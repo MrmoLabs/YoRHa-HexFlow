@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { OP_CODES, OP_PRIORITY, CATEGORY_ORDER } from '../constants';
+import { OP_CODES, OP_PRIORITY, CATEGORY_ORDER } from '../../constants';
 
 export default function ComponentPalette({
     operatorTemplates,

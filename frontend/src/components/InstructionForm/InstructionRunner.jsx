@@ -1,93 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useInstructionForm } from '../../hooks/useInstructionForm';
-import { SmartInput } from './SmartInput';
+import { api } from '../../api';
 import { v4 as uuidv4 } from 'uuid';
+import { normalizeRunnerInstruction } from './normalizeRunnerInstruction';
+import RunnerFieldTree from './RunnerFieldTree';
+import TransmissionLog from './TransmissionLog';
+import { triggerBlobDownload } from '../../utils/download';
 
 export default function InstructionRunner({ instruction, onSend, onOpenDatePicker }) {
     // 1. Normalize Instruction Object (Schema Mapping)
-    const normalizedInstruction = React.useMemo(() => {
-        if (!instruction) return null;
-
-        const processFields = (items) => {
-            // 0. Pre-process: If items is a flat list with parent_id, build the tree first.
-            let rootItems = items;
-            const hasParentIds = items.some(i => i.parent_id);
-
-            if (hasParentIds) {
-                const map = {};
-                items.forEach(i => map[i.id] = { ...i, fields: [] }); // Create clones with empty fields
-                const roots = [];
-                items.forEach(i => {
-                    if (i.parent_id && map[i.parent_id]) {
-                        map[i.parent_id].fields.push(map[i.id]);
-                    } else {
-                        roots.push(map[i.id]);
-                    }
-                });
-                rootItems = roots;
-            }
-
-            // Respect field ordering if provided (Backend uses 'sequence')
-            const sortNodes = (nodes) => {
-                nodes.sort((a, b) => (a.sequence ?? a.order ?? 0) - (b.sequence ?? b.order ?? 0));
-                nodes.forEach(n => {
-                    if (n.fields && n.fields.length > 0) sortNodes(n.fields);
-                });
-                return nodes;
-            };
-
-            const sortedItems = sortNodes(rootItems);
-
-            const mapToSchema = (nodes) => {
-                return nodes.map(f => {
-                    // Recursive processing
-                    const processedChildren = f.fields && f.fields.length > 0 ? mapToSchema(f.fields) : [];
-
-                    if (f.op_code || f.parameter_config) {
-                        // Inherit or process
-                        const op = String(f.op_code || '').toUpperCase();
-                        const type = String(f.type || f.parameter_config?.type || '').toLowerCase();
-
-                        // Advanced Recognition: Length/Calculated
-                        // FIX: Explicitly include LENGTH_CALC and CHECKSUM_CRC
-                        const isCalculated = op === 'CALCULATED' || op === 'LENGTH_CALC' || op === 'CHECKSUM_CRC' || type === 'length' || type === 'calculated' || type === 'checksum';
-
-                        // Advanced Recognition: Inputs
-                        // FIX: Broaden Fixed detection. "Raw HEX" might be 'HEX' or just have a value.
-                        const hasFixedValue = (f.parameter_config?.hex || f.parameter_config?.value) !== undefined && !f.parameter_config?.variable;
-                        const isFixed = op === 'FIXED' || op === 'HEX_RAW' || op === 'HEX' || type === 'fixed' || type === 'hex_raw' || f.parameter_config?.readOnly || hasFixedValue;
-                        const isInput = !isCalculated && !isFixed;
-
-                        return {
-                            id: f.id,
-                            name: f.name || f.label,
-                            op_code: (['LENGTH_CALC', 'CHECKSUM_CRC', 'HEX_RAW', 'TIME_CUMULATIVE', 'TIME_ACCUMULATOR'].includes(op) || type === 'time_cumulative') ? (['LENGTH_CALC', 'CHECKSUM_CRC', 'HEX_RAW'].includes(op) ? op : 'TIME_CUMULATIVE') : (isInput ? 'INPUT' : (isCalculated ? 'CALCULATED' : 'FIXED')),
-                            original_op_code: f.op_code, // Preserve original for render logic fallback
-                            parameter_config: {
-                                hex: f.hex_value, // Legacy mapping support if needed, mostly in param_config now
-                                ...f.parameter_config,
-                                value: f.value ?? f.parameter_config?.value,
-                                variable: isInput,
-                                formula: type === 'length' ? 'auto' : (f.formula || f.parameter_config?.formula),
-                                type: type.includes('float') || type.includes('decimal') ? 'decimal' : (type || 'number'),
-                                unit: f.unit || f.parameter_config?.unit,
-                                description: f.description || f.parameter_config?.description,
-                                options: f.options || f.parameter_config?.options
-                            },
-                            byte_len: f.byte_length || f.byte_len || 1,
-                            fields: processedChildren
-                        };
-                    }
-                    return f;
-                });
-            };
-
-            return mapToSchema(sortedItems);
-        };
-
-        const fields = processFields(instruction.fields || instruction.blocks || []);
-        return { ...instruction, fields };
-    }, [instruction]);
+    const normalizedInstruction = React.useMemo(
+        () => normalizeRunnerInstruction(instruction),
+        [instruction]
+    );
 
     const {
         inputs,
@@ -98,31 +23,77 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
     } = useInstructionForm(normalizedInstruction);
 
     const [logs, setLogs] = useState([]);
+    const [isSending, setIsSending] = useState(false);
+    const [isExporting, setIsExporting] = useState(false);
+    const [exportMsg, setExportMsg] = useState('');
 
     // Keyboard Shortcuts
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.ctrlKey && e.key === 'Enter') {
+                e.preventDefault();
                 handleSend();
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [inputs, hexPreview]);
+    }, [inputs, hexPreview, isSending]);
 
-    const handleSend = () => {
-        if (!instruction || !normalizedInstruction) return;
+    const handleSend = async () => {
+        if (!instruction || !normalizedInstruction || isSending) return;
         const payload = hexPreview.replace(/\s/g, '');
+        if (!payload) {
+            // Never transmit an empty frame (e.g. instruction with no fields yet).
+            setLogs(prev => [{
+                id: uuidv4(),
+                time: new Date().toLocaleTimeString(),
+                name: instruction.name || instruction.label || 'Unknown',
+                payload: '--',
+                status: 'FAILED',
+                error: 'EMPTY FRAME — nothing to send'
+            }, ...prev].slice(0, 50));
+            return;
+        }
+        const entryId = uuidv4();
         const entry = {
-            id: uuidv4(),
+            id: entryId,
             time: new Date().toLocaleTimeString(),
             name: instruction.name || instruction.label || 'Unknown',
-            payload: hexPreview
+            payload: hexPreview,
+            status: 'SENDING'
         };
         setLogs(prev => [entry, ...prev].slice(0, 50)); // Keep last 50
+        setIsSending(true);
 
-        if (onSend) {
-            onSend(payload);
+        try {
+            if (onSend) {
+                await onSend(payload);
+            }
+            setLogs(prev => prev.map(l => l.id === entryId ? { ...l, status: 'SENT' } : l));
+        } catch (err) {
+            setLogs(prev => prev.map(l => l.id === entryId
+                ? { ...l, status: 'FAILED', error: err?.message || 'UNKNOWN ERROR' }
+                : l));
+        } finally {
+            setIsSending(false);
+        }
+    };
+
+    const handleExport = async () => {
+        if (!instruction || isExporting) return;
+        setIsExporting(true);
+        setExportMsg('');
+        try {
+            const hexString = hexPreview.replace(/\s/g, '');
+            const safeName = (instruction.code || instruction.name || 'yorha-frame')
+                .replace(/[^\w.\-]+/g, '_');
+            const blob = await api.exportHexFile(hexString, `${safeName}.hex`);
+            triggerBlobDownload(blob, `${safeName}.hex`);
+            setExportMsg('EXPORT OK');
+        } catch (err) {
+            setExportMsg(`EXPORT FAILED: ${err?.message || 'UNKNOWN'}`);
+        } finally {
+            setIsExporting(false);
         }
     };
 
@@ -138,192 +109,6 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
     const deviceCode = normalizedInstruction.device_code || 'GENERIC-DEV';
     const instructionCode = normalizedInstruction.code || normalizedInstruction.id;
     const instructionName = normalizedInstruction.name || normalizedInstruction.label || 'Unnamed Protocol';
-
-    // DRY Helper: Get Date object for the field's base time (epoch)
-    const getFieldEpoch = (params) => {
-        const baseTimeStr = params.base_time || '2000-01-01T00:00:00';
-        return new Date(baseTimeStr.includes('T') ? baseTimeStr : baseTimeStr.replace(' ', 'T'));
-    };
-
-
-    const renderFields = (fieldsToRender, depth = 0) => {
-        return fieldsToRender.map((field) => {
-            const params = field.parameter_config || {};
-            // FIX: Robust check using preserved original_op_code
-            const originalOp = String(field.original_op_code || '').toUpperCase();
-
-            // Re-apply robust classification logic in render time
-            // Re-apply robust classification logic in render time
-            const isCalculated = field.op_code === 'CALCULATED' || field.op_code === 'LENGTH_CALC' || field.op_code === 'CHECKSUM_CRC' || params.formula === 'auto' || params.type === 'length' || params.type === 'checksum';
-            const isTimeCumulative = field.op_code === 'TIME_CUMULATIVE' || originalOp === 'TIME_CUMULATIVE' || originalOp === 'TIME_ACCUMULATOR' || params.type === 'time_cumulative';
-
-            const isFixed = (field.op_code === 'FIXED' || originalOp === 'HEX_RAW' || originalOp === 'FIXED' || field.op_code === 'HEX_RAW' || params.readOnly) && !isTimeCumulative;
-
-            const isEditable = !isCalculated && !isFixed;
-            const rawOptions = params.options;
-            const hasOptions = rawOptions && (Array.isArray(rawOptions) ? rawOptions.length > 0 : Object.keys(rawOptions).length > 0);
-            const isEnum = hasOptions || field.op_code === 'MAPPING';
-
-            const subFields = field.fields || [];
-
-            if (subFields.length > 0) {
-                return (
-                    <div key={field.id} className={`${depth > 0 ? 'ml-6' : ''}`}>
-                        <div className="border-l border-nier-light/10 pl-4 py-2 my-2 bg-nier-light/[0.02]">
-                            <div className="flex items-center gap-2 mb-2 opacity-60">
-                                <div className="w-2 h-2 bg-nier-light/30"></div>
-                                <span className="text-[10px] font-black uppercase tracking-widest text-nier-light">
-                                    {field.name || field.label || 'BLOCK'}
-                                </span>
-                            </div>
-                            {renderFields(subFields, depth + 1)}
-                        </div>
-                    </div>
-                );
-            }
-
-            // LEAF NODE
-            const formattedOptions = Array.isArray(rawOptions)
-                ? rawOptions.map(opt => typeof opt === 'object' ? opt : { label: String(opt), value: opt })
-                : (rawOptions ? Object.entries(rawOptions).map(([k, v]) => ({ label: k, value: v })) : []);
-
-            let displayValue = '';
-            let placeholder = '';
-            let inputType = !isEditable ? 'text' : (isEnum && formattedOptions.length > 0 ? 'select' : (params.type || 'number'));
-
-            // 1. Fixed / ReadOnly Fields: Show the exact HEX or Value
-            if (isFixed) {
-                const isExplicitHex = originalOp === 'HEX_RAW' || field.op_code === 'HEX_RAW';
-                let rawVal = params.hex || params.value;
-
-                if (!rawVal && isExplicitHex) {
-                    // Default to Zero based on byte_len if missing
-                    rawVal = '00'.repeat(field.byte_len || 1);
-                }
-
-                displayValue = String(rawVal || '').toUpperCase();
-
-                if (!displayValue) {
-                    placeholder = 'NO DATA';
-                }
-            } else if (isTimeCumulative) {
-                // TIME CUMULATIVE LOGIC
-                // Value is Seconds since base_time (default: 2000-01-01 00:00:00)
-                const BASE_TIME = getFieldEpoch(params);
-                const seconds = inputs[field.id] || 0;
-                const currentTime = new Date(BASE_TIME.getTime() + (seconds * 1000));
-
-                // Format: YYYY-MM-DD HH:mm:ss
-                const pad = n => n.toString().padStart(2, '0');
-                displayValue = `${currentTime.getFullYear()}-${pad(currentTime.getMonth() + 1)}-${pad(currentTime.getDate())} ${pad(currentTime.getHours())}:${pad(currentTime.getMinutes())}:${pad(currentTime.getSeconds())}`;
-                inputType = 'text'; // Show formatted text
-
-                // Override Input Props for Picker
-            } else if (isCalculated || isEnum) {
-                // FIX: Priority to Computed Values for calculated fields
-                // If it's Enum, input is source of truth. If Calculated, computedValues is source.
-                if (isCalculated) {
-                    displayValue = computedValues[field.id] !== undefined ? computedValues[field.id] : 0;
-                    inputType = 'hex'; // Usually Length/Checksum are hex
-                    // Auto-format for display
-                    if (typeof displayValue === 'number' && field.byte_len !== undefined) {
-                        if (field.byte_len === 0) {
-                            displayValue = '';
-                        } else {
-                            const targetLen = field.byte_len * 2;
-                            displayValue = displayValue.toString(16).toUpperCase().padStart(targetLen, '0').slice(-targetLen);
-                        }
-                    }
-                } else {
-                    displayValue = inputs[field.id] !== undefined ? inputs[field.id] : (computedValues[field.id] || 0);
-                }
-            } else {
-                const rawValue = inputs[field.id];
-                if (field.byte_len && field.byte_len > 0) {
-                    const currentVal = rawValue ?? 0;
-                    if (!params.type || params.type === 'number' || params.type === 'hex') {
-                        inputType = 'hex';
-                        if (typeof currentVal === 'number') {
-                            displayValue = currentVal.toString(16).toUpperCase().padStart(field.byte_len * 2, '0');
-                        } else {
-                            displayValue = String(currentVal || '').toUpperCase();
-                        }
-                        placeholder = '0'.repeat(field.byte_len * 2);
-                    } else {
-                        displayValue = rawValue;
-                    }
-                } else {
-                    displayValue = rawValue;
-                    placeholder = '?? [VAR]';
-                }
-            }
-
-            const handleChange = (val) => {
-                // FIX: Enum handling for HEX strings
-                if (isEnum) {
-                    // If the value looks like a hex string (e.g. "AA"), parse it as base 16
-                    // But if it's already a number, just use it.
-                    const strVal = String(val);
-                    // Check if option value was intended as hex
-                    // We can try to match it against options to see the original type?
-                    // Or just generic "Auto Detect" approach:
-                    if (typeof val === 'string' && /^[0-9A-Fa-f]+$/.test(val)) {
-                        // It's a hex string (e.g. 'AA', '0A') form the option value
-                        const num = parseInt(val, 16);
-                        handleInputChange(field.id, isNaN(num) ? 0 : num);
-                        return;
-                    }
-                }
-
-                if (inputType === 'hex' && typeof val === 'string') {
-                    // Convert hex string back to integer for storage
-                    const num = parseInt(val, 16);
-                    handleInputChange(field.id, isNaN(num) ? 0 : num);
-                } else {
-                    handleInputChange(field.id, val);
-                }
-            };
-
-            const handleTimeClick = () => {
-                if (onOpenDatePicker) {
-                    // Calculate current ISO for picker
-                    const BASE_TIME = getFieldEpoch(params);
-                    const seconds = inputs[field.id] || 0;
-                    const currentIso = new Date(BASE_TIME.getTime() + (seconds * 1000)).toISOString();
-
-                    onOpenDatePicker(currentIso, (newIso) => {
-                        const newDate = new Date(newIso);
-                        const diffSeconds = Math.floor((newDate.getTime() - BASE_TIME.getTime()) / 1000);
-                        handleInputChange(field.id, diffSeconds); // Allow negative for "before base time"
-                    });
-                }
-            };
-
-            return (
-                <div key={field.id} className={`${depth > 0 ? 'ml-6' : ''}`}>
-                    <div className="group/field transition-all border-l-2 border-transparent hover:border-nier-light/10 focus-within:border-nier-light/30">
-                        <SmartInput
-                            label={field.name || field.label || 'PARAM'}
-                            value={displayValue}
-                            onChange={handleChange}
-                            type={inputType}
-                            options={formattedOptions}
-                            readOnly={!isEditable || isTimeCumulative} // ReadOnly if time (use click)
-                            onClick={isTimeCumulative ? handleTimeClick : undefined} // Trigger picker
-                            highlight={isCalculated || isTimeCumulative}
-                            suffix={params.unit || (isTimeCumulative ? `${getFieldEpoch(params).getFullYear()}` : '')}
-                            placeholder={placeholder}
-                        />
-                        {params.description && (
-                            <div className="text-[9px] font-bold text-nier-light/30 ml-40 -mt-1 mb-2 opacity-0 group-hover/field:opacity-100 transition-opacity uppercase tracking-tighter">
-                                {params.description}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            );
-        });
-    };
 
     return (
         <div className="flex-1 flex flex-col h-full bg-nier-bg p-8 gap-8 overflow-hidden">
@@ -357,7 +142,13 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                         <div className="h-[1px] flex-1 bg-nier-light/10"></div>
                     </div>
                     <div className="space-y-1">
-                        {renderFields(normalizedInstruction.fields)}
+                        <RunnerFieldTree
+                            fields={normalizedInstruction.fields}
+                            inputs={inputs}
+                            computedValues={computedValues}
+                            onFieldChange={handleInputChange}
+                            onOpenDatePicker={onOpenDatePicker}
+                        />
                     </div>
                 </div>
 
@@ -374,36 +165,31 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
 
                     <button
                         onClick={handleSend}
-                        className="bg-nier-light text-white py-4 px-8 font-black text-sm tracking-[0.2em] hover:bg-[#2a2a2a] transition-all active:scale-95 flex items-center justify-between group shadow-lg"
+                        disabled={isSending}
+                        className="bg-nier-light text-white py-4 px-8 font-black text-sm tracking-[0.2em] hover:bg-[#2a2a2a] transition-all active:scale-95 flex items-center justify-between group shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        <span>TRANSMIT_DATA</span>
+                        <span>{isSending ? 'TRANSMITTING...' : 'TRANSMIT_DATA'}</span>
                         <div className="flex items-center gap-2">
                             <span className="text-[10px] font-mono opacity-50">CTRL+ENT</span>
-                            <span className="w-2 h-2 bg-white animate-pulse"></span>
+                            <span className={`w-2 h-2 bg-white ${isSending ? 'animate-pulse' : ''}`}></span>
                         </div>
                     </button>
 
-                    <div className="flex-1 overflow-hidden flex flex-col mt-4">
-                        <div className="text-xs font-black text-nier-light/40 mb-3 uppercase tracking-[0.2em] border-b-2 border-nier-light/10 pb-2">
-                            :: Transmission_Log ::
+                    <button
+                        onClick={handleExport}
+                        disabled={isExporting}
+                        className="border border-nier-light text-nier-light py-2 px-6 font-black text-xs tracking-[0.2em] hover:bg-nier-light hover:text-nier-dark transition-all flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <span>{isExporting ? 'EXPORTING...' : 'EXPORT_HEX'}</span>
+                        <span className="text-[10px] font-mono opacity-50">.HEX</span>
+                    </button>
+                    {exportMsg && (
+                        <div className={`text-[10px] font-mono tracking-widest text-center ${exportMsg === 'EXPORT OK' ? 'text-green-400' : 'text-red-400'}`}>
+                            {exportMsg}
                         </div>
-                        <div className="flex-1 overflow-y-auto font-mono text-xs space-y-3">
-                            {logs.map(log => (
-                                <div key={log.id} className="flex flex-col gap-1 border-b border-nier-light/5 pb-2">
-                                    <div className="flex justify-between opacity-40 font-bold text-[9px]">
-                                        <span>[{log.time}]</span>
-                                        <span>TX_SUCCESS</span>
-                                    </div>
-                                    <div className="text-nier-light break-all font-bold">
-                                        {log.payload}
-                                    </div>
-                                </div>
-                            ))}
-                            {logs.length === 0 && (
-                                <div className="italic text-nier-light/30 text-[10px]">// BUFFER_EMPTY</div>
-                            )}
-                        </div>
-                    </div>
+                    )}
+
+                    <TransmissionLog logs={logs} />
                 </div>
             </div>
         </div>

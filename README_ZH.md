@@ -1,7 +1,7 @@
 ﻿# YoRHa-HexFlow: Hex Instruction Orchestrator
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Frontend](https://img.shields.io/badge/Frontend-React_18_%7C_Vite-61DAFB)
+![Frontend](https://img.shields.io/badge/Frontend-React_19_%7C_Vite-61DAFB)
 ![Backend](https://img.shields.io/badge/Backend-FastAPI-009688)
 ![Style](https://img.shields.io/badge/Style-Nier:_Automata-dad4bb)
 
@@ -25,9 +25,15 @@
 ### 2. 强大的逻辑引擎 (Logic Engine)
 - **实时公式计算**: 支持 `([FieldA] + 10) / 2` 形式的动态公式，前端实时预览计算结果。
 - **自动计数器 & 时间累计**: 内置 `AUTO_COUNTER` 和 `TIME_ACCUMULATOR` 等智能积木。
+- **位域编辑器**: `BITFIELD` 算子配有专门的位布局编辑器（`start_bit` / `bit_len` / `default_val`），持久化到 `bit_fields` 表并由编码器按位打包。
 - **多进制支持**: 属性面板支持 HEX/DEC/BIN 无缝切换输入。
 
-### 3. 工程化与质量 (Engineering)
+### 3. 导出与下发 (Export & Dispatch)
+- **Hex 文件导出**: `POST /export/hex` 将组装好的数据流导出为 `.hex` 文件（指令加工页）。
+- **二进制文件导出**: `POST /export/binary` 由后端 Orchestrator 编译合并后的块结构并返回 `.bin` 文件（编排绑定页）。
+- **环回下发**: `POST /dispatch/` 返回 ACK 并保留有界内存历史（最多 100 条）。**这是进程内环回通道——目前没有真实串口/TCP/WebSocket 传输。**
+
+### 4. 工程化与质量 (Engineering)
 - **SRP 架构**: 严格遵循单一职责原则，逻辑 Hook 化，组件原子化。
 - **全链路测试**: 
   - 集成 `Vitest` + `React Testing Library`。
@@ -122,18 +128,34 @@ graph TD
 
 ```
 /backend
-    /main.py            # FastAPI 入口
-    /models.py          # Pydantic 数据模型
-    
+    main.py              # FastAPI 入口（lifespan：建表 + 三个种子函数）
+    requirements.txt     # Python 依赖（含 pymysql，仅 debug_db.py 使用）
+    /routers             # HTTP 路由（instruction / protocol / operator / compile / export / dispatch）
+    /handlers            # 区间逻辑（length、checksum）
+    /core                # orchestrator.py（在用）；processor.py / graph.py（遗留，未接线）
+    /db                  # SQLAlchemy 模型 + SQLite 文件 backend/db/yorha.db（migrations/*.sql 非权威）
+    debug_db.py          # 独立 MySQL 调试脚本（唯一使用 pymysql 的地方）
+
 /frontend
     /src
-        /components     # 原子 UI 组件 (Block, PropertiesPanel)
-        /hooks          # 业务逻辑 Hooks (Data, Selection)
-        /pages          # 页面级容器 (Instruction, Canvas)
-        /utils          # 纯函数工具 (Formula, Hex)
-        /constants.js   # 全局常量定义
-    /src/hooks/__tests__ # 单元测试套件
+        /components
+            /ui         # 通用 UI（NieRModal、NieRDatePicker、FeaturePlaceholder）
+            /editor     # 编辑器域组件（Canvas、Block、BlockPropertiesPanel、ComponentPalette 等）
+            /InstructionForm  # 动态发送表单（InstructionRunner + 拆出的字段树/日志）
+        /hooks           # 业务逻辑 Hooks（useInstructionData、useInstructionForm 等）
+        /pages           # 页面容器（Protocol、Instruction、InstructionProcessor、Orchestration）
+        /utils           # 纯函数工具（InstructionEncoder.js = 编码核心、formula.js、normalizeInstruction.js）
+        /config          # pageStatus.json（页面状态唯一数据源）
+        /api             # 全部 HTTP 调用，按域拆分（client/protocols/instructions/export/dispatch + index）
+        constants.js     # 全局常量（OP_CODES、分类）
+    /src/**/__tests__    # Vitest 测试套件
+
+/scripts
+    generate-page-status.mjs  # 由 pageStatus.json 重新生成 docs/PAGE_STATUS.md
+    inspect_db.py             # SQLite 调试脚本（路径相对脚本解析，任意 cwd 可跑）
 ```
+
+> 有意保留的未接线遗留代码：`backend/core/processor.py`、`backend/core/graph.py`、`frontend/src/pages/Blueprint.jsx`。请勿删除，也不要向其中新增依赖。完整文件地图见 [PROJECT_HANDOVER.md](./PROJECT_HANDOVER.md)。
 
 ## ⚠️ 开发规范 (Guidelines)
 1. **单一职责**: 单文件不超过 400 行，复杂逻辑必须提取 Hook。

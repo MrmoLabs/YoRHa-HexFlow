@@ -1,5 +1,5 @@
 import React from 'react';
-import FeaturePlaceholder from '../components/FeaturePlaceholder';
+import FeaturePlaceholder from '../components/ui/FeaturePlaceholder';
 import { PAGE_STATUS_BY_KEY } from '../config/pageRegistry';
 
 export default function DataHub() {

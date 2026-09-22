@@ -1,11 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import Canvas from '../components/Canvas';
+import Canvas from '../components/editor/Canvas';
+import { api } from '../api';
+import { mergeProtocolInstruction, buildLanes, getTotalBytes } from '../utils/blockMerge';
+import { toFrameBlocks } from '../utils/toFrameBlocks';
+import { triggerBlobDownload } from '../utils/download';
 
 export default function Orchestration({ protocols, instructions }) {
     // State for Bindings (Mappings)
     const [bindings, setBindings] = useState([]);
     const [activeBindingId, setActiveBindingId] = useState(null);
+    const [isExporting, setIsExporting] = useState(false);
+    const [exportMsg, setExportMsg] = useState('');
 
     // Initial Binding
     useEffect(() => {
@@ -57,119 +63,35 @@ export default function Orchestration({ protocols, instructions }) {
         setBindings(bindings.map(b => b.id === id ? { ...b, ...updates } : b));
     };
 
-    // MERGE LOGIC: Combine Protocol + Instruction
-    const getMergedBlocks = () => {
+    // MERGE LOGIC: Combine Protocol + Instruction (see utils/blockMerge.js)
+    const mergedBlocks = useMemo(() => {
         if (!currentBinding) return [];
-
         const protocol = protocols.find(p => p.id === currentBinding.protocolId);
         const instruction = instructions.find(i => i.id === currentBinding.instructionId);
+        return mergeProtocolInstruction(protocol, instruction);
+    }, [currentBinding, instructions, protocols]);
 
-        if (!protocol) return [];
-
-        const normalizeInstructionBlocks = (instruction) => {
-            const blocks = instruction?.blocks;
-            if (blocks?.length) return blocks;
-
-            const fields = instruction?.fields || [];
-            const fieldMap = new Map(fields.map(field => [field.id, { ...field, label: field.label || field.name, children: [] }]));
-            const roots = [];
-
-            fieldMap.forEach(field => {
-                if (field.parent_id && fieldMap.has(field.parent_id)) {
-                    fieldMap.get(field.parent_id).children.push(field);
-                } else {
-                    roots.push(field);
-                }
-            });
-
-            return roots.sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
-        };
-
-        // Deep Clone to avoid mutating original AND Prefix IDs to avoid collisions
-        const cloneBlocks = (blocks, prefix) => {
-            return blocks.map(b => {
-                const newBlock = { ...b, id: `${prefix}-${b.id}` };
-                if (newBlock.children) {
-                    newBlock.children = cloneBlocks(newBlock.children, prefix);
-                }
-                return newBlock;
-            });
-        };
-
-        const mergedRoot = { ...protocol };
-        if (mergedRoot.children) {
-            mergedRoot.children = cloneBlocks(mergedRoot.children, 'p');
-        }
-
-        // Logic: Find the FIRST 'slot' block (or container?) and inject instruction blocks
-        // If no slot, maybe append? OR user must define a SLOT in Protocol.
-        // For V3.1, let's assume we look for type === 'slot'. 
-        // If no slot found, we append to the end of the root container (fallback).
-
-        if (instruction) {
-            const instructionBlocks = cloneBlocks(normalizeInstructionBlocks(instruction), 'i');
-
-            const injectIntoSlot = (nodes) => {
-                for (let i = 0; i < nodes.length; i++) {
-                    if (nodes[i].type === 'slot') {
-                        // FOUND SLOT: Replace with instruction blocks
-                        // Mark them as "Injected" for styling if needed
-                        const injected = instructionBlocks.map(ib => ({ ...ib, isInjected: true }));
-                        nodes.splice(i, 1, ...injected);
-                        return true; // Stop after first slot filled
-                    }
-                    if (nodes[i].children) {
-                        if (injectIntoSlot(nodes[i].children)) return true;
-                    }
-                }
-                return false;
-            };
-
-            const injected = injectIntoSlot(mergedRoot.children || []);
-
-            if (!injected && mergedRoot.children) {
-                // Fallback: Append if no slot
-                const injected = instructionBlocks.map(ib => ({ ...ib, isInjected: true }));
-                mergedRoot.children.push(...injected);
-            }
-        }
-
-        return mergedRoot.children || [];
-    };
-
-    const mergedBlocks = useMemo(() => getMergedBlocks(), [currentBinding, instructions, protocols]);
-    const buildLanes = (nodes, parentId = null, parentName = 'ROOT SEQUENCE', depth = 0) => {
-        const lanes = [{
-            depth,
-            parentId,
-            parentName,
-            items: nodes || []
-        }];
-
-        (nodes || []).forEach(node => {
-            if (node.children?.length) {
-                lanes.push(...buildLanes(node.children, node.id, node.label || node.name || 'GROUP CONTENT', depth + 1));
-            }
-        });
-
-        return lanes;
-    };
     const mergedLanes = useMemo(() => buildLanes(mergedBlocks), [mergedBlocks]);
 
-    // Flatten for simple display (optional, but our Canvas supports recursive now)
-    // But for a linear "Hex View" we might need a flat list.
-    // Let's stick to the Canvas view for now.
-
-    const getTotalBytes = (blocks) => {
-        let total = 0;
-        blocks.forEach(b => {
-            if (b.children) total += getTotalBytes(b.children);
-            else total += (b.byte_length || 0);
-        });
-        return total;
-    };
     const totalBytes = getTotalBytes(mergedBlocks);
     const selectedInstruction = instructions.find(i => i.id === currentBinding?.instructionId);
+
+    // Export merged blocks as .bin (server-side compile via Orchestrator)
+    const handleExportBinary = async () => {
+        if (!mergedBlocks.length || isExporting) return;
+        setIsExporting(true);
+        setExportMsg('');
+        try {
+            const bindingLabel = (currentBinding?.label || 'binding').replace(/[^\w.\-]+/g, '_');
+            const blob = await api.exportBinaryFromBlocks(toFrameBlocks(mergedBlocks), `${bindingLabel}.bin`);
+            triggerBlobDownload(blob, `${bindingLabel}.bin`);
+            setExportMsg('EXPORT OK');
+        } catch (err) {
+            setExportMsg(`EXPORT FAILED: ${err?.message || 'UNKNOWN'}`);
+        } finally {
+            setIsExporting(false);
+        }
+    };
 
     return (
         <div className="flex-1 flex overflow-hidden">
@@ -226,6 +148,18 @@ export default function Orchestration({ protocols, instructions }) {
                             <div className="ml-auto flex flex-col items-end">
                                 <label className="text-[10px] opacity-70 uppercase tracking-widest">总长度 (Total Size)</label>
                                 <div className="text-xl font-bold font-mono">{totalBytes} <span className="text-sm font-normal opacity-50">Bytes</span></div>
+                                <button
+                                    onClick={handleExportBinary}
+                                    disabled={!mergedBlocks.length || isExporting}
+                                    className="mt-1 border border-nier-light/60 text-nier-light text-[10px] font-mono tracking-widest px-3 py-1 hover:bg-nier-light hover:text-nier-dark transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    {isExporting ? 'EXPORTING...' : 'EXPORT .BIN'}
+                                </button>
+                                {exportMsg && (
+                                    <div className={`text-[9px] font-mono mt-0.5 ${exportMsg === 'EXPORT OK' ? 'text-green-400' : 'text-red-400'}`}>
+                                        {exportMsg}
+                                    </div>
+                                )}
                             </div>
                         </>
                     )}

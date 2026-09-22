@@ -3,18 +3,18 @@ version: '3.8'
 services:
   backend:
     build:
-      context: ../
+      context: .
       dockerfile: deploy/Dockerfile.backend
     ports:
       - "8000:8000"
     volumes:
-      - ../backend:/app/backend
+      - ./backend:/app/backend
     environment:
       - ENVIRONMENT=production
 
   frontend:
     build:
-      context: ../
+      context: .
       dockerfile: deploy/Dockerfile.frontend
     ports:
       - "80:80"

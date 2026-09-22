@@ -37,7 +37,7 @@
 ### 2.1 表现层 (View Layer)
 - **Instruction.jsx**: 页面入口，负责顶层布局和组件编排。
 - **Canvas.jsx**: 核心画布，负责渲染泳道和处理拖拽事件区域。
-- **components/Block.jsx**: 最小原子组件，负责不同 OP_CODE 的差异化渲染（主题、形状）。
+- **components/editor/Block.jsx**: 最小原子组件，负责不同 OP_CODE 的差异化渲染（主题、形状）。
 
 ### 2.2 逻辑层 (Logic Hooks) - **SRP 核心**
 - **useInstructionData**: 负责 CRUD、API 通信、脏数据检查。
@@ -46,8 +46,14 @@
 - **useCanvasConnections**: 负责计算 SVG 贝塞尔曲线（逻辑引用线、层级关系线）。
 
 ### 2.3 工具层 (Utils)
+- **InstructionEncoder.js**: 编码核心。`getInitialValues`（默认值）→ `resolveDependencies`（长度/校验/公式）→ `encodeInstruction`（生成 hex 与 byteMap）。`BITFIELD` 按 `sum(default_val << start_bit)` 打包，运行时输入值优先。
 - **formula.js**: 纯函数库，包含安全的公式解析器 (`evaluateFormula`) 和 十六进制格式化器 (`formatToHex`)。
-- **constants.js**: 单一可信源，定义 `OP_CODES`, `UI_THEME` 等常量。
+- **constants.js**: 单一可信源，定义 `OP_CODES`, `CATEGORIES`, `OP_PRIORITY` 等常量。
+
+### 2.4 后端链路 (Backend)
+- **routers**: `instruction` / `protocol` / `operator`（CRUD + 种子）、`export`（hex/bin 下载）、`dispatch`（进程内环回，非真实传输）。
+- **core/orchestrator.py**: 块森林 → 扁平流 → 区间 length/checksum → hex，供 `/compile` 与 `/export/binary` 使用。
+- **db**: SQLite（`backend/db/yorha.db`），表结构以 `backend/db/models.py` 为准（含 `bit_fields`）。
 
 ---
 
@@ -55,7 +61,8 @@
 
 | 技术 | 选型原因 |
 | :--- | :--- |
-| **React 18** | 组件化开发，Hooks 机制完美契合业务逻辑分离 (SRP) 的需求。 |
+| **React 19** | 组件化开发，Hooks 机制完美契合业务逻辑分离 (SRP) 的需求（`package.json` 中实际版本 ^19.2）。 |
+| **Vite 7** | 开发服务器与构建链路（`package.json` 中实际版本 ^7.2）。 |
 | **@dnd-kit** | 相比 `react-beautiful-dnd` 更轻量且模块化，支持自定义碰撞检测，适合复杂的嵌套泳道拖拽。 |
 | **TailwindCSS** | 原子类 CSS，结合 `index.css` 的 Theme 配置，能快速构建 Nier: Automata 风格的高定制 UI。 |
 | **Vitest** | 兼容 Jest API 但基于 Vite，速度极快，适合作为开发环境的实时测试运行器。 |

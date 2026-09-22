@@ -12,7 +12,7 @@ vi.mock('../../api', () => ({
     }
 }));
 
-vi.mock('../../components/Canvas', () => ({
+vi.mock('../../components/editor/Canvas', () => ({
     default: ({ lanes, onSelect }) => (
         <div data-testid="mock-canvas">
             <div>{lanes.map(lane => `${lane.parentName}:${lane.items.length}`).join('|')}</div>

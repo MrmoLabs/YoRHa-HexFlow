@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import InstructionListSidebar from '../components/InstructionListSidebar';
+import InstructionListSidebar from '../components/editor/InstructionListSidebar';
 import InstructionRunner from '../components/InstructionForm/InstructionRunner';
 import { useInstructionData } from '../hooks/useInstructionData';
-import NieRDatePicker from '../components/NieRDatePicker';
+import NieRDatePicker from '../components/ui/NieRDatePicker';
+import { api } from '../api';
 
 export default function InstructionProcessor({ instructions: initialInstructions, setInstructions: setSharedInstructions, reloadInstructions }) {
     const {
@@ -31,11 +32,12 @@ export default function InstructionProcessor({ instructions: initialInstructions
         ));
     }, [instructions, searchTerm]);
 
-    // Handle "Send" action (mock for now, or real API call)
+    // Send via backend loopback channel (/dispatch). No real serial/TCP transport yet.
     const handleSend = async (payload) => {
-        console.log(`[Processor] Sending Payload: ${payload}`);
-        // TODO: Call backend API if needed
-        // await api.sendRaw(payload);
+        const instructionName = currentInstruction?.name || currentInstruction?.label || null;
+        const record = await api.dispatchPayload(payload, instructionName);
+        console.log(`[Processor] Dispatched (LOOPBACK) id=${record.id} bytes=${record.byte_count}`);
+        return record;
     };
 
     return (
@@ -47,10 +49,9 @@ export default function InstructionProcessor({ instructions: initialInstructions
                 setSearchTerm={setSearchTerm}
                 onSearch={searchTerm.trim() ? null : loadInstructions}
                 onSelect={setActiveInstructionId}
-                // We pass no-op for Add/Delete to make it "Read Only" or just hide buttons via CSS if we wanted to be stricter.
-                // But passing empty functions prevents crashes if clicked.
-                onAdd={() => { }}
-                onDelete={() => { }}
+                // Read-only here: passing null hides the Add/Delete buttons entirely.
+                onAdd={null}
+                onDelete={null}
                 hasUnsavedChanges={false}
             />
 

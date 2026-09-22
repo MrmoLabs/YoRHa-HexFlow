@@ -11,33 +11,30 @@ class LengthHandler(LogicHandler):
         end_id = block.config.target_end_id
         offset = int(block.config.params.get("offset", 0))
 
-        # We need to match Start/End IDs. 
-        # CAUTION: The IDs in config might be local or global.
-        # GraphEngine resolved this for sorting, but here we scan the linear stream.
-        # If IDs are ambiguous, we assume first match? Or we need Global IDs in config.
-        # For Phase 2, let's assume if we find the ID, it's the right one (simplification).
-        
+        # Range matching rules:
+        # 1. Start block: first match begins the range.
+        # 2. End block: only scanned AFTER the start has matched, so an end_id that
+        #    happens to appear earlier in the stream cannot terminate the scan prematurely.
+        # 3. If no end block is found, the range extends to the end of the stream.
         count = 0
         in_range = False
-        
+        start_matched = False
+
         for layer_id, b in flattened_blocks:
-            # We check if b.id matches start_id. 
-            # Ideally we check "{layer_id}:{b.id}" == config_global_id
-            # But config might just have "1".
-            
-            if b.id == start_id:
+            if not start_matched and b.id == start_id:
+                start_matched = True
                 in_range = True
-            
+
             if in_range:
-                if b.is_enabled and b.id != block.id and b.type != "slot": 
+                if b.is_enabled and b.id != block.id and b.type != "slot":
                     # Don't count the length block itself unless needed (rare)
                     # Don't count "slots" (placeholders), only their contents (which are separate blocks in the stream)
-                    # Check: flattened_blocks expands Slot contents? Yes, GraphEngine does that.
                     count += b.byte_length
-            
-            if b.id == end_id:
-                in_range = False
-                break
+
+                if b.id == end_id:
+                    # End is only honored once the range has actually started
+                    in_range = False
+                    break
                 
         total = count + offset
         hex_str = f"{total:0{block.byte_length * 2}X}"

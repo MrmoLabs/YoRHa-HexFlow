@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 
 from backend.db.database import Base, engine, get_db
 from backend.db.models import ProtocolTemplate
-from backend.db.seed import seed_sample_protocols
 from backend.schemas.protocol_api import ProtocolCreate, ProtocolResponse, ProtocolUpdate
 
 
@@ -16,17 +15,6 @@ router = APIRouter(
     prefix="/protocols",
     tags=["protocols"]
 )
-
-
-@router.on_event("startup")
-def seed_protocols():
-    from backend.db.database import SessionLocal
-
-    db = SessionLocal()
-    try:
-        seed_sample_protocols(db)
-    finally:
-        db.close()
 
 
 @router.get("/", response_model=List[ProtocolResponse])

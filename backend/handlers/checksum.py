@@ -14,11 +14,15 @@ class ChecksumHandler(LogicHandler):
         
         data_bytes = bytearray()
         in_range = False
-        
+        start_matched = False
+
+        # Same range rules as LengthHandler: start = first match,
+        # end only honored after start, missing end => end of stream.
         for layer_id, b in flattened_blocks:
-            if b.id == start_id:
+            if not start_matched and b.id == start_id:
+                start_matched = True
                 in_range = True
-                
+
             if in_range:
                 if b.is_enabled and b.id != block.id and b.type != "slot":
                     val = b.hex_value or ("00" * b.byte_length)
@@ -27,11 +31,11 @@ class ChecksumHandler(LogicHandler):
                         clean_val = val.replace(" ", "")
                         data_bytes.extend(bytes.fromhex(clean_val))
                     except ValueError:
-                        pass 
-            
-            if b.id == end_id:
-                in_range = False
-                break
+                        pass
+
+                if b.id == end_id:
+                    in_range = False
+                    break
                 
         result = 0
         if algo == "sum":

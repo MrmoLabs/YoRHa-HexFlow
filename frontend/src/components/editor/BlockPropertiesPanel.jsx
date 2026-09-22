@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ParamConfigForm from './ParamConfigForm';
+import BitFieldEditor from './BitFieldEditor';
 import { v4 as uuidv4 } from 'uuid';
 
 const controlledValue = (value, fallback = '') => (value ?? fallback);
@@ -27,6 +28,12 @@ export default function BlockPropertiesPanel({
 
     // Sync with Selection
     useEffect(() => {
+        // Abort active ref-picking when the selection changes: the stale
+        // onUpdateRefs closure would otherwise write refs into the newly
+        // selected block's config (cross-block contamination).
+        setPickingMode?.(prev => (prev?.isActive
+            ? { isActive: false, fieldKey: null, currentRefs: [], onUpdateRefs: null }
+            : prev));
         if (selectedBlock) {
             const initialParams = { ...selectedBlock.parameter_config };
             const opTemplate = operatorTemplates[selectedBlock.op_code];
@@ -218,7 +225,7 @@ export default function BlockPropertiesPanel({
                     {/* Dynamic Params */}
                     <div className="p-3 border border-white/10 bg-white/5 space-y-3">
                         <div className="text-[9px] opacity-50 border-b border-white/10 pb-1 mb-2">配置参数 (CONFIG)</div>
-                        {selectedBlock.op_code !== 'HEX_RAW' && (
+                        {selectedBlock.op_code !== 'HEX_RAW' && selectedBlock.op_code !== 'BITFIELD' && (
                             <ParamConfigForm
                                 blockState={tempBlockConfig}
                                 instructionFields={currentInstruction.fields}
@@ -230,6 +237,15 @@ export default function BlockPropertiesPanel({
                                 onStartPicking={handleStartPicking}
                                 onStopPicking={handleStopPicking}
                                 pickingMode={pickingMode}
+                            />
+                        )}
+
+                        {/* BITFIELD: Dedicated bit layout editor */}
+                        {selectedBlock.op_code === 'BITFIELD' && (
+                            <BitFieldEditor
+                                bits={tempBlockConfig.bits || []}
+                                byteLen={tempBlockConfig.byte_len || 0}
+                                onUpdateBits={(nextBits) => handleTempUpdate({ bits: nextBits })}
                             />
                         )}
 

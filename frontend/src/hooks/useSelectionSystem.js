@@ -31,7 +31,7 @@ export function useSelectionSystem() {
     // Keyboard Shortcuts
     useEffect(() => {
         const handleKeyDown = (e) => {
-            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+            if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
 
             // ESC to cancel picking OR deselect
             if (e.key === 'Escape') {

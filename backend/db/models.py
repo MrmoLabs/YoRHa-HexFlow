@@ -79,6 +79,24 @@ class InstructionField(Base):
     
     # Relationships
     instruction = relationship("Instruction", back_populates="fields")
-    children = relationship("InstructionField", 
+    children = relationship("InstructionField",
                             backref=backref('parent', remote_side=[id]),
                             cascade="all, delete-orphan")
+    bit_fields = relationship("BitField",
+                              order_by="BitField.sequence",
+                              backref="field",
+                              cascade="all, delete-orphan")
+
+
+# 4. Bit Fields (Bit-level layout for BITFIELD fields)
+class BitField(Base):
+    __tablename__ = "bit_fields"
+
+    id = Column(String(36), primary_key=True)
+    field_id = Column(String(36), ForeignKey("instruction_fields.id"), nullable=False)
+
+    sequence = Column(Integer, default=0, nullable=False)
+    bit_name = Column(String(64), nullable=False)
+    start_bit = Column(Integer, default=0, nullable=False)
+    bit_len = Column(Integer, default=1, nullable=False)
+    default_val = Column(Integer, default=0, nullable=False)

@@ -1,11 +1,11 @@
-import React, { useMemo, useState } from 'react';
-import Canvas from '../components/Canvas';
+import React, { useMemo, useState, useEffect } from 'react';
+import Canvas from '../components/editor/Canvas';
 import { v4 as uuidv4 } from 'uuid';
-import NieRModal from '../components/NieRModal';
-import NieRDatePicker from '../components/NieRDatePicker';
-import InstructionListSidebar from '../components/InstructionListSidebar';
-import ComponentPalette from '../components/ComponentPalette';
-import BlockPropertiesPanel from '../components/BlockPropertiesPanel';
+import NieRModal from '../components/ui/NieRModal';
+import NieRDatePicker from '../components/ui/NieRDatePicker';
+import InstructionListSidebar from '../components/editor/InstructionListSidebar';
+import ComponentPalette from '../components/editor/ComponentPalette';
+import BlockPropertiesPanel from '../components/editor/BlockPropertiesPanel';
 import { useInstructionData } from '../hooks/useInstructionData';
 import { useInstructionLanes } from '../hooks/useInstructionLanes';
 import { useSelectionSystem } from '../hooks/useSelectionSystem';
@@ -52,11 +52,22 @@ export default function Instruction({ instructions: initialInstructions, setInst
     // 3. Lanes/UI Hook
     const {
         expandedGroupIds,
+        setExpandedGroupIds,
         focusedParentId,
         setFocusedParentId,
         processedLanes,
         handleNavigateGroup
     } = useInstructionLanes(currentInstruction, activeInstructionId);
+
+    // Abort ref-picking whenever the target instruction or selection changes:
+    // a stale onUpdateRefs closure would otherwise write refs into another
+    // block's config, and after switching instructions canvas clicks would keep
+    // toggling refs instead of selecting blocks (until ESC).
+    useEffect(() => {
+        setPickingMode(prev => (prev.isActive
+            ? { isActive: false, fieldKey: null, currentRefs: [], onUpdateRefs: null }
+            : prev));
+    }, [activeInstructionId, selectedId, setPickingMode]);
 
     // Local UI State
     const [searchTerm, setSearchTerm] = useState('');
@@ -106,13 +117,14 @@ export default function Instruction({ instructions: initialInstructions, setInst
     const handleAddBlock = (opCode) => {
         if (!currentInstruction) return;
         const template = operatorTemplates[opCode] || operatorTemplates['HEX_RAW'];
+        if (!template) return; // Templates not loaded yet — avoid crashing on undefined.
         const currentParentId = focusedParentId;
         const siblings = currentInstruction.fields.filter(f => (f.parent_id || null) === currentParentId);
-        const nextSeq = siblings.length > 0 ? Math.max(...siblings.map(s => s.sequence)) + 1 : 0;
+        const nextSeq = siblings.length > 0 ? Math.max(...siblings.map(s => Number(s.sequence) || 0)) + 1 : 0;
 
         const defaultParams = {};
         if (template.param_template) {
-            const keywords = ['datetime', 'number', 'string', 'field_picker', 'kv_pair_list', 'input'];
+            const keywords = ['datetime', 'number', 'string', 'field_picker', 'kv_pair_list', 'input', 'bit_editor'];
             Object.entries(template.param_template).forEach(([key, val]) => {
                 if (typeof val !== 'string' || !keywords.includes(val)) defaultParams[key] = val;
             });
@@ -131,7 +143,11 @@ export default function Instruction({ instructions: initialInstructions, setInst
             byte_len: template.byte_len || 1,
         };
 
-        if (opCode === 'HEX_RAW' && !newBlock.parameter_config.hex) newBlock.parameter_config.hex = "00";
+        if (opCode === 'BITFIELD') {
+            // Seed one 8-bit segment so the editor has something to show immediately
+            newBlock.byte_len = 1;
+            newBlock.bits = [{ id: uuidv4(), sequence: 0, bit_name: 'VALUE', start_bit: 0, bit_len: 8, default_val: 0 }];
+        }
         if (opCode === 'ARRAY_GROUP') {
             newBlock.byte_len = 0;
             if (!newBlock.parameter_config.max_count) newBlock.parameter_config.max_count = 1;
@@ -142,6 +158,23 @@ export default function Instruction({ instructions: initialInstructions, setInst
             newBlock.byte_len = Math.ceil(newBlock.parameter_config.bits / 8);
         }
 
+        // HEX_RAW: default hex must match byte_len exactly (APPLY validates the
+        // length), and byte_len may have been adjusted by the bits template above.
+        if (opCode === 'HEX_RAW') {
+            const byteLen = newBlock.byte_len || 1;
+            const currentHex = String(newBlock.parameter_config.hex || '').replace(/\s/g, '');
+            if (currentHex.length !== byteLen * 2) {
+                newBlock.parameter_config.hex = '00'.repeat(byteLen);
+            }
+        }
+
+        // A brand-new group should be immediately visible & focusable, otherwise
+        // the user would be adding children into a collapsed lane they can't see.
+        if (opCode === 'ARRAY_GROUP') {
+            setExpandedGroupIds(prev => (prev.includes(newBlock.id) ? prev : [...prev, newBlock.id]));
+            setFocusedParentId(newBlock.id);
+        }
+
         updateLocalInstruction({ ...currentInstruction, fields: [...currentInstruction.fields, newBlock] });
     };
 
@@ -150,8 +183,41 @@ export default function Instruction({ instructions: initialInstructions, setInst
             setInstructions(prev => {
                 const active = prev.find(i => i.id === activeInstructionId);
                 if (!active) return prev;
-                const filtered = active.fields.filter(b => b.id !== id);
-                return prev.map(i => i.id === active.id ? { ...i, fields: filtered } : i);
+
+                // Cascade: collect the block AND every descendant. Fields form a
+                // flat parent_id tree — deleting only the group itself would leave
+                // its children pointing at a dead parent, i.e. invisible orphans.
+                const removed = new Set([id]);
+                let grew = true;
+                while (grew) {
+                    grew = false;
+                    active.fields.forEach(f => {
+                        if (f.parent_id && removed.has(f.parent_id) && !removed.has(f.id)) {
+                            removed.add(f.id);
+                            grew = true;
+                        }
+                    });
+                }
+
+                // Purge dangling references (checksum/length refs & dynamic repeat)
+                // so surviving blocks don't keep pointing at deleted fields.
+                const scrubbed = active.fields
+                    .filter(b => !removed.has(b.id))
+                    .map(b => {
+                        const refs = b.parameter_config?.refs;
+                        const refsGone = Array.isArray(refs) && refs.some(r => removed.has(r));
+                        const repeatGone = b.repeat_ref_id && removed.has(b.repeat_ref_id);
+                        if (!refsGone && !repeatGone) return b;
+                        const parameter_config = { ...b.parameter_config };
+                        if (refsGone) parameter_config.refs = refs.filter(r => !removed.has(r));
+                        return {
+                            ...b,
+                            parameter_config,
+                            repeat_ref_id: repeatGone ? null : b.repeat_ref_id
+                        };
+                    });
+
+                return prev.map(i => i.id === active.id ? { ...i, fields: scrubbed } : i);
             });
             setHasUnsavedChanges(true);
             if (selectedId === id) setSelectedId(null);
@@ -180,7 +246,7 @@ export default function Instruction({ instructions: initialInstructions, setInst
             newFields = newFields.map(b => {
                 const refs = b.parameter_config?.refs || [];
                 const formula = b.parameter_config?.formula;
-                if (refs.includes(updatedBlock.id) && typeof formula === 'string') {
+                if (refs.includes(updatedBlock.id) && typeof formula === 'string' && oldName) {
                     const escapedOld = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                     const regex = new RegExp(`\\[${escapedOld}\\]`, 'g');
                     const newFormula = formula.replace(regex, `[${newName}]`);

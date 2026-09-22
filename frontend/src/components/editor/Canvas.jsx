@@ -16,7 +16,7 @@ import {
     horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import Block from './Block';
-import { useCanvasConnections } from '../hooks/useCanvasConnections';
+import { useCanvasConnections } from '../../hooks/useCanvasConnections';
 
 // Lane Component to handle Droppable logic cleanly
 function LaneContainer({ lane, index, children, isActiveLane, onNavigateGroup, onSetFocusedLane }) {

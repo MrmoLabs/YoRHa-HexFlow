@@ -2,12 +2,9 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-# If requirements.txt doesn't exist, we can use pip install directly or copy pyproject.toml
-# For this project we just relied on venv in dev, let's create a requirements.txt or install manually in docker.
-# Generating requirements.txt first is good practice.
-
-RUN pip install --no-cache-dir fastapi uvicorn pydantic
+# Requirements live under backend/ (build context = repo root, see docker-compose.yml)
+COPY backend/requirements.txt ./backend/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt
 
 COPY . .
 

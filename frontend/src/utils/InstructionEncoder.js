@@ -130,6 +130,30 @@ export const InstructionEncoder = {
             // Number fallthrough
         }
 
+        // 3.5 BITFIELD: pack sub-bits -> integer -> fixed-width bytes
+        if (op === 'BITFIELD') {
+            let packed;
+            if (inputValue !== undefined || computedVal !== undefined) {
+                // Runtime input/computed value overrides static bit defaults
+                packed = Math.floor(Number(value) || 0);
+            } else {
+                packed = 0;
+                const subBits = Array.isArray(field.bits) ? field.bits : [];
+                subBits.forEach(bit => {
+                    const start = Number.isFinite(bit.start_bit) ? bit.start_bit : 0;
+                    const len = Math.max(1, Number.isFinite(bit.bit_len) ? bit.bit_len : 1);
+                    const mask = len >= 32 ? 0xFFFFFFFF : ((1 << len) - 1);
+                    const raw = Number.isFinite(bit.default_val) ? bit.default_val : 0;
+                    packed |= (raw & mask) << start; // JS bitwise is 32-bit; fields <= 32 bits are the common case
+                });
+            }
+            // Treat packed result as unsigned
+            packed = packed >>> 0;
+            const hexStr = packed.toString(16).toUpperCase();
+            const target = byteLen * 2;
+            return this.parseHexBytes(hexStr.padStart(target, '0').slice(-target));
+        }
+
         // 4. Standard Integers
         // Handle negative? standard hex conversion usually implies unsigned unless specified
         if (byteLen === 0) return [];

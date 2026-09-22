@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import Canvas from '../components/Canvas';
+import Canvas from '../components/editor/Canvas';
 import { v4 as uuidv4 } from 'uuid';
 
 // Mock Initial Data (Recursive)

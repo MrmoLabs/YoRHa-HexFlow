@@ -1,35 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../api';
+import { normalizeFieldPayload, normalizeInstructionPayload } from '../utils/normalizeInstruction';
 
-const normalizeFieldPayload = (field, fallbackSequence = 0) => ({
-    id: field.id,
-    parent_id: field.parent_id || null,
-    sequence: Number.isFinite(field.sequence) ? field.sequence : fallbackSequence,
-    name: String(field.name || field.label || field.op_code || 'UNNAMED'),
-    op_code: String(field.op_code || 'HEX_RAW'),
-    byte_len: Number.isFinite(field.byte_len) ? field.byte_len : (Number.isFinite(field.byte_length) ? field.byte_length : 0),
-    endianness: field.endianness === 'LITTLE' ? 'LITTLE' : 'BIG',
-    repeat_type: ['NONE', 'FIXED', 'DYNAMIC'].includes(field.repeat_type) ? field.repeat_type : 'NONE',
-    repeat_ref_id: field.repeat_ref_id || null,
-    repeat_count: Number.isFinite(field.repeat_count) ? field.repeat_count : 1,
-    parameter_config: field.parameter_config && typeof field.parameter_config === 'object'
-        ? Object.fromEntries(
-            Object.entries(field.parameter_config).filter(([, value]) => value !== undefined)
-        )
-        : {},
-    children: []
-});
-
-const normalizeInstructionPayload = (instruction) => ({
-    device_code: String(instruction.device_code || '').trim(),
-    code: String(instruction.code || '').trim(),
-    name: String(instruction.name || instruction.label || '').trim(),
-    description: instruction.description ?? null,
-    type: ['STATIC', 'DYNAMIC'].includes(instruction.type) ? instruction.type : 'STATIC',
-    fields: Array.isArray(instruction.fields)
-        ? instruction.fields.map((field, index) => normalizeFieldPayload(field, index))
-        : []
-});
+// Normalization helpers moved to utils/normalizeInstruction.js (logic unchanged);
+// re-exported here so existing consumers keep working.
+export { normalizeFieldPayload, normalizeInstructionPayload };
 
 export function useInstructionData(options = {}) {
     const normalizedOptions = typeof options === 'function'
@@ -237,6 +212,8 @@ export function useInstructionData(options = {}) {
             } catch (e) {
                 if (e.response && e.response.status === 400) {
                     showStatus(e.response.data.detail);
+                } else {
+                    showStatus(`新增指令失败：${e?.response?.data?.detail || e?.message || '未知错误'}`);
                 }
             }
         };
@@ -258,7 +235,9 @@ export function useInstructionData(options = {}) {
                 reconcileActiveInstruction(rem, activeInstructionIdRef.current === id ? null : activeInstructionIdRef.current);
                 setHasUnsavedChanges(false);
                 showStatus('已删除指令', 1000);
-            } catch (e) { }
+            } catch (e) {
+                showStatus(`删除失败：${e?.response?.data?.detail || e?.message || '未知错误'}`);
+            }
         };
 
         if (openConfirmCallback) {

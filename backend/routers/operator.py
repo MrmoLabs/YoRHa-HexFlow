@@ -38,13 +38,14 @@ SEED_TEMPLATES = [
     # LOGIC_CALC (V2)
     {"op_code": "LENGTH_CALC", "name": "长度计算", "category": "LOGIC", "description": "基于公式计算字段长度", "param_template": {"refs": "field_picker", "formula": "string"}},
     {"op_code": "CHECKSUM_CRC", "name": "校验码", "category": "LOGIC", "description": "CRC/Sum/Xor校验", "param_template": {"refs": "field_picker", "algo": ["CRC16_CCITT", "CRC32", "XOR_SUM", "ADD_SUM"]}},
+
+    # BIT-LEVEL (V2)
+    {"op_code": "BITFIELD", "name": "位域", "category": "ENCODING", "description": "按位定义字段布局", "param_template": {"bit_layout": "bit_editor"}},
 ]
 
-@router.on_event("startup")
-def seed_operators():
-    # Robust seed: Upsert templates
-    from backend.db.database import SessionLocal
-    db = SessionLocal()
+
+def seed_operator_templates(db: Session):
+    # Robust seed: Upsert templates (called once from app lifespan)
     try:
         print("Seeding/Updating Operator Templates...")
         for t in SEED_TEMPLATES:
@@ -53,9 +54,8 @@ def seed_operators():
         db.commit()
         print("Seeding Complete.")
     except Exception as e:
+        db.rollback()
         print(f"Seeding Failed: {e}")
-    finally:
-        db.close()
 
 @router.get("/", response_model=List[OperatorTemplateSchema])
 def get_operator_templates(db: Session = Depends(get_db)):

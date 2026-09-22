@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import Orchestration from '../Orchestration';
 
-vi.mock('../../components/Canvas', () => ({
+vi.mock('../../components/editor/Canvas', () => ({
     default: ({ lanes }) => (
         <div data-testid="mock-canvas">
             {lanes.flatMap(lane => lane.items.map(item => item.label || item.name)).join('|')}

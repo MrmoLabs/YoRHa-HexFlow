@@ -5,9 +5,8 @@ from typing import List
 import uuid
 
 from backend.db.database import get_db, engine, Base
-from backend.db.models import Instruction, InstructionField
-from backend.db.seed import seed_sample_instructions
-from backend.schemas.instruction_api import InstructionCreate, InstructionResponse, InstructionFieldSchema, InstructionUpdate
+from backend.db.models import Instruction, InstructionField, BitField
+from backend.schemas.instruction_api import InstructionCreate, InstructionResponse, InstructionFieldSchema, BitFieldSchema, InstructionUpdate
 
 # Create tables if not exist (Simple migration)
 # In prod use Alembic
@@ -19,21 +18,10 @@ router = APIRouter(
 )
 
 
-@router.on_event("startup")
-def seed_instructions():
-    from backend.db.database import SessionLocal
-
-    db = SessionLocal()
-    try:
-        seed_sample_instructions(db)
-    finally:
-        db.close()
-
-# HELPER: Recursive Save
 # HELPER: Flat Save (Trust Payload)
 def save_field_flat(db: Session, field_data: InstructionFieldSchema, instruction_id: str):
     f_id = field_data.id or str(uuid.uuid4())
-    
+
     db_field = InstructionField(
         id=f_id,
         instruction_id=instruction_id,
@@ -52,6 +40,18 @@ def save_field_flat(db: Session, field_data: InstructionFieldSchema, instruction
         repeat_count=field_data.repeat_count
     )
     db.add(db_field)
+
+    # Bit-level layout (BITFIELD only)
+    for idx, bit in enumerate(field_data.bits):
+        db.add(BitField(
+            id=bit.id or str(uuid.uuid4()),
+            field_id=f_id,
+            sequence=bit.sequence if bit.sequence else idx,
+            bit_name=bit.bit_name,
+            start_bit=bit.start_bit,
+            bit_len=bit.bit_len,
+            default_val=bit.default_val
+        ))
 
 
 def serialize_instruction(db_inst: Instruction) -> InstructionResponse:
@@ -73,6 +73,17 @@ def serialize_instruction(db_inst: Instruction) -> InstructionResponse:
             repeat_ref_id=field.repeat_ref_id,
             repeat_count=field.repeat_count,
             parameter_config=field.parameter_config or {},
+            bits=[
+                BitFieldSchema(
+                    id=bit.id,
+                    sequence=bit.sequence,
+                    bit_name=bit.bit_name,
+                    start_bit=bit.start_bit,
+                    bit_len=bit.bit_len,
+                    default_val=bit.default_val
+                )
+                for bit in sorted(field.bit_fields, key=lambda b: (b.start_bit, b.sequence, b.id))
+            ],
             children=[]
         )
         for field in sorted_fields
@@ -159,7 +170,11 @@ def update_instruction(id: str, updates: InstructionUpdate, db: Session = Depend
     db_inst.type = updates.type
     
     # Update Tree (Full Replace Strategy)
-    db.query(InstructionField).filter(InstructionField.instruction_id == id).delete()
+    # Bulk query.delete() bypasses ORM cascade, so clear bit_fields explicitly first.
+    field_ids = [row.id for row in db.query(InstructionField.id).filter(InstructionField.instruction_id == id)]
+    if field_ids:
+        db.query(BitField).filter(BitField.field_id.in_(field_ids)).delete(synchronize_session=False)
+    db.query(InstructionField).filter(InstructionField.instruction_id == id).delete(synchronize_session=False)
     
     if updates.fields:
         for f in updates.fields:

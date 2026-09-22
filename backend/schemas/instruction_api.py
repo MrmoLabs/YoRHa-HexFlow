@@ -27,6 +27,19 @@ class OperatorTemplateSchema(BaseModel):
     class Config:
         from_attributes = True
 
+# Bit Field Schema (bit-level layout for BITFIELD fields)
+class BitFieldSchema(BaseModel):
+    id: Optional[str] = None
+    sequence: int = 0
+    bit_name: str
+    start_bit: int = 0
+    bit_len: int = 1
+    default_val: int = 0
+
+    class Config:
+        from_attributes = True
+
+
 # Instruction Field Schema
 class InstructionFieldSchema(BaseModel):
     id: Optional[str] = None
@@ -45,7 +58,10 @@ class InstructionFieldSchema(BaseModel):
     
     # Parameter Config
     parameter_config: Optional[Dict[str, Any]] = None
-    
+
+    # Bit-level layout (only meaningful when op_code == 'BITFIELD')
+    bits: List[BitFieldSchema] = Field(default_factory=list)
+
     children: List['InstructionFieldSchema'] = Field(default_factory=list)
     
     class Config:

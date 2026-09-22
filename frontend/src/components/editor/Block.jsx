@@ -1,7 +1,7 @@
 import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { OP_CODES } from '../constants';
+import { OP_CODES } from '../../constants';
 
 export default function Block({ id, label, name, byte_length, byte_len, type, op_code, hex_value, parameter_config, children, isSelected, isPickMode, isPickRef, isGroupActive, onClick }) {
     // Normalize Props (Backend v4 vs v3)

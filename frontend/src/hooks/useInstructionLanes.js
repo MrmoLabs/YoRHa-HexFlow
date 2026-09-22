@@ -21,9 +21,15 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
 
         allFields.forEach(field => {
             const parentId = field.parent_id || null;
-            const siblings = map.get(parentId) || [];
+            // Self-heal: buildLanes only descends into expanded ARRAY_GROUP nodes.
+            // A parent_id pointing at a missing field (deleted group) or a
+            // non-group field would never be reached, leaving those fields
+            // INVISIBLE on the canvas. Re-attach such orphans to the root lane.
+            const parent = parentId ? fieldById.get(parentId) : null;
+            const effectiveParentId = parent && parent.op_code === 'ARRAY_GROUP' ? parentId : null;
+            const siblings = map.get(effectiveParentId) || [];
             siblings.push(field);
-            map.set(parentId, siblings);
+            map.set(effectiveParentId, siblings);
         });
 
         for (const siblings of map.values()) {
@@ -31,7 +37,7 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
         }
 
         return map;
-    }, [allFields]);
+    }, [allFields, fieldById]);
 
     const groupIds = useMemo(
         () => allFields.filter(f => f.op_code === 'ARRAY_GROUP').map(f => f.id),
@@ -43,6 +49,17 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
         setExpandedGroupIds(groupIds);
         setFocusedParentId(null);
     }, [activeInstructionId]); // Reset only when switching instruction
+
+    // Self-heal: clear focus once the focused group disappears (deleted) or the
+    // focused id turns out to be a non-group block, so newly added fields never
+    // receive a dead parent_id (which would make them invisible orphans).
+    useEffect(() => {
+        if (!focusedParentId) return;
+        const parent = fieldById.get(focusedParentId);
+        if (!parent || parent.op_code !== 'ARRAY_GROUP') {
+            setFocusedParentId(null);
+        }
+    }, [focusedParentId, fieldById]);
 
     // Compute Lanes for Canvas (Recursive Tree)
     const uiLanes = useMemo(() => {

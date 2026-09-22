@@ -1,7 +1,7 @@
 ﻿# YoRHa-HexFlow: Hex Instruction Orchestrator
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Frontend](https://img.shields.io/badge/Frontend-React_18_%7C_Vite-61DAFB)
+![Frontend](https://img.shields.io/badge/Frontend-React_19_%7C_Vite-61DAFB)
 ![Backend](https://img.shields.io/badge/Backend-FastAPI-009688)
 ![Style](https://img.shields.io/badge/Style-Nier:_Automata-dad4bb)
 
@@ -25,9 +25,15 @@
 ### 2. Powerful Logic Engine
 - **Real-time Formula Calculation**: Supports dynamic formulas like `([FieldA] + 10) / 2`, with real-time preview of calculation results on the frontend.
 - **Auto Counters & Time Accumulation**: Built-in intelligent blocks like `AUTO_COUNTER` and `TIME_ACCUMULATOR`.
+- **Bitfield Editor**: The `BITFIELD` operator ships with a dedicated bit layout editor (`start_bit` / `bit_len` / `default_val`), persisted to the `bit_fields` table and packed by the encoder.
 - **Multi-base Support**: Property panels support seamless switching between HEX/DEC/BIN input.
 
-### 3. Engineering & Quality
+### 3. Export & Dispatch
+- **Hex File Export**: `POST /export/hex` turns the assembled stream into a downloadable `.hex` file (Instruction Processing page).
+- **Binary File Export**: `POST /export/binary` compiles the merged block forest server-side via the Orchestrator and returns a `.bin` file (Orchestration page).
+- **Loopback Dispatch**: `POST /dispatch/` acknowledges frames and keeps a bounded in-memory history (max 100). **This is an in-process loopback channel — there is no real serial/TCP/WebSocket transport yet.**
+
+### 4. Engineering & Quality
 - **SRP Architecture**: Strictly follows the Single Responsibility Principle, with logic hooked and components atomized.
 - **Full-link Testing**: 
   - Integrated `Vitest` + `React Testing Library`.
@@ -119,18 +125,34 @@ For detailed technical specifications, please refer to: [SPECIFICATION.md](./SPE
 
 ```
 /backend
-    /main.py            # FastAPI entry point
-    /models.py          # Pydantic data models
-    
+    main.py              # FastAPI entry (lifespan: create_all + seeds)
+    requirements.txt     # Python deps (includes pymysql, used only by debug_db.py)
+    /routers             # HTTP routes (instruction, protocol, operator, compile, export, dispatch)
+    /handlers            # Range logic (length, checksum)
+    /core                # orchestrator.py (wired); processor.py / graph.py (legacy, unwired)
+    /db                  # SQLAlchemy models + SQLite file backend/db/yorha.db (migrations/*.sql = non-authoritative)
+    debug_db.py          # Standalone MySQL debug script (only pymysql consumer)
+
 /frontend
     /src
-        /components     # Atomic UI components (Block, PropertiesPanel)
-        /hooks          # Business logic Hooks (Data, Selection)
-        /pages          # Page-level containers (Instruction, Canvas)
-        /utils          # Pure function utilities (Formula, Hex)
-        /constants.js   # Global constant definitions
-    /src/hooks/__tests__ # Unit test suite
+        /components
+            /ui         # Generic UI (NieRModal, NieRDatePicker, FeaturePlaceholder)
+            /editor     # Editor domain (Canvas, Block, BlockPropertiesPanel, ComponentPalette, ...)
+            /InstructionForm  # Dynamic send form (InstructionRunner + extracted field tree/log)
+        /hooks           # Business logic hooks (useInstructionData, useInstructionForm, ...)
+        /pages           # Page containers (Protocol, Instruction, InstructionProcessor, Orchestration)
+        /utils           # Pure utilities (InstructionEncoder.js = encoding core, formula.js, normalizeInstruction.js)
+        /config          # pageStatus.json (single source of truth for page status)
+        /api             # All HTTP calls, split by domain (client/protocols/instructions/export/dispatch + index)
+        constants.js     # Global constants (OP_CODES, categories)
+    /src/**/__tests__    # Vitest suites
+
+/scripts
+    generate-page-status.mjs  # Regenerates docs/PAGE_STATUS.md from pageStatus.json
+    inspect_db.py             # SQLite debug script (path resolved relative to script)
 ```
+
+> Unwired legacy code kept intentionally: `backend/core/processor.py`, `backend/core/graph.py`, `frontend/src/pages/Blueprint.jsx`. Do not delete; do not add new dependencies to them. See [PROJECT_HANDOVER.md](./PROJECT_HANDOVER.md) for the full file map.
 
 ## ⚠️ Development Guidelines
 1. **Single Responsibility**: No single file should exceed 400 lines; complex logic must be extracted into Hooks.

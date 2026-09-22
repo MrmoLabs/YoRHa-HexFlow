@@ -3,16 +3,16 @@ import { render, screen } from '@testing-library/react';
 import Instruction from '../Instruction';
 
 // Mock Child Components
-vi.mock('../../components/Canvas', () => ({
+vi.mock('../../components/editor/Canvas', () => ({
     default: () => <div data-testid="mock-canvas">Canvas Component</div>
 }));
-vi.mock('../../components/InstructionListSidebar', () => ({
+vi.mock('../../components/editor/InstructionListSidebar', () => ({
     default: () => <div data-testid="mock-sidebar">Sidebar Component</div>
 }));
-vi.mock('../../components/BlockPropertiesPanel', () => ({
+vi.mock('../../components/editor/BlockPropertiesPanel', () => ({
     default: () => <div data-testid="mock-props">Properties Component</div>
 }));
-vi.mock('../../components/ComponentPalette', () => ({
+vi.mock('../../components/editor/ComponentPalette', () => ({
     default: () => <div data-testid="mock-palette">Palette Component</div>
 }));
 
