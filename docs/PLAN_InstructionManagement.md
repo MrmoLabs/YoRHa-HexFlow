@@ -163,11 +163,43 @@
 ### P3-2 JSON 导入/导出
 
 - **导出**：`GET /instructions` 全量 → 带 `schemaVersion` 与导出时间的 JSON 下载。
+  **❌ 已按人工反馈移除（2026-09-22）**：不需要导出功能——工具栏「导出」按钮、
+  `buildExportPayload` 及其 2 个用例已删，仅保留导入（导入仍兼容
+  `{instructions:[…]}` 包裹格式，外部手写文件可直接导入）。
 - **导入**：选文件 → 解析 → 逐条过 `validateInstruction` → 预览（新增/冲突/错误计数）
   → 确认后顺序 POST，逐条结果汇总；冲突（code 唯一约束）默认跳过并报告，不覆盖。
 - 入口放指令管理页工具栏；`pageStatus.json` datahub 条目同步更新其"已支持"边界。
 - **验收**：导出→清空/另库→导入往返结构一致；坏文件有明确错误不落脏数据。
 - **测试**：导出 payload 形状、导入解析与校验分流的纯函数用例。
+
+### 实施增补（2026-09-22）
+
+- **调研点 2 结论**：`InstructionResponse` = `id / device_code / code / name / description /
+  type / fields`，**无 `updated_at`**（model 未映射时间戳）→ 表格不含更新时间列，列 =
+  代号 / 设备 / 名称 / 总长（`nB` + `FIXED|VAR`，与顶栏 LEN 同口径）/ 字段数。
+- **P3-1 表格视图**：切换按钮放侧栏指令库头部（列表态显「表格」、表格态显「列表」）；
+  表格替换 section 中的画布区（顶栏 LEN / UNSAVED / RESET 保留）。行渲染
+  `visibleInstructions`——与列表共享同一 `searchTerm` 过滤（含 device_code，是计划
+  「code + name」口径的超集，未做删减）；点行走 `handleSelectInstWrapper`（带未保存
+  更改确认）；切回列表时搜索、选中与视图状态均不丢。行的总长/字段数由 `useMemo`
+  每行一次 `computeByteOffsets` 现算，纯前端零接口。
+- **人工反馈迭代（2026-09-22，三条一并处理）**：1) 表格内容**全部居中**（th/td
+  `text-center`，LEN / FIELDS 列同样居中）；2) 表格**自带检索框**——表头上方
+  「检索 FILTER」行绑定页面级 `searchTerm`（与侧栏搜索同一状态，双向同步），右侧
+  实时显示 `MATCH n` 匹配行数；3) **不需要导出功能** → 导出整体移除（见 P3-2 ❌）。
+- **P3-2 导入**：入口在 section 顶栏右侧「导入」。导入 = 隐藏 file input → JSON.parse
+  失败即报错、不落脏 → `analyzeImport` 三分流：冲突 = name 或 code 与**存量或文件内**
+  重复、名称/代号为空 → 跳过**绝不覆盖**；错误 = `validateInstruction` 结构问题按
+  `[CODE] message` 上报 → openConfirm 预览（总数/新增/冲突/错误计数，明细截断 5 条）
+  → 确认后**顺序 POST** → `loadInstructions()` 刷新 → 二次弹窗汇总成功/失败。
+  「导出」按钮、`handleExport`、`buildExportPayload` 与其 2 个用例已删（同轮反馈）。
+- **id 安全**：`duplicateInstruction.js` 抽出共用 `cloneFieldsForNewInstruction`（P2 复制与
+  P3 导入同源）——导入 payload **重生成全部字段/bit id**（后端字段 id 按 payload 原样
+  入库，直接复用文件内 id 会与源指令行主键冲突），`parent_id`/`repeat_ref_id`/`refs`
+  重映射、悬空丢弃（E2 安全）；顺带修复 id 缺失字段共享 `undefined` 映射键的隐患
+  （无 id 字段现也获得独立新 id）。
+- **测试**：107/107（Phase 2 基线 100 + 导入 7；导出 2 例随功能移除）；`npx vite build`
+  通过；yorha-ui 校验器改动文件零违规。
 
 ---
 
@@ -205,6 +237,8 @@
 1. **指令 id / code 生成与唯一约束**（`backend/models` + `routers/instruction.py`）：
    决定复制与导入是"后端发号"还是"前端重新生成"。Phase 2/3 前置。
 2. **指令列表可用字段**（是否有 `updated_at` 等）：决定表格列。Phase 3 前置。
+   ✅ 已确认 `InstructionResponse` 无 `updated_at`（model 未映射时间戳）→ 表格不含
+   更新时间列，列 = 代号 / 设备 / 名称 / 总长 / 字段数。
 3. **LENGTH_CALC / CHECKSUM 在 seed 中的真实可用性**：决定骨架模板用真实算子还是 HEX_RAW 占位。Phase 2 前置。
    ✅ 已确认两者 seed 真实可用（骨架曾以真实算子实施，后按人工反馈移除）。
 4. **Protocol 页防抖窗口与 beforeunload 交互**：确认 `pendingSaveRef` 判空时机。Phase 0 内联处理。

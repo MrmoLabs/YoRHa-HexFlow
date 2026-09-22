@@ -8,6 +8,8 @@ export default function InstructionListSidebar({
     onSearch, // Optional specific search handler if separate from set
     onSelect, // (id) => void
     onAdd, // () => void | null (null hides the button)
+    viewMode, // 'list' | 'table' — P3-1 视图切换
+    onToggleView, // () => void | null（null 隐藏切换按钮）
     onDuplicate, // (id) => void | null (null hides the button) — P2-1 复制指令
     onDelete, // (e, id) => void | null (null hides the button)
     hasUnsavedChanges
@@ -18,6 +20,15 @@ export default function InstructionListSidebar({
                 <div className="flex justify-between items-center">
                     <span className="text-xs font-bold tracking-widest text-nier-light">指令库 (DATABASE)</span>
                     <div className="flex items-center gap-2">
+                        {onToggleView && (
+                            <button
+                                onClick={onToggleView}
+                                title={viewMode === 'table' ? '切换到列表视图 (LIST)' : '切换到表格视图 (TABLE)'}
+                                className="border border-nier-light/40 text-[9px] px-1 py-0.5 leading-none tracking-widest text-nier-light/70 hover:bg-nier-light hover:text-black transition-colors"
+                            >
+                                {viewMode === 'table' ? '列表' : '表格'}
+                            </button>
+                        )}
                         {onAdd && (
                             <button onClick={onAdd} className="hover:text-nier-highlight text-lg leading-none transition-colors text-nier-light/70">+</button>
                         )}

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import Canvas from '../components/editor/Canvas';
 import { v4 as uuidv4 } from 'uuid';
 import NieRModal from '../components/ui/NieRModal';
@@ -12,6 +12,9 @@ import { useSelectionSystem } from '../hooks/useSelectionSystem';
 import { validateInstruction } from '../utils/validateInstruction';
 import { computeByteOffsets } from '../utils/byteOffsets';
 import { duplicateBlockInInstruction } from '../utils/duplicateInstruction';
+import { analyzeImport } from '../utils/importExport';
+import InstructionTable from '../components/editor/InstructionTable';
+import { api } from '../api';
 
 export default function Instruction({ instructions: initialInstructions, setInstructions: setSharedInstructions, onWebUpdate, reloadInstructions }) {
     // 1. Data Hook
@@ -103,6 +106,11 @@ export default function Instruction({ instructions: initialInstructions, setInst
 
     // Local UI State
     const [searchTerm, setSearchTerm] = useState('');
+    // P3-1: 'list' = canvas view (default), 'table' = table view replaces the
+    // canvas in the section area. searchTerm/activeSelection live outside the
+    // views, so toggling back loses nothing.
+    const [viewMode, setViewMode] = useState('list');
+    const importInputRef = useRef(null);
     const [modalConfig, setModalConfig] = useState({ isOpen: false, message: '', onConfirm: null, onCancel: null });
     const [datePickerState, setDatePickerState] = useState({ isOpen: false, value: null, onConfirmCallback: null });
 
@@ -375,6 +383,59 @@ export default function Instruction({ instructions: initialInstructions, setInst
         }
     };
 
+    // P3-2 导入：parse → analyzeImport（validate + 冲突分流）→ 预览 →
+    // 顺序 POST → 结果汇总。冲突/错误只跳过并报告，绝不覆盖（后端 name 与
+    // code 双唯一）。
+    const handleImportFileChosen = async (e) => {
+        const file = e.target.files && e.target.files[0];
+        e.target.value = ''; // 允许重复选择同一文件
+        if (!file) return;
+
+        let raw;
+        try {
+            raw = JSON.parse(await file.text());
+        } catch (err) {
+            openConfirm(`文件解析失败：${err?.message || '无效内容'}\n（需要有效的 JSON 文件）`, () => {});
+            return;
+        }
+
+        const report = analyzeImport(raw, instructions);
+        const head = [
+            `导入预览：共 ${report.total} 条`,
+            `新增 ${report.payloads.length} ／ 冲突跳过 ${report.conflicts.length} ／ 校验错误 ${report.errors.length}`,
+        ];
+        const conflictLines = report.conflicts.slice(0, 5)
+            .map(c => `  冲突「${c.name}」(${c.code || '—'}): ${c.reason}`);
+        if (report.conflicts.length > 5) conflictLines.push(`  …另有 ${report.conflicts.length - 5} 条冲突`);
+        const errorLines = report.errors.slice(0, 5)
+            .map(x => `  错误「${x.name}」: ${x.messages[0]}${x.messages.length > 1 ? ` 等 ${x.messages.length} 项` : ''}`);
+        if (report.errors.length > 5) errorLines.push(`  …另有 ${report.errors.length - 5} 条错误`);
+        const summary = [...head, ...conflictLines, ...errorLines].join('\n');
+
+        if (report.payloads.length === 0) {
+            openConfirm(`${summary}\n没有可导入的指令。`, () => {});
+            return;
+        }
+
+        openConfirm(`${summary}\n\n确认导入？（不覆盖任何现有指令）`, async () => {
+            let ok = 0;
+            const failed = [];
+            for (const p of report.payloads) {
+                try {
+                    await api.createInstruction(p);
+                    ok += 1;
+                } catch (err) {
+                    failed.push(`「${p.name}」: ${err?.response?.data?.detail || err?.message || '未知错误'}`);
+                }
+            }
+            try { await loadInstructions(); } catch (_) { /* 列表刷新尽力而为 */ }
+            openConfirm(
+                [`导入完成：成功 ${ok} ／ 失败 ${failed.length}`, ...failed.slice(0, 6)].join('\n'),
+                () => {}
+            );
+        });
+    };
+
     return (
         <div className="flex-1 flex overflow-hidden relative">
             <NieRModal isOpen={modalConfig.isOpen} message={modalConfig.message} onConfirm={modalConfig.onConfirm} onCancel={modalConfig.onCancel} />
@@ -395,6 +456,8 @@ export default function Instruction({ instructions: initialInstructions, setInst
                 searchTerm={searchTerm}
                 setSearchTerm={setSearchTerm}
                 onSearch={null}
+                viewMode={viewMode}
+                onToggleView={() => setViewMode(m => (m === 'list' ? 'table' : 'list'))}
                 onSelect={handleSelectInstWrapper}
                 onAdd={() => addInstruction(openConfirm)}
                 onDuplicate={(id) => duplicateInstruction(id, openConfirm)}
@@ -415,6 +478,13 @@ export default function Instruction({ instructions: initialInstructions, setInst
                         <span>KERNEL EDITOR // {currentInstruction?.device_code} / {currentInstruction?.code}</span>
                     </div>
                     <div className="flex gap-2 items-center">
+                        <button
+                            onClick={() => importInputRef.current && importInputRef.current.click()}
+                            title="从 JSON 文件导入指令 (IMPORT)"
+                            className="border border-nier-light/40 px-1.5 leading-none hover:bg-nier-light hover:text-black transition-colors"
+                        >
+                            导入
+                        </button>
                         <span
                             className="font-bold"
                             title={byteOffsets.variable
@@ -434,6 +504,22 @@ export default function Instruction({ instructions: initialInstructions, setInst
                         )}
                     </div>
                 </div>
+                <input
+                    ref={importInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    className="hidden"
+                    onChange={handleImportFileChosen}
+                />
+                {viewMode === 'table' ? (
+                    <InstructionTable
+                        instructions={visibleInstructions}
+                        activeInstructionId={activeInstructionId}
+                        onSelect={handleSelectInstWrapper}
+                        searchTerm={searchTerm}
+                        setSearchTerm={setSearchTerm}
+                    />
+                ) : (
                 <Canvas
                     lanes={displayLanes}
                     offsets={byteOffsets.byId}
@@ -461,6 +547,7 @@ export default function Instruction({ instructions: initialInstructions, setInst
                     expandedGroupIds={expandedGroupIds}
                     onNavigateGroup={handleNavigateGroup}
                 />
+                )}
             </section>
             <BlockPropertiesPanel
                 selectedBlock={selectedBlock}

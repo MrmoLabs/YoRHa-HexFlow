@@ -20,13 +20,16 @@ import { normalizeInstructionPayload } from './normalizeInstruction';
  * @param {Array<{name?:string, code?:string}>} existingInstructions for suffix uniqueness
  * @param {() => string} genId id mint (injectable for tests)
  */
-export function buildDuplicateInstructionPayload(source, existingInstructions = [], genId = uuidv4) {
-    const payload = normalizeInstructionPayload(source);
-
-    // 1. Fresh ids for every field, then remap all intra-instruction links.
+/**
+ * Fresh ids for every field/bit + remap of all intra-instruction links
+ * (parent_id / repeat_ref_id / refs). Unresolvable refs are dropped so the
+ * clone is self-contained and E2-safe; id-less fields still get fresh ids.
+ * Shared by instruction duplication (P2-1) and JSON import (P3-2).
+ */
+export function cloneFieldsForNewInstruction(fields, genId = uuidv4) {
     const idMap = new Map();
-    payload.fields.forEach(f => idMap.set(f.id, genId()));
-    const fields = payload.fields.map(f => {
+    fields.forEach(f => { if (f.id && !idMap.has(f.id)) idMap.set(f.id, genId()); });
+    return fields.map(f => {
         const parameter_config = { ...f.parameter_config };
         if (Array.isArray(parameter_config.refs)) {
             parameter_config.refs = parameter_config.refs
@@ -35,15 +38,20 @@ export function buildDuplicateInstructionPayload(source, existingInstructions = 
         }
         return {
             ...f,
-            id: idMap.get(f.id),
+            id: (f.id && idMap.get(f.id)) || genId(),
             parent_id: f.parent_id && idMap.has(f.parent_id) ? idMap.get(f.parent_id) : null,
             repeat_ref_id: f.repeat_ref_id && idMap.has(f.repeat_ref_id) ? idMap.get(f.repeat_ref_id) : null,
             parameter_config,
             bits: (f.bits || []).map(b => ({ ...b, id: genId() })),
         };
     });
+}
 
-    // 2. Unique name/code against the loaded list (backend rejects duplicates).
+export function buildDuplicateInstructionPayload(source, existingInstructions = [], genId = uuidv4) {
+    const payload = normalizeInstructionPayload(source);
+    const fields = cloneFieldsForNewInstruction(payload.fields, genId);
+
+    // Unique name/code against the loaded list (backend rejects duplicates).
     const names = new Set(existingInstructions.map(i => String(i.name || '').trim()));
     const codes = new Set(existingInstructions.map(i => String(i.code || '').trim()));
 
