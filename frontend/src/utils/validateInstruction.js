@@ -144,6 +144,17 @@ export function validateInstruction(instruction) {
             }
         });
 
+        // --- W3: LENGTH_CALC refs without formula (preview infers sum-of-refs) ---
+        if (f.op_code === 'LENGTH_CALC'
+            && (typeof params.formula !== 'string' || !params.formula.trim())
+            && refList(params.refs).length > 0) {
+            warnings.push({
+                blockId: f.id,
+                code: 'LENGTH_NO_FORMULA',
+                message: `「${label || f.id}」未配置公式，预览按引用块求和显示；建议补全公式以明确计算方式`,
+            });
+        }
+
         // --- E3: field labels must be unique (formula [Label] resolution is global) ---
         if (label) {
             if (seenNames.has(label)) {

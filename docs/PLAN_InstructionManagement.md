@@ -66,7 +66,7 @@
 
 ---
 
-## 3. Phase 1 — P1 结构可读性（偏移标尺 + 总长）
+## 3. Phase 1 — P1 结构可读性（偏移标尺 + 总长）（✅ 已完成 2026-09-22，测试 76/76、构建 516 modules）
 
 - **改动文件**：
   - 新增 `frontend/src/utils/byteOffsets.js`（纯函数）：
@@ -78,6 +78,25 @@
 - **验收**：`[HEAD 2B][LEN 2B][CMD 1B][DATA 4B][CRC 2B]` 显示偏移 0/2/4/5/9，总长 11B；
   拖拽/增删块后偏移实时重算；嵌套组起点正确。
 - **测试**：`byteOffsets` 纯函数用例（含嵌套、动态占位）。
+- **2026-09-22 增补（人工反馈迭代）**：
+  - 组卡片中心不再硬编码 `??`——能算出 Σ 子块时直显 `4B`（未知才 `??`），组 footer 同步显示总长；
+  - 空组（seed `byte_len=0`）按已知 0 字节处理，不污染后续偏移；
+  - 顶栏区分**定长/变长**：`LEN 11B FIXED`（全静态）/ `LEN ~11B VAR`（DYNAMIC 重复或值驱动长度，可算）/ `LEN 6B+ VAR`（含未知，下限）；
+    口径对齐编码器实际输出（B7：重复只展开一次，显示值以编码为准，⚠B7 继续标注）。
+  - 修复 LENGTH_CALC 公式引用组恒为 `??` 的缺陷：`useInstructionLanes` 的 `nameToValueMap`
+    原把组硬编码为 `"??"`，`[状态块] + [帧尾]` 因此短路——现取 byteOffsets 的 Σ 组值
+    （真未知才 `??`）；示例状态包长度现算出 `05`。同步移除死字段 `_displayLen`。
+  - 智能卡片宽度：`宽 = max(60px 底线, 字节数×40, 内容下限)`——footer（`2B @00` / `??B @02..`
+    + OPEN）不再被相邻卡片遮挡；组卡按 Σ 比例（状态块 4B → 160px）。footer 顺序改为
+    **字节数在前、偏移在后**（人工反馈）。
+  - 组卡片双保险：Σ 同时注入 `parameter_config.computedValue`（`4B`/`??`），偏移标尺 prop
+    缺失时回退显示（byteOffsets 组分支仅走 Σ 子级、不读 computedValue，无反向污染）。
+  - 修复「有 refs 无 formula」的 LENGTH_CALC 恒显 `??`（New Instruction 682 实例）：
+    数据模型以 formula 为表达式源头、refs 只是其变量镜像（seed：`refs:[组,帧尾]` ↔
+    `[状态块] + [帧尾]`），历史数据可能只剩 refs——预览按该约定**合成求和公式**
+    （真公式恒优先；悬空 ref 仍诚实显示 `??`），问题清单新增 Warning `LENGTH_NO_FORMULA`
+    披露推断并提示补全公式。加工页（编码器为禁区）对该形态仍不可算，补全公式落库即可修复，
+    待授权另立任务。
 
 ---
 
@@ -157,7 +176,9 @@
 2. **指令列表可用字段**（是否有 `updated_at` 等）：决定表格列。Phase 3 前置。
 3. **LENGTH_CALC / CHECKSUM 在 seed 中的真实可用性**：决定骨架模板用真实算子还是 HEX_RAW 占位。Phase 2 前置。
 4. **Protocol 页防抖窗口与 beforeunload 交互**：确认 `pendingSaveRef` 判空时机。Phase 0 内联处理。
-5. **动态长度块的偏移显示口径**（`computedValue` 不可用时的占位）：Phase 1 设计定稿。
+5. **动态长度块的偏移显示口径**：✅ 已于 Phase 1 定稿——尺寸解析顺序 `byte_len > 0` →
+   `parameter_config.computedValue` 字节数（hex 非 `??`）→ 未知；未知块自身起点照常显示，
+   其**后**块偏移显示 `··`，总长降级为下限（`+` 后缀）。
 
 ## 8. 交付与验证节奏
 

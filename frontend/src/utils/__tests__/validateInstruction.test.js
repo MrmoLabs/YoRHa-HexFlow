@@ -165,3 +165,24 @@ describe('encoderLimits', () => {
         });
     });
 });
+
+describe('validateInstruction — LENGTH_CALC refs without formula (W3)', () => {
+    it('warns when refs exist but formula is missing (preview infers sum-of-refs)', () => {
+        const { errors, warnings } = validateInstruction(inst([
+            blk(),
+            blk({ id: 'f2', name: 'L', sequence: 1, op_code: 'LENGTH_CALC', parameter_config: { refs: ['f1'] } }),
+        ]));
+        expect(errors).toEqual([]);
+        const w = warnings.find((x) => x.code === 'LENGTH_NO_FORMULA');
+        expect(w).toBeTruthy();
+        expect(w.blockId).toBe('f2');
+    });
+
+    it('does not warn when a formula is present', () => {
+        const { warnings } = validateInstruction(inst([
+            blk(),
+            blk({ id: 'f2', name: 'L', sequence: 1, op_code: 'LENGTH_CALC', parameter_config: { refs: ['f1'], formula: '[A]' } }),
+        ]));
+        expect(warnings.some((x) => x.code === 'LENGTH_NO_FORMULA')).toBe(false);
+    });
+});

@@ -10,6 +10,7 @@ import { useInstructionData } from '../hooks/useInstructionData';
 import { useInstructionLanes } from '../hooks/useInstructionLanes';
 import { useSelectionSystem } from '../hooks/useSelectionSystem';
 import { validateInstruction } from '../utils/validateInstruction';
+import { computeByteOffsets } from '../utils/byteOffsets';
 
 export default function Instruction({ instructions: initialInstructions, setInstructions: setSharedInstructions, onWebUpdate, reloadInstructions }) {
     // 1. Data Hook
@@ -66,6 +67,14 @@ export default function Instruction({ instructions: initialInstructions, setInst
     // surface B2–B8 encoder-limit notices without blocking.
     const validationIssues = useMemo(
         () => validateInstruction(currentInstruction),
+        [currentInstruction]
+    );
+
+    // P1: byte-offset ruler + total frame length — recomputed on every structural
+    // edit (add/delete/drag/APPLY all mutate currentInstruction). exact=false
+    // means some block has unknown size → total is a lower bound ("+").
+    const byteOffsets = useMemo(
+        () => computeByteOffsets(currentInstruction),
         [currentInstruction]
     );
 
@@ -391,7 +400,20 @@ export default function Instruction({ instructions: initialInstructions, setInst
                     <div className="flex items-center gap-2 cursor-pointer hover:text-nier-light" onClick={() => setSelectedId(null)}>
                         <span>KERNEL EDITOR // {currentInstruction?.device_code} / {currentInstruction?.code}</span>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
+                        <span
+                            className="font-bold"
+                            title={byteOffsets.variable
+                                ? (byteOffsets.exact
+                                    ? `变长指令：含动态重复或值驱动长度，当前结构可算约 ${byteOffsets.total} 字节`
+                                    : `变长指令：存在未知长度块，${byteOffsets.total}B 为下限`)
+                                : `定长指令：总长恒为 ${byteOffsets.total} 字节`}
+                        >
+                            LEN {byteOffsets.variable && byteOffsets.exact && '~'}{byteOffsets.total}B{!byteOffsets.exact && '+'}
+                            <span className={`ml-1 ${byteOffsets.variable ? 'text-[#E58D28]' : 'opacity-50'}`}>
+                                {byteOffsets.variable ? 'VAR' : 'FIXED'}
+                            </span>
+                        </span>
                         {hasUnsavedChanges && <span className="text-yellow-500 animate-pulse">UNSAVED</span>}
                         {hasUnsavedChanges && (
                             <button onClick={() => revertChanges(openConfirm)} className="hover:text-nier-light hover:underline">RESET</button>
@@ -400,6 +422,7 @@ export default function Instruction({ instructions: initialInstructions, setInst
                 </div>
                 <Canvas
                     lanes={displayLanes}
+                    offsets={byteOffsets.byId}
                     onMoveItem={(itemId, newParentId, newIndex) => {
                         const allFields = [...currentInstruction.fields];
                         const itemIndex = allFields.findIndex(f => f.id === itemId);

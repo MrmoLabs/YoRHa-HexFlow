@@ -43,6 +43,7 @@ function LaneContainer({ lane, index, children, isActiveLane, onNavigateGroup, o
 
 export default function Canvas({
     lanes = [],
+    offsets = null, // P1: Map<id, {offset,size,isGroup}> byte-offset ruler (from utils/byteOffsets)
     onMoveItem, // (itemId, newParentId, newIndex) => void
     selectedId,
     onSelect,
@@ -261,6 +262,7 @@ export default function Canvas({
                                     isSelected={selectedId === item.id}
                                     isPickMode={pickingMode?.isActive}
                                     isPickRef={pickingMode?.currentRefs?.includes(item.id)}
+                                    offsetMeta={offsets?.get?.(item.id) ?? null}
                                     // Clicking a block should focus THIS lane (the container), not the child lane
                                     onClick={() => handleBlockClick(item.id, item.op_code, lane.parentId)}
                                     isGroupActive={false}
@@ -386,6 +388,7 @@ export default function Canvas({
                                 {...activeDragItem}
                                 isSelected={false}
                                 isGroupActive={false}
+                                offsetMeta={offsets?.get?.(activeDragItem.id) ?? null}
                             />
                         </div>
                     ) : null}

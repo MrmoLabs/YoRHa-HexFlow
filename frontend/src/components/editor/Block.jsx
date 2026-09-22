@@ -2,8 +2,9 @@ import React from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { OP_CODES } from '../../constants';
+import { formatOffset } from '../../utils/byteOffsets';
 
-export default function Block({ id, label, name, byte_length, byte_len, type, op_code, hex_value, parameter_config, children, isSelected, isPickMode, isPickRef, isGroupActive, onClick }) {
+export default function Block({ id, label, name, byte_length, byte_len, type, op_code, hex_value, parameter_config, children, isSelected, isPickMode, isPickRef, isGroupActive, offsetMeta, onClick }) {
     // Normalize Props (Backend v4 vs v3)
     const displayLabel = name || label || 'BLOCK';
     const length = byte_len || byte_length || 1;
@@ -18,6 +19,30 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
         isDragging
     } = useSortable({ id });
 
+    // P1 optim: a group shows its COMPUTED total (Σ children, sourced from
+    // byteOffsets via offsetMeta) instead of a hard-coded "??" — "??" stays
+    // only for a genuinely unknown size (some child byte_len missing).
+    const isGroupCard = op_code === OP_CODES.ARRAY_GROUP || op_code === OP_CODES.STRUCT || offsetMeta?.isGroup === true;
+
+    // Footer byte length: trust byteOffsets when the ruler is wired (accurate
+    // "??B" for unknown instead of the legacy `|| 1` guess); fall back to the
+    // legacy display when no offsets were passed (e.g. Orchestration page).
+    const footerBytes = offsetMeta
+        ? (typeof offsetMeta.size === 'number' ? `${offsetMeta.size}B` : '??B')
+        : (isGroupCard ? '' : `${length}B`);
+    const offsetStr = offsetMeta ? formatOffset(offsetMeta) : '';
+
+    // P1 smart width: byte-extent driven (group = Σ children via offsetMeta,
+    // leaf = byte_len) with a content-aware floor so the footer
+    // (`2B @00` / `??B @02..` + OPEN) never gets clipped by the next card.
+    const extentBytes = isGroupCard
+        ? (offsetMeta && typeof offsetMeta.size === 'number' ? offsetMeta.size : 0)
+        : length;
+    const footerText = [footerBytes, offsetStr].filter(Boolean).join(' ');
+    const contentMin = Math.ceil(footerText.length * 5.4) // 9px monospace ≈ 5.4px/char
+        + (isGroupActive ? 26 : 0) // OPEN marker + gap
+        + 20;                      // card padding + safety margin
+
     const style = {
         transform: CSS.Transform.toString(transform),
         // Inline `transition` overrides the Tailwind `transition-colors` class, so
@@ -26,7 +51,7 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
         transition: transition
             ? `${transition}, width 200ms ease, background-color 200ms ease, border-color 200ms ease`
             : transition,
-        width: `${Math.max(60, length * 40)}px`, // Increased min-width for label stability
+        width: `${Math.max(60, extentBytes * 40, contentMin)}px`, // Smart width: byte extent + content floor
     };
 
     // Style Mapping: Based on Information Density
@@ -87,9 +112,13 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
 
     // Logic for display value
     const displayValue = React.useMemo(() => {
-        // Special Case: Nested Group has no fixed value/size
-        if (op_code === OP_CODES.ARRAY_GROUP) {
-            return "??"; // User Request: Show ?? instead of DYNAMIC
+        // Special Case: Nested Group — length is the group's total, not a value
+        if (isGroupCard) {
+            if (offsetMeta && typeof offsetMeta.size === 'number') return `${offsetMeta.size}B`;
+            // Fallback: Σ injected by processedLanes — the group still shows
+            // its total even where the offset ruler prop isn't wired.
+            if (parameter_config?.computedValue !== undefined) return parameter_config.computedValue;
+            return "??"; // User Request: Show ?? when undeterminable
         }
 
         // 1. If explicit computed value (from formula engine), use it
@@ -107,7 +136,7 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
         // 3. Default: "00 " repeated for unknown/unset
         const safeLen = Math.max(1, Math.floor(length));
         return Array(safeLen).fill('00').join(' ');
-    }, [type, effectiveHex, length, parameter_config?.computedValue, op_code]);
+    }, [type, effectiveHex, length, parameter_config?.computedValue, op_code, isGroupCard, offsetMeta?.size]);
 
     return (
         <div
@@ -141,10 +170,17 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
                 {displayValue}
             </div>
 
-            {/* Footer info */}
-            <div className="text-[9px] flex justify-between opacity-70 mt-1 w-full min-h-[14px]">
-                {/* Hide Byte Len for Groups */}
-                <span>{op_code === 'ARRAY_GROUP' ? '' : `${length}B`}</span>
+            {/* Footer info: byte len + P1 offset ruler (@00 plain / @00.. group / ·· unknown) */}
+            <div className="text-[9px] flex justify-between opacity-70 mt-1 w-full min-h-[14px] gap-1">
+                <span className="flex gap-1 min-w-0">
+                    {/* User Request: bytes before offset (`2B @00`) */}
+                    <span>{footerBytes}</span>
+                    {offsetMeta && (
+                        <span className="font-mono" title={`字节偏移 ${offsetMeta.offset === null ? '未知（前序块长度动态）' : `0x${offsetMeta.offset.toString(16).toUpperCase()}`}`}>
+                            {formatOffset(offsetMeta)}
+                        </span>
+                    )}
+                </span>
                 {isGroupActive && <span className="text-[8px] animate-pulse">OPEN</span>}
             </div>
 

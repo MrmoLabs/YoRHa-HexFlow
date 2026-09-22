@@ -171,3 +171,4 @@
     5. `endianness=LITTLE` 仅入库与透传，编码恒按大端（属性面板已加控件并标注“仅存储”）。
     6. `ARRAY_GROUP` 的 `repeat_type/count/ref_id` 可配可存，但编码只展开一次（`FIXED×N` 只编 1 份），加工页不显示重复信息。
     7. `TIME_ACCUMULATOR` 在加工页按用户选择的相对秒数直接编码（`base_time` 仅用于显示换算）；`AUTO_COUNTER` 的 `step/max` 不自动递增，需手输值（语义参数已在表单下方展示）。
+*   **Phase 1 偏移标尺（2026-09-22）**: `utils/byteOffsets.js` 纯函数按 `parent_id/sequence` 计算每块起始偏移与指令总长。尺寸口径 = `byte_len > 0` → `parameter_config.computedValue` 字节数（hex 且非 `??`）→ 未知（`··`，总长降级为下限并显示 `+`）；未知尺寸只污染其**后**块的偏移，自身起点照常显示。组起点 = 父起点 + 组内累计（组显示 `@00..`），组卡片直显 Σ 子块可算长度（空组=已知 0B），顶栏 `LEN nB` 并标注 `FIXED/VAR`（`variable = 未知 || computedValue 驱动长度 || DYNAMIC 重复`；口径对齐编码器实际输出——B7 重复只展开一次），另修复 LENGTH_CALC 公式引用组恒 `??` 的缺陷（`useInstructionLanes.nameToValueMap` 原硬编码组为 `??`，现取 Σ 组值、真未知才 `??`，示例状态包长度现算 `05`，并移除死字段 `_displayLen`），总长口径与编排页 `getTotalBytes`（Σ叶子字节）对齐。见 `docs/PLAN_InstructionManagement.md` §3。

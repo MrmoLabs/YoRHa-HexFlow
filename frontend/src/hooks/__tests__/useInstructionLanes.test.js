@@ -113,4 +113,88 @@ describe('useInstructionLanes', () => {
         // However, let's verify runtime safety
         expect(item.parameter_config.computedValue).toBe('??');
     });
+
+    it('resolves LENGTH_CALC formulas referencing a group (group value = Σ children, seed 示例状态包 scenario)', () => {
+        // Mirrors backend/db/seed.py 示例状态包: [状态块](组 1+2+1=4B) + [帧尾](1B) → 05
+        const statusMock = {
+            fields: [
+                { id: 'hdr', name: '帧头', op_code: 'HEX_RAW', sequence: 0, byte_len: 2 },
+                { id: 'g', name: '状态块', op_code: 'ARRAY_GROUP', sequence: 1, byte_len: 0 },
+                { id: 'mode', parent_id: 'g', name: '运行模式', op_code: 'MAPPING', sequence: 0, byte_len: 1 },
+                { id: 'volt', parent_id: 'g', name: '母线电压', op_code: 'INT_UNSIGNED', sequence: 1, byte_len: 2 },
+                { id: 'temp', parent_id: 'g', name: '模块温度', op_code: 'INT_UNSIGNED', sequence: 2, byte_len: 1 },
+                { id: 'tail', name: '帧尾', op_code: 'HEX_RAW', sequence: 3, byte_len: 1 },
+                {
+                    id: 'len', name: '长度', op_code: 'LENGTH_CALC', sequence: 2, byte_len: 1,
+                    parameter_config: { formula: '[状态块] + [帧尾]' },
+                },
+            ],
+        };
+        const { result } = renderHook(() => useInstructionLanes(statusMock, 'inst-status'));
+
+        const root = result.current.processedLanes.find(l => l.parentId === null);
+        const lenBlock = root.items.find(i => i.id === 'len');
+        expect(lenBlock.parameter_config.computedValue).toBe('05'); // 4 + 1
+
+        // P1: the group item itself carries its Σ extent as computedValue
+        // (insurance for cards rendered without the offset-ruler prop).
+        const groupBlock = root.items.find(i => i.id === 'g');
+        expect(groupBlock.byte_len).toBe(0);
+        expect(groupBlock.parameter_config.computedValue).toBe('4B');
+    });
+
+    it('keeps group-in-formula as ?? when the group total is undeterminable', () => {
+        const brokenGroupMock = {
+            fields: [
+                { id: 'g', name: '组', op_code: 'ARRAY_GROUP', sequence: 0 },
+                { id: 'mystery', parent_id: 'g', name: '未知子块', sequence: 0 }, // no byte_len
+                {
+                    id: 'len', op_code: 'LENGTH_CALC', sequence: 1, byte_len: 1,
+                    parameter_config: { formula: '[组] + 1' },
+                },
+            ],
+        };
+        const { result } = renderHook(() => useInstructionLanes(brokenGroupMock, 'inst-x'));
+        const root = result.current.processedLanes.find(l => l.parentId === null);
+        const lenBlock = root.items.find(i => i.id === 'len');
+        expect(lenBlock.parameter_config.computedValue).toBe('??');
+
+        // Undeterminable group → its own injected display value is "??" too
+        const groupBlock = root.items.find(i => i.id === 'g');
+        expect(groupBlock.parameter_config.computedValue).toBe('??');
+    });
+
+    it('LENGTH_CALC with refs but no formula infers sum-of-refs (New Instruction 682 scenario)', () => {
+        const refsOnlyMock = {
+            fields: [
+                { id: 'hex1', name: '原始Hex', op_code: 'HEX_RAW', sequence: 0, byte_len: 1, parameter_config: { hex: '00' } },
+                { id: 'u1', name: '无符号整数', op_code: 'INT_UNSIGNED', sequence: 1, byte_len: 1, parameter_config: { bits: 8 } },
+                { id: 's1', name: '有符号整数', op_code: 'INT_SIGNED', sequence: 2, byte_len: 2, parameter_config: { bits: 16 } },
+                {
+                    id: 'len', name: '长度计算', op_code: 'LENGTH_CALC', sequence: 3, byte_len: 1,
+                    // legacy persisted state: refs + stale computedValue, no formula
+                    parameter_config: { refs: ['hex1', 'u1', 's1'], computedValue: '??' },
+                },
+            ],
+        };
+        const { result } = renderHook(() => useInstructionLanes(refsOnlyMock, 'inst-682'));
+        const root = result.current.processedLanes.find(l => l.parentId === null);
+        const lenBlock = root.items.find(i => i.id === 'len');
+        expect(lenBlock.parameter_config.computedValue).toBe('04'); // 1 + 1 + 2
+    });
+
+    it('refs-only LENGTH_CALC with a dangling ref stays ?? (honest unknown)', () => {
+        const danglingMock = {
+            fields: [
+                {
+                    id: 'len', name: '长度计算', op_code: 'LENGTH_CALC', sequence: 0, byte_len: 1,
+                    parameter_config: { refs: ['ghost-id'] },
+                },
+            ],
+        };
+        const { result } = renderHook(() => useInstructionLanes(danglingMock, 'inst-dangle'));
+        const root = result.current.processedLanes.find(l => l.parentId === null);
+        const lenBlock = root.items.find(i => i.id === 'len');
+        expect(lenBlock.parameter_config.computedValue).toBe('??');
+    });
 });

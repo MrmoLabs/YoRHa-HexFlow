@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { evaluateFormula, formatToHex, calculateChecksum } from '../utils/formula';
 import { mapChecksumAlgo } from '../utils/normalizeInstruction';
+import { computeByteOffsets } from '../utils/byteOffsets';
 
 export function useInstructionLanes(currentInstruction, activeInstructionId) {
     // expandedGroupIds: Array of IDs that are currently expanded.
@@ -102,10 +103,17 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
 
     // LIVE FORMULA EVALUATION
     const processedLanes = useMemo(() => {
+        // LENGTH_CALC formulas evaluate over BYTE COUNTS (leaves map to byte_len).
+        // Phase 1: groups now resolve to Σ children via byteOffsets, so formulas
+        // like "[状态块] + [帧尾]" compute a real value instead of short-circuiting
+        // on the legacy hard-coded "??" group placeholder. "??" remains only when
+        // the group total is genuinely undeterminable (a child byte_len missing).
+        const offsets = computeByteOffsets({ fields: allFields });
         const nameToValueMap = {};
         allFields.forEach(f => {
             if (f.op_code === 'ARRAY_GROUP') {
-                nameToValueMap[f.name || f.label] = "??";
+                const meta = offsets.byId.get(f.id);
+                nameToValueMap[f.name || f.label] = (meta && typeof meta.size === 'number') ? meta.size : "??";
             } else {
                 nameToValueMap[f.name || f.label] = f.byte_len || 0;
             }
@@ -117,7 +125,19 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
             items: lane.items.map(f => {
                 // 1. Length Calculation
                 if (f.op_code === 'LENGTH_CALC') {
-                    const formula = f.parameter_config?.formula;
+                    let formula = f.parameter_config?.formula;
+                    if (typeof formula === 'string') formula = formula.trim();
+                    // Legacy/imported data can carry `refs` with no formula (the
+                    // model's source of truth is the formula; refs mirror its
+                    // variables — seed pattern: refs:[组,帧尾] ↔ "[状态块] + [帧尾]").
+                    // Infer the seed's sum-of-refs for PREVIEW so the card isn't a
+                    // silent "??"; a real formula always wins over the inference.
+                    if (!formula && Array.isArray(f.parameter_config?.refs) && f.parameter_config.refs.length > 0) {
+                        formula = [...new Set(f.parameter_config.refs)].map((rid) => {
+                            const target = fieldById.get(rid);
+                            return `[${target ? (target.name || target.label || rid) : rid}]`;
+                        }).join(' + ');
+                    }
                     if (!formula) {
                         return { ...f, parameter_config: { ...f.parameter_config, computedValue: "??" } };
                     }
@@ -183,9 +203,22 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
                     const result = calculateChecksum(algo, bytes);
                     return { ...f, parameter_config: { ...f.parameter_config, computedValue: formatToHex(result, f.byte_len || 1) } };
                 }
-                // Dynamic Group Sizing
+                // Dynamic Group Sizing — inject the Σ extent as computedValue so
+                // the group card can show "4B" even where the offset ruler prop
+                // isn't wired. byteOffsets' group branch is Σ-of-children only and
+                // never reads computedValue, so this cannot feed back into size
+                // resolution (and "??" stays when the total is unknowable).
                 if (f.op_code === 'ARRAY_GROUP') {
-                    return { ...f, byte_len: 0, _displayLen: '??' };
+                    const meta = offsets.byId.get(f.id);
+                    const known = meta && typeof meta.size === 'number';
+                    return {
+                        ...f,
+                        byte_len: 0,
+                        parameter_config: {
+                            ...f.parameter_config,
+                            computedValue: known ? `${meta.size}B` : '??'
+                        }
+                    };
                 }
                 return f;
             })
