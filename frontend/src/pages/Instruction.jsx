@@ -86,6 +86,31 @@ export default function Instruction({ instructions: initialInstructions, setInst
     // --- Derived State Helpers ---
     const flattenedProcessed = processedLanes.flatMap(l => l.items);
     const selectedBlock = flattenedProcessed.find(b => b.id === selectedId);
+
+    // Live preview: mirror the properties panel's temp edits onto the matching
+    // card so byte_len / name / hex changes show up before APPLY (display only —
+    // derived computedValue always stays sourced from processedLanes).
+    const [previewBlock, setPreviewBlock] = useState(null);
+    const displayLanes = useMemo(() => {
+        if (!previewBlock?.id) return processedLanes;
+        return processedLanes.map(lane => ({
+            ...lane,
+            items: lane.items.map(item => (
+                item.id === previewBlock.id
+                    ? {
+                        ...item,
+                        ...previewBlock,
+                        id: item.id,
+                        parameter_config: {
+                            ...item.parameter_config,
+                            ...previewBlock.parameter_config,
+                            computedValue: item.parameter_config?.computedValue
+                        }
+                    }
+                    : item
+            ))
+        }));
+    }, [processedLanes, previewBlock]);
     const visibleInstructions = useMemo(() => {
         const keyword = searchTerm.trim().toLowerCase();
         if (!keyword) return instructions;
@@ -153,9 +178,15 @@ export default function Instruction({ instructions: initialInstructions, setInst
             if (!newBlock.parameter_config.max_count) newBlock.parameter_config.max_count = 1;
         }
         if (template?.param_template?.bits) {
-            const defaultBits = Array.isArray(template.param_template.bits) ? template.param_template.bits[0] : 8;
-            if (!newBlock.parameter_config.bits) newBlock.parameter_config.bits = defaultBits;
-            newBlock.byte_len = Math.ceil(newBlock.parameter_config.bits / 8);
+            // A1: parameter_config.bits may have been copied as the template ARRAY
+            // ([8,16,32,64]) — Math.ceil(array/8) === NaN, which poisoned byte_len.
+            // Always store the scalar default and derive byte_len from it.
+            const rawBits = template.param_template.bits;
+            const defaultBits = Number(Array.isArray(rawBits) ? rawBits[0] : rawBits);
+            if (Number.isFinite(defaultBits) && defaultBits > 0) {
+                newBlock.parameter_config.bits = defaultBits;
+                newBlock.byte_len = Math.ceil(defaultBits / 8);
+            }
         }
 
         // HEX_RAW: default hex must match byte_len exactly (APPLY validates the
@@ -239,6 +270,14 @@ export default function Instruction({ instructions: initialInstructions, setInst
         const newName = updatedBlock.name || updatedBlock.label;
         const isRename = oldName !== newName;
         updatedBlock.updatedAt = Date.now();
+
+        // Structure is never edited in the panel: take parent/sequence from the
+        // SAVED state so a stale temp copy cannot silently revert a drag/move
+        // that happened while this block was selected.
+        if (oldBlock) {
+            updatedBlock.parent_id = oldBlock.parent_id;
+            updatedBlock.sequence = oldBlock.sequence;
+        }
 
         let newFields = currentInstruction.fields.map(b => b.id === updatedBlock.id ? updatedBlock : b);
 
@@ -339,7 +378,7 @@ export default function Instruction({ instructions: initialInstructions, setInst
                     </div>
                 </div>
                 <Canvas
-                    lanes={processedLanes}
+                    lanes={displayLanes}
                     onMoveItem={(itemId, newParentId, newIndex) => {
                         const allFields = [...currentInstruction.fields];
                         const itemIndex = allFields.findIndex(f => f.id === itemId);
@@ -380,6 +419,7 @@ export default function Instruction({ instructions: initialInstructions, setInst
                 pickingMode={pickingMode}
                 setPickingMode={setPickingMode}
                 onPickBlock={handlePickBlock}
+                onTempChange={setPreviewBlock}
             />
         </div>
     );

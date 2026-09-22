@@ -4,17 +4,19 @@ import { InstructionEncoder } from '../utils/InstructionEncoder';
 export function useInstructionForm(instruction) {
     const [inputs, setInputs] = useState({});
 
-    // Initialize defaults when instruction ID changes
+    // Content signature: reset defaults when the instruction CONTENT changes
+    // (id switch, refetch adding/renaming fields, revert). Identity-only deps
+    // would miss same-id content updates; identical re-created objects keep
+    // the signature stable so in-progress inputs are NOT needlessly discarded.
+    const instructionSignature = instruction ? JSON.stringify(instruction) : '';
     useEffect(() => {
         if (instruction?.id) {
-            // Important: We only reset if the ID actually changed to a new one
-            // or if it's the first initialization.
             const defaults = InstructionEncoder.getInitialValues(instruction);
             setInputs(defaults);
         } else if (!instruction) {
             setInputs({});
         }
-    }, [instruction?.id]); // Only trigger on ID change
+    }, [instructionSignature]);
 
     // Handle single field update
     const handleInputChange = useCallback((fieldId, value) => {

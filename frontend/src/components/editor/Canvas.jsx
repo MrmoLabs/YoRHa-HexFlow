@@ -65,13 +65,12 @@ export default function Canvas({
 
     // useCanvasConnections Hook (Replaces lengthy useEffect)
     const { connectionPaths, hierarchyLines } = useCanvasConnections(lanes, selectedId, pickingMode, contentRef);
-    const lanesSignature = JSON.stringify(
-        lanes.map(lane => ({
-            parentId: lane.parentId ?? null,
-            depth: lane.depth ?? 0,
-            itemIds: (lane.items || []).map(item => item.id)
-        }))
-    );
+    // Full-content signature: localLanes must re-sync on ANY lanes change
+    // (byte_len / name / hex / computedValue…, not just structure) so live
+    // property edits and canvas previews actually reach the rendered cards.
+    // DnD is unaffected: mid-drag the incoming lanes content stays identical,
+    // so the effect below does not clobber local drag state.
+    const lanesSignature = JSON.stringify(lanes);
 
     // SENSORS
     const sensors = useSensors(

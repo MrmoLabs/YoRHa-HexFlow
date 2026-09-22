@@ -31,13 +31,16 @@ SEED_TEMPLATES = [
     
     # LOGIC
     {"op_code": "MAPPING", "name": "枚举映射", "category": "LOGIC", "description": "状态位映射", "param_template": {"options": "kv_pair_list"}},
-    
+
     # STRUCT
     {"op_code": "ARRAY_GROUP", "name": "嵌套组", "category": "STRUCT", "description": "循环容器", "param_template": {"max_count": "number"}},
 
     # LOGIC_CALC (V2)
     {"op_code": "LENGTH_CALC", "name": "长度计算", "category": "LOGIC", "description": "基于公式计算字段长度", "param_template": {"refs": "field_picker", "formula": "string"}},
-    {"op_code": "CHECKSUM_CRC", "name": "校验码", "category": "LOGIC", "description": "CRC/Sum/Xor校验", "param_template": {"refs": "field_picker", "algo": ["CRC16_CCITT", "CRC32", "XOR_SUM", "ADD_SUM"]}},
+    # B1 convergence: algo values are exactly the enums the frontend encoder
+    # implements (formula.js ChecksumAlgo). Legacy names (CRC16_CCITT/CRC32/
+    # XOR_SUM/ADD_SUM) were never read by the encoder — the selection had no effect.
+    {"op_code": "CHECKSUM_CRC", "name": "校验码", "category": "LOGIC", "description": "CRC16-MODBUS/Sum/Xor校验", "param_template": {"refs": "field_picker", "algo": ["CRC_16_MODBUS", "SUM_8", "XOR_8"]}},
 
     # BIT-LEVEL (V2)
     {"op_code": "BITFIELD", "name": "位域", "category": "ENCODING", "description": "按位定义字段布局", "param_template": {"bit_layout": "bit_editor"}},

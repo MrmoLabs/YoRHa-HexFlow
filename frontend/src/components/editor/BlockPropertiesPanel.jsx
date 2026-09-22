@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ParamConfigForm from './ParamConfigForm';
 import BitFieldEditor from './BitFieldEditor';
 import { v4 as uuidv4 } from 'uuid';
+import { mapChecksumAlgo } from '../../utils/normalizeInstruction';
 
 const controlledValue = (value, fallback = '') => (value ?? fallback);
 
@@ -20,11 +21,28 @@ export default function BlockPropertiesPanel({
     // Picking Props
     pickingMode,
     setPickingMode,
-    onPickBlock
+    onPickBlock,
+    onTempChange // (tempBlockConfig | null) => void — live canvas preview
 }) {
     // Local Edit State
     const [tempBlockConfig, setTempBlockConfig] = useState(null);
     const [hexInputMode, setHexInputMode] = useState('HEX');
+
+    // Live preview: push temp edits upward so the page can mirror them on the
+    // selected card in real time (display only — APPLY/SAVE still persists).
+    useEffect(() => {
+        onTempChange?.(tempBlockConfig);
+    }, [tempBlockConfig]);
+
+    // Semantic signature of the selected block: detects EXTERNAL changes
+    // (cascade ref-scrub after deleting another block, revert/reset, rename
+    // formula sync) so the temp editor is rebuilt instead of silently
+    // overwriting them on APPLY. Structural fields (sequence/parent_id) are
+    // excluded: drags change them but must not discard un-applied edits —
+    // handleSaveBlock takes structure from the saved state instead.
+    const selectedBlockSignature = selectedBlock
+        ? JSON.stringify((({ sequence, parent_id, updatedAt, ...semantic }) => semantic)(selectedBlock))
+        : null;
 
     // Sync with Selection
     useEffect(() => {
@@ -61,6 +79,13 @@ export default function BlockPropertiesPanel({
                 });
             }
 
+            // B1: normalize checksum algo to the encoder enum on read, so the
+            // select shows a real working value and apply persists the alias.
+            if (initialParams.algo !== undefined) {
+                initialParams.algo = mapChecksumAlgo(initialParams.algo);
+                initialParams.algorithm = initialParams.algo;
+            }
+
             setTempBlockConfig({
                 ...selectedBlock,
                 parameter_config: initialParams
@@ -68,17 +93,38 @@ export default function BlockPropertiesPanel({
         } else {
             setTempBlockConfig(null);
         }
-    }, [selectedBlock?.id, selectedBlock?.updatedAt]); // Add version/timestamp check if strictly needed? ID usually enough if strict immutability.
+    }, [selectedBlock?.id, selectedBlockSignature]); // Semantic signature: rebuild on EXTERNAL content changes so APPLY cannot overwrite them with a stale copy; structural drags keep dirty edits alive.
 
     const handleTempUpdate = (updates) => {
         setTempBlockConfig(prev => ({ ...prev, ...updates }));
     };
 
     const handleTempParamUpdate = (key, val) => {
-        setTempBlockConfig(prev => ({
-            ...prev,
-            parameter_config: { ...prev.parameter_config, [key]: val }
-        }));
+        setTempBlockConfig(prev => {
+            const parameter_config = { ...prev.parameter_config, [key]: val };
+
+            // A1/A2: bit-width params drive byte_len (INT*/FLOAT bits, BCD bytes) —
+            // otherwise picking 16/32/64 in the select changes nothing on the wire.
+            if (key === 'bits') {
+                const bitsNum = Number(val);
+                if (Number.isFinite(bitsNum) && bitsNum > 0) {
+                    return { ...prev, parameter_config, byte_len: Math.ceil(bitsNum / 8) };
+                }
+                return { ...prev, parameter_config };
+            }
+            if (key === 'bytes') {
+                const byteNum = Number(val);
+                if (Number.isFinite(byteNum) && byteNum > 0) {
+                    return { ...prev, parameter_config, byte_len: byteNum };
+                }
+                return { ...prev, parameter_config };
+            }
+            // B1: keep parameter_config.algorithm (the key the encoder reads) in sync.
+            if (key === 'algo') {
+                parameter_config.algorithm = mapChecksumAlgo(val);
+            }
+            return { ...prev, parameter_config };
+        });
     };
 
     const handleStartPicking = (key, currentRefs) => {
@@ -190,6 +236,26 @@ export default function BlockPropertiesPanel({
                         <label className="text-xs opacity-70 uppercase tracking-widest">指令名称 (Name)</label>
                         <input type="text" value={controlledValue(currentInstruction.name ?? currentInstruction.label, '')} onChange={(e) => onUpdateInstruction({ ...currentInstruction, name: e.target.value })} className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono tracking-wide" />
                     </div>
+                    <div className="flex flex-col gap-1">
+                        <label className="text-xs opacity-70 uppercase tracking-widest">指令类型 (Type)</label>
+                        <select
+                            value={currentInstruction.type || 'STATIC'}
+                            onChange={(e) => onUpdateInstruction({ ...currentInstruction, type: e.target.value })}
+                            className="bg-nier-dark border border-nier-light/50 text-nier-light text-xs p-1 focus:outline-none"
+                        >
+                            <option value="STATIC" className="bg-nier-dark text-nier-light">静态 (STATIC)</option>
+                            <option value="DYNAMIC" className="bg-nier-dark text-nier-light">动态 (DYNAMIC)</option>
+                        </select>
+                    </div>
+                    <div className="flex flex-col gap-1">
+                        <label className="text-xs opacity-70 uppercase tracking-widest">说明 (Description)</label>
+                        <textarea
+                            rows={2}
+                            value={currentInstruction.description || ''}
+                            onChange={(e) => onUpdateInstruction({ ...currentInstruction, description: e.target.value })}
+                            className="bg-transparent border border-nier-light/30 focus:border-nier-light focus:outline-none p-1 font-mono text-xs tracking-wide resize-none"
+                        />
+                    </div>
 
                     {/* Instruction Actions */}
                     <div className="pt-8 flex flex-col gap-3 border-t border-nier-light/20">
@@ -220,6 +286,18 @@ export default function BlockPropertiesPanel({
                     <div className="flex flex-col gap-1">
                         <label className="text-xs opacity-70 uppercase tracking-widest">字节长度 (Length)</label>
                         <input type="number" min="0" value={controlledValue(tempBlockConfig.byte_len ?? tempBlockConfig.byte_length, 0)} onChange={e => handleTempUpdate({ byte_len: parseInt(e.target.value) || 0 })} className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono" />
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                        <label className="text-xs opacity-70 uppercase tracking-widest">字节序 (Endian · 仅存储, 编码暂按大端)</label>
+                        <select
+                            value={controlledValue(tempBlockConfig.endianness, 'BIG')}
+                            onChange={e => handleTempUpdate({ endianness: e.target.value })}
+                            className="bg-nier-dark border border-nier-light/50 text-nier-light text-xs p-1 focus:outline-none"
+                        >
+                            <option value="BIG" className="bg-nier-dark text-nier-light">大端 (BIG)</option>
+                            <option value="LITTLE" className="bg-nier-dark text-nier-light">小端 (LITTLE)</option>
+                        </select>
                     </div>
 
                     {/* Dynamic Params */}

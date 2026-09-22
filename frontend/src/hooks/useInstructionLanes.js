@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
-import { evaluateFormula, formatToHex } from '../utils/formula';
+import { evaluateFormula, formatToHex, calculateChecksum } from '../utils/formula';
+import { mapChecksumAlgo } from '../utils/normalizeInstruction';
 
 export function useInstructionLanes(currentInstruction, activeInstructionId) {
     // expandedGroupIds: Array of IDs that are currently expanded.
@@ -148,6 +149,40 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
                     const hex = formatToHex(startVal, f.byte_len || 1);
                     return { ...f, parameter_config: { ...f.parameter_config, computedValue: hex } };
                 }
+                // 3.5 Checksum preview (A5): structural estimate over referenced
+                // fields — HEX_RAW contributes its literal bytes, everything else
+                // contributes 00 placeholders (no runtime inputs on this page).
+                if (f.op_code === 'CHECKSUM_CRC') {
+                    const refs = f.parameter_config?.refs || [];
+                    if (refs.length === 0) {
+                        return { ...f, parameter_config: { ...f.parameter_config, computedValue: '??' } };
+                    }
+                    const collectLeaves = (groupId, acc = []) => {
+                        (childrenByParentId.get(groupId) || []).forEach(child => {
+                            if (child.op_code === 'ARRAY_GROUP') collectLeaves(child.id, acc);
+                            else acc.push(child);
+                        });
+                        return acc;
+                    };
+                    const bytes = [];
+                    refs.forEach(refId => {
+                        const ref = fieldById.get(refId);
+                        if (!ref) return;
+                        const leaves = ref.op_code === 'ARRAY_GROUP' ? collectLeaves(ref.id) : [ref];
+                        leaves.forEach(leaf => {
+                            const hexVal = String(leaf.parameter_config?.hex || leaf.hex_value || '').replace(/\s/g, '');
+                            if (hexVal && /^[\dA-Fa-f]+$/.test(hexVal)) {
+                                (hexVal.match(/.{1,2}/g) || []).forEach(pair => bytes.push(parseInt(pair, 16)));
+                            } else {
+                                const zeroLen = Math.max(1, leaf.byte_len || 1);
+                                for (let i = 0; i < zeroLen; i++) bytes.push(0);
+                            }
+                        });
+                    });
+                    const algo = mapChecksumAlgo(f.parameter_config?.algorithm || f.parameter_config?.algo);
+                    const result = calculateChecksum(algo, bytes);
+                    return { ...f, parameter_config: { ...f.parameter_config, computedValue: formatToHex(result, f.byte_len || 1) } };
+                }
                 // Dynamic Group Sizing
                 if (f.op_code === 'ARRAY_GROUP') {
                     return { ...f, byte_len: 0, _displayLen: '??' };
@@ -155,7 +190,7 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
                 return f;
             })
         }));
-    }, [allFields, uiLanes]);
+    }, [allFields, uiLanes, childrenByParentId, fieldById]);
 
     const handleNavigateGroup = (groupId) => {
         setExpandedGroupIds(prev => {

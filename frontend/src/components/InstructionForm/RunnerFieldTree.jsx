@@ -1,5 +1,6 @@
 import React from 'react';
 import { SmartInput } from './SmartInput';
+import { mapChecksumAlgo } from '../../utils/normalizeInstruction';
 
 // Recursive renderer for the dynamic send form's field tree.
 // Extracted verbatim from InstructionRunner.jsx renderFields (logic unchanged).
@@ -8,6 +9,22 @@ import { SmartInput } from './SmartInput';
 const getFieldEpoch = (params) => {
     const baseTimeStr = params.base_time || '2000-01-01T00:00:00';
     return new Date(baseTimeStr.includes('T') ? baseTimeStr : baseTimeStr.replace(' ', 'T'));
+};
+
+// A4: pack BITFIELD default_val bits into the exact hex the encoder emits
+// (display-only mirror of InstructionEncoder's BITFIELD branch).
+const packBitfieldDefault = (bits, byteLen) => {
+    let packed = 0;
+    (Array.isArray(bits) ? bits : []).forEach(b => {
+        const start = Number.isFinite(Number(b.start_bit)) ? Number(b.start_bit) : 0;
+        const len = Math.max(1, Number.isFinite(Number(b.bit_len)) ? Number(b.bit_len) : 1);
+        const mask = len >= 32 ? 0xFFFFFFFF : ((1 << len) - 1);
+        const raw = Number.isFinite(Number(b.default_val)) ? Number(b.default_val) : 0;
+        packed |= (raw & mask) << start;
+    });
+    packed = packed >>> 0;
+    const target = Math.max(1, byteLen) * 2;
+    return packed.toString(16).toUpperCase().padStart(target, '0').slice(-target);
 };
 
 export default function RunnerFieldTree({
@@ -121,7 +138,12 @@ export default function RunnerFieldTree({
                 displayValue = inputs[field.id] !== undefined ? inputs[field.id] : (computedValues[field.id] || 0);
             }
         } else {
-            const rawValue = inputs[field.id];
+            let rawValue = inputs[field.id];
+            // A4: until the user provides an input, show the packed default_val
+            // bytes — the value the encoder actually emits for BITFIELD.
+            if (rawValue === undefined && field.op_code === 'BITFIELD') {
+                rawValue = packBitfieldDefault(field.bits, field.byte_len || 1);
+            }
             if (field.byte_len && field.byte_len > 0) {
                 const currentVal = rawValue ?? 0;
                 if (!params.type || params.type === 'number' || params.type === 'hex') {
@@ -140,6 +162,21 @@ export default function RunnerFieldTree({
                 placeholder = '?? [VAR]';
             }
         }
+
+        // A6: surface semantic params (scale factor/offset, counter step/max,
+        // checksum algo, ...) the send form would otherwise hide from the operator.
+        const semanticMeta = [
+            ['factor', 'FACTOR'], ['offset', 'OFFSET'], ['step', 'STEP'], ['max', 'MAX'],
+            ['start_val', 'START'], ['bytes', 'BYTES'], ['max_count', 'MAX LOOP'],
+            ['algorithm', 'ALGO'], ['algo', 'ALGO']
+        ].reduce((acc, [k, label]) => {
+            if (k === 'algo' && params.algorithm !== undefined) return acc; // prefer encoder key
+            const raw = params[k];
+            if (raw === undefined || raw === null || raw === '') return acc;
+            const shown = (k === 'algorithm' || k === 'algo') ? mapChecksumAlgo(raw) : raw;
+            acc.push(`${label}=${shown}`);
+            return acc;
+        }, []).join(' · ');
 
         const handleChange = (val) => {
             // FIX: Enum handling for HEX strings
@@ -197,6 +234,11 @@ export default function RunnerFieldTree({
                         suffix={params.unit || (isTimeCumulative ? `${getFieldEpoch(params).getFullYear()}` : '')}
                         placeholder={placeholder}
                     />
+                    {semanticMeta && (
+                        <div className="text-[9px] font-mono text-nier-light/30 ml-40 -mt-0.5 mb-1 uppercase tracking-tighter">
+                            {semanticMeta}
+                        </div>
+                    )}
                     {params.description && (
                         <div className="text-[9px] font-bold text-nier-light/30 ml-40 -mt-1 mb-2 opacity-0 group-hover/field:opacity-100 transition-opacity uppercase tracking-tighter">
                             {params.description}

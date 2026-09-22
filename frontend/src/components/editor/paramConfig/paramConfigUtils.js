@@ -7,6 +7,9 @@ export const toControlledScalar = (value, fallback = '') => {
     if (value === undefined || value === null) {
         return fallback;
     }
+    if (typeof value === 'number' && isNaN(value)) {
+        return fallback; // A7: legacy NaN params must not render as "NaN"
+    }
     return String(value);
 };
 

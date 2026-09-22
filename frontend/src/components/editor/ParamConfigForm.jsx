@@ -140,7 +140,11 @@ export default function ParamConfigForm({
                     value={toControlledScalar(val, '')}
                     onChange={(e) => {
                         let v = e.target.value;
-                        if (configType === 'number') v = parseFloat(v);
+                        if (configType === 'number') {
+                            // A7: an emptied number input must not store NaN
+                            v = v === '' ? '' : parseFloat(v);
+                            if (typeof v === 'number' && isNaN(v)) v = '';
+                        }
                         onUpdateParam(key, v);
                     }}
                     className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono text-sm"

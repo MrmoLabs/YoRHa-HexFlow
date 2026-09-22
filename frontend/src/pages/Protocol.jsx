@@ -13,6 +13,24 @@ export default function Protocol({ protocols, setProtocols }) {
     const saveTimerRef = useRef(null);
     const statusTimerRef = useRef(null);
     const lastPersistedSignatureRef = useRef('');
+    // Debounced-save bookkeeping: remember the pending payload so protocol
+    // switches / unmount can FLUSH it instead of dropping it. Otherwise the
+    // switch effect rewrites lastPersistedSignatureRef with the IN-MEMORY
+    // (dirty) state, the pending save then sees matching signatures and
+    // silently skips persisting the edits (lost on reload).
+    const pendingSaveRef = useRef(null);
+    const flushPendingSave = () => {
+        if (!pendingSaveRef.current) return;
+        if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = null;
+        }
+        const pending = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+        // saveProtocol is declared later in the component but this helper only
+        // ever runs from effects after render; failures surface via showStatus.
+        saveProtocol(pending).catch(() => { /* surfaced below in saveProtocol */ });
+    };
 
     useEffect(() => {
         if (!activeProtocolId && protocols.length > 0) {
@@ -24,6 +42,8 @@ export default function Protocol({ protocols, setProtocols }) {
 
     useEffect(() => {
         return () => {
+            // Persist pending edits instead of dropping them on unmount
+            flushPendingSave();
             if (saveTimerRef.current) {
                 clearTimeout(saveTimerRef.current);
             }
@@ -52,6 +72,10 @@ export default function Protocol({ protocols, setProtocols }) {
     const [pathIds, setPathIds] = useState(currentProtocol ? [currentProtocol.id] : []);
 
     useEffect(() => {
+        // Flush first: the dirty payload of the protocol we are leaving must be
+        // persisted BEFORE lastPersistedSignatureRef is overwritten below.
+        flushPendingSave();
+
         if (!currentProtocol) {
             setPathIds([]);
             setSelectedId(null);
@@ -118,10 +142,13 @@ export default function Protocol({ protocols, setProtocols }) {
         if (saveTimerRef.current) {
             clearTimeout(saveTimerRef.current);
         }
+        pendingSaveRef.current = nextProtocol; // dirty payload, flushed on switch/unmount
 
         showStatus('待保存...');
         saveTimerRef.current = setTimeout(() => {
-            saveProtocol(nextProtocol);
+            pendingSaveRef.current = null;
+            saveTimerRef.current = null;
+            saveProtocol(nextProtocol).catch(() => { /* surfaced via showStatus */ });
         }, 350);
     }, [saveProtocol, showStatus]);
 
