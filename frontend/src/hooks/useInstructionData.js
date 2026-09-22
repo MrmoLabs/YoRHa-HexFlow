@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../api';
 import { normalizeFieldPayload, normalizeInstructionPayload } from '../utils/normalizeInstruction';
+import { validateInstruction } from '../utils/validateInstruction';
 
 // Normalization helpers moved to utils/normalizeInstruction.js (logic unchanged);
 // re-exported here so existing consumers keep working.
@@ -253,6 +254,21 @@ export function useInstructionData(options = {}) {
 
         if (!payload.device_code || !payload.code || !payload.name) {
             showStatus('保存失败：设备前缀、指令代号、指令名称不能为空');
+            return;
+        }
+
+        // P0-2: structural validation gates the save — errors block the PUT so
+        // broken structures (bit overlap, dangling refs, duplicate labels,
+        // formula cycles, empty checksum coverage) never reach the API.
+        // Warnings (B2–B8 encoder limits, soft inconsistencies) do not block.
+        const { errors } = validateInstruction(currentInstruction);
+        if (errors.length > 0) {
+            const lines = errors.slice(0, 8).map(e => `· ${e.message}`).join('\n');
+            const more = errors.length > 8 ? `\n… 共 ${errors.length} 个错误` : '';
+            showStatus(`保存被阻止：${errors.length} 个结构错误`);
+            if (openConfirmCallback) {
+                openConfirmCallback(`保存被阻止，存在 ${errors.length} 个结构错误：\n${lines}${more}`, () => { });
+            }
             return;
         }
 

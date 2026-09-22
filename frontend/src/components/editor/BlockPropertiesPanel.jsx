@@ -3,6 +3,7 @@ import ParamConfigForm from './ParamConfigForm';
 import BitFieldEditor from './BitFieldEditor';
 import { v4 as uuidv4 } from 'uuid';
 import { mapChecksumAlgo } from '../../utils/normalizeInstruction';
+import { getBlockLimitRefs, ENCODER_LIMITS } from '../../utils/encoderLimits';
 
 const controlledValue = (value, fallback = '') => (value ?? fallback);
 
@@ -22,11 +23,14 @@ export default function BlockPropertiesPanel({
     pickingMode,
     setPickingMode,
     onPickBlock,
-    onTempChange // (tempBlockConfig | null) => void — live canvas preview
+    onTempChange, // (tempBlockConfig | null) => void — live canvas preview
+    validationIssues, // { errors, warnings } — P0-2 structure validation (page-level)
+    onLocateBlock // (blockId) => void — select the offending block on the canvas
 }) {
     // Local Edit State
     const [tempBlockConfig, setTempBlockConfig] = useState(null);
     const [hexInputMode, setHexInputMode] = useState('HEX');
+    const [showWarnings, setShowWarnings] = useState(false);
 
     // Live preview: push temp edits upward so the page can mirror them on the
     // selected card in real time (display only — APPLY/SAVE still persists).
@@ -217,12 +221,64 @@ export default function BlockPropertiesPanel({
     };
 
 
+    const blockLimitRefs = tempBlockConfig ? getBlockLimitRefs(tempBlockConfig) : [];
+
     return (
         <aside className="w-80 border-l border-nier-light bg-nier-dark/95 backdrop-blur-sm p-4 flex flex-col z-20 shadow-[-5px_0_15px_rgba(0,0,0,0.5)] overflow-y-auto">
             <h2 className="text-lg border-b-2 border-nier-light mb-6 pb-1 font-bold tracking-wider">属性配置 (PROPERTIES)</h2>
 
             {currentInstruction && !selectedBlock && (
                 <div className="space-y-6 text-sm">
+                    {/* P0-2: structural validation issue list — placed FIRST so a
+                        blocked save is visible without scrolling. Errors use a red
+                        container + solid chips; body text stays bright (high contrast). */}
+                    {validationIssues && (validationIssues.errors.length > 0 || validationIssues.warnings.length > 0) && (
+                        <div className={`p-2 space-y-1 border ${validationIssues.errors.length > 0 ? 'border-[#D94834] bg-[#D94834]/15' : 'border-[#E58D28] bg-[#E58D28]/10'}`}>
+                            <div className="flex flex-wrap gap-2 items-baseline mb-1">
+                                {validationIssues.errors.length > 0 && (
+                                    <span className="bg-[#D94834] text-nier-light font-bold uppercase tracking-widest px-1 py-0.5 text-[10px]">
+                                        ⛔ {validationIssues.errors.length} 结构错误
+                                    </span>
+                                )}
+                                <span className="bg-[#E58D28] text-nier-dark font-bold uppercase tracking-widest px-1 py-0.5 text-[10px]">
+                                    ⚠ {validationIssues.warnings.length} 提醒
+                                </span>
+                                {validationIssues.errors.length === 0 && (
+                                    <span className="text-[10px] text-nier-light/70">（不阻断保存）</span>
+                                )}
+                            </div>
+                            {validationIssues.errors.slice(0, 8).map((err, i) => (
+                                <button
+                                    key={`err-${i}`}
+                                    type="button"
+                                    onClick={() => err.blockId && onLocateBlock?.(err.blockId)}
+                                    className="block w-full text-left text-[11px] font-bold text-nier-light hover:text-white hover:underline truncate"
+                                >
+                                    ⛔ {err.message}
+                                </button>
+                            ))}
+                            {validationIssues.warnings.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowWarnings(v => !v)}
+                                    className="text-[10px] font-bold text-[#E58D28] underline"
+                                >
+                                    {showWarnings ? '收起提醒' : `展开提醒 (${validationIssues.warnings.length})`}
+                                </button>
+                            )}
+                            {showWarnings && validationIssues.warnings.slice(0, 20).map((warn, i) => (
+                                <button
+                                    key={`warn-${i}`}
+                                    type="button"
+                                    onClick={() => warn.blockId && onLocateBlock?.(warn.blockId)}
+                                    className="block w-full text-left text-[10px] text-nier-light hover:text-white truncate"
+                                >
+                                    ⚠ {warn.message}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
                     {/* Instruction Meta */}
                     <div className="flex flex-col gap-1">
                         <label className="text-xs opacity-70 uppercase tracking-widest">设备前缀 (Device)</label>
@@ -278,6 +334,23 @@ export default function BlockPropertiesPanel({
                         <span className="text-nier-light">{selectedBlock.op_code}</span>
                     </div>
 
+                    {/* P0-1: block-level encoder-limit banner (B2–B8, display-only configs) */}
+                    {blockLimitRefs.length > 0 && (
+                        <div className="border border-[#E58D28] bg-[#E58D28]/10 p-2 text-[10px] leading-relaxed">
+                            <div className="inline-block bg-[#E58D28] text-nier-dark font-bold uppercase tracking-widest px-1 mb-1">⚠ 编码器限制（仅记录配置，不参与编码）</div>
+                            {blockLimitRefs.map(ref => (
+                                <div key={ref} className="text-nier-light"><span className="font-bold text-[#E58D28]">[{ref}]</span> {ENCODER_LIMITS[ref]}</div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* P0-2: compact error strip while a block is selected */}
+                    {validationIssues?.errors.length > 0 && (
+                        <div className="border border-[#D94834] bg-[#D94834]/15 p-2 text-[11px] font-bold text-nier-light">
+                            ⛔ {validationIssues.errors.length} 个结构错误 — 点击画布空白处查看清单
+                        </div>
+                    )}
+
                     <div className="flex flex-col gap-1">
                         <label className="text-xs opacity-70 uppercase tracking-widest">字段标签 (Label)</label>
                         <input type="text" value={controlledValue(tempBlockConfig.name ?? tempBlockConfig.label, '')} onChange={(e) => handleTempUpdate({ name: e.target.value })} className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono tracking-wide" />
@@ -289,7 +362,7 @@ export default function BlockPropertiesPanel({
                     </div>
 
                     <div className="flex flex-col gap-1">
-                        <label className="text-xs opacity-70 uppercase tracking-widest">字节序 (Endian · 仅存储, 编码暂按大端)</label>
+                        <label className="text-xs opacity-70 uppercase tracking-widest" title={ENCODER_LIMITS.B6}>字节序 (Endian · 仅存储, 编码暂按大端)</label>
                         <select
                             value={controlledValue(tempBlockConfig.endianness, 'BIG')}
                             onChange={e => handleTempUpdate({ endianness: e.target.value })}
@@ -384,7 +457,10 @@ export default function BlockPropertiesPanel({
                     {/* Repeat Strategy */}
                     {(selectedBlock.op_code === 'ARRAY_GROUP' || selectedBlock.op_code === 'STRUCT') && (
                         <div className="p-3 border border-dashed border-nier-light/50 space-y-3">
-                            <div className="text-[9px] opacity-100 font-bold text-nier-light">重复策略 (REPEAT)</div>
+                            <div className="text-[9px] opacity-100 font-bold text-nier-light flex items-center gap-2">
+                                重复策略 (REPEAT)
+                                <span title={ENCODER_LIMITS.B7} className="bg-[#E58D28] text-nier-dark font-bold px-0.5 cursor-help">⚠B7</span>
+                            </div>
                             <select
                                 value={controlledValue(tempBlockConfig.repeat_type, 'NONE')}
                                 onChange={e => handleTempUpdate({ repeat_type: e.target.value })}

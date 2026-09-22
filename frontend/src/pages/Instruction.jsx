@@ -9,6 +9,7 @@ import BlockPropertiesPanel from '../components/editor/BlockPropertiesPanel';
 import { useInstructionData } from '../hooks/useInstructionData';
 import { useInstructionLanes } from '../hooks/useInstructionLanes';
 import { useSelectionSystem } from '../hooks/useSelectionSystem';
+import { validateInstruction } from '../utils/validateInstruction';
 
 export default function Instruction({ instructions: initialInstructions, setInstructions: setSharedInstructions, onWebUpdate, reloadInstructions }) {
     // 1. Data Hook
@@ -58,6 +59,26 @@ export default function Instruction({ instructions: initialInstructions, setInst
         processedLanes,
         handleNavigateGroup
     } = useInstructionLanes(currentInstruction, activeInstructionId);
+
+    // P0-2: structural validation of the working copy — recomputed on every
+    // local edit (pure). Errors block saveChanges (see useInstructionData)
+    // and are listed in the properties panel with click-to-locate; warnings
+    // surface B2–B8 encoder-limit notices without blocking.
+    const validationIssues = useMemo(
+        () => validateInstruction(currentInstruction),
+        [currentInstruction]
+    );
+
+    // P0-3: guard unsaved edits against refresh/close.
+    useEffect(() => {
+        if (!hasUnsavedChanges) return;
+        const onBeforeUnload = (e) => {
+            e.preventDefault();
+            e.returnValue = '';
+        };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => window.removeEventListener('beforeunload', onBeforeUnload);
+    }, [hasUnsavedChanges]);
 
     // Abort ref-picking whenever the target instruction or selection changes:
     // a stale onUpdateRefs closure would otherwise write refs into another
@@ -420,6 +441,8 @@ export default function Instruction({ instructions: initialInstructions, setInst
                 setPickingMode={setPickingMode}
                 onPickBlock={handlePickBlock}
                 onTempChange={setPreviewBlock}
+                validationIssues={validationIssues}
+                onLocateBlock={(id) => { if (id) setSelectedId(id); }}
             />
         </div>
     );

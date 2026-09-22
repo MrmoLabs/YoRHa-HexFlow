@@ -53,6 +53,19 @@ export default function Protocol({ protocols, setProtocols }) {
         };
     }, []);
 
+    // P0-3: a debounced save inside the 350ms window must not be lost to a
+    // refresh — block unload while one is pending (refs read at event time).
+    useEffect(() => {
+        const onBeforeUnload = (e) => {
+            if (pendingSaveRef.current || saveTimerRef.current) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => window.removeEventListener('beforeunload', onBeforeUnload);
+    }, []);
+
     const showStatus = useCallback((message, durationMs = 0) => {
         if (statusTimerRef.current) {
             clearTimeout(statusTimerRef.current);

@@ -3,6 +3,14 @@ import FieldPickerParam from './paramConfig/FieldPickerParam';
 import KvPairListParam from './paramConfig/KvPairListParam';
 import FormulaParam from './paramConfig/FormulaParam';
 import { toControlledScalar, inferConfigType } from './paramConfig/paramConfigUtils';
+import { getParamKeyLimitRef, ENCODER_LIMITS } from '../../utils/encoderLimits';
+
+// P0-1: amber badge for param keys whose semantics the encoder ignores (B2–B8).
+function ParamLimitBadge({ paramKey, opCode }) {
+    const ref = getParamKeyLimitRef(paramKey, opCode);
+    if (!ref) return null;
+    return <span title={ENCODER_LIMITS[ref]} className="ml-1 inline-block bg-[#E58D28] text-nier-dark font-bold px-0.5 cursor-help">⚠{ref}</span>;
+}
 
 export default function ParamConfigForm({
     blockState,
@@ -64,7 +72,7 @@ export default function ParamConfigForm({
 
             return (
                 <div key={key} className="flex flex-col gap-1">
-                    <label className="text-[10px] opacity-70 uppercase tracking-widest">{key}</label>
+                    <label className="text-[10px] opacity-70 uppercase tracking-widest">{key}<ParamLimitBadge paramKey={key} opCode={blockState.op_code} /></label>
                     <select
                         value={toControlledScalar(selectValue, '')}
                         onChange={(e) => {
@@ -133,6 +141,7 @@ export default function ParamConfigForm({
             <div key={key} className="flex flex-col gap-1">
                 <label className="text-[10px] opacity-70 uppercase tracking-widest">
                     {key === 'max_count' ? 'LOOP COUNT' : key}
+                    <ParamLimitBadge paramKey={key} opCode={blockState.op_code} />
                 </label>
                 <input
                     type={configType === 'number' ? 'number' : 'text'}

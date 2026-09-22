@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
     DndContext,
     closestCenter,
+    pointerWithin,
     KeyboardSensor,
     PointerSensor,
     useSensor,
@@ -287,10 +288,48 @@ export default function Canvas({
 
     const rootLanes = localLanes.filter(l => !l.parentId);
 
+    // Drop targeting (fix: "released but didn't land where I aimed"):
+    // The vanilla closestCenter let LANE CONTAINERS compete globally with
+    // cards — a pointer in a card gap or near a lane edge could resolve to
+    // "lane background" (→ jump to END) or a NEIGHBOR lane (→ accidental
+    // cross-lane splice). Policy: a card under the pointer always wins; empty
+    // space inside a lane resolves to that lane's nearest card; pointing
+    // outside every lane (transiting gaps) stays in the ACTIVE card's lane.
+    const isLaneContainerId = (id) => String(id).startsWith('lane-container-');
+    const laneOwnerIndex = (cardId) => localLanes.findIndex(l => l.items.some(i => i.id === cardId));
+
+    const detectCollision = (raw) => {
+        const { droppables, pointer } = raw;
+        // Keyboard / no pointer: keep the legacy behavior.
+        if (!pointer) return closestCenter(raw);
+
+        const within = pointerWithin(raw);
+        const cardWithin = within.filter(c => !isLaneContainerId(c.id));
+        if (cardWithin.length > 0) return cardWithin;
+
+        // Pointer inside a lane rect but over empty space → nearest card OF THAT LANE.
+        const laneHit = within.find(c => isLaneContainerId(c.id));
+        if (laneHit) {
+            const laneIdx = parseInt(String(laneHit.id).split('-')[2], 10);
+            const cardsInLane = droppables.filter(d => !isLaneContainerId(d.id) && laneOwnerIndex(d.id) === laneIdx);
+            if (cardsInLane.length > 0) return closestCenter({ ...raw, droppables: cardsInLane });
+            return within.filter(c => c.id === laneHit.id); // empty lane → the lane itself (append)
+        }
+
+        // Pointer outside every lane: stay in the ACTIVE card's lane so
+        // transiting between lanes never triggers a cross-lane jump.
+        const activeLaneIdx = activeDragId != null ? laneOwnerIndex(activeDragId) : -1;
+        if (activeLaneIdx !== -1) {
+            const cardsInActiveLane = droppables.filter(d => !isLaneContainerId(d.id) && laneOwnerIndex(d.id) === activeLaneIdx);
+            if (cardsInActiveLane.length > 0) return closestCenter({ ...raw, droppables: cardsInActiveLane });
+        }
+        return closestCenter(raw);
+    };
+
     return (
         <DndContext
             sensors={sensors}
-            collisionDetection={closestCenter}
+            collisionDetection={detectCollision}
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}

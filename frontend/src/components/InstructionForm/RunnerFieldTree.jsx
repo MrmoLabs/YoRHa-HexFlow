@@ -1,6 +1,7 @@
 import React from 'react';
 import { SmartInput } from './SmartInput';
 import { mapChecksumAlgo } from '../../utils/normalizeInstruction';
+import { getParamKeyLimitRef, ENCODER_LIMITS } from '../../utils/encoderLimits';
 
 // Recursive renderer for the dynamic send form's field tree.
 // Extracted verbatim from InstructionRunner.jsx renderFields (logic unchanged).
@@ -165,7 +166,7 @@ export default function RunnerFieldTree({
 
         // A6: surface semantic params (scale factor/offset, counter step/max,
         // checksum algo, ...) the send form would otherwise hide from the operator.
-        const semanticMeta = [
+        const semanticItems = [
             ['factor', 'FACTOR'], ['offset', 'OFFSET'], ['step', 'STEP'], ['max', 'MAX'],
             ['start_val', 'START'], ['bytes', 'BYTES'], ['max_count', 'MAX LOOP'],
             ['algorithm', 'ALGO'], ['algo', 'ALGO']
@@ -174,9 +175,11 @@ export default function RunnerFieldTree({
             const raw = params[k];
             if (raw === undefined || raw === null || raw === '') return acc;
             const shown = (k === 'algorithm' || k === 'algo') ? mapChecksumAlgo(raw) : raw;
-            acc.push(`${label}=${shown}`);
+            // P0-1: attach the encoder-limit ref (B4/B7/B8...) so semantics the
+            // encoder ignores are visibly marked for the operator.
+            acc.push({ text: `${label}=${shown}`, ref: getParamKeyLimitRef(k, field.op_code) });
             return acc;
-        }, []).join(' · ');
+        }, []);
 
         const handleChange = (val) => {
             // FIX: Enum handling for HEX strings
@@ -234,9 +237,19 @@ export default function RunnerFieldTree({
                         suffix={params.unit || (isTimeCumulative ? `${getFieldEpoch(params).getFullYear()}` : '')}
                         placeholder={placeholder}
                     />
-                    {semanticMeta && (
-                        <div className="text-[9px] font-mono text-nier-light/30 ml-40 -mt-0.5 mb-1 uppercase tracking-tighter">
-                            {semanticMeta}
+                    {semanticItems.length > 0 && (
+                        <div className="text-[9px] font-mono text-nier-light/60 ml-40 -mt-0.5 mb-1 uppercase tracking-tighter">
+                            {semanticItems.map((it, i) => (
+                                <React.Fragment key={`${it.text}-${i}`}>
+                                    {i > 0 && ' · '}
+                                    <span
+                                        title={it.ref ? ENCODER_LIMITS[it.ref] : undefined}
+                                        className={it.ref ? 'text-[#E58D28] font-bold cursor-help' : undefined}
+                                    >
+                                        {it.text}{it.ref ? ' ⚠' : ''}
+                                    </span>
+                                </React.Fragment>
+                            ))}
                         </div>
                     )}
                     {params.description && (
