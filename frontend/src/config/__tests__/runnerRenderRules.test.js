@@ -239,32 +239,32 @@ describe('resolveFieldDisplay（显示值解析）', () => {
 });
 
 describe('collectSemanticItems（A6 语义参数标签）', () => {
-    it('factor/offset 输出标签并挂 B4 限制引用', () => {
+    it('factor/offset 输出标签（B4 已解 · E1-3 定标落地，不再挂限制引用）', () => {
         expect(collectSemanticItems(leaf({
             parameter_config: { factor: 2, offset: 100 }
         }))).toEqual([
-            { text: 'FACTOR=2', ref: 'B4' },
-            { text: 'OFFSET=100', ref: 'B4' }
+            { text: 'FACTOR=2', ref: null },
+            { text: 'OFFSET=100', ref: null }
         ]);
     });
 
-    it('COUNTER 的 step/max 挂 B8；非 COUNTER 不挂', () => {
+    it('COUNTER 的 step/max 语义参数（B8 已解 · E1-6 落地，不再挂限制引用）', () => {
         expect(collectSemanticItems(leaf({
             op_code: 'COUNTER_UP',
             parameter_config: { step: 1, max: 10 }
         }))).toEqual([
-            { text: 'STEP=1', ref: 'B8' },
-            { text: 'MAX=10', ref: 'B8' }
+            { text: 'STEP=1', ref: null },
+            { text: 'MAX=10', ref: null }
         ]);
         expect(collectSemanticItems(leaf({
             parameter_config: { step: 1 }
         }))[0].ref).toBeNull();
     });
 
-    it('max_count 挂 B7（任意 op_code）', () => {
+    it('max_count 输出标签（B7 已解 · E1-5 展开落地，不再挂限制引用）', () => {
         expect(collectSemanticItems(leaf({
             parameter_config: { max_count: 3 }
-        }))).toEqual([{ text: 'MAX LOOP=3', ref: 'B7' }]);
+        }))).toEqual([{ text: 'MAX LOOP=3', ref: null }]);
     });
 
     it('checksum algo 归一显示；algorithm 键优先于 algo', () => {

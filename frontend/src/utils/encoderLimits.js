@@ -1,44 +1,38 @@
-// P0-1: Single source of truth for encoder limitations B2–B8.
-// See PROJECT_HANDOVER.md §7. These configs are stored and SHOWN in the UI but
-// NOT consumed by InstructionEncoder.js / orchestrator.py (do-not-edit scope).
-// This module is display-only metadata: annotating limits here must never be
-// interpreted as changing encoding behavior.
+// P0-1: Single source of truth for encoder limitations (historical B2–B8).
+// B2–B8 were ALL resolved by the E1 batch — every semantic below now lives in
+// BOTH encoders with byte-equal tests (改一必改二):
+// - B5 (INT_SIGNED two's complement) → E1-1: InstructionEncoder.js /
+//   orchestrator.encode_int_signed.
+// - B6 (endianness=LITTLE reversal) → E1-2: getFieldBytes wrapper /
+//   orchestrator._reverse_hex_pairs.
+// - B3 (BCD) / B4 (SCALED factor/offset) → E1-3: BCD_CODE / SCALED_DECIMAL
+//   branches + encode_bcd / encode_scaled.
+// - B2 (FLOAT_IEEE float32) → E1-4: FLOAT_IEEE branch + encode_float_ieee
+//   (bits=64 and contradictory types stay out of contract).
+// - B7 (ARRAY_GROUP repeat ×N) → E1-5: encodeInstruction tree emit /
+//   _repeatCount + datahub.to_block resolve + orchestrator._flatten_recursive.
+// - B8 (TIME_ACCUMULATOR / AUTO_COUNTER) → E1-6: TIME_ACCUMULATOR →
+//   floor((now − base_time)/1000) 墙钟秒数、AUTO_COUNTER → (Current+Step)%Max,
+//   in InstructionEncoder.js branches + orchestrator.encode_time_accumulator /
+//   encode_auto_counter; now 可注入（FE opts.now ↔ BE fields_to_blocks(now=…)）。
+// See PROJECT_HANDOVER.md §7. This module stays the SSOT for any FUTURE
+// encoder limitation: an entry + ref-mapping here flows to the panel banner,
+// ⚠ badges and save-time validation. Display-only metadata: annotating limits
+// here must never be interpreted as changing encoding behavior.
 
-export const ENCODER_LIMITS = {
-    B2: 'FLOAT_IEEE 按普通整数编码（编码器浮点分支需 type=float，算子模板从不设置）',
-    B3: 'BCD_CODE 无 BCD 分支（25 → 0x19 而非 0x25）',
-    B4: 'factor/offset 不参与编码，字节按裸整数输出',
-    B5: 'INT_SIGNED 负数按 Math.abs 编码（-1 → 01），非补码',
-    B6: 'endianness=LITTLE 仅存储，编码恒按大端',
-    B7: 'repeat 只展开一次（FIXED×N 只编 1 份）',
-    B8: '计数器 step/max 不自动递增；时间按输入秒数直接编码',
-};
+export const ENCODER_LIMITS = {};
 
 // Block-level limits (op_code / block properties) — drives the panel banner
-// and the validation warnings.
+// and the validation warnings. Empty while every known limit is resolved;
+// future entries go here (e.g. `if (op === 'X') refs.push('B9')`).
 export function getBlockLimitRefs(block) {
     if (!block) return [];
-    const op = String(block.op_code || '').toUpperCase();
-    const refs = [];
-    if (op.includes('FLOAT')) refs.push('B2');
-    if (op.includes('BCD')) refs.push('B3');
-    if (op.includes('SCALED')) refs.push('B4');
-    if (op.includes('INT_SIGNED')) refs.push('B5');
-    if (String(block.endianness || '').toUpperCase() === 'LITTLE') refs.push('B6');
-    if ((op.includes('ARRAY_GROUP') || op.includes('STRUCT'))
-        && block.repeat_type && block.repeat_type !== 'NONE') {
-        refs.push('B7');
-    }
-    if (op.includes('COUNTER') || op.includes('TIME')) refs.push('B8');
-    return refs;
+    return [];
 }
 
 // Param-key level limits (per op_code) — drives the ⚠ badges next to labels
-// in ParamConfigForm / RunnerFieldTree.
+// in ParamConfigForm / RunnerFieldTree. Empty while every known limit is
+// resolved; future entries go here (e.g. `if (key === 'k' && op === 'X') return 'B9'`).
 export function getParamKeyLimitRef(key, opCode) {
-    const op = String(opCode || '').toUpperCase();
-    if (key === 'factor' || key === 'offset') return 'B4';
-    if (key === 'max_count') return 'B7';
-    if ((key === 'step' || key === 'max') && op.includes('COUNTER')) return 'B8';
     return null;
 }

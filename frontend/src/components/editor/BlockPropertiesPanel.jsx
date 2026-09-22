@@ -363,7 +363,7 @@ export default function BlockPropertiesPanel({
                     </div>
 
                     <div className="flex flex-col gap-1">
-                        <label className="text-xs opacity-70 uppercase tracking-widest" title={ENCODER_LIMITS.B6}>字节序 (Endian · 仅存储, 编码暂按大端)</label>
+                        <label className="text-xs opacity-70 uppercase tracking-widest">字节序 (Endian)</label>
                         <select
                             value={controlledValue(tempBlockConfig.endianness, 'BIG')}
                             onChange={e => handleTempUpdate({ endianness: e.target.value })}
@@ -460,7 +460,6 @@ export default function BlockPropertiesPanel({
                         <div className="p-3 border border-dashed border-nier-light/50 space-y-3">
                             <div className="text-[9px] opacity-100 font-bold text-nier-light flex items-center gap-2">
                                 重复策略 (REPEAT)
-                                <span title={ENCODER_LIMITS.B7} className="bg-[#E58D28] text-nier-dark font-bold px-0.5 cursor-help">⚠B7</span>
                             </div>
                             <select
                                 value={controlledValue(tempBlockConfig.repeat_type, 'NONE')}

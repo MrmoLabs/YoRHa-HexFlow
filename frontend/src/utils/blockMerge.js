@@ -98,7 +98,17 @@ export const getTotalBytes = (blocks) => {
         // normalizeInstructionBlocks attaches to every field) is NOT a
         // container — counting it as one recursed into nothing and dropped
         // the whole payload from the displayed total.
-        if (b.children?.length) total += getTotalBytes(b.children);
+        if (b.children?.length) {
+            // E1-5 (B7): a repeating group contributes Σ children × N copies
+            // (FIXED). DYNAMIC counts are runtime-dependent — this page has no
+            // unknown/`+` display mode, so keep ×1 as a lower bound.
+            let reps = 1;
+            if (String(b.repeat_type || '').toUpperCase() === 'FIXED') {
+                const c = b.repeat_count;
+                reps = (typeof c === 'number' && Number.isFinite(c)) ? Math.max(0, Math.floor(c)) : 1;
+            }
+            total += getTotalBytes(b.children) * reps;
+        }
         else total += (b.byte_length || 0);
     });
     return total;

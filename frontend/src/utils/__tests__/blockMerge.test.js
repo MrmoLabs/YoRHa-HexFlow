@@ -152,6 +152,19 @@ describe('getTotalBytes（C5 总长度回归）', () => {
 
         expect(total).toBe(9);
     });
+
+    it('E1-5: repeat 组 — FIXED 按 Σ×N 计入，DYNAMIC 按 ×1 下限', () => {
+        const group = (repeat_type, repeat_count) => ({
+            id: 'g', byte_length: 0, repeat_type, repeat_count,
+            children: [{ id: 'a', byte_length: 2 }, { id: 'b', byte_length: 1 }],
+        });
+        expect(getTotalBytes([group('FIXED', 3)])).toBe(9);   // (2+1)×3
+        expect(getTotalBytes([group('FIXED', 1)])).toBe(3);   // 现状回归
+        expect(getTotalBytes([group('FIXED', 0)])).toBe(0);   // 0 份
+        expect(getTotalBytes([group('FIXED', 'x')])).toBe(3); // 防御 → ×1
+        expect(getTotalBytes([group('DYNAMIC', null)])).toBe(3); // 运行时未知 → ×1 下限
+        expect(getTotalBytes([group('NONE', 1)])).toBe(3);
+    });
 });
 
 describe('buildLanes（边界结构）', () => {

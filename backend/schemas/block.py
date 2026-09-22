@@ -39,6 +39,16 @@ class Block(BaseModel):
     is_container: bool = False
     is_enabled: bool = True
 
+    # E1-2 (B6): BIG (default) | LITTLE — emission byte order for this block's
+    # value bytes; length/checksum handlers always compute on big-endian order.
+    endianness: str = "BIG"
+
+    # E1-5 (B7): resolved repeat expansion count for containers — the container's
+    # children are emitted N times (1 = NONE / single copy). FIXED counts and
+    # DYNAMIC counts (from the referenced field's static value) are resolved in
+    # datahub.to_block; the orchestrator flattens children N times.
+    repeat_count: int = 1
+
 class FrameRequest(BaseModel):
     blocks: List[Block]
 

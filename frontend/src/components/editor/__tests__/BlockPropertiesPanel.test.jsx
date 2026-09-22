@@ -34,7 +34,7 @@ describe('BlockPropertiesPanel validation issues (P0-2)', () => {
                 }}
                 validationIssues={{
                     errors: [{ blockId: 'f9', message: '字段标签重复「X」' }],
-                    warnings: [{ blockId: null, message: 'B2 按位重解释（仅标注）' }],
+                    warnings: [{ blockId: null, message: '模拟提醒（仅渲染）' }],
                 }}
                 onLocateBlock={onLocateBlock}
             />
@@ -55,12 +55,12 @@ describe('BlockPropertiesPanel validation issues (P0-2)', () => {
         // Warnings collapsed by default, expandable
         const toggle = screen.getByText(/展开提醒/);
         fireEvent.click(toggle);
-        expect(screen.getByText(/B2 按位重解释/)).toBeDefined();
+        expect(screen.getByText(/模拟提醒/)).toBeDefined();
     });
 });
 
 describe('BlockPropertiesPanel encoder-limit banner (P0-1)', () => {
-    it('shows the B6 banner for a LITTLE-endian block', () => {
+    it('shows no B6 banner for a LITTLE-endian block (B6 withdrawn, E1-2)', () => {
         const block = {
             id: 'b1',
             name: 'LE_FLAG',
@@ -87,7 +87,7 @@ describe('BlockPropertiesPanel encoder-limit banner (P0-1)', () => {
             />
         );
 
-        expect(screen.getByText(/编码器限制（仅记录配置，不参与编码）/)).toBeDefined();
-        expect(screen.getByText(/\[B6\]/)).toBeDefined();
+        expect(screen.queryByText(/编码器限制（仅记录配置，不参与编码）/)).toBeNull();
+        expect(screen.queryByText(/\[B6\]/)).toBeNull();
     });
 });

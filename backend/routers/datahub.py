@@ -27,7 +27,9 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
-from backend.core.orchestrator import Orchestrator
+import math
+
+from backend.core.orchestrator import Orchestrator, encode_int_signed, encode_bcd, encode_scaled, encode_float_ieee, encode_time_accumulator, encode_auto_counter, _floor_numeric
 from backend.db.database import DB_PATH, SessionLocal, engine
 from backend.db.models import (
     BitField,
@@ -60,7 +62,7 @@ def sanitize_filename(name, fallback="instruction"):
     return safe or fallback
 
 
-def fields_to_blocks(fields):
+def fields_to_blocks(fields, now=None):
     """扁平指令字段列表 → 后端帧块森林（dict 树）。
 
     口径与前端 utils/toFrameBlocks.js 一致：
@@ -72,7 +74,16 @@ def fields_to_blocks(fields):
     既接受 GET /instructions 的扁平列表（parent_id 关联），也接受嵌套
     children 树（扁平副本优先，按 id 去重）。顶层顺序与 children 顺序均按
     sequence → name → id 稳定排序；parent_id 悬空的字段按顶层处理（不丢）。
+
+    E1-6 (B8)：now = 注入的墙钟 epoch ms（测试/回放固定时间），缺省取服务器
+    当前毫秒；TIME_ACCUMULATOR 的 Current−BaseTime 秒数按此计算，与前端
+    encodeInstruction 第 4 参 opts.now 同名同单位，双端注入同值 → byte-equal。
     """
+    now_ms = (
+        float(now)
+        if isinstance(now, (int, float)) and not isinstance(now, bool) and math.isfinite(now)
+        else datetime.now().timestamp() * 1000
+    )
     pool = {}  # key: ("id", …) 或 ("obj", id(f)) → 扁平去重后的字段池
 
     def collect(f):
@@ -96,10 +107,34 @@ def fields_to_blocks(fields):
     for group in by_parent.values():
         group.sort(key=lambda f: (f.get("sequence") or 0, str(f.get("name") or ""), str(f.get("id") or "")))
 
+    by_id = {f["id"]: f for f in pool.values() if f.get("id") is not None}
+
     def to_block(f):
         kids = [to_block(c) for c in by_parent.get(f.get("id"), [])]
         byte_len = int(f.get("byte_len") or 0)
         op = str(f.get("op_code") or "").upper()
+        # E1-5 (B7): repeat 展开次数 resolve（仅组容器有意义；叶子恒 1）：
+        # NONE/缺省/未知类型 → 1；FIXED → repeat_count 须为有限 number（非有限/
+        # bool/缺失 → 1 同前端 typeof 严格防御口径），max(0, floor(n))；DYNAMIC →
+        # ref 字段静态 parameter_config.value（_floor_numeric 同前端解析口径）
+        # max(0, n)，ref 缺失/无值 → 0。与前端 _repeatCount byte-equal，orchestrator
+        # _flatten_recursive 按此 N 展开子树。
+        repeat_n = 1
+        if kids:
+            rt = str(f.get("repeat_type") or "NONE").upper()
+            if rt == "FIXED":
+                rc = f.get("repeat_count")
+                if isinstance(rc, bool) or not isinstance(rc, (int, float)) or not math.isfinite(rc):
+                    repeat_n = 1
+                else:
+                    repeat_n = max(0, math.floor(rc))
+            elif rt == "DYNAMIC":
+                ref = by_id.get(f.get("repeat_ref_id"))
+                if ref is None:
+                    repeat_n = 0
+                else:
+                    ref_cfg = ref.get("parameter_config") or {}
+                    repeat_n = max(0, _floor_numeric(ref_cfg.get("value")))
         if kids:
             btype = "container"
         elif op == "LENGTH_CALC" and byte_len > 0:
@@ -110,6 +145,50 @@ def fields_to_blocks(fields):
             btype = "fixed"
         cfg = f.get("parameter_config") or {}
         hex_value = cfg.get("hex") if isinstance(cfg.get("hex"), str) else None
+        if op == "INT_SIGNED" and byte_len > 0 and not kids:
+            # E1-1(B5): 规范 INT_SIGNED（type 缺省/number）的静态值按两补码出帧，
+            # 与前端 getFieldBytes 的 INT_SIGNED 分支 byte-equal；cfg.hex 对
+            # INT_SIGNED 无效（前端同样忽略）。矛盾配置（type=string/float/hex 等，
+            # 算子模板不会产生）不在契约内，保持既有 zeros 行为。
+            if str(cfg.get("type") or "").lower() in ("", "number"):
+                hex_value = encode_int_signed(cfg.get("value"), byte_len)
+        elif op == "BCD_CODE" and byte_len > 0 and not kids:
+            # E1-3 (B3): 规范类型（type 缺省/number）静态值出 packed BCD 帧，
+            # 与前端 BCD_CODE 分支 byte-equal；矛盾 type 保持既有 zeros 契约外行为。
+            if str(cfg.get("type") or "").lower() in ("", "number"):
+                hex_value = encode_bcd(cfg.get("value"), byte_len)
+        elif op == "SCALED_DECIMAL" and byte_len > 0 and not kids:
+            # E1-3 (B4): 规范类型静态值出定标帧 (value+offset)*factor，
+            # 与前端 SCALED_DECIMAL 定标分支 byte-equal。
+            if str(cfg.get("type") or "").lower() in ("", "number"):
+                hex_value = encode_scaled(
+                    cfg.get("value"), cfg.get("factor"), cfg.get("offset"), byte_len
+                )
+        elif op == "FLOAT_IEEE" and byte_len == 4 and not kids:
+            # E1-4 (B2): bits=32（byte_len=4）规范类型静态值出 float32 大端帧
+            # （恒 4 字节），与前端 FLOAT_IEEE 分支 byte-equal；bits=64 与矛盾
+            # type 不在范围，保持既有 zeros 契约外行为。
+            if str(cfg.get("type") or "").lower() in ("", "number"):
+                hex_value = encode_float_ieee(cfg.get("value"))
+        elif op == "TIME_ACCUMULATOR" and byte_len > 0 and not kids:
+            # E1-6 (B8): 规范类型按墙钟 Current−BaseTime 秒数出帧；now 经
+            # fields_to_blocks(now=… ms) 注入，与前端 opts.now 同值 byte-equal。
+            # base_time 缺失/非法（契约外配置）→ encode 返回 None → 不覆盖
+            # hex_value，保持既有 cfg.hex/zeros 现状（前端同情形回落 value
+            # 路径，两端各自现状锚，同 E1-3/E1-4 先例）。
+            if str(cfg.get("type") or "").lower() in ("", "number"):
+                sem = encode_time_accumulator(cfg.get("base_time"), now_ms, byte_len)
+                if sem is not None:
+                    hex_value = sem
+        elif op == "AUTO_COUNTER" and byte_len > 0 and not kids:
+            # E1-6 (B8): (Current+Step)%Max —— 静态口径 Current = value（非空）
+            # 否则 start_val；与前端 AUTO_COUNTER 分支 byte-equal（运行时
+            # computed/input 仅前端有，BE 静态口径同 DYNAMIC repeat 先例）。
+            if str(cfg.get("type") or "").lower() in ("", "number"):
+                hex_value = encode_auto_counter(
+                    cfg.get("value"), cfg.get("start_val"),
+                    cfg.get("step"), cfg.get("max"), byte_len,
+                )
         return {
             "id": str(f.get("id") or f.get("name") or "field"),
             "type": btype,
@@ -120,6 +199,10 @@ def fields_to_blocks(fields):
             "children": kids,
             "is_container": bool(kids),
             "is_enabled": True,
+            # E1-2 (B6): 透传字段字节序（前端 normalizeInstruction 同款归一）。
+            "endianness": str(f.get("endianness") or "BIG").upper(),
+            # E1-5 (B7): resolved repeat 展开次数（组容器；orchestrator flatten 用）。
+            "repeat_count": repeat_n,
         }
 
     return [to_block(f) for f in by_parent.get(None, [])]

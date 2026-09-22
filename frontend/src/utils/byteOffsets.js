@@ -17,7 +17,8 @@
 // (repeat_ref_id), value-driven sizes (computedValue fallback), or any unknown
 // size — the UI then labels the header VAR (with "~" while still computable);
 // otherwise it labels FIXED. Sizes always mirror the encoder's real output
-// (B7: repeats expand once — display must not lie about emitted bytes).
+// (E1-5: FIXED repeats expand N copies — a DYNAMIC repeat's count only exists
+// at run time, so its group degrades to an unknown size instead of lying).
 
 const bySequence = (a, b) => (a.sequence ?? 0) - (b.sequence ?? 0);
 
@@ -60,16 +61,30 @@ export function computeByteOffsets(instruction) {
         const kids = kidsOf.get(f.id) || [];
         let size;
         if (kids.length > 0 || isGroupOp(f)) {
-            // Group = Σ children (an EMPTY group is a known 0 bytes — it emits nothing,
-            // so it must not poison downstream offsets like seed rows with byte_len=0).
-            let sum = 0;
-            size = 0;
-            for (const k of kids) {
-                const ks = resolveSize(k);
-                if (ks === null) { size = null; break; }
-                sum += ks;
+            if (hasDynamicRepeat(f)) {
+                // E1-5 (B7): DYNAMIC repeat counts resolve at run time — the exact
+                // size (and everything that follows) is unknowable now. Degrade to
+                // unknown: VAR label, "··" offsets, "+" lower-bound total. Showing
+                // one copy would contradict the encoder, which expands N times.
+                size = null;
+            } else {
+                // Group = Σ children × N (FIXED repeat; NONE → 1). An EMPTY group
+                // is a known 0 bytes — it emits nothing, so it must not poison
+                // downstream offsets like seed rows with byte_len=0.
+                let reps = 1;
+                if (String(f.repeat_type || '').toUpperCase() === 'FIXED') {
+                    const c = f.repeat_count;
+                    reps = (typeof c === 'number' && Number.isFinite(c)) ? Math.max(0, Math.floor(c)) : 1;
+                }
+                let sum = 0;
+                size = 0;
+                for (const k of kids) {
+                    const ks = resolveSize(k);
+                    if (ks === null) { size = null; break; }
+                    sum += ks;
+                }
+                if (size !== null) size = sum * reps;
             }
-            if (size !== null) size = sum;
         } else {
             const n = Number(f.byte_len ?? f.byte_length);
             if (Number.isFinite(n) && n > 0) {
@@ -96,7 +111,11 @@ export function computeByteOffsets(instruction) {
             byId.set(f.id, { offset: cursor, size, isGroup });
             if (hasDynamicRepeat(f)) dynamicRepeat = true;
             if (kids.length > 0) {
-                walk(kids); // group children advance the cursor by Σ children
+                const start = cursor;
+                walk(kids); // children of copy #1 advance the cursor by Σ×1
+                // E1-5: land the cursor on the group's true end (Σ×N) — the
+                // children walk only covers the first copy.
+                if (cursor !== null && start !== null && size !== null) cursor = start + size;
             } else if (size !== null && cursor !== null) {
                 cursor += size;
             }
@@ -117,7 +136,8 @@ export function computeByteOffsets(instruction) {
     // Fixed vs variable: a frame is FIXED only when every byte is statically
     // known. DYNAMIC repeat (count dictated by another field), value-driven
     // sizes (computedValue), or any unknown size make it VAR. Note the value
-    // shown is always the encoder-aligned one (B7: repeats expand once).
+    // shown is always the encoder-aligned one (E1-5: FIXED repeats expand ×N;
+    // a DYNAMIC count only exists at run time and degrades to unknown).
     const variable = hasUnknown || dynamicSized || dynamicRepeat;
 
     return { byId, total, exact: !hasUnknown, variable };

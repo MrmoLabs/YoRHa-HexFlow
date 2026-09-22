@@ -119,12 +119,12 @@ describe('validateInstruction', () => {
         expect(errors).toEqual([]);
     });
 
-    it('W: LITTLE endianness warns as B6 without blocking', () => {
+    it('W: LITTLE endianness no longer warns — B6 withdrawn (E1-2)', () => {
         const { errors, warnings } = validateInstruction(inst([
             blk({ endianness: 'LITTLE' }),
         ]));
         expect(errors).toEqual([]);
-        expect(warnings.some(w => w.code === 'B6')).toBe(true);
+        expect(warnings.some(w => w.code === 'B6')).toBe(false);
     });
 
     it('W: duplicate sequence within the same parent warns', () => {
@@ -138,30 +138,43 @@ describe('validateInstruction', () => {
 });
 
 describe('encoderLimits', () => {
-    it('maps block-level ops/properties to B2–B8 refs', () => {
-        expect(getBlockLimitRefs({ op_code: 'FLOAT_IEEE' })).toContain('B2');
-        expect(getBlockLimitRefs({ op_code: 'BCD_CODE' })).toContain('B3');
-        expect(getBlockLimitRefs({ op_code: 'SCALED_DECIMAL' })).toContain('B4');
-        expect(getBlockLimitRefs({ op_code: 'INT_SIGNED' })).toContain('B5');
-        expect(getBlockLimitRefs({ op_code: 'HEX_RAW', endianness: 'LITTLE' })).toContain('B6');
-        expect(getBlockLimitRefs({ op_code: 'ARRAY_GROUP', repeat_type: 'FIXED' })).toContain('B7');
-        expect(getBlockLimitRefs({ op_code: 'AUTO_COUNTER' })).toContain('B8');
+    it('maps block-level ops/properties to refs — B2–B8 全部已解（E1-1..E1-6）', () => {
+        // B2 已解（E1-4）：FLOAT_IEEE float32 双端落地，不再挂限制标注
+        expect(getBlockLimitRefs({ op_code: 'FLOAT_IEEE' })).toEqual([]);
+        // B3/B4 已解（E1-3）：packed BCD 与 (value+offset)*factor 定标双端落地
+        expect(getBlockLimitRefs({ op_code: 'BCD_CODE' })).toEqual([]);
+        expect(getBlockLimitRefs({ op_code: 'SCALED_DECIMAL' })).toEqual([]);
+        // B5 已解（E1-1）：INT_SIGNED 补码双端落地，不再挂限制标注
+        expect(getBlockLimitRefs({ op_code: 'INT_SIGNED' })).toEqual([]);
+        // B6 已解（E1-2）：LITTLE 反转双端落地，不再挂限制标注
+        expect(getBlockLimitRefs({ op_code: 'HEX_RAW', endianness: 'LITTLE' })).toEqual([]);
+        // B7 已解（E1-5）：repeat 组 FIXED/DYNAMIC 真实展开，不再挂限制标注
+        expect(getBlockLimitRefs({ op_code: 'ARRAY_GROUP', repeat_type: 'FIXED' })).toEqual([]);
+        // B8 已解（E1-6）：TIME 墙钟 Current−BaseTime / AUTO_COUNTER
+        // (Current+Step)%Max 双端落地，不再挂限制标注
+        expect(getBlockLimitRefs({ op_code: 'AUTO_COUNTER' })).toEqual([]);
+        expect(getBlockLimitRefs({ op_code: 'TIME_ACCUMULATOR' })).toEqual([]);
         expect(getBlockLimitRefs({ op_code: 'HEX_RAW' })).toEqual([]);
         expect(getBlockLimitRefs(null)).toEqual([]);
     });
 
     it('maps param keys to limit refs per op_code', () => {
-        expect(getParamKeyLimitRef('factor', 'SCALED_DECIMAL')).toBe('B4');
-        expect(getParamKeyLimitRef('offset', 'ANY')).toBe('B4');
-        expect(getParamKeyLimitRef('max_count', 'ARRAY_GROUP')).toBe('B7');
-        expect(getParamKeyLimitRef('step', 'AUTO_COUNTER')).toBe('B8');
+        // B4 已解（E1-3）：定标参与编码，不再挂限制引用
+        expect(getParamKeyLimitRef('factor', 'SCALED_DECIMAL')).toBeNull();
+        expect(getParamKeyLimitRef('offset', 'ANY')).toBeNull();
+        // B7 已解（E1-5）：max_count 语义参数不再挂限制引用
+        expect(getParamKeyLimitRef('max_count', 'ARRAY_GROUP')).toBeNull();
+        // B8 已解（E1-6）：step/max 参与 (Current+Step)%Max，不再挂限制引用
+        expect(getParamKeyLimitRef('step', 'AUTO_COUNTER')).toBeNull();
+        expect(getParamKeyLimitRef('max', 'AUTO_COUNTER')).toBeNull();
         expect(getParamKeyLimitRef('step', 'HEX_RAW')).toBeNull();
         expect(getParamKeyLimitRef('algorithm', 'CHECKSUM_CRC')).toBeNull();
     });
 
-    it('defines text for every ref B2–B8', () => {
+    it('B2–B8 全部撤除（E1-1..E1-6）—— ENCODER_LIMITS 清空', () => {
+        expect(ENCODER_LIMITS).toEqual({});
         ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8'].forEach((ref) => {
-            expect(ENCODER_LIMITS[ref]).toBeTruthy();
+            expect(ENCODER_LIMITS[ref]).toBeUndefined();
         });
     });
 });

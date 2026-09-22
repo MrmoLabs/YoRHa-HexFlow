@@ -121,16 +121,46 @@ describe('computeByteOffsets', () => {
         expect(res.exact).toBe(true);
     });
 
-    it('classifies DYNAMIC repeat as variable while keeping the encoder-aligned total (B7: one copy)', () => {
+    it('E1-5: DYNAMIC repeat degrades to unknown size (runtime count — VAR + lower-bound total)', () => {
         const res = computeByteOffsets(inst([
             { id: 'g', sequence: 0, parent_id: null, repeat_type: 'DYNAMIC', repeat_ref_id: 'len-field' },
             { id: 'g1', byte_len: 2, sequence: 0, parent_id: 'g' },
             { id: 'tail', byte_len: 1, sequence: 1, parent_id: null },
         ]));
         expect(res.variable).toBe(true);
-        expect(res.exact).toBe(true);       // current structure is still computable
-        expect(res.total).toBe(3);          // Σ once — matches what the encoder emits
-        expect(res.byId.get('g').size).toBe(2);
+        expect(res.exact).toBe(false);      // group size unknowable until run time
+        expect(res.total).toBe(1);          // only the known root counts → UI shows "1B+"
+        expect(res.byId.get('g').size).toBeNull();
+        expect(res.byId.get('tail').offset).toBeNull(); // unknown poisons what follows
+    });
+
+    it('E1-5: FIXED repeat expands Σ×N in sizes, offsets and total', () => {
+        const res = computeByteOffsets(inst([
+            { id: 'g', sequence: 0, parent_id: null, repeat_type: 'FIXED', repeat_count: 3 },
+            { id: 'g1', byte_len: 2, sequence: 0, parent_id: 'g' },
+            { id: 'g2', byte_len: 1, sequence: 1, parent_id: 'g' },
+            { id: 'tail', byte_len: 1, sequence: 1, parent_id: null },
+        ]));
+        expect(res.byId.get('g').size).toBe(9);        // (2+1)×3
+        expect(res.byId.get('tail').offset).toBe(9);
+        expect(res.total).toBe(10);
+        expect(res.exact).toBe(true);
+        expect(res.variable).toBe(false);              // statically known → FIXED label
+    });
+
+    it('E1-5: FIXED repeat_count=0 → known 0-byte group; non-number count → ×1 defensive', () => {
+        const zero = computeByteOffsets(inst([
+            { id: 'g', sequence: 0, parent_id: null, repeat_type: 'FIXED', repeat_count: 0 },
+            { id: 'g1', byte_len: 2, sequence: 0, parent_id: 'g' },
+        ]));
+        expect(zero.byId.get('g').size).toBe(0);
+        expect(zero.total).toBe(0);
+        expect(zero.exact).toBe(true);
+        const bad = computeByteOffsets(inst([
+            { id: 'g', sequence: 0, parent_id: null, repeat_type: 'FIXED', repeat_count: 'x' },
+            { id: 'g1', byte_len: 2, sequence: 0, parent_id: 'g' },
+        ]));
+        expect(bad.byId.get('g').size).toBe(2);        // 防御 → ×1
     });
 
     it('classifies value-driven sizes (computedValue fallback) as variable', () => {

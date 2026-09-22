@@ -21,8 +21,8 @@
 
 | 批次 | 内容 | 状态 |
 |---|---|---|
-| M1 | A1 加工页 refs 无 formula 修复 + C1 指令页测试债 + C2 位域后端强校验 | 🔄 实现完成，待人工验证 |
-| M2 | C3 数据中心页一期 + C4 协议页测试收敛 + C5 编排回归 + C6 加工页渲染下沉 + C7 隐式约定收敛 + C8 README 同步 | ✅ |
+| M1 | A1 加工页 refs 无 formula 修复 + C1 指令页测试债 + C2 位域后端强校验 | ✅（0ad7a1c） |
+| M2 | C3 数据中心页一期 + C4 协议页测试收敛 + C5 编排回归 + C6 加工页渲染下沉 + C7 隐式约定收敛 + C8 README 同步 | ✅（47904ef） |
 | E1 | B1 B2–B8 真实编码语义（6 子项，双端编码器解禁） | ⬜ |
 | E2 | B2 传输层 T1→T2→T3→T4→T5（T2 TCP 无依赖先行，T3 串口 pyserial） | ⬜ |
 | E3 | B3 通讯调试页 /terminal 实装（依赖 E2） | ⬜ |
@@ -116,13 +116,130 @@
 每子项流程：字节级设计 → `InstructionEncoder.js` + `orchestrator.py` 双端实现 →
 双端 byte-equal 一致性测试 + 存量回归样本 → 撤对应 UI 标注 → 文档。
 
-- **E1-1** B5 INT_SIGNED 按位宽补码（替换 `Math.abs`）
-- **E1-2** B6 `endianness=LITTLE` 真实字节序反转
-- **E1-3** B3 BCD_CODE 打包 + B4 SCALED factor/offset 定标
-- **E1-4** B2 FLOAT_IEEE（float32）
-- **E1-5** B7 ARRAY_GROUP repeat 展开 N 次 ⚠️ **联动**：`byteOffsets` /
+- **E1-1** ✅ B5 INT_SIGNED 按位宽补码（替换 `Math.abs`）
+- **E1-2** ✅ B6 `endianness=LITTLE` 真实字节序反转
+- **E1-3** ✅ B3 BCD_CODE 打包 + B4 SCALED factor/offset 定标
+- **E1-4** ✅ B2 FLOAT_IEEE（float32）
+- **E1-5** ✅ B7 ARRAY_GROUP repeat 展开 N 次 ⚠️ **联动**：`byteOffsets` /
   编排页 `getTotalBytes` / 指令页 LEN 三处总长口径同步改 + Phase 1 测试更新
-- **E1-6** B8 TIME_ACCUMULATOR / AUTO_COUNTER 语义生效（base_time / step / max）
+- **E1-6** ✅ B8 TIME_ACCUMULATOR / AUTO_COUNTER 语义生效（base_time / step / max）
+
+> **E1-1 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · 待人工验证）**：
+> 字节级设计 = 两补码 mod 2^(8·byteLen) 溢出环绕 + 双端统一解析口径（number
+> 取 floor 非有限→0 / 严格十进制字符串 / 其余含 bool、null、"FF"、"1e3" → 0）。
+> 落点：`InstructionEncoder.getFieldBytes` 新增 INT_SIGNED 分支（BigInt 掩码）、
+> `orchestrator.encode_int_signed` 纯函数、`fields_to_blocks` 规范 INT_SIGNED
+> （type 缺省/number）静态值出补码帧（cfg.hex 忽略同前端，矛盾 type 保持 zeros）。
+> 双端 byte-equal：同一张 24 例向量表钉在 `InstructionEncoder.test.js` 与
+> `test_encode_int_signed.py`（改一必改二）+ 回归样本（INT_UNSIGNED 负数仍走
+> abs、HEX_RAW 骨架不变）。验证：前端 240/240（213+27）、后端 29/29（21+8）、
+> `vite build` EXIT=0、撤 B5 标注（encoderLimits 单一事实源 + 校验引用 + 测试
+> 断言同步）。加工页 hex 输入负数表达 = 直接写补码字节（FF→255→掩码 FF）。
+
+> **E1-2 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · 待人工验证）**：
+> 字节级设计 = 先按 op 语义出大端字节、`endianness=LITTLE` 时对整段字节逆序
+> （字节数不变；单字节与组容器本身不动，子字段逐个经 wrapper 处理）。
+> 落点：前端 `getFieldBytes` 改为 wrapper（内部实现改名 `_encodeFieldBytes`，
+> checksum/refs 调用点走内部方法吃未反转值字节 → 与后端 handler 输入端对称）、
+> 后端 `schemas/block.py` 加 `endianness: str = "BIG"` + `datahub.to_block` 透传
+> （归一大写）+ `orchestrator._reverse_hex_pairs` 在 emit 第 4 步反转（length/
+> checksum handler 第 3 步先在大端值上算完）。双端 byte-equal：同一张 7 例向量表
+> 钉在 `InstructionEncoder.test.js` E1-2 describe 与 `test_encode_little_endian.py`
+> （INT_SIGNED -2→FEFF、HEX_RAW `AA BB`→BBAA、单字节不动、小写容错、BIG/缺省回归；
+> 改一必改二）+ 组容器不整体逆序、refs 不吃反转、checksum LITTLE/BIG 引用同值、
+> `_reverse_hex_pairs` 单元 + endianness 透传测试。撤 B6 标注：encoderLimits
+> （entry + push + header）、validateInstruction.test 三处、属性面板 label、面板
+> banner 测试翻转。验证：前端 251/251（224+27）、后端 34/34（26+8）、
+> `vite build` EXIT=0、校验器改动文件仅 BlockPropertiesPanel 既知旧违规
+> （backdrop-blur-sm / pt-8，非本批引入）。
+
+> **E1-3 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · 待人工验证）**：
+> 字节级设计：① B3 packed BCD —— 与 INT_SIGNED 同款 floor 解析（抽公共
+> `_floor_numeric`）→ abs（负号无 nibble 表达，同通用路径口径）→ 数字逐 nibble
+> 打包，超长截高位保低 2n 位、高位补 0（大端；LITTLE 经 E1-2 wrapper 联动）；
+> ② B4 定标 —— `(value+offset)*factor`，factor/offset 空/缺省/非有限 → 1/0
+> （恒等回归=裸整数路径不变），value 非有限 → 0，结果 `abs(floor)` 定宽
+> mod 2^(8n)；矛盾 type（string/float/hex，算子模板不设置）不参与保持现行为。
+> 落点：`InstructionEncoder.getFieldBytes` 新增 BCD_CODE 分支 + SCALED_DECIMAL
+> 定标块（value 解析后、type 分支前）；`orchestrator.encode_bcd / encode_scaled /
+> _to_number / _finite_or` + `fields_to_blocks` 两 elif（规范 type 静态值出帧）。
+> 双端 byte-equal：BCD 17 例 + SCALED 16 例同表钉在 `InstructionEncoder.test.js`
+> E1-3 describe 与 `test_encode_bcd_scaled.py`（改一必改二）+ 矛盾 type 现状锚、
+> BCD×LITTLE 联动 0025→2500、encodeInstruction 混排、静态值缺省 zeros；byte_len=0
+> 不入向量（FE `byte_len||1` 归一 / BE `>0` 守卫属通用边角非 B3 语义）。
+> 撤 B3/B4 标注：encoderLimits（entries + getBlockLimitRefs + getParamKeyLimitRef
+> factor/offset + header）、validateInstruction.test 三处、runnerRenderRules.test
+> B4 ref→null（ParamConfigForm `if(!ref)` 守卫自动消失）。验证：前端 288/288、
+> 后端 43/43、`vite build` EXIT=0、校验器 5 文件 0 违规。
+
+> **E1-4 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · 待人工验证）**：
+> 字节级设计：`op=FLOAT_IEEE` + `byte_len=4`（bits=32）+ 规范 type（缺省/number）
+> → IEEE 754 float32 大端（网络序）恒 4 字节。解析口径 = number 原样 / 严格
+> 十进制字符串（同 E1-1 正则，拒 `1e3`/`0x`/`FF`）/ bool→1|0 / 其余→0；非有限
+> （NaN/±Infinity）→ 0；有限值经 Float32Array 转换，超 f32 表示范围 →
+> ±Infinity（IEEE 溢出，`struct.pack('>f')` OverflowError → copysign inf 对齐）。
+> **范围外保持现状**：bits=64（byte_len=8）仍走整数路径 / BE zeros（float64 不在
+> E1-4 范围，如需另立）；矛盾 type=float/string/hex 模板不会产生，FE 走既有分支、
+> BE 保持 zeros 契约外（同 E1-1 原则）。落点：`getFieldBytes` FLOAT_IEEE 分支
+> （BCD 分支后）、`orchestrator.encode_float_ieee + _float_number`（`import struct`）、
+> `fields_to_blocks` elif（`byte_len == 4` + 规范 type 静态值出帧）。
+> 双端 byte-equal：22 例向量表钉在 `InstructionEncoder.test.js` E1-4 describe 与
+> `test_encode_float_ieee.py`（改一必改二）+ 静态/输入同口径、缺省值 4 零字节、
+> byte_len≠4 / 矛盾 type×2 现状锚、LITTLE 联动 3F800000→0000803F、
+> encodeInstruction 组装。撤 B2 标注：encoderLimits（entry + FLOAT push + header，
+> 剩 B7/B8）、validateInstruction.test 两处、BlockPropertiesPanel.test mock 文本
+> 去 B2。验证：前端 317/317（288+29）、后端 49/49（43+6）、`vite build` EXIT=0、
+> 校验器 5 文件 0 违规。
+
+> **E1-5 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · 待人工验证 ·
+> ⚠️ 联动三处总长口径）**：
+> 字节级设计（三端统一 N 口径）：NONE/缺省→1；FIXED→`max(0, floor(repeat_count))`
+> （非 number/非有限防御→1，对齐 normalize 归一与 BE isinstance 检查）；
+> DYNAMIC→计数源字段值（computedValues > inputs > 静态 `parameter_config.value`，
+> `_floor_numeric` 同款严格解析）`max(0,n)`，ref 缺失/悬空/无值→0。
+> FE 落点：`encodeInstruction` 改**树状递归 emit**（组级整拷贝循环 → `(ab)×N`
+> 交错，绝不 `(a×N)(b×N)`；byteMap 每份一跨；children 取 `fields` 优先、
+> parent_id 链兜底）+ `_encodeFieldBytes` 组分支（直调/checksum 组 refs 路径）+
+> `_repeatCount`。BE 落点：`Block.repeat_count`（schema）+ `datahub.to_block`
+> resolve（pool 建 `by_id` 查 DYNAMIC ref 静态值）+ `orchestrator
+> ._flatten_recursive` 容器 ×N。checksum refs 口径：叶引用恒 1 份 ↔ BE
+> `first-start→first-end` 范围恰 1 份（byte-equal by design）；组引用走组分支自
+> 展开（BE 范围匹配不到容器 id，契约外）。
+> 联动三处：`byteOffsets`（FIXED 组 size=Σ×N、walk 游标落组真终点；DYNAMIC 组
+> 降级 unknown → VAR/`··`/下限「+」——运行时才知次数，显示不许撒谎）、编排页
+> `blockMerge.getTotalBytes`（FIXED Σ×N；DYNAMIC 无「+」表达 → ×1 下限并注释）、
+> 指令页 LEN（派生自 byteOffsets，自动联动）。撤 B7 标注：encoderLimits（entry +
+> ARRAY_GROUP/STRUCT push + `getParamKeyLimitRef` max_count + header，剩 B8）、
+> validateInstruction.test 两处 + 清单、⚠B7 面板角标、runnerRenderRules B7→null。
+> 验证：前端 335/335（317+18：E1-5 describe 15 + byteOffsets +2 + blockMerge +1）、
+> 后端 53/53（49+4）、`vite build` EXIT=0、校验器 4 过 + 仅 BlockPropertiesPanel
+> 既知旧违规（backdrop-blur-sm/pt-8，非本批引入）。Phase 1 测试更新：byteOffsets
+> DYNAMIC 断言翻转为降级口径 + FIXED×N/×0/防御三用例、blockMerge repeat 组用例。
+
+> **E1-6 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · 待人工验证 ·
+> 🎉 E1 批 B2–B8 全部解除）**：
+> 字节级设计：TIME_ACCUMULATOR → `n = floor((now − base_time)/1000)`，墙钟主导
+> （inputs/value 不参与）；base 缺失/非法（契约外）→ 双端各自现状回落（FE value
+> 路径 / BE zeros 不覆盖）。now 可注入 —— FE `encodeInstruction` 第 4 参
+> `opts.now`（缺省 Date.now()）↔ BE `fields_to_blocks(now=ms)`（缺省服务器墙
+> 钟），双端注入同值 → byte-equal；base 解析 FE `Date.parse` ↔ BE `_iso_ms`
+> （fromisoformat，尾 Z→+00:00，naive 按本地时区，对齐 JS 本地语义）。
+> AUTO_COUNTER → `n = (Current + Step) % Max`（算子描述原样落地）：Current =
+> computed > input > 静态 value（非空）> start_val，`_floor_numeric` 同款解析；
+> step 缺省/非法 → 0；max 缺省/非法/≤0 → 不回绕；回绕双重取模 `((n%max)+max)%max`
+> 消平 JS/Python 负余数差异；结果 abs(floor) mod 2^(8n)（无回绕负值 → abs 同
+> 通用路径口径）。跨帧自动递增状态机不在编码器（纯函数），由调用方每帧推进
+> value。落点：FE TIME/AUTO 两块（SCALED 块后、字符串分支前，规范 type 门控）
+> + now 参数贯穿（`getFieldBytes`/`_encodeFieldBytes`/emitNode 末参）；BE
+> `orchestrator.encode_time_accumulator`/`encode_auto_counter` + `_iso_ms`
+> （datetime import）+ `datahub.to_block` 两 elif + `fields_to_blocks(now=)`。
+> 编排页泳道 `useInstructionLanes` 既有 now−base/start_val 显示预览与新口径
+> 天然一致，不动。撤 B8：**encoderLimits `ENCODER_LIMITS` 清空（B2–B8 全撤，
+> 模块保留为未来限制 SSOT）**、validateInstruction.test 三处 + 清单改
+> `toEqual({})`、runnerRenderRules.test STEP/MAX ref→null（⚠角标/横幅随之
+> 消失）。验证：前端 341/341（335+6：E1-6 describe 6 用例）、后端 59/59
+> （53+6：TIME 类 5 + AUTO 11 向量）、`vite build` EXIT=0、校验器 4 过 + 仅
+> BlockPropertiesPanel 既知旧违规（backdrop-blur-sm/pt-8，非本批引入）。
 
 ## 5. E2 明细（传输层）
 
