@@ -8,6 +8,7 @@ export default function InstructionListSidebar({
     onSearch, // Optional specific search handler if separate from set
     onSelect, // (id) => void
     onAdd, // () => void | null (null hides the button)
+    onDuplicate, // (id) => void | null (null hides the button) — P2-1 复制指令
     onDelete, // (e, id) => void | null (null hides the button)
     hasUnsavedChanges
 }) {
@@ -41,6 +42,18 @@ export default function InstructionListSidebar({
                         <div className="truncate text-xs flex-1">{inst.name || inst.label}</div>
                         <div className="flex items-center gap-2 shrink-0">
                             {inst.id === activeInstructionId && hasUnsavedChanges && <span className="text-[9px] text-yellow-500">*</span>}
+                            {onDuplicate && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation(); // Don't also select the row
+                                        onDuplicate(inst.id);
+                                    }}
+                                    title="复制指令 (DUPLICATE)"
+                                    className={`hidden group-hover:block text-[9px] font-bold tracking-widest leading-none px-1 transition-colors ${inst.id === activeInstructionId ? 'text-nier-dark/70 hover:text-nier-dark' : 'text-nier-light/70 hover:text-nier-light'}`}
+                                >
+                                    副本
+                                </button>
+                            )}
                             {onDelete && (
                                 <button
                                     onClick={(e) => {

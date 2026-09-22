@@ -11,6 +11,7 @@ import { useInstructionLanes } from '../hooks/useInstructionLanes';
 import { useSelectionSystem } from '../hooks/useSelectionSystem';
 import { validateInstruction } from '../utils/validateInstruction';
 import { computeByteOffsets } from '../utils/byteOffsets';
+import { duplicateBlockInInstruction } from '../utils/duplicateInstruction';
 
 export default function Instruction({ instructions: initialInstructions, setInstructions: setSharedInstructions, onWebUpdate, reloadInstructions }) {
     // 1. Data Hook
@@ -28,6 +29,7 @@ export default function Instruction({ instructions: initialInstructions, setInst
         loadOperatorTemplates,
         updateLocalInstruction,
         addInstruction,
+        duplicateInstruction,
         deleteInstruction,
         saveChanges,
         revertChanges,
@@ -339,6 +341,17 @@ export default function Instruction({ instructions: initialInstructions, setInst
         // But to minimize friction, I will NOT auto-save here, just mark unsaved.
     }
 
+    // P2-1 复制块: deep-copy the selected block (plus subtree) right after
+    // itself; refs inside the copy keep pointing at the originals (documented),
+    // the copy gets `_N` names and is selected for immediate editing.
+    const handleDuplicateBlock = (id) => {
+        if (!currentInstruction) return;
+        const result = duplicateBlockInInstruction(currentInstruction, id);
+        if (!result) return;
+        updateLocalInstruction({ ...currentInstruction, fields: result.fields });
+        setSelectedId(result.newBlockId);
+    };
+
     const handleCanvasClick = (e) => {
         if (pickingMode.isActive) return;
         if (e.target === e.currentTarget || e.target.classList.contains('canvas-bg')) {
@@ -384,6 +397,7 @@ export default function Instruction({ instructions: initialInstructions, setInst
                 onSearch={null}
                 onSelect={handleSelectInstWrapper}
                 onAdd={() => addInstruction(openConfirm)}
+                onDuplicate={(id) => duplicateInstruction(id, openConfirm)}
                 onDelete={(e, id) => deleteInstruction(id, openConfirm)}
                 hasUnsavedChanges={hasUnsavedChanges}
             />
@@ -457,6 +471,7 @@ export default function Instruction({ instructions: initialInstructions, setInst
                 onSaveInstruction={() => saveChanges(openConfirm)}
                 onDeleteInstruction={(e, id) => deleteInstruction(id, openConfirm)}
                 onDeleteBlock={promptDeleteBlock}
+                onDuplicateBlock={handleDuplicateBlock}
                 onSaveBlock={handleSaveBlock}
                 openConfirm={openConfirm}
                 onOpenDatePicker={(val, cb) => setDatePickerState({ isOpen: true, value: val, onConfirmCallback: cb })}

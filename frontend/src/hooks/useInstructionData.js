@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../api';
 import { normalizeFieldPayload, normalizeInstructionPayload } from '../utils/normalizeInstruction';
 import { validateInstruction } from '../utils/validateInstruction';
+import { buildDuplicateInstructionPayload } from '../utils/duplicateInstruction';
 
 // Normalization helpers moved to utils/normalizeInstruction.js (logic unchanged);
 // re-exported here so existing consumers keep working.
@@ -226,6 +227,40 @@ export function useInstructionData(options = {}) {
         }
     };
 
+    // P2-1: duplicate an existing instruction as a brand-new one — fresh
+    // field ids + self-contained refs (backend mints the instruction id and
+    // enforces unique name/code, both derived with escalating suffixes here).
+    const duplicateInstruction = async (sourceId, openConfirmCallback) => {
+        const doDuplicate = async () => {
+            const source = instructionsRef.current.find(i => i.id === sourceId);
+            if (!source) {
+                showStatus('复制失败：源指令不存在');
+                return;
+            }
+            try {
+                const payload = buildDuplicateInstructionPayload(source, instructionsRef.current);
+                const created = await api.createInstruction(payload);
+                if (!isMountedRef.current) return;
+                setInstructionsState(prev => [...prev, created]);
+                setActiveInstructionId(created.id);
+                setHasUnsavedChanges(false);
+                showStatus('已复制指令', 1000);
+            } catch (e) {
+                if (e.response && e.response.status === 400) {
+                    showStatus(e.response.data.detail);
+                } else {
+                    showStatus(`复制指令失败：${e?.response?.data?.detail || e?.message || '未知错误'}`);
+                }
+            }
+        };
+
+        if (hasUnsavedChanges && openConfirmCallback) {
+            return openConfirmCallback("检测到未保存的更改。\n是否覆盖？", doDuplicate);
+        } else {
+            return doDuplicate();
+        }
+    };
+
     const deleteInstruction = async (id, openConfirmCallback) => {
         const doDelete = async () => {
             try {
@@ -316,6 +351,7 @@ export function useInstructionData(options = {}) {
         loadOperatorTemplates,
         updateLocalInstruction,
         addInstruction,
+        duplicateInstruction,
         deleteInstruction,
         saveChanges,
         revertChanges

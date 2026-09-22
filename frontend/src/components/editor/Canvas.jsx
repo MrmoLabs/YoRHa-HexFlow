@@ -64,6 +64,82 @@ export default function Canvas({
     const canvasRef = useRef(null);
     const contentRef = useRef(null);
 
+    // P2-feedback (v2): long-press the LEFT button on EMPTY space and drag to
+    // pan (mouse only). Start area = anywhere on the canvas EXCEPT cards (dnd)
+    // and controls — most "blank-looking" pixels belong to lane / wrapper
+    // elements, so requiring the bare root as target made the gesture feel
+    // dead. Once movement crosses the 3px threshold the pointer stream is
+    // captured by the canvas (the drag never dies crossing cards/overlays);
+    // the content wrapper carries a min scroll slack so short/wide content
+    // still has BOTH axes to pan into (no more dead vertical axis). The
+    // release click is swallowed in onClickCapture so panning never
+    // deselects or re-focuses a lane (lane stopPropagation can't bypass it).
+    const panRef = useRef(null);
+    const suppressClickRef = useRef(false);
+
+    useEffect(() => {
+        const finishPan = (suppressClick) => {
+            const pan = panRef.current;
+            if (!pan) return;
+            if (suppressClick && pan.moved) suppressClickRef.current = true;
+            try {
+                if (canvasRef.current?.hasPointerCapture?.(pan.pointerId)) {
+                    canvasRef.current.releasePointerCapture(pan.pointerId);
+                }
+            } catch (_) { /* capture already released */ }
+            panRef.current = null;
+            canvasRef.current?.classList.remove('cursor-grabbing');
+        };
+
+        const handlePanMove = (e) => {
+            const pan = panRef.current;
+            if (!pan || e.pointerId !== pan.pointerId) return;
+            if (e.buttons === 0) { finishPan(false); return; } // released outside the window
+            const dx = e.clientX - pan.startX;
+            const dy = e.clientY - pan.startY;
+            if (!pan.moved) {
+                if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return; // still a click candidate
+                pan.moved = true;
+                canvasRef.current?.classList.add('cursor-grabbing');
+                try { canvasRef.current?.setPointerCapture?.(pan.pointerId); } catch (_) { /* ok */ }
+            }
+            canvasRef.current.scrollLeft = pan.startScrollLeft - dx;
+            canvasRef.current.scrollTop = pan.startScrollTop - dy;
+        };
+        const handlePanUp = (e) => {
+            if (panRef.current && e.pointerId === panRef.current.pointerId) finishPan(true);
+        };
+        const handlePanCancel = (e) => {
+            if (panRef.current && e.pointerId === panRef.current.pointerId) finishPan(false);
+        };
+        window.addEventListener('pointermove', handlePanMove);
+        window.addEventListener('pointerup', handlePanUp);
+        window.addEventListener('pointercancel', handlePanCancel);
+        return () => {
+            window.removeEventListener('pointermove', handlePanMove);
+            window.removeEventListener('pointerup', handlePanUp);
+            window.removeEventListener('pointercancel', handlePanCancel);
+        };
+    }, []);
+
+    const handlePanPointerDown = (e) => {
+        if (e.pointerType !== 'mouse' || e.button !== 0) return;
+        const t = e.target;
+        if (!canvasRef.current || !canvasRef.current.contains(t)) return;
+        // cards keep dnd; controls keep their clicks
+        if (t.closest && t.closest('button, a, input, select, textarea, [id^="block-"]')) return;
+        suppressClickRef.current = false; // fresh gesture — any stale flag is void
+        e.preventDefault(); // no text selection while dragging
+        panRef.current = {
+            pointerId: e.pointerId,
+            startX: e.clientX,
+            startY: e.clientY,
+            startScrollLeft: canvasRef.current.scrollLeft,
+            startScrollTop: canvasRef.current.scrollTop,
+            moved: false,
+        };
+    };
+
     // useCanvasConnections Hook (Replaces lengthy useEffect)
     const { connectionPaths, hierarchyLines } = useCanvasConnections(lanes, selectedId, pickingMode, contentRef);
     // Full-content signature: localLanes must re-sync on ANY lanes change
@@ -338,7 +414,18 @@ export default function Canvas({
         >
             <div
                 ref={canvasRef}
-                className="w-full h-full overflow-auto relative canvas-root bg-transparent"
+                className="w-full h-full overflow-auto relative canvas-root bg-transparent cursor-grab"
+                onPointerDown={handlePanPointerDown}
+                onClickCapture={(e) => {
+                    // A pan just ended → swallow its release click entirely.
+                    // Capture runs before lane/card handlers, and stopping
+                    // propagation here also skips this element's own deselect.
+                    if (suppressClickRef.current) {
+                        suppressClickRef.current = false;
+                        e.stopPropagation();
+                        e.preventDefault();
+                    }
+                }}
                 onClick={(e) => {
                     // Background click reset/cancel
                     // We rely on child elements (Blocks/Lanes) calling e.stopPropagation()
@@ -352,7 +439,7 @@ export default function Canvas({
                 {/* Scrollable Content Wrapper */}
                 <div
                     ref={contentRef}
-                    className="min-w-fit min-h-fit p-10 relative flex flex-col items-start"
+                    className="min-w-[max(fit-content,calc(100%_+_160px))] min-h-[max(fit-content,calc(100%_+_160px))] p-10 relative flex flex-col items-start"
                 >
                     {/* SVG OVERLAY */}
                     <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-0" style={{ overflow: 'visible' }}>

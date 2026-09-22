@@ -16,6 +16,7 @@ export default function BlockPropertiesPanel({
     onSaveInstruction, // () => void
     onDeleteInstruction, // (e, id) => void
     onDeleteBlock, // (id) => void
+    onDuplicateBlock, // (id) => void — P2-1 复制块（深拷贝插入源块之后）
     onSaveBlock, // (updatedBlock) => Promise<void> (Handles Auto-Save)
     openConfirm, // (msg, action) => void
     onOpenDatePicker, // (key, val) => void
@@ -499,6 +500,11 @@ export default function BlockPropertiesPanel({
                         <button onClick={handleApply} className="w-full bg-nier-light/20 border border-nier-light text-nier-light hover:bg-nier-light hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors font-bold">
                             应用配置 (APPLY)
                         </button>
+                        {onDuplicateBlock && (
+                            <button onClick={() => onDuplicateBlock(selectedBlock.id)} className="w-full bg-nier-light/10 border border-nier-light/70 text-nier-light hover:bg-nier-light hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors">
+                                复制块 (DUPLICATE)
+                            </button>
+                        )}
                         <button onClick={() => onDeleteBlock(selectedBlock.id)} className="w-full border border-red-500/50 text-red-500 hover:bg-red-500 hover:text-white py-2 px-4 uppercase text-xs tracking-widest transition-colors">
                             删除 (DELETE)
                         </button>
