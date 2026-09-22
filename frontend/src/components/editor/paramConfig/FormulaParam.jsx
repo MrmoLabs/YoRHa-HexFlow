@@ -1,4 +1,5 @@
 import React from 'react';
+import { synthesizeFormula } from '../../../utils/synthesizeFormula';
 
 // formula parameter editor (linked-field quick actions + auto ref resolve).
 // Extracted verbatim from ParamConfigForm.jsx (logic unchanged).
@@ -15,6 +16,10 @@ export default function FormulaParam({
         const f = instructionFields?.find(b => b.id === id);
         return f ? (f.name || f.label) : null;
     }).filter(Boolean);
+
+    // A1-b: refs → formula 合成（全部可解析才非 null；镜像指令页 Σ 口径）
+    const synthesized = synthesizeFormula(refs, instructionFields);
+    const currentFormula = String(val || '').trim();
 
     return (
         <div className="flex flex-col gap-2">
@@ -45,6 +50,18 @@ export default function FormulaParam({
                         className="text-[9px] bg-orange-400 text-black font-bold px-1.5 py-0.5 hover:opacity-80 transition-opacity uppercase"
                     >
                         ∑ SUM ALL
+                    </button>
+                )}
+                {refs.length > 0 && (
+                    <button
+                        disabled={!synthesized || synthesized === currentFormula}
+                        title={!synthesized
+                            ? '存在悬空引用或引用字段无名称，无法合成公式（先修复引用）'
+                            : synthesized === currentFormula ? '公式已与引用一致' : `写入公式：${synthesized}`}
+                        onClick={() => synthesized && onUpdateParam(paramKey, synthesized)}
+                        className="text-[9px] bg-nier-light/10 border border-nier-light/30 px-1.5 py-0.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed enabled:hover:bg-nier-light enabled:hover:text-nier-dark"
+                    >
+                        用 refs 合成公式
                     </button>
                 )}
                 {linkedFields.length === 0 && (

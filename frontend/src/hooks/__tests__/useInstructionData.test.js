@@ -203,4 +203,84 @@ describe('useInstructionData', () => {
         expect(result.current.instructions).toEqual(mockInstructions);
         expect(result.current.activeInstructionId).toBe('inst-1');
     });
+
+    // C1-b: P4-2 saveError 路径 — PUT 失败横幅与 P0-2 校验拦截的分界。
+    describe('saveChanges — P4-2 saveError 路径', () => {
+        const load = async () => {
+            const { result } = renderHook(() => useInstructionData());
+            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            return result;
+        };
+
+        it('PUT 网络失败（无 response）→「网络/服务错误」+ 脏态保留', async () => {
+            const result = await load();
+            act(() => result.current.updateLocalInstruction({ ...mockInstructions[0], name: 'Dirty' }));
+            api.updateInstruction.mockRejectedValueOnce(new Error('Network Error'));
+
+            const openConfirm = vi.fn();
+            await act(async () => { await result.current.saveChanges(openConfirm); });
+
+            expect(result.current.saveError).toContain('网络/服务错误');
+            expect(result.current.saveError).toContain('Network Error');
+            expect(result.current.hasUnsavedChanges).toBe(true); // 不静默回滚
+            expect(result.current.statusMsg).toContain('保存失败');
+            expect(openConfirm).not.toHaveBeenCalled(); // 仅 400/422 弹确认
+        });
+
+        it('PUT 400 →「服务端拒绝（400）」+ detail + 弹确认', async () => {
+            const result = await load();
+            api.updateInstruction.mockRejectedValueOnce({
+                response: { status: 400, data: { detail: '指令名称或代号必须唯一' } },
+            });
+
+            const openConfirm = vi.fn();
+            await act(async () => { await result.current.saveChanges(openConfirm); });
+
+            expect(result.current.saveError).toContain('服务端拒绝（400）');
+            expect(result.current.saveError).toContain('指令名称或代号必须唯一');
+            expect(openConfirm).toHaveBeenCalledWith(
+                expect.stringContaining('保存失败'),
+                expect.any(Function)
+            );
+        });
+
+        it('上次失败后保存成功 → saveError 清空 + 脏态清除', async () => {
+            const result = await load();
+            api.updateInstruction.mockRejectedValueOnce(new Error('boom'));
+            await act(async () => { await result.current.saveChanges(vi.fn()); });
+            expect(result.current.saveError).not.toBe('');
+
+            api.updateInstruction.mockResolvedValueOnce({});
+            await act(async () => { await result.current.saveChanges(vi.fn()); });
+
+            expect(result.current.saveError).toBe('');
+            expect(result.current.hasUnsavedChanges).toBe(false);
+        });
+
+        it('P0-2 结构校验拦截 → 不设置 saveError、不发 PUT', async () => {
+            const result = await load();
+            // 悬空引用字段（REF_DANGLING 结构错误，参照 validateInstruction E2）
+            act(() => {
+                result.current.updateLocalInstruction({
+                    ...mockInstructions[0],
+                    fields: [{
+                        id: 'f-bad', parent_id: null, sequence: 0,
+                        name: 'BadLen', op_code: 'LENGTH_CALC', byte_len: 1,
+                        parameter_config: { refs: ['ghost-field'] },
+                    }],
+                });
+            });
+
+            const openConfirm = vi.fn();
+            await act(async () => { await result.current.saveChanges(openConfirm); });
+
+            expect(result.current.saveError).toBe(''); // 校验失败 ≠ 网络失败
+            expect(api.updateInstruction).not.toHaveBeenCalled();
+            expect(result.current.statusMsg).toContain('保存被阻止');
+            expect(openConfirm).toHaveBeenCalledWith(
+                expect.stringContaining('结构错误'),
+                expect.any(Function)
+            );
+        });
+    });
 });

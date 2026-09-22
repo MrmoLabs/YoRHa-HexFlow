@@ -85,4 +85,21 @@ describe('Block (P1 offset ruler + smart width)', () => {
         // content floor for `1B @07` (6ch × 5.4 + 20 ≈ 53) stays under the 60px floor
         expect(cardOf(oneByte.container).style.width).toBe('60px');
     });
+
+    it('long names render single-line complete: label width floor overrides the byte width', () => {
+        const { container } = renderBlock({
+            name: '长度计算_原始数据块副本',
+            op_code: 'HEX_RAW',
+            byte_len: 1,
+            offsetMeta: { offset: 0, size: 1 },
+        });
+
+        const label = container.querySelector('#block-b1 span');
+        expect(label.className).toContain('whitespace-nowrap'); // 不换行
+        expect(label.parentElement.className).not.toContain('text-ellipsis'); // 不截断
+
+        // 11 CJK + `_`: ceil(11×11.5 + 8 + 6) = 141 → +20 = 161px ≥ 150，
+        // 宽度地板被标签撑开，覆盖单行完整显示（byte_len=1 本为 60px）。
+        expect(parseInt(cardOf(container).style.width, 10)).toBeGreaterThanOrEqual(150);
+    });
 });

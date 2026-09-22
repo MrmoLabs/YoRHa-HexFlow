@@ -54,6 +54,33 @@ def save_field_flat(db: Session, field_data: InstructionFieldSchema, instruction
         ))
 
 
+# C2: 保存时位域强校验 — 镜像前端 P0-2 的 BIT_OVERLAP / BIT_OVERFLOW 口径，
+# 直连 API 绕过前端也不允许入库重叠/超容量位域。POST/PUT 落库前调用。
+def _validate_bitfields(fields):
+    if not fields:
+        return
+    for f in fields:
+        if f.op_code != "BITFIELD" or not f.bits:
+            continue
+        label = f.name or "UNNAMED"
+        prev_end = -1
+        for b in sorted(f.bits, key=lambda x: (x.start_bit or 0)):
+            start = b.start_bit or 0
+            length = max(1, b.bit_len or 1)
+            if start < prev_end:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"「{label}」位域重叠（{b.bit_name} 起始 {start} < 上一块结束 {prev_end}）",
+                )
+            prev_end = max(prev_end, start + length)
+        total_bits = sum(max(1, b.bit_len or 1) for b in f.bits)
+        if f.byte_len and f.byte_len > 0 and total_bits > f.byte_len * 8:
+            raise HTTPException(
+                status_code=400,
+                detail=f"「{label}」位域超出容量（{f.byte_len}B = {f.byte_len * 8} bits，Σ{total_bits} bits）",
+            )
+
+
 def serialize_instruction(db_inst: Instruction) -> InstructionResponse:
     sorted_fields = sorted(
         db_inst.fields,
@@ -126,6 +153,9 @@ def create_instruction(inst: InstructionCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="指令名称或代号必须唯一")
 
+    # C2: 位域强校验 — 重叠/超容量在落库前拒绝（POST）
+    _validate_bitfields(inst.fields)
+
     # 2. Create Instruction
     new_inst = Instruction(
         id=i_id,
@@ -161,6 +191,9 @@ def update_instruction(id: str, updates: InstructionUpdate, db: Session = Depend
     ).first()
     if existing:
         raise HTTPException(status_code=400, detail="指令名称或代号必须唯一")
+
+    # C2: 位域强校验 — 必须在任何写入发生前拒绝（PUT 全量替换前）
+    _validate_bitfields(updates.fields)
 
     # Update Metadata
     db_inst.device_code = updates.device_code

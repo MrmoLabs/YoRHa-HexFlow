@@ -39,9 +39,18 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
         ? (offsetMeta && typeof offsetMeta.size === 'number' ? offsetMeta.size : 0)
         : length;
     const footerText = [footerBytes, offsetStr].filter(Boolean).join(' ');
-    const contentMin = Math.ceil(footerText.length * 5.4) // 9px monospace ≈ 5.4px/char
-        + (isGroupActive ? 26 : 0) // OPEN marker + gap
-        + 20;                      // card padding + safety margin
+    // Label floor: 名称必须单行完整显示（不截断、不换行）→ 卡片宽度必须容纳
+    // 标签。10px + tracking-widest ≈ CJK 11.5px / latin 8px 每字符（含估算安全
+    // 量）；组卡另加 `::` 指示位。header 与 footer 分属两行 → 取较大值（非求和），
+    // 短名称不触发（字节驱动宽度语义与 60px 地板保持不变）。
+    const labelPx = Math.ceil(
+        [...displayLabel].reduce((w, ch) => w + (ch.charCodeAt(0) > 0x2e7f ? 11.5 : 8), 0)
+        + (op_code === 'ARRAY_GROUP' ? 18 : 0) // `::` + gap-1
+        + 6                                     // estimate safety margin
+    );
+    const footerNeed = Math.ceil(footerText.length * 5.4) // 9px monospace ≈ 5.4px/char
+        + (isGroupActive ? 26 : 0);            // OPEN marker + gap
+    const contentMin = Math.max(footerNeed, labelPx) + 20; // card padding + safety margin
 
     const style = {
         transform: CSS.Transform.toString(transform),
@@ -153,16 +162,17 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
         >
             {/* Logic Field Indicators */}
             {isPickRef && (
-                <div className="absolute -top-2 -right-2 bg-yellow-400 text-black text-[9px] font-bold px-1 rounded-sm shadow-sm z-50">
+                <div className="absolute -top-2 -right-2 bg-yellow-400 text-black text-[9px] font-bold px-1 z-50">
                     REF
                 </div>
             )}
 
-            {/* Header/Label */}
-            <div className="text-[10px] tracking-widest uppercase border-b border-current pb-1 mb-1 whitespace-nowrap overflow-hidden text-ellipsis flex justify-between">
-                <span>{displayLabel}</span>
+            {/* Header/Label — 单行完整显示（不截断、不换行）：超长名称由 P1
+                content floor 的 labelPx 把卡片宽度撑到容纳标签。 */}
+            <div className="text-[10px] tracking-widest uppercase border-b border-current pb-1 mb-1 flex justify-between gap-1">
+                <span className="whitespace-nowrap" title={displayLabel}>{displayLabel}</span>
                 {/* Visual indicator for Group */}
-                {op_code === 'ARRAY_GROUP' && <span className="opacity-50">::</span>}
+                {op_code === 'ARRAY_GROUP' && <span className="opacity-50 shrink-0">::</span>}
             </div>
 
             {/* Byte Indicator centered */}

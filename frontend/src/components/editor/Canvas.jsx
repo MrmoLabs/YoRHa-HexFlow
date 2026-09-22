@@ -18,6 +18,7 @@ import {
 import Block from './Block';
 import { useCanvasConnections } from '../../hooks/useCanvasConnections';
 import { computeFinalPlacement } from '../../utils/computePlacement';
+import { computeInsertionSide } from '../../utils/computeInsertionSide';
 
 // Lane Component to handle Droppable logic cleanly
 function LaneContainer({ lane, index, children, isActiveLane, onNavigateGroup, onSetFocusedLane }) {
@@ -211,9 +212,9 @@ export default function Canvas({
                 const er = el.getBoundingClientRect();
                 const cr = origin.getBoundingClientRect();
                 const overLane = localLanes.find(l => l.items.some(i => i.id === over.id));
-                const aIdx = overLane ? overLane.items.findIndex(i => i.id === active.id) : -1;
-                const oIdx = overLane ? overLane.items.findIndex(i => i.id === over.id) : -1;
-                const side = (aIdx !== -1 && oIdx !== -1 && aIdx < oIdx) ? 'right' : 'left';
+                // C1-c: 侧别推导抽为纯函数（computeInsertionSide，单测覆盖）；
+                // self-over 已在外层清除，?? 'left' 仅为几何兜底。
+                const side = computeInsertionSide(overLane ? overLane.items : null, active.id, over.id) ?? 'left';
                 const left = Math.round((side === 'right' ? er.right : er.left) - cr.left);
                 const top = Math.round(er.top - cr.top);
                 const height = Math.round(er.height);

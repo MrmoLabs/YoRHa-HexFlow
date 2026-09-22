@@ -12,6 +12,7 @@ import { useSelectionSystem } from '../hooks/useSelectionSystem';
 import { validateInstruction } from '../utils/validateInstruction';
 import { computeByteOffsets } from '../utils/byteOffsets';
 import { duplicateBlockInInstruction } from '../utils/duplicateInstruction';
+import { moveField } from '../utils/moveField';
 import { analyzeImport } from '../utils/importExport';
 import InstructionTable from '../components/editor/InstructionTable';
 import { api } from '../api';
@@ -585,17 +586,12 @@ export default function Instruction({ instructions: initialInstructions, setInst
                     lanes={displayLanes}
                     offsets={byteOffsets.byId}
                     onMoveItem={(itemId, newParentId, newIndex) => {
-                        const allFields = [...currentInstruction.fields];
-                        const itemIndex = allFields.findIndex(f => f.id === itemId);
-                        if (itemIndex === -1) return;
-                        const item = { ...allFields[itemIndex] };
-                        allFields.splice(itemIndex, 1);
-                        const siblings = allFields.filter(f => (f.parent_id || null) === newParentId).sort((a, b) => a.sequence - b.sequence);
-                        siblings.splice(newIndex, 0, item);
-                        const updatedSiblings = siblings.map((sib, idx) => ({ ...sib, parent_id: newParentId, sequence: idx }));
-                        const finalFields = allFields.filter(f => (f.parent_id || null) !== newParentId);
-                        finalFields.push(...updatedSiblings);
-                        updateLocalInstruction({ ...currentInstruction, fields: finalFields });
+                        // C1-d: splice 逻辑抽为纯函数 moveField（单测覆盖）；
+                        // 源字段缺失 → 同一引用 → 跳过 updateLocalInstruction。
+                        const nextFields = moveField(currentInstruction.fields, itemId, newParentId, newIndex);
+                        if (nextFields !== currentInstruction.fields) {
+                            updateLocalInstruction({ ...currentInstruction, fields: nextFields });
+                        }
                     }}
                     selectedId={selectedId}
                     onSelect={setSelectedId}
