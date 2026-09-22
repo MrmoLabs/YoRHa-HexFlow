@@ -9,6 +9,7 @@ from backend.routers.protocol import router as protocol_router
 from backend.routers.compile import router as compile_router
 from backend.routers.export import router as export_router
 from backend.routers.dispatch import router as dispatch_router
+from backend.routers.datahub import router as datahub_router
 
 
 @asynccontextmanager
@@ -53,6 +54,7 @@ app.include_router(protocol_router)
 app.include_router(compile_router)
 app.include_router(export_router)
 app.include_router(dispatch_router)
+app.include_router(datahub_router)
 
 
 if __name__ == "__main__":

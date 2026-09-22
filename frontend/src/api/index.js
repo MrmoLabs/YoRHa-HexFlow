@@ -16,6 +16,7 @@ import {
 import { getOperatorTemplates } from './operators';
 import { exportHexFile, exportBinaryFromBlocks } from './export';
 import { dispatchPayload, getDispatchHistory, clearDispatchHistory } from './dispatch';
+import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle } from './datahub';
 
 export const api = {
     // Protocols
@@ -41,7 +42,13 @@ export const api = {
     // Dispatch (in-memory loopback channel, no real serial/TCP transport)
     dispatchPayload,
     getDispatchHistory,
-    clearDispatchHistory
+    clearDispatchHistory,
+
+    // Data Hub (C3: status / aggregate export / db backup & restore)
+    getDatahubStatus,
+    createDbBackup,
+    restoreDbBackup,
+    exportDataBundle
 };
 
 export default api;

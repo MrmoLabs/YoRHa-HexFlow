@@ -5,6 +5,7 @@ import ProtocolPropertiesPanel from '../components/editor/ProtocolPropertiesPane
 import { v4 as uuidv4 } from 'uuid';
 import { api } from '../api';
 import { serializeProtocol, findNode } from '../utils/protocolTree';
+import { BLOCK_TYPES, createBlock, isNestable } from '../config/blockTypes';
 
 export default function Protocol({ protocols, setProtocols }) {
     const [activeProtocolId, setActiveProtocolId] = useState(protocols[0]?.id || null);
@@ -224,16 +225,7 @@ export default function Protocol({ protocols, setProtocols }) {
     };
 
     const handleAddBlock = (type) => {
-        const newBlock = {
-            id: uuidv4(),
-            label: type === 'container' ? '新容器' : (type === 'fixed' ? '固定块' : type.toUpperCase()),
-            type: type,
-            byte_length: type === 'container' ? 0 : 1,
-            hex_value: '00',
-            children: type === 'container' ? [] : undefined,
-            config: {}
-        };
-        handleSetBlocks([...currentBlocks, newBlock]);
+        handleSetBlocks([...currentBlocks, createBlock(type, uuidv4)]);
     };
 
     const handleDeleteBlock = (id) => {
@@ -249,7 +241,7 @@ export default function Protocol({ protocols, setProtocols }) {
 
     // Navigation Logic
     const handleEnterContainer = (block) => {
-        if (block.type === 'container') {
+        if (isNestable(block.type)) {
             setPathIds(prev => [...prev, block.id]);
             setSelectedId(null);
         }
@@ -288,12 +280,19 @@ export default function Protocol({ protocols, setProtocols }) {
 
             {/* Palette Sidebar */}
             <aside className="w-14 border-r border-nier-light flex flex-col items-center py-4 gap-4 z-10 bg-nier-dark select-none">
-                <button onClick={() => handleAddBlock('container')} className="w-10 h-10 border border-nier-light flex flex-col items-center justify-center text-xs hover:bg-nier-light hover:text-nier-dark active:bg-white active:text-black cursor-pointer leading-3" title="新建容器">PKG<span className="scale-[0.6]">PKG</span></button>
-                <div className="w-8 h-[1px] bg-nier-light/30 my-2"></div>
-                <button onClick={() => handleAddBlock('fixed')} className="w-10 h-10 border border-nier-light flex flex-col items-center justify-center text-xs hover:bg-nier-light hover:text-nier-dark active:bg-white active:text-black cursor-pointer leading-3" title="添加固定块 (Fixed)">固定<span className="scale-[0.6]">FIX</span></button>
-                <button onClick={() => handleAddBlock('length')} className="w-10 h-10 border border-nier-light flex flex-col items-center justify-center text-xs hover:bg-nier-light hover:text-nier-dark active:bg-white active:text-black cursor-pointer leading-3" title="添加长度 (Length)">长度<span className="scale-[0.6]">LEN</span></button>
-                <button onClick={() => handleAddBlock('checksum')} className="w-10 h-10 border border-nier-light flex flex-col items-center justify-center text-xs hover:bg-nier-light hover:text-nier-dark active:bg-white active:text-black cursor-pointer leading-3" title="添加校验 (Checksum)">校验<span className="scale-[0.6]">CRC</span></button>
-                <button onClick={() => handleAddBlock('slot')} className="w-10 h-10 border border-dashed border border-nier-light flex flex-col items-center justify-center text-xs hover:bg-nier-light hover:text-nier-dark active:bg-white active:text-black cursor-pointer leading-3" title="添加插槽 (Slot)">插槽<span className="scale-[0.6]">SLOT</span></button>
+                {BLOCK_TYPES.map((blockType, index) => (
+                    <React.Fragment key={blockType.type}>
+                        {index === 1 && <div className="w-8 h-[1px] bg-nier-light/30 my-2"></div>}
+                        <button
+                            onClick={() => handleAddBlock(blockType.type)}
+                            className={`w-10 h-10 border border-nier-light flex flex-col items-center justify-center text-xs hover:bg-nier-light hover:text-nier-dark active:bg-white active:text-black cursor-pointer leading-3${blockType.palette.dashed ? ' border-dashed' : ''}`}
+                            title={blockType.palette.title}
+                        >
+                            {blockType.palette.mainLabel}
+                            <span className="scale-[0.6]">{blockType.palette.subLabel}</span>
+                        </button>
+                    </React.Fragment>
+                ))}
             </aside>
 
             {/* Canvas Area */}

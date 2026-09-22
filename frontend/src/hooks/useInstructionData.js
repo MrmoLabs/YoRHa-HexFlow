@@ -3,16 +3,56 @@ import { api } from '../api';
 import { normalizeFieldPayload, normalizeInstructionPayload } from '../utils/normalizeInstruction';
 import { validateInstruction } from '../utils/validateInstruction';
 import { buildDuplicateInstructionPayload } from '../utils/duplicateInstruction';
+import { normalizeInstructionDataOptions } from './instructionDataOptions';
 import { useHistory } from './useHistory';
 
 // Normalization helpers moved to utils/normalizeInstruction.js (logic unchanged);
 // re-exported here so existing consumers keep working.
 export { normalizeFieldPayload, normalizeInstructionPayload };
 
+/**
+ * useInstructionData — data layer for the Instruction (指令) and
+ * InstructionProcessor (加工) pages.
+ *
+ * OPTIONS (page -> hook; validated by hooks/instructionDataOptions.js):
+ * @param {Function|Object} [options] — legacy function form == `{ onWebUpdate }`.
+ * @param {Array|null} [options.instructions]      External list (SHARED mode).
+ * @param {Function} [options.setInstructions]     Parent setter; supplying it
+ *   switches the hook to SHARED (受管) mode: writes go through the setter and
+ *   onWebUpdate is never fired (prevents feeding the same state back).
+ * @param {Function} [options.onWebUpdate]         SELF (自管) mode callback:
+ *   called with the fresh list after load/reload/save.
+ * @param {Function} [options.fetchInstructions]   (search?: string) =>
+ *   Promise<Array> — overrides api.getInstructions everywhere.
+ * @param {boolean} [options.disableInitialLoad]   Skip the mount-time load;
+ *   SHARED pages pass true and reload explicitly.
+ *
+ * IMPLICIT CONVENTIONS MADE EXPLICIT (behavior unchanged):
+ *   - Shared ownership suppresses onWebUpdate (`!setExternalInstructions && …`).
+ *   - fetchInstructions, when present, replaces the default API for both the
+ *     initial load and loadInstructions(search).
+ *   - disableInitialLoad only guards the mount effect; operator templates
+ *     still load on mount.
+ *   - Invalid option keys are dropped with a console warning instead of
+ *     being silently ignored (normalizeInstructionDataOptions).
+ *
+ * @returns {{
+ *   instructions: Array, activeInstructionId: string|null,
+ *   setActiveInstructionId: Function, currentInstruction: Object|null,
+ *   operatorTemplates: Object, isOperatorTemplatesLoading: boolean,
+ *   operatorTemplatesError: string, isLoading: boolean, statusMsg: string,
+ *   setStatusMsg: Function, hasUnsavedChanges: boolean,
+ *   setHasUnsavedChanges: Function, setInstructions: Function,
+ *   loadData: Function, loadInstructions: Function,
+ *   loadOperatorTemplates: Function, updateLocalInstruction: Function,
+ *   undo: Function, redo: Function, canUndo: boolean, canRedo: boolean,
+ *   saveError: string, setSaveError: Function, addInstruction: Function,
+ *   duplicateInstruction: Function, deleteInstruction: Function,
+ *   saveChanges: Function, revertChanges: Function
+ * }} the page <-> hook return contract (Instruction.jsx destructures these).
+ */
 export function useInstructionData(options = {}) {
-    const normalizedOptions = typeof options === 'function'
-        ? { onWebUpdate: options }
-        : (options || {});
+    const normalizedOptions = normalizeInstructionDataOptions(options);
     const {
         instructions: externalInstructions,
         setInstructions: setExternalInstructions,

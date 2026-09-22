@@ -13,6 +13,8 @@ dist/
 backend/db/*.db-shm
 backend/db/*.db-journal
 backend/db/*.db-wal
+# C3 数据中心：数据库备份目录（yorha.db 本体仍保持 git 跟踪）
+backend/db/backups/
 
 # User specific
 .idea/

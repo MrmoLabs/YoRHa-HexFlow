@@ -16,6 +16,6 @@ describe('pageRegistry', () => {
         expect(PAGE_STATUS_BY_PATH['/protocol']?.implemented).toBe(true);
         expect(PAGE_STATUS_BY_PATH['/instruction']?.implemented).toBe(true);
         expect(PAGE_STATUS_BY_KEY.terminal?.implemented).toBe(false);
-        expect(PAGE_STATUS_BY_KEY.datahub?.implemented).toBe(false);
+        expect(PAGE_STATUS_BY_KEY.datahub?.implemented).toBe(true);
     });
 });

@@ -72,10 +72,17 @@ export const SmartInput = ({
     };
 
     // Compact HUD aesthetics - NieR: Automata standard (High-Density)
-    const baseClasses = "bg-[#d1cbaf]/5 font-mono outline-none text-left px-3 py-1.5 text-base font-bold tracking-wider transition-all duration-200 uppercase w-full";
-    const editClasses = "text-[#4a4a4a] border-2 border-[#4a4a4a]/10 focus:border-[#4a4a4a] focus:bg-[#d1cbaf]/20 hover:border-[#4a4a4a]/20";
-    // Modified: Solid block style for read-only (Fixed) fields
-    const readClasses = "text-[#4a4a4a] bg-[#4a4a4a]/5 border-2 border-[#4a4a4a]/20 cursor-default";
+    const baseClasses = "bg-[#d1cbaf]/5 font-mono outline-none text-left px-3 py-1.5 text-base font-bold tracking-wider transition-all duration-150 uppercase w-full";
+    // Editable: solid light border that snaps dark on hover/focus (clearly enterable)
+    const editClasses = "text-[#4a4a4a] border-2 border-[#4a4a4a]/25 hover:border-[#4a4a4a]/60 focus:border-[#4a4a4a] focus:bg-[#d1cbaf]/25 cursor-text";
+    // Read-only (Fixed/Calculated): dark hatch fill + dashed border = locked plate
+    const readClasses = "text-[#4a4a4a]/60 bg-[#4a4a4a]/10 border-2 border-dashed border-[#4a4a4a]/40 cursor-default";
+    // Inline so the locked fill wins over base bg regardless of CSS order:
+    // 135° hazard hatch stripes read as "generated, not enterable" at a glance.
+    const readStyle = {
+        backgroundColor: 'rgba(74,74,74,0.10)',
+        backgroundImage: 'repeating-linear-gradient(135deg, rgba(74,74,74,0) 0 6px, rgba(74,74,74,0.10) 6px 12px)'
+    };
 
     return (
         <div
@@ -90,8 +97,9 @@ export const SmartInput = ({
             <div className="flex items-stretch relative">
                 {label && (
                     <div className="flex items-center gap-2 mr-3 min-w-[140px] shrink-0">
-                        <div className={`w-1 h-4 ${readOnly ? 'bg-[#4a4a4a]/40' : 'bg-[#4a4a4a]/80'}`}></div>
-                        <span className={`text-[11px] font-black uppercase tracking-widest truncate ${readOnly ? 'text-[#4a4a4a]/60' : 'text-[#4a4a4a]/70'}`}>
+                        {/* accent bar: full-contrast when editable, ghosted when locked */}
+                        <div className={`w-1 h-4 ${readOnly ? 'bg-[#4a4a4a]/25' : 'bg-[#4a4a4a]/80'}`}></div>
+                        <span className={`text-[11px] font-black uppercase tracking-widest truncate ${readOnly ? 'text-[#4a4a4a]/40' : 'text-[#4a4a4a]'}`}>
                             {label}
                         </span>
                     </div>
@@ -116,6 +124,7 @@ export const SmartInput = ({
                         <input
                             type="text"
                             className={`${baseClasses} ${readOnly ? readClasses : editClasses} flex-1 min-w-0 placeholder:text-[#4a4a4a]/20 ${onClick ? 'pointer-events-none' : ''}`}
+                            style={readOnly ? readStyle : undefined}
                             value={localValue}
                             onChange={handleChange}
                             onFocus={handleFocus}
@@ -136,9 +145,19 @@ export const SmartInput = ({
                 </div>
 
                 <div className="w-24 shrink-0 flex items-center justify-end px-2">
-                    <span className="text-[9px] font-black text-[#4a4a4a]/20 uppercase tracking-tighter whitespace-nowrap">
-                        {readOnly ? "[READ_ONLY]" : `[${type.toUpperCase()}]`}
-                    </span>
+                    {readOnly ? (
+                        // Inverted (charcoal-on-sand) chip: the strongest anchor in the row
+                        <span
+                            className="text-[9px] font-black text-[#dad4bb] bg-[#4a4a4a] px-1.5 py-0.5 uppercase tracking-tighter whitespace-nowrap select-none"
+                            title="READ_ONLY // 由固定/计算块生成，不可直接编辑"
+                        >
+                            [READ_ONLY]
+                        </span>
+                    ) : (
+                        <span className="text-[9px] font-black text-[#4a4a4a]/35 uppercase tracking-tighter whitespace-nowrap select-none">
+                            {`[${type.toUpperCase()}]`}
+                        </span>
+                    )}
                 </div>
             </div>
 

@@ -118,7 +118,7 @@ export default function Orchestration({ protocols, instructions }) {
             {/* Main Area */}
             <section className="flex-1 flex flex-col bg-[url('/grid.png')] relative">
                 {/* Configuration Header */}
-                <div className="h-16 border-b border-nier-light/50 bg-nier-dark/90 flex items-center px-6 gap-8 z-20">
+                <div className="h-16 border-b border-nier-light/50 bg-nier-dark/90 flex items-center px-4 gap-8 z-20">
                     {currentBinding && (
                         <>
                             <div className="flex flex-col gap-1 w-64">
@@ -191,7 +191,7 @@ export default function Orchestration({ protocols, instructions }) {
                         {/* Mock Hex Stream based on structure */}
                         {mergedBlocks.map((b, i) => (
                             <span key={i} className={`mr-2 ${b.isInjected ? 'text-yellow-400 font-bold' : ''}`}>
-                                {b.children ? `[${b.label}]` : (b.hex_value || '00'.repeat(b.byte_length)).toUpperCase()}
+                                {b.children?.length ? `[${b.label}]` : (b.hex_value || '00'.repeat(b.byte_length || 0)).toUpperCase()}
                             </span>
                         ))}
                     </div>
@@ -200,7 +200,7 @@ export default function Orchestration({ protocols, instructions }) {
             </section>
 
             {/* Right Panel (Details - Binding Info) */}
-            <aside className="w-80 border-l border-nier-light bg-nier-dark/95 backdrop-blur-sm p-4 flex flex-col z-20 shadow-[-5px_0_15px_rgba(0,0,0,0.1)]">
+            <aside className="w-80 border-l border-nier-light bg-nier-dark/95 p-4 flex flex-col z-20 shadow-[-5px_0_15px_rgba(0,0,0,0.1)]">
                 <h2 className="text-lg border-b-2 border-nier-light mb-6 pb-1 font-bold tracking-wider">绑定属性 (BINDING)</h2>
                 {currentBinding && (
                     <div className="space-y-6 text-sm">

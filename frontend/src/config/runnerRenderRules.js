@@ -1,0 +1,197 @@
+// Render rules for the processing page's dynamic send form
+// (components/InstructionForm/RunnerFieldTree.jsx).
+// Extracted verbatim from RunnerFieldTree render logic (behavior unchanged);
+// pure functions so every rule is unit-testable in isolation.
+// NOTE: these rules only drive DISPLAY. Encoding semantics live in
+// utils/InstructionEncoder.js / backend/core/orchestrator.py — keep in sync.
+
+import { mapChecksumAlgo } from '../utils/normalizeInstruction';
+import { getParamKeyLimitRef } from '../utils/encoderLimits';
+
+// DRY Helper: Get Date object for the field's base time (epoch).
+// Accepts both 'YYYY-MM-DDTHH:mm:ss' and 'YYYY-MM-DD HH:mm:ss'.
+export const getFieldEpoch = (params = {}) => {
+    const baseTimeStr = params.base_time || '2000-01-01T00:00:00';
+    return new Date(baseTimeStr.includes('T') ? baseTimeStr : baseTimeStr.replace(' ', 'T'));
+};
+
+// A4: pack BITFIELD default_val bits into the exact hex the encoder emits
+// (display-only mirror of InstructionEncoder's BITFIELD branch).
+export const packBitfieldDefault = (bits, byteLen) => {
+    let packed = 0;
+    (Array.isArray(bits) ? bits : []).forEach(b => {
+        const start = Number.isFinite(Number(b.start_bit)) ? Number(b.start_bit) : 0;
+        const len = Math.max(1, Number.isFinite(Number(b.bit_len)) ? Number(b.bit_len) : 1);
+        const mask = len >= 32 ? 0xFFFFFFFF : ((1 << len) - 1);
+        const raw = Number.isFinite(Number(b.default_val)) ? Number(b.default_val) : 0;
+        packed |= (raw & mask) << start;
+    });
+    packed = packed >>> 0;
+    const target = Math.max(1, byteLen) * 2;
+    return packed.toString(16).toUpperCase().padStart(target, '0').slice(-target);
+};
+
+// Field classification: which render lane a leaf field lands in.
+// NOTE: Fixed detection also falls back to preserved original_op_code
+// (normalizeRunnerInstruction may rewrite op_code to 'FIXED'/'INPUT').
+export const classifyRunnerField = (field = {}) => {
+    const params = field.parameter_config || {};
+    const originalOp = String(field.original_op_code || '').toUpperCase();
+
+    const isCalculated = field.op_code === 'CALCULATED'
+        || field.op_code === 'LENGTH_CALC'
+        || field.op_code === 'CHECKSUM_CRC'
+        || params.formula === 'auto'
+        || params.type === 'length'
+        || params.type === 'checksum';
+
+    const isTimeCumulative = field.op_code === 'TIME_CUMULATIVE'
+        || originalOp === 'TIME_CUMULATIVE'
+        || originalOp === 'TIME_ACCUMULATOR'
+        || params.type === 'time_cumulative';
+
+    // Boolean(): the || chain ends in params.readOnly which may be undefined
+    // (original code relied on falsy — coerce so the flag is always a boolean).
+    const isFixed = Boolean(field.op_code === 'FIXED'
+        || originalOp === 'HEX_RAW'
+        || originalOp === 'FIXED'
+        || field.op_code === 'HEX_RAW'
+        || params.readOnly)
+        && !isTimeCumulative;
+
+    const isEditable = !isCalculated && !isFixed;
+
+    const rawOptions = params.options;
+    const hasOptions = Boolean(rawOptions && (Array.isArray(rawOptions)
+        ? rawOptions.length > 0
+        : Object.keys(rawOptions).length > 0));
+    const isEnum = hasOptions || field.op_code === 'MAPPING';
+
+    return { params, originalOp, isCalculated, isTimeCumulative, isFixed, isEditable, hasOptions, isEnum };
+};
+
+// Normalize option values with the SAME rule InstructionEncoder.getInitialValues
+// uses (hex-looking string -> number). The stored input state is numeric, so if
+// option values stayed hex strings, String(opt.value) would never match
+// String(displayValue) and the controlled <select> renders blank.
+const normalizeOptionValue = (v) =>
+    (typeof v === 'string' && /^[0-9A-Fa-f]+$/.test(v)) ? (parseInt(v, 16) || 0) : v;
+
+// Accepts: array of {label,value} objects / array of primitives / object map.
+export const formatEnumOptions = (rawOptions) => {
+    if (Array.isArray(rawOptions)) {
+        return rawOptions.map(opt => (typeof opt === 'object'
+            ? { ...opt, value: normalizeOptionValue(opt.value) }
+            : { label: String(opt), value: normalizeOptionValue(opt) }));
+    }
+    if (rawOptions) {
+        return Object.entries(rawOptions).map(([k, v]) => ({ label: k, value: normalizeOptionValue(v) }));
+    }
+    return [];
+};
+
+// TIME_CUMULATIVE display: seconds since base_time -> 'YYYY-MM-DD HH:mm:ss'.
+// Negative seconds (before base time) are allowed.
+export const formatTimeDisplay = (params, seconds) => {
+    const base = getFieldEpoch(params);
+    const current = new Date(base.getTime() + (seconds * 1000));
+    const pad = n => n.toString().padStart(2, '0');
+    return `${current.getFullYear()}-${pad(current.getMonth() + 1)}-${pad(current.getDate())} `
+        + `${pad(current.getHours())}:${pad(current.getMinutes())}:${pad(current.getSeconds())}`;
+};
+
+// Resolve the final controlled-input triple for a leaf field.
+// Returns { displayValue, placeholder, inputType, options }.
+export const resolveFieldDisplay = (field, { inputs = {}, computedValues = {} } = {}) => {
+    const { params, originalOp, isCalculated, isTimeCumulative, isFixed, isEditable, isEnum }
+        = classifyRunnerField(field);
+    const options = formatEnumOptions(params.options);
+
+    let displayValue = '';
+    let placeholder = '';
+    let inputType = !isEditable ? 'text' : (isEnum && options.length > 0 ? 'select' : (params.type || 'number'));
+
+    if (isFixed) {
+        // 1. Fixed / ReadOnly Fields: Show the exact HEX or Value
+        const isExplicitHex = originalOp === 'HEX_RAW' || field.op_code === 'HEX_RAW';
+        let rawVal = params.hex || params.value;
+
+        if (!rawVal && isExplicitHex) {
+            // Default to Zero based on byte_len if missing
+            rawVal = '00'.repeat(field.byte_len || 1);
+        }
+
+        displayValue = String(rawVal || '').toUpperCase();
+
+        if (!displayValue) {
+            placeholder = 'NO DATA';
+        }
+    } else if (isTimeCumulative) {
+        // 2. TIME CUMULATIVE: seconds since base_time, shown formatted/read-only
+        displayValue = formatTimeDisplay(params, inputs[field.id] || 0);
+        inputType = 'text';
+    } else if (isCalculated || isEnum) {
+        // 3a. Calculated: computedValues is source of truth, hex-formatted
+        if (isCalculated) {
+            displayValue = computedValues[field.id] !== undefined ? computedValues[field.id] : 0;
+            inputType = 'hex';
+            if (typeof displayValue === 'number' && field.byte_len !== undefined) {
+                if (field.byte_len === 0) {
+                    displayValue = '';
+                } else {
+                    const targetLen = field.byte_len * 2;
+                    displayValue = displayValue.toString(16).toUpperCase().padStart(targetLen, '0').slice(-targetLen);
+                }
+            }
+        } else {
+            // 3b. Enum: inputs is source of truth (computedValues as fallback)
+            displayValue = inputs[field.id] !== undefined ? inputs[field.id] : (computedValues[field.id] || 0);
+        }
+    } else {
+        // 4. Plain editable input
+        let rawValue = inputs[field.id];
+        // A4: until the user provides an input, show the packed default_val
+        // bytes — the value the encoder actually emits for BITFIELD.
+        if (rawValue === undefined && field.op_code === 'BITFIELD') {
+            rawValue = packBitfieldDefault(field.bits, field.byte_len || 1);
+        }
+        if (field.byte_len && field.byte_len > 0) {
+            const currentVal = rawValue ?? 0;
+            if (!params.type || params.type === 'number' || params.type === 'hex') {
+                inputType = 'hex';
+                if (typeof currentVal === 'number') {
+                    displayValue = currentVal.toString(16).toUpperCase().padStart(field.byte_len * 2, '0');
+                } else {
+                    displayValue = String(currentVal || '').toUpperCase();
+                }
+                placeholder = '0'.repeat(field.byte_len * 2);
+            } else {
+                displayValue = rawValue;
+            }
+        } else {
+            displayValue = rawValue;
+            placeholder = '?? [VAR]';
+        }
+    }
+
+    return { displayValue, placeholder, inputType, options };
+};
+
+// A6: surface semantic params (scale factor/offset, counter step/max,
+// checksum algo, ...) the send form would otherwise hide from the operator.
+// Each item may carry an encoder-limit ref (B4/B7/B8...) -> ⚠ badge in UI.
+export const collectSemanticItems = (field = {}) => {
+    const params = field.parameter_config || {};
+    return [
+        ['factor', 'FACTOR'], ['offset', 'OFFSET'], ['step', 'STEP'], ['max', 'MAX'],
+        ['start_val', 'START'], ['bytes', 'BYTES'], ['max_count', 'MAX LOOP'],
+        ['algorithm', 'ALGO'], ['algo', 'ALGO']
+    ].reduce((acc, [k, label]) => {
+        if (k === 'algo' && params.algorithm !== undefined) return acc; // prefer encoder key
+        const raw = params[k];
+        if (raw === undefined || raw === null || raw === '') return acc;
+        const shown = (k === 'algorithm' || k === 'algo') ? mapChecksumAlgo(raw) : raw;
+        acc.push({ text: `${label}=${shown}`, ref: getParamKeyLimitRef(k, field.op_code) });
+        return acc;
+    }, []);
+};

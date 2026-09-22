@@ -33,7 +33,12 @@
 - **Binary File Export**: `POST /export/binary` compiles the merged block forest server-side via the Orchestrator and returns a `.bin` file (Orchestration page).
 - **Loopback Dispatch**: `POST /dispatch/` acknowledges frames and keeps a bounded in-memory history (max 100). **This is an in-process loopback channel — there is no real serial/TCP/WebSocket transport yet.**
 
-### 4. Engineering & Quality
+### 4. Data Hub (数据中心)
+- **Environment Status Panel**: `GET /datahub/status` reports the DB path / size / mtime, row counts of all five tables, and the backend version.
+- **Aggregate Export**: `GET /datahub/export/bundle` packages `instructions.json` (import-format symmetric with the Instruction page), `manifest.json`, and per-instruction skeleton frames (`frames/*.bin|.hex`, compiled by the Orchestrator) into one ZIP.
+- **Backup & Restore**: `POST /datahub/backup` copies `yorha.db` into `backend/db/backups/` (gitignored); `POST /datahub/restore` takes an automatic `pre-restore-*` snapshot, releases the pool, clears WAL/SHM leftovers, and atomically replaces the file (filename traversal is rejected).
+
+### 5. Engineering & Quality
 - **SRP Architecture**: Strictly follows the Single Responsibility Principle, with logic hooked and components atomized.
 - **Full-link Testing**: 
   - Integrated `Vitest` + `React Testing Library`.
@@ -45,8 +50,8 @@
 Page navigation labels, placeholder descriptions, and implementation status now use `frontend/src/config/pageStatus.json` as the single source of truth.
 
 - See the current page matrix in [docs/PAGE_STATUS.md](./docs/PAGE_STATUS.md)
-- `Protocol Definition`, `Instruction Management`, `Instruction Processing`, and `Orchestration Binding` are connected to the current SQLite / FastAPI main flow.
-- `Communication Terminal` and `Data Hub` are still placeholder pages, and the documentation now reflects that explicitly.
+- `Protocol Definition`, `Instruction Management`, `Instruction Processing`, `Orchestration Binding`, and `Data Hub` are connected to the current SQLite / FastAPI main flow.
+- `Communication Terminal` is still a placeholder page, and the documentation now reflects that explicitly.
 
 ---
 
@@ -127,10 +132,11 @@ For detailed technical specifications, please refer to: [SPECIFICATION.md](./SPE
 /backend
     main.py              # FastAPI entry (lifespan: create_all + seeds)
     requirements.txt     # Python deps (includes pymysql, used only by debug_db.py)
-    /routers             # HTTP routes (instruction, protocol, operator, compile, export, dispatch)
+    /routers             # HTTP routes (instruction, protocol, operator, compile, export, dispatch, datahub)
     /handlers            # Range logic (length, checksum)
     /core                # orchestrator.py (wired); processor.py / graph.py (legacy, unwired)
     /db                  # SQLAlchemy models + SQLite file backend/db/yorha.db (migrations/*.sql = non-authoritative)
+                         # runtime backups land in /db/backups (gitignored)
     debug_db.py          # Standalone MySQL debug script (only pymysql consumer)
 
 /frontend
@@ -139,11 +145,11 @@ For detailed technical specifications, please refer to: [SPECIFICATION.md](./SPE
             /ui         # Generic UI (NieRModal, NieRDatePicker, FeaturePlaceholder)
             /editor     # Editor domain (Canvas, Block, BlockPropertiesPanel, ComponentPalette, ...)
             /InstructionForm  # Dynamic send form (InstructionRunner + extracted field tree/log)
-        /hooks           # Business logic hooks (useInstructionData, useInstructionForm, ...)
-        /pages           # Page containers (Protocol, Instruction, InstructionProcessor, Orchestration)
-        /utils           # Pure utilities (InstructionEncoder.js = encoding core, formula.js, normalizeInstruction.js)
-        /config          # pageStatus.json (single source of truth for page status)
-        /api             # All HTTP calls, split by domain (client/protocols/instructions/export/dispatch + index)
+        /hooks           # Business logic hooks (useInstructionData + instructionDataOptions contract, useInstructionForm, ...)
+        /pages           # Page containers (Protocol, Instruction, InstructionProcessor, Orchestration, DataHub)
+        /utils           # Pure utilities (InstructionEncoder.js = encoding core, formula.js, normalizeInstruction.js, blockMerge.js)
+        /config          # pageStatus.json (page status SoT) + blockTypes.js / runnerRenderRules.js (testable render-rule configs)
+        /api             # All HTTP calls, split by domain (client/protocols/instructions/export/dispatch/datahub + index)
         constants.js     # Global constants (OP_CODES, categories)
     /src/**/__tests__    # Vitest suites
 

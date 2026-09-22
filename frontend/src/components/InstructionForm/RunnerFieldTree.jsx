@@ -1,32 +1,17 @@
 import React from 'react';
 import { SmartInput } from './SmartInput';
-import { mapChecksumAlgo } from '../../utils/normalizeInstruction';
-import { getParamKeyLimitRef, ENCODER_LIMITS } from '../../utils/encoderLimits';
+import { ENCODER_LIMITS } from '../../utils/encoderLimits';
+import {
+    classifyRunnerField,
+    resolveFieldDisplay,
+    collectSemanticItems,
+    getFieldEpoch
+} from '../../config/runnerRenderRules';
 
 // Recursive renderer for the dynamic send form's field tree.
-// Extracted verbatim from InstructionRunner.jsx renderFields (logic unchanged).
-
-// DRY Helper: Get Date object for the field's base time (epoch)
-const getFieldEpoch = (params) => {
-    const baseTimeStr = params.base_time || '2000-01-01T00:00:00';
-    return new Date(baseTimeStr.includes('T') ? baseTimeStr : baseTimeStr.replace(' ', 'T'));
-};
-
-// A4: pack BITFIELD default_val bits into the exact hex the encoder emits
-// (display-only mirror of InstructionEncoder's BITFIELD branch).
-const packBitfieldDefault = (bits, byteLen) => {
-    let packed = 0;
-    (Array.isArray(bits) ? bits : []).forEach(b => {
-        const start = Number.isFinite(Number(b.start_bit)) ? Number(b.start_bit) : 0;
-        const len = Math.max(1, Number.isFinite(Number(b.bit_len)) ? Number(b.bit_len) : 1);
-        const mask = len >= 32 ? 0xFFFFFFFF : ((1 << len) - 1);
-        const raw = Number.isFinite(Number(b.default_val)) ? Number(b.default_val) : 0;
-        packed |= (raw & mask) << start;
-    });
-    packed = packed >>> 0;
-    const target = Math.max(1, byteLen) * 2;
-    return packed.toString(16).toUpperCase().padStart(target, '0').slice(-target);
-};
+// Extracted verbatim from InstructionRunner.jsx renderFields.
+// All classification / option / display-value / semantic rules live in
+// config/runnerRenderRules.js (unit-tested) — this file only does layout.
 
 export default function RunnerFieldTree({
     fields,
@@ -38,19 +23,10 @@ export default function RunnerFieldTree({
 }) {
     return fields.map((field) => {
         const params = field.parameter_config || {};
-        // FIX: Robust check using preserved original_op_code
-        const originalOp = String(field.original_op_code || '').toUpperCase();
-
-        // Re-apply robust classification logic in render time
-        const isCalculated = field.op_code === 'CALCULATED' || field.op_code === 'LENGTH_CALC' || field.op_code === 'CHECKSUM_CRC' || params.formula === 'auto' || params.type === 'length' || params.type === 'checksum';
-        const isTimeCumulative = field.op_code === 'TIME_CUMULATIVE' || originalOp === 'TIME_CUMULATIVE' || originalOp === 'TIME_ACCUMULATOR' || params.type === 'time_cumulative';
-
-        const isFixed = (field.op_code === 'FIXED' || originalOp === 'HEX_RAW' || originalOp === 'FIXED' || field.op_code === 'HEX_RAW' || params.readOnly) && !isTimeCumulative;
-
-        const isEditable = !isCalculated && !isFixed;
-        const rawOptions = params.options;
-        const hasOptions = rawOptions && (Array.isArray(rawOptions) ? rawOptions.length > 0 : Object.keys(rawOptions).length > 0);
-        const isEnum = hasOptions || field.op_code === 'MAPPING';
+        // FIX: Robust classification from config/runnerRenderRules.js
+        // (re-applied at render time; falls back to preserved original_op_code)
+        const { isCalculated, isTimeCumulative, isEditable, isEnum }
+            = classifyRunnerField(field);
 
         const subFields = field.fields || [];
 
@@ -78,108 +54,14 @@ export default function RunnerFieldTree({
         }
 
         // LEAF NODE
-        // Normalize option values with the SAME rule InstructionEncoder.getInitialValues
-        // uses (hex-looking string -> number). The stored input state is numeric, so if
-        // option values stayed hex strings, String(opt.value) would never match
-        // String(displayValue) and the controlled <select> renders blank.
-        const normalizeOptionValue = (v) =>
-            (typeof v === 'string' && /^[0-9A-Fa-f]+$/.test(v)) ? (parseInt(v, 16) || 0) : v;
-        const formattedOptions = Array.isArray(rawOptions)
-            ? rawOptions.map(opt => typeof opt === 'object' ? { ...opt, value: normalizeOptionValue(opt.value) } : { label: String(opt), value: normalizeOptionValue(opt) })
-            : (rawOptions ? Object.entries(rawOptions).map(([k, v]) => ({ label: k, value: normalizeOptionValue(v) })) : []);
-
-        let displayValue = '';
-        let placeholder = '';
-        let inputType = !isEditable ? 'text' : (isEnum && formattedOptions.length > 0 ? 'select' : (params.type || 'number'));
-
-        // 1. Fixed / ReadOnly Fields: Show the exact HEX or Value
-        if (isFixed) {
-            const isExplicitHex = originalOp === 'HEX_RAW' || field.op_code === 'HEX_RAW';
-            let rawVal = params.hex || params.value;
-
-            if (!rawVal && isExplicitHex) {
-                // Default to Zero based on byte_len if missing
-                rawVal = '00'.repeat(field.byte_len || 1);
-            }
-
-            displayValue = String(rawVal || '').toUpperCase();
-
-            if (!displayValue) {
-                placeholder = 'NO DATA';
-            }
-        } else if (isTimeCumulative) {
-            // TIME CUMULATIVE LOGIC
-            // Value is Seconds since base_time (default: 2000-01-01 00:00:00)
-            const BASE_TIME = getFieldEpoch(params);
-            const seconds = inputs[field.id] || 0;
-            const currentTime = new Date(BASE_TIME.getTime() + (seconds * 1000));
-
-            // Format: YYYY-MM-DD HH:mm:ss
-            const pad = n => n.toString().padStart(2, '0');
-            displayValue = `${currentTime.getFullYear()}-${pad(currentTime.getMonth() + 1)}-${pad(currentTime.getDate())} ${pad(currentTime.getHours())}:${pad(currentTime.getMinutes())}:${pad(currentTime.getSeconds())}`;
-            inputType = 'text'; // Show formatted text
-
-            // Override Input Props for Picker
-        } else if (isCalculated || isEnum) {
-            // FIX: Priority to Computed Values for calculated fields
-            // If it's Enum, input is source of truth. If Calculated, computedValues is source.
-            if (isCalculated) {
-                displayValue = computedValues[field.id] !== undefined ? computedValues[field.id] : 0;
-                inputType = 'hex'; // Usually Length/Checksum are hex
-                // Auto-format for display
-                if (typeof displayValue === 'number' && field.byte_len !== undefined) {
-                    if (field.byte_len === 0) {
-                        displayValue = '';
-                    } else {
-                        const targetLen = field.byte_len * 2;
-                        displayValue = displayValue.toString(16).toUpperCase().padStart(targetLen, '0').slice(-targetLen);
-                    }
-                }
-            } else {
-                displayValue = inputs[field.id] !== undefined ? inputs[field.id] : (computedValues[field.id] || 0);
-            }
-        } else {
-            let rawValue = inputs[field.id];
-            // A4: until the user provides an input, show the packed default_val
-            // bytes — the value the encoder actually emits for BITFIELD.
-            if (rawValue === undefined && field.op_code === 'BITFIELD') {
-                rawValue = packBitfieldDefault(field.bits, field.byte_len || 1);
-            }
-            if (field.byte_len && field.byte_len > 0) {
-                const currentVal = rawValue ?? 0;
-                if (!params.type || params.type === 'number' || params.type === 'hex') {
-                    inputType = 'hex';
-                    if (typeof currentVal === 'number') {
-                        displayValue = currentVal.toString(16).toUpperCase().padStart(field.byte_len * 2, '0');
-                    } else {
-                        displayValue = String(currentVal || '').toUpperCase();
-                    }
-                    placeholder = '0'.repeat(field.byte_len * 2);
-                } else {
-                    displayValue = rawValue;
-                }
-            } else {
-                displayValue = rawValue;
-                placeholder = '?? [VAR]';
-            }
-        }
+        // Display rules (fixed/time/calculated/enum/plain + hex formatting)
+        // live in config/runnerRenderRules.js — resolve once here.
+        const { displayValue, placeholder, inputType, options: formattedOptions }
+            = resolveFieldDisplay(field, { inputs, computedValues });
 
         // A6: surface semantic params (scale factor/offset, counter step/max,
         // checksum algo, ...) the send form would otherwise hide from the operator.
-        const semanticItems = [
-            ['factor', 'FACTOR'], ['offset', 'OFFSET'], ['step', 'STEP'], ['max', 'MAX'],
-            ['start_val', 'START'], ['bytes', 'BYTES'], ['max_count', 'MAX LOOP'],
-            ['algorithm', 'ALGO'], ['algo', 'ALGO']
-        ].reduce((acc, [k, label]) => {
-            if (k === 'algo' && params.algorithm !== undefined) return acc; // prefer encoder key
-            const raw = params[k];
-            if (raw === undefined || raw === null || raw === '') return acc;
-            const shown = (k === 'algorithm' || k === 'algo') ? mapChecksumAlgo(raw) : raw;
-            // P0-1: attach the encoder-limit ref (B4/B7/B8...) so semantics the
-            // encoder ignores are visibly marked for the operator.
-            acc.push({ text: `${label}=${shown}`, ref: getParamKeyLimitRef(k, field.op_code) });
-            return acc;
-        }, []);
+        const semanticItems = collectSemanticItems(field);
 
         const handleChange = (val) => {
             // FIX: Enum handling for HEX strings
@@ -222,16 +104,20 @@ export default function RunnerFieldTree({
             }
         };
 
+        // ReadOnly if time (input readOnly; click opens the picker) or static
+        const readOnly = !isEditable || isTimeCumulative;
+
         return (
             <div key={field.id} className={`${depth > 0 ? 'ml-6' : ''}`}>
-                <div className="group/field transition-all border-l-2 border-transparent hover:border-nier-light/10 focus-within:border-nier-light/30">
+                {/* hover/focus rail only on enterable rows — static read-only rows stay dead */}
+                <div className={`group/field transition-all border-l-2 border-transparent ${readOnly && !isTimeCumulative ? '' : 'hover:border-nier-light/10 focus-within:border-nier-light/30'}`}>
                     <SmartInput
                         label={field.name || field.label || 'PARAM'}
                         value={displayValue}
                         onChange={handleChange}
                         type={inputType}
                         options={formattedOptions}
-                        readOnly={!isEditable || isTimeCumulative} // ReadOnly if time (use click)
+                        readOnly={readOnly}
                         onClick={isTimeCumulative ? handleTimeClick : undefined} // Trigger picker
                         highlight={isCalculated || isTimeCumulative}
                         suffix={params.unit || (isTimeCumulative ? `${getFieldEpoch(params).getFullYear()}` : '')}

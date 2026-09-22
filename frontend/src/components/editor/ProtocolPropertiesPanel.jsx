@@ -1,4 +1,5 @@
 import React from 'react';
+import { getBlockFields, isNestable } from '../../config/blockTypes';
 
 // Right-hand properties panel for the Protocol editor page.
 // Extracted verbatim from pages/Protocol.jsx (logic unchanged).
@@ -12,7 +13,7 @@ export default function ProtocolPropertiesPanel({
     onDeleteBlock // (id) => void
 }) {
     return (
-        <aside className="w-80 border-l border-nier-light bg-nier-dark/95 backdrop-blur-sm p-4 flex flex-col z-20 shadow-[-5px_0_15px_rgba(0,0,0,0.1)]">
+        <aside className="w-80 border-l border-nier-light bg-nier-dark/95 p-4 flex flex-col z-20 shadow-[-5px_0_15px_rgba(0,0,0,0.1)]">
             <h2 className="text-lg border-b-2 border-nier-light mb-6 pb-1 font-bold tracking-wider">属性配置 (PROPERTIES)</h2>
 
             {showProtocolLevel && currentProtocol && (
@@ -46,7 +47,7 @@ export default function ProtocolPropertiesPanel({
                         />
                     </div>
 
-                    {selectedBlock.type === 'container' && (
+                    {isNestable(selectedBlock.type) && (
                         <button
                             onClick={() => onEnterContainer(selectedBlock)}
                             className="mt-4 w-full border border-nier-light bg-nier-light/10 text-nier-light py-2 px-4 hover:bg-nier-light hover:text-nier-dark transition-colors font-bold tracking-widest text-xs"
@@ -55,33 +56,21 @@ export default function ProtocolPropertiesPanel({
                         </button>
                     )}
 
-                    {(selectedBlock.type !== 'container') && (
-                        <div className="flex flex-col gap-1">
-                            <label className="text-xs opacity-70 uppercase tracking-widest">字节长度 (Length)</label>
+                    {/* Type-driven property fields (see config/blockTypes.js) */}
+                    {getBlockFields(selectedBlock.type).map((field) => (
+                        <div key={field.id} className="flex flex-col gap-1">
+                            <label className="text-xs opacity-70 uppercase tracking-widest">{field.label}</label>
                             <input
-                                type="number"
-                                min="1"
-                                value={selectedBlock.byte_length}
-                                onChange={(e) => onUpdateBlock(selectedBlock.id, { byte_length: parseInt(e.target.value) || 1 })}
-                                className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono"
+                                type={field.inputType}
+                                {...(field.min !== undefined ? { min: field.min } : {})}
+                                value={selectedBlock[field.key] ?? ''}
+                                onChange={(e) => onUpdateBlock(selectedBlock.id, { [field.key]: field.parse(e.target.value) })}
+                                className={`bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono${field.inputType === 'text' ? ' uppercase' : ''}`}
                             />
                         </div>
-                    )}
+                    ))}
 
-                    {/* Fix: Hex Value for Fixed Blocks */}
-                    {selectedBlock.type === 'fixed' && (
-                        <div className="flex flex-col gap-1">
-                            <label className="text-xs opacity-70 uppercase tracking-widest">十六进制值 (Hex)</label>
-                            <input
-                                type="text"
-                                value={selectedBlock.hex_value || ''}
-                                onChange={(e) => onUpdateBlock(selectedBlock.id, { hex_value: e.target.value })}
-                                className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono uppercase"
-                            />
-                        </div>
-                    )}
-
-                    <div className="pt-8 border-t border-nier-light/20">
+                    <div className="pt-4 border-t border-nier-light/20">
                         <button
                             onClick={() => onDeleteBlock(selectedBlock.id)}
                             className="w-full border border-red-500/50 text-red-400 hover:bg-red-500 hover:text-white py-2 px-4 uppercase text-xs tracking-widest transition-colors"

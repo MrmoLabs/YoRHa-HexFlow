@@ -22,7 +22,7 @@
 | 批次 | 内容 | 状态 |
 |---|---|---|
 | M1 | A1 加工页 refs 无 formula 修复 + C1 指令页测试债 + C2 位域后端强校验 | 🔄 实现完成，待人工验证 |
-| M2 | C3 数据中心页一期 + C4 协议页测试收敛 + C5 编排回归 + C6 加工页渲染下沉 + C7 隐式约定收敛 + C8 README 同步 | ⬜ |
+| M2 | C3 数据中心页一期 + C4 协议页测试收敛 + C5 编排回归 + C6 加工页渲染下沉 + C7 隐式约定收敛 + C8 README 同步 | ✅ |
 | E1 | B1 B2–B8 真实编码语义（6 子项，双端编码器解禁） | ⬜ |
 | E2 | B2 传输层 T1→T2→T3→T4→T5（T2 TCP 无依赖先行，T3 串口 pyserial） | ⬜ |
 | E3 | B3 通讯调试页 /terminal 实装（依赖 E2） | ⬜ |
@@ -84,6 +84,21 @@
   `backend/tests/test_bitfield_validation.py`：重叠 / 超容量 / 正常 / 无 bits。
 
 ## 3. M2 明细
+
+> **进度（2026-09-22）**：C3–C8 全部实现。自动化验证：前端 207/207
+> （M1 基线 137 → +70，新增 DataHub/blockMerge/runnerRenderRules/
+> instructionDataOptions/契约测试并扩充 Protocol、Orchestration、pageRegistry）、
+> 后端 unittest 21/21（新增 `test_datahub` 13 例，stdlib 直测纯函数）、
+> `npx vite build` EXIT=0、yorha-ui 校验器 M2 全部改动文件 0 违规
+> （Canvas `pl-8`/`p-10` 与 BlockPropertiesPanel 既知旧违规除外）、
+> `backend/db/yorha.db` 未被改动。顺带修复真 bug：编排页总长度漏计注入
+> 载荷字节（`children: []` 被当容器递归）+ 页脚 hex 流叶子/防崩；顺手清理
+> Orchestration `px-6`、ProtocolPropertiesPanel `backdrop-blur-sm`/`pt-8` 既有违规。
+> **人工验证期反馈（并入本批）**：加工页只读字段与可编辑字段区分度不够 →
+> `SmartInput` 只读态改斜纹警示填充 + 虚线边框 + 反白 `[READ_ONLY]` 徽标 +
+> 暗淡标签/幽灵刻度条，可编辑态实线边框悬停聚焦加深、行导轨仅可编辑行响应；
+> 新增 `SmartInput.test.jsx` 6 例锁视觉+行为契约（213/213）。
+> 待人工验证 → 一批一提交。
 
 - **C3 数据中心页一期**：D1 聚合导出入口（指令 JSON + `/export` .bin/.hex 打包
   下载）M；D2 备份/恢复（复制 yorha.db 新端点，设计运行中换库风险）M；

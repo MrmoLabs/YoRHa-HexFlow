@@ -94,7 +94,11 @@ export const buildLanes = (nodes, parentId = null, parentName = 'ROOT SEQUENCE',
 export const getTotalBytes = (blocks) => {
     let total = 0;
     blocks.forEach(b => {
-        if (b.children) total += getTotalBytes(b.children);
+        // Leaf = node without child nodes. `children: []` (which
+        // normalizeInstructionBlocks attaches to every field) is NOT a
+        // container — counting it as one recursed into nothing and dropped
+        // the whole payload from the displayed total.
+        if (b.children?.length) total += getTotalBytes(b.children);
         else total += (b.byte_length || 0);
     });
     return total;
