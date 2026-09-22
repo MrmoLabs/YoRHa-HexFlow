@@ -10,7 +10,6 @@ import {
     DragOverlay,
 } from '@dnd-kit/core';
 import {
-    arrayMove,
     SortableContext,
     sortableKeyboardCoordinates,
     horizontalListSortingStrategy,
@@ -32,7 +31,7 @@ function LaneContainer({ lane, index, children, isActiveLane, onNavigateGroup, o
                 e.stopPropagation();
                 onSetFocusedLane && onSetFocusedLane(lane.parentId);
             }}
-            className={`relative flex gap-1 items-end min-w-max p-4 border border-dashed min-h-[140px] transition-colors duration-300 cursor-pointer
+            className={`relative flex gap-1 items-end min-w-max p-4 border border-dashed min-h-[140px] transition-all duration-300 cursor-pointer
                 ${isActiveLane ? 'border-nier-light/40 bg-nier-light/5 opacity-100 grayscale-0 scale-[1.01]' : 'border-nier-light/10 bg-transparent opacity-80 grayscale scale-100'}
             `}
         >
@@ -125,17 +124,12 @@ export default function Canvas({
         if (newLaneIndex !== null) setDragOverLaneIndex(newLaneIndex);
 
         if (sourceLane === targetLane) {
-            const oldIndex = sourceLane.items.findIndex(i => i.id === active.id);
-            let newIndex = sourceLane.items.findIndex(i => i.id === over.id);
-            if (over.id.toString().startsWith('lane-container-')) newIndex = sourceLane.items.length - 1;
-            if (oldIndex !== newIndex && newIndex !== -1) {
-                setLocalLanes(prev => {
-                    const newLanes = [...prev];
-                    const laneIdx = prev.indexOf(sourceLane);
-                    newLanes[laneIdx] = { ...sourceLane, items: arrayMove(sourceLane.items, oldIndex, newIndex) };
-                    return newLanes;
-                });
-            }
+            // Same lane: DO NOT reorder `items` physically mid-drag.
+            // The SortableContext strategy already previews avoidance via CSS transforms;
+            // mutating `items` here made dnd-kit flip `itemsHaveChanged` → disable
+            // transforms + re-measure rects on every index crossing, so cards jumped
+            // and slid back instead of gliding. Final order is resolved in
+            // handleDragEnd from `over` (arrayMove semantics).
             return;
         }
 
@@ -162,13 +156,42 @@ export default function Canvas({
         const { active, over } = event;
         setActiveDragId(null);
         setDragOverLaneIndex(null);
+        // Released outside any droppable → undo any cross-lane splice from dragOver.
         if (!over) { setLocalLanes(lanes); return; }
 
-        const finalLane = localLanes.find(l => l.items.find(i => i.id === active.id));
-        if (finalLane) {
-            const finalIndex = finalLane.items.findIndex(i => i.id === active.id);
-            onMoveItem(active.id, finalLane.parentId, finalIndex);
+        const activeLaneIdx = localLanes.findIndex(l => l.items.some(i => i.id === active.id));
+        if (activeLaneIdx === -1) return;
+        const activeLane = localLanes[activeLaneIdx];
+
+        // Which lane does `over` point at? (-1 = unresolvable)
+        let overLaneIdx = -1;
+        const overStr = String(over.id);
+        if (overStr.startsWith('lane-container-')) {
+            const idx = parseInt(overStr.split('-')[2], 10);
+            overLaneIdx = Number.isNaN(idx) ? -1 : idx;
+        } else {
+            overLaneIdx = localLanes.findIndex(l => l.items.some(i => i.id === over.id));
         }
+
+        let finalIndex;
+        if (overLaneIdx === activeLaneIdx) {
+            // Same lane (or post cross-lane splice, where `over` is in the lane the
+            // item now physically sits): derive the target from `over` with
+            // arrayMove semantics — insert-after-remove at `overIdx` reproduces
+            // exactly what the strategy preview shows on screen.
+            if (overStr.startsWith('lane-container-')) {
+                finalIndex = activeLane.items.length - 1; // dropped on lane background → end
+            } else {
+                finalIndex = activeLane.items.findIndex(i => i.id === over.id);
+            }
+        } else {
+            // Transient/unresolvable `over` (e.g. released mid-gap between lanes):
+            // trust the current physical position — a no-op move keeps order stable.
+            finalIndex = activeLane.items.findIndex(i => i.id === active.id);
+        }
+
+        if (finalIndex < 0) return;
+        onMoveItem(active.id, activeLane.parentId, finalIndex);
     };
 
     const handleBlockClick = (id, opCode, parentId) => {

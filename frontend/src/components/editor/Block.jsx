@@ -20,7 +20,12 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
 
     const style = {
         transform: CSS.Transform.toString(transform),
-        transition,
+        // Inline `transition` overrides the Tailwind `transition-colors` class, so
+        // compose everything we want animated: strategy transforms (drag avoidance),
+        // width (live byte_len preview), and theme/hover colors.
+        transition: transition
+            ? `${transition}, width 200ms ease, background-color 200ms ease, border-color 200ms ease`
+            : transition,
         width: `${Math.max(60, length * 40)}px`, // Increased min-width for label stability
     };
 
