@@ -31,7 +31,7 @@
 ### 3. 导出与下发 (Export & Dispatch)
 - **Hex 文件导出**: `POST /export/hex` 将组装好的数据流导出为 `.hex` 文件（指令加工页）。
 - **二进制文件导出**: `POST /export/binary` 由后端 Orchestrator 编译合并后的块结构并返回 `.bin` 文件（编排绑定页）。
-- **环回下发**: `POST /dispatch/` 返回 ACK 并保留有界内存历史（最多 100 条）。**这是进程内环回通道——目前没有真实串口/TCP/WebSocket 传输。**
+- **下发与传输层**: `POST /dispatch/` 经传输抽象发送并保留有界内存历史（最多 100 条，含原始/响应/错误三类事件）。**默认模式仍为进程内环回（`/dispatch` 口径不变）；`POST /transport/config` 可切换 TCP（标准库 socket）与串口（pyserial）真实传输，`GET /transport/status` 提供连接状态事件。**
 
 ### 4. 工程化与质量 (Engineering)
 - **SRP 架构**: 严格遵循单一职责原则，逻辑 Hook 化，组件原子化。

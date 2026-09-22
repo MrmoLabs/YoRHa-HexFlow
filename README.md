@@ -31,7 +31,7 @@
 ### 3. Export & Dispatch
 - **Hex File Export**: `POST /export/hex` turns the assembled stream into a downloadable `.hex` file (Instruction Processing page).
 - **Binary File Export**: `POST /export/binary` compiles the merged block forest server-side via the Orchestrator and returns a `.bin` file (Orchestration page).
-- **Loopback Dispatch**: `POST /dispatch/` acknowledges frames and keeps a bounded in-memory history (max 100). **This is an in-process loopback channel — there is no real serial/TCP/WebSocket transport yet.**
+- **Dispatch + Transport**: `POST /dispatch/` sends frames through the transport abstraction and keeps a bounded in-memory history (max 100) with three event kinds — raw / response / error. **The default mode is the in-process loopback channel (`/dispatch` contract unchanged); `POST /transport/config` switches to real TCP (stdlib socket) or serial (pyserial) transport, and `GET /transport/status` reports connection-state events.**
 
 ### 4. Data Hub (数据中心)
 - **Environment Status Panel**: `GET /datahub/status` reports the DB path / size / mtime, row counts of all five tables, and the backend version.

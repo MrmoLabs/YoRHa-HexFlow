@@ -76,12 +76,12 @@
 - 与指令管理页共享同一份指令列表状态。
 - 支持按当前指令结构渲染参数填写表单。
 - 支持打开日期选择器并预览发送 payload。
-- 发送走后端 /dispatch 环回通道（无真实串口/TCP），日志展示成功、失败与等待状态。
+- 发送经后端 /dispatch 走传输抽象（默认环回，可经 /transport/config 切换 TCP/串口真实传输），日志展示成功、失败与等待状态。
 - 支持将当前 payload 导出为 .hex 文件下载。
 - 参数渲染规则抽为 config/runnerRenderRules.js（字段分类/选项归一/显示值解析/语义标签，纯函数 + 27 项单测），RunnerFieldTree 只保留布局（C6）。
 
 ### 后续建议
-- 接入真实串口或 TCP 传输层，替换当前环回通道。
+- 在本页展示当前传输模式与连接状态（GET /transport/status），支持一键切换 loopback/TCP/串口。
 
 ---
 

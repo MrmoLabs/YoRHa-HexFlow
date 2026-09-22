@@ -32,7 +32,7 @@ export default function InstructionProcessor({ instructions: initialInstructions
         ));
     }, [instructions, searchTerm]);
 
-    // Send via backend loopback channel (/dispatch). No real serial/TCP transport yet.
+    // Send via backend /dispatch (transport abstraction: loopback default, TCP/serial via /transport/config).
     const handleSend = async (payload) => {
         const instructionName = currentInstruction?.name || currentInstruction?.label || null;
         const record = await api.dispatchPayload(payload, instructionName);

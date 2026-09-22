@@ -57,18 +57,18 @@
     "titleZh": "指令加工",
     "titleEn": "Instruction Processing",
     "implemented": true,
-    "status": "已接入共享指令数据链路 / 环回下发",
-    "summary": "指令加工页用于基于现有指令定义填写参数并预组装 payload，当前已经复用共享指令数据状态，并通过后端 /dispatch 环回通道下发与导出十六进制文件。",
+    "status": "已接入共享指令数据链路 / 传输抽象下发（默认环回）",
+    "summary": "指令加工页用于基于现有指令定义填写参数并预组装 payload，当前已经复用共享指令数据状态，并通过后端 /dispatch（传输抽象，默认环回）下发与导出十六进制文件。",
     "availableNow": [
       "与指令管理页共享同一份指令列表状态。",
       "支持按当前指令结构渲染参数填写表单。",
       "支持打开日期选择器并预览发送 payload。",
-      "发送走后端 /dispatch 环回通道（无真实串口/TCP），日志展示成功、失败与等待状态。",
+      "发送经后端 /dispatch 走传输抽象（默认环回，可经 /transport/config 切换 TCP/串口真实传输），日志展示成功、失败与等待状态。",
       "支持将当前 payload 导出为 .hex 文件下载。",
       "参数渲染规则抽为 config/runnerRenderRules.js（字段分类/选项归一/显示值解析/语义标签，纯函数 + 27 项单测），RunnerFieldTree 只保留布局（C6）。"
     ],
     "nextSteps": [
-      "接入真实串口或 TCP 传输层，替换当前环回通道。"
+      "展示当前传输模式与连接状态（GET /transport/status），支持在本页切换 loopback/TCP/串口。"
     ]
   },
   {
@@ -98,17 +98,16 @@
     "titleZh": "通讯调试",
     "titleEn": "Communication Terminal",
     "implemented": false,
-    "status": "占位页 / 未接入串口或 TCP 调试链路",
-    "summary": "当前项目的稳定主链路集中在协议定义、指令管理、指令加工和编排绑定。通讯调试页还没有接入真实会话、发送记录、串口枚举或报文往返结果，所以这里明确展示实现边界。",
+    "status": "占位页 / 传输层已实装（E2），三面板未接入",
+    "summary": "当前项目的稳定主链路集中在协议定义、指令管理、指令加工和编排绑定。后端传输层与配置 API 已就绪（loopback/TCP/串口），但通讯调试页还没有接入会话 UI、发送记录面板与串口枚举，所以这里明确展示实现边界。",
     "availableNow": [
-      "可以在“指令加工”页完成参数填写、payload 预组装，并通过后端 /dispatch 环回通道试发（有界历史，最多 100 条）。",
+      "可以在“指令加工”页完成参数填写、payload 预组装，并经后端 /dispatch 试发（默认环回，可经 /transport/config 切 TCP/串口；有界历史，最多 100 条）。",
       "可以在“编排绑定”页预览协议壳与指令内核合成后的结构。",
-      "后端当前没有提供串口、TCP、WebSocket 调试接口，/dispatch 仅为进程内环回，不是真实链路。"
+      "后端已提供 /transport/config 配置与 /transport/status 连接状态 API，支持 loopback/TCP/串口三种传输，发送历史含原始/响应/错误三类事件。"
     ],
     "nextSteps": [
-      "补通讯配置模型：串口参数、目标地址、发送模式。",
-      "增加发送历史、原始报文、响应报文与错误日志面板。",
-      "根据后端能力决定接串口库或 TCP 调试 API，并把 /dispatch 的环回实现替换为真实传输。"
+      "补通讯配置模型 UI：串口参数、目标地址、发送模式，接 /transport/config API。",
+      "在本页实装三面板：发送历史 / 原始报文 / 响应与错误日志。"
     ]
   },
   {

@@ -66,8 +66,8 @@
 ### 导出与下发（本次交接新增）
 *   `POST /export/hex` — hex 文本 → `.hex` 文件下载（指令加工页 "EXPORT_HEX" 按钮）。
 *   `POST /export/binary?filename=` — 块森林 → Orchestrator 编译 → `.bin` 下载（编排页 "EXPORT .BIN" 按钮；前端经 `toFrameBlocks` 映射 `byte_len→byte_length`、`op_code→type`）。
-*   `POST /dispatch/` — **进程内环回（loopback）**，返回 ACK 记录，保存在有界 deque（最多 100 条）；`GET /dispatch/history`、`DELETE /dispatch/history`。
-    *   **诚实说明**: 当前**没有**真实串口/TCP/WebSocket 传输，`/dispatch` 不是真实链路，仅用于打通前后端发送状态与历史记录。真实传输层是后续工作。
+*   `POST /dispatch/` — 经 **transport 抽象**（`backend/core/transport.py`）发送并返回记录，保存在有界 deque（最多 100 条，含 raw/response/error 三类事件）；`GET /dispatch/history`、`DELETE /dispatch/history`。
+    *   **诚实说明**: **默认模式仍是进程内环回，`/dispatch` 口径不变**；E2 已实装 TCP（标准库 socket）与串口（pyserial）真实传输，经 `POST /transport/config` 切换、`GET /transport/status` 查看连接状态事件（connected/disconnected/error）。无真实设备时请保持 loopback。
 
 ## 5. 当前实施状态
 ### ✅ 已完成
@@ -82,7 +82,10 @@
 *   前端测试 47/47 通过；后端 import + 新端点冒烟通过。
 
 ### 🚧 待办 / 下一步
-1.  **真实传输层**: 串口 / TCP 实现，替换 `/dispatch` 环回。
+1.  ~~**真实传输层**~~ ✅ 已落地（2026-09-23，Backlog E2-T1..T4）：`backend/core/transport.py`
+    （loopback 默认 / TCP 标准库 socket / pyserial 串口）+ `POST /transport/config`、
+    `GET /transport/status` API + 发送历史三类事件（原始/响应/错误）；`/dispatch`
+    默认环回口径不变，TCP/串口为可切换真实传输。
 2.  **通讯调试页 (`/terminal`)**: 目前是占位页，接入发送历史、原始报文与响应面板。
 3.  **数据中心页 (`/datahub`)**: 占位页，补 JSON 导入导出、备份恢复。
 4.  **绑定持久化**: 编排页的 bindings 目前只在页面内存中。

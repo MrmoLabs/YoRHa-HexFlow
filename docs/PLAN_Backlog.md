@@ -24,7 +24,7 @@
 | M1 | A1 加工页 refs 无 formula 修复 + C1 指令页测试债 + C2 位域后端强校验 | ✅（0ad7a1c） |
 | M2 | C3 数据中心页一期 + C4 协议页测试收敛 + C5 编排回归 + C6 加工页渲染下沉 + C7 隐式约定收敛 + C8 README 同步 | ✅（47904ef） |
 | E1 | B1 B2–B8 真实编码语义（6 子项，双端编码器解禁） | ⬜ |
-| E2 | B2 传输层 T1→T2→T3→T4→T5（T2 TCP 无依赖先行，T3 串口 pyserial） | ⬜ |
+| E2 | B2 传输层 T1→T2→T3→T4→T5（T2 TCP 无依赖先行，T3 串口 pyserial） | ✅ |
 | E3 | B3 通讯调试页 /terminal 实装（依赖 E2） | ⬜ |
 | E4 | B4 编排绑定持久化（甲案：新表） | ⬜ |
 
@@ -249,6 +249,27 @@
 - **T4** `POST /transport/config` API + 发送历史三类事件（原始/响应/错误）
 - **T5** 文档口径更新（真实传输落地后才改 /dispatch 描述）
 
+> **E2 进度（2026-09-23，T1–T5 整批完成，随 E2 整批提交 · 待人工验证 · 传输层落地）**：
+> T1 `backend/core/transport.py` 传输抽象：loopback 默认（`/dispatch` 口径不变——
+> loopback 记录字段与存量逐位一致，echo=回显压缩 hex）；配置为进程内存态，POST
+> patch 深合并 + 整体校验，非法 → 400。T2 TCP：stdlib socket 持久连接（复用同一
+> 句柄，连续两次发送仅一次 accept）、connect/read 超时 ms 级、收包 25ms 轮询 +
+> 50ms 静默截断（不等满 read_timeout）、连接状态事件 connected/disconnected/error
+> （有界 50 条）。T3 串口：pyserial（requirements.txt 入册，E2-T3 解禁）lazy
+> import；COM/波特率/数据位/校验位（N/E/O 归一大写）/停止位（1/1.5/2 归一）；
+> 打开或收发失败 → TransportError。T4 `/transport/config`（GET/POST 深合并校验）
+> + `/transport/status`（mode/connected/last_error/events）；/dispatch 发送历史
+> 三类事件 raw/response/error：成功 [raw,response]、失败 [raw,error] + HTTP 502
+> 且 ERROR 记录入历史（有界 100）。T5 文档口径：README/ZH §3、HANDOVER §4 下发
+> 条目 + §5 待办 1 划线、PAGE_STATUS 指令加工/通讯调试两节、pageStatus.json
+> processing/terminal 两条目（terminal.implemented 仍 false，E3 才翻）、前端三处
+> 注释。验证：后端 79/79（59+20：test_transport.py，含本地回声 TCP 对端双发单
+> accept、拒连 502、读超时空响应、串口坏端口、loopback 口径锚）、前端 341/341、
+> `vite build` EXIT=0、校验器触达 3 文件 0 违规、curl 冒烟 10/10（loopback 锚 +
+> TCP 切换/拒连 + 坏模式 400 + 状态事件）。运维教训：杀旧 uvicorn 须查
+> multiprocessing 子进程（37832 的子 38976 继承监听句柄占住 8000）；PS5.1 下
+> curl -d 内嵌 JSON 引号会被吞，改用临时文件传 body。
+
 ## 6. E3 明细（/terminal 通讯调试页）
 
 - 通讯配置模型 UI（串口参数/目标地址/发送模式，接 E2 配置 API）
@@ -266,4 +287,4 @@
 - `backend/core/processor.py` / `graph.py` 未接线（Phase-2 遗留，保留勿删，
   勿引入新依赖）
 - `pymysql` 保留；`backend/db/yorha.db` git 跟踪；`/dispatch` 文档口径
-  在 E2-T5 前固定为进程内环回
+  自 E2-T5 起更新为「默认进程内环回 + 可切换 TCP/串口真实传输」

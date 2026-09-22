@@ -2,7 +2,7 @@ import React from 'react';
 
 // Transmission log panel (send status history) for InstructionRunner.
 // Extracted verbatim from InstructionRunner.jsx (logic unchanged).
-// Status text reflects the backend /dispatch loopback channel (no real transport).
+// Status text reflects the backend /dispatch send history (raw/response/error events; loopback default mode).
 export default function TransmissionLog({ logs }) {
     return (
         <div className="flex-1 overflow-hidden flex flex-col mt-4">

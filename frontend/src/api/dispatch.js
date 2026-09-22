@@ -1,6 +1,6 @@
 import { API_BASE, handleResponse } from './client';
 
-// Dispatch (in-memory loopback channel, no real serial/TCP transport)
+// Dispatch via backend transport abstraction (loopback default / tcp / serial; bounded send history).
 export const dispatchPayload = async (hexString, instructionName = null) => {
     const response = await fetch(`${API_BASE}/dispatch/`, {
         method: 'POST',
