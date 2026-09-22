@@ -230,6 +230,33 @@
   （同 lane / 背景落点 / 跨 lane / 不可解析 over 四分支）——钉死拖拽避让修复。
 - 目标：基线 47 → 65+ 全绿；`vite build` 通过。
 
+### 实施增补（2026-09-22）
+
+- **P4-1 撤销/重做**：`hooks/useHistory.js` 手写（零依赖；undo/redo 双栈各上限 50，
+  新编辑清空 redo 分支）；压栈点 = `updateLocalInstruction` 咽喉（快照上一版本，
+  内容全等的调用——如松手 no-op 拖拽——不压栈防废步骤）；undo/redo 还原快照并保持
+  脏态（仍需保存）。**基线重置点**：切换指令（按 activeInstructionId 的 effect）、
+  保存成功、`loadInstructions` 重载——撤销永不跨基线。入口：顶栏「撤销 / 重做」按钮
+ （栈空禁用）+ `Ctrl+Z / Ctrl+Shift+Z`（输入控件聚焦或弹窗打开时不响应）。
+- **P4-2 保存失败恢复**：PUT catch → `saveError` 横幅（section 顶栏正下方，琥珀色：
+  摘要分「服务端拒绝（400/422）」/「网络/服务错误」两类 + **重试** 按钮 +
+  「本地更改保留 · RESET 可放弃」+ 关闭 ×）；脏态保留、无静默回滚，成功/重载清横幅。
+  与 P0-2 严格分流：校验失败走弹窗与「保存被阻止」文案，根本不进 PUT catch。
+- **P4-3 落点指示线 + 连线处理**：dragOver 按 arrayMove 预览算 side（拖拽卡当前在
+  目标卡之前 → 右缘，否则左缘），以内容层坐标渲染 2px 琥珀绝对定位线（几何未变不
+  setState 防抖动）；lane 背景落点不画线（沿用既有 focus 高亮），self-over 清线；
+  **refs 连线层拖拽期间整层 `opacity-0`**（stale 连线误导落点），drop 后随 `lanes`
+  自然重算；新增 `onDragCancel`（Escape 取消时清 activeDragId/指示线并回滚跨 lane
+  splice——原实现无此处理会卡住拖拽态）。
+- **P4-4 回归测试**：`handleDragEnd` 落点推导抽为纯函数 `utils/computePlacement.js`
+  的 `computeFinalPlacement(lanes, activeId, overId)`，四分支单测（同 lane 卡片 /
+  背景落点 → 末尾 / 跨 lane 的 parentId 跟随 ACTIVE 所在 lane / 不可解析 over →
+  no-op 保序）+ null 兜底，共 6 例。
+- **修复过程 bug**：keydown effect 原插在 `modalConfig` 声明之前（依赖数组 TDZ
+  崩渲染）——页面冒烟测试 `Instruction.test.jsx` 当场逮住 → 移至声明之后。
+- **测试**：113/113（Phase 3 基线 107 + computePlacement 6）；`npx vite build`
+  通过；yorha-ui 校验器改动文件零新增违规（Canvas `pl-8`/`p-10` 两处为既有）。
+
 ---
 
 ## 7. 调研点（实现前先确认，影响设计）

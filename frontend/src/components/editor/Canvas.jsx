@@ -17,6 +17,7 @@ import {
 } from '@dnd-kit/sortable';
 import Block from './Block';
 import { useCanvasConnections } from '../../hooks/useCanvasConnections';
+import { computeFinalPlacement } from '../../utils/computePlacement';
 
 // Lane Component to handle Droppable logic cleanly
 function LaneContainer({ lane, index, children, isActiveLane, onNavigateGroup, onSetFocusedLane }) {
@@ -59,6 +60,9 @@ export default function Canvas({
 
     const [activeDragId, setActiveDragId] = useState(null);
     const [dragOverLaneIndex, setDragOverLaneIndex] = useState(null); // Track which lane is hovered (by index for local DnD)
+    // P4-3: amber insertion-line hint — { side, left, top, height } in content
+    // coordinates, or null (lane backgrounds keep the focus highlight only).
+    const [dropHint, setDropHint] = useState(null);
 
     // Refs
     const canvasRef = useRef(null);
@@ -193,6 +197,35 @@ export default function Canvas({
 
         if (!sourceLane || !targetLane) return;
 
+        // P4-3: 2px amber insertion line on the target CARD's edge (lane
+        // backgrounds keep the existing focus highlight; self-over clears it).
+        // Side follows the arrayMove preview: the dragged card lands on over's
+        // RIGHT when it currently sits before it, LEFT otherwise. Rect math is
+        // relative to the positioned content layer (the line is absolute in it).
+        if (over.id === active.id || String(over.id).startsWith('lane-container-')) {
+            setDropHint(null);
+        } else {
+            const el = document.getElementById(`block-${over.id}`);
+            const origin = contentRef.current;
+            if (el && origin) {
+                const er = el.getBoundingClientRect();
+                const cr = origin.getBoundingClientRect();
+                const overLane = localLanes.find(l => l.items.some(i => i.id === over.id));
+                const aIdx = overLane ? overLane.items.findIndex(i => i.id === active.id) : -1;
+                const oIdx = overLane ? overLane.items.findIndex(i => i.id === over.id) : -1;
+                const side = (aIdx !== -1 && oIdx !== -1 && aIdx < oIdx) ? 'right' : 'left';
+                const left = Math.round((side === 'right' ? er.right : er.left) - cr.left);
+                const top = Math.round(er.top - cr.top);
+                const height = Math.round(er.height);
+                // Bail out on identical geometry so steady hovering doesn't re-render.
+                setDropHint(prev => (prev && prev.side === side && prev.left === left && prev.top === top && prev.height === height)
+                    ? prev
+                    : { side, left, top, height });
+            } else {
+                setDropHint(null);
+            }
+        }
+
         let newLaneIndex = null;
         if (over.id.toString().startsWith('lane-container-')) {
             newLaneIndex = parseInt(over.id.split('-')[2]);
@@ -234,42 +267,24 @@ export default function Canvas({
         const { active, over } = event;
         setActiveDragId(null);
         setDragOverLaneIndex(null);
+        setDropHint(null);
         // Released outside any droppable → undo any cross-lane splice from dragOver.
         if (!over) { setLocalLanes(lanes); return; }
 
-        const activeLaneIdx = localLanes.findIndex(l => l.items.some(i => i.id === active.id));
-        if (activeLaneIdx === -1) return;
-        const activeLane = localLanes[activeLaneIdx];
+        // P4-4: placement derivation extracted to utils/computePlacement.js
+        // (unit-tested: same lane / lane background / cross lane / unresolvable).
+        const placement = computeFinalPlacement(localLanes, active.id, over.id);
+        if (!placement) return;
+        onMoveItem(active.id, placement.parentId, placement.index);
+    };
 
-        // Which lane does `over` point at? (-1 = unresolvable)
-        let overLaneIdx = -1;
-        const overStr = String(over.id);
-        if (overStr.startsWith('lane-container-')) {
-            const idx = parseInt(overStr.split('-')[2], 10);
-            overLaneIdx = Number.isNaN(idx) ? -1 : idx;
-        } else {
-            overLaneIdx = localLanes.findIndex(l => l.items.some(i => i.id === over.id));
-        }
-
-        let finalIndex;
-        if (overLaneIdx === activeLaneIdx) {
-            // Same lane (or post cross-lane splice, where `over` is in the lane the
-            // item now physically sits): derive the target from `over` with
-            // arrayMove semantics — insert-after-remove at `overIdx` reproduces
-            // exactly what the strategy preview shows on screen.
-            if (overStr.startsWith('lane-container-')) {
-                finalIndex = activeLane.items.length - 1; // dropped on lane background → end
-            } else {
-                finalIndex = activeLane.items.findIndex(i => i.id === over.id);
-            }
-        } else {
-            // Transient/unresolvable `over` (e.g. released mid-gap between lanes):
-            // trust the current physical position — a no-op move keeps order stable.
-            finalIndex = activeLane.items.findIndex(i => i.id === active.id);
-        }
-
-        if (finalIndex < 0) return;
-        onMoveItem(active.id, activeLane.parentId, finalIndex);
+    // P4-3: Escape/cancel must clear the drag visuals too (dnd-kit fires
+    // onDragCancel, NOT onDragEnd) and roll back any cross-lane splice.
+    const handleDragCancel = () => {
+        setActiveDragId(null);
+        setDragOverLaneIndex(null);
+        setDropHint(null);
+        setLocalLanes(lanes);
     };
 
     const handleBlockClick = (id, opCode, parentId) => {
@@ -411,6 +426,7 @@ export default function Canvas({
             onDragStart={handleDragStart}
             onDragOver={handleDragOver}
             onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
         >
             <div
                 ref={canvasRef}
@@ -441,8 +457,9 @@ export default function Canvas({
                     ref={contentRef}
                     className="min-w-[max(fit-content,calc(100%_+_160px))] min-h-[max(fit-content,calc(100%_+_160px))] p-10 relative flex flex-col items-start"
                 >
-                    {/* SVG OVERLAY */}
-                    <svg className="absolute top-0 left-0 w-full h-full pointer-events-none z-0" style={{ overflow: 'visible' }}>
+                    {/* SVG OVERLAY — P4-3: 整层在拖拽期间隐藏（stale 连线会
+                        误导落点），drop 后随 lanes 变化自然重算 */}
+                    <svg className={`absolute top-0 left-0 w-full h-full pointer-events-none z-0 ${activeDragId ? 'opacity-0' : ''}`} style={{ overflow: 'visible' }}>
                         <defs>
                             <filter id="glow-line" x="-20%" y="-20%" width="140%" height="140%">
                                 <feGaussianBlur stdDeviation="2" result="blur" />
@@ -462,6 +479,13 @@ export default function Canvas({
                             </g>
                         ))}
                     </svg>
+                    {/* P4-3: amber insertion line (2px) on the target card edge */}
+                    {dropHint && (
+                        <div
+                            className="absolute z-20 w-[2px] bg-[#E58D28] pointer-events-none"
+                            style={{ left: dropHint.left - 1, top: dropHint.top, height: dropHint.height }}
+                        />
+                    )}
 
                     {rootLanes.map(lane => (
                         <RenderLaneNode key={lane.parentId || 'root'} lane={lane} />

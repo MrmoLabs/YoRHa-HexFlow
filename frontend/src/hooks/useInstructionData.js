@@ -3,6 +3,7 @@ import { api } from '../api';
 import { normalizeFieldPayload, normalizeInstructionPayload } from '../utils/normalizeInstruction';
 import { validateInstruction } from '../utils/validateInstruction';
 import { buildDuplicateInstructionPayload } from '../utils/duplicateInstruction';
+import { useHistory } from './useHistory';
 
 // Normalization helpers moved to utils/normalizeInstruction.js (logic unchanged);
 // re-exported here so existing consumers keep working.
@@ -27,6 +28,12 @@ export function useInstructionData(options = {}) {
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [operatorTemplates, setOperatorTemplates] = useState({});
     const [operatorTemplatesError, setOperatorTemplatesError] = useState('');
+    // P4-1: undo/redo stacks for the working copy (cap 50) — destructured as
+    // stable callbacks so effects can depend on `clearHistory` alone.
+    const { push: pushHistory, undo: popUndo, redo: popRedo, clear: clearHistory, canUndo, canRedo } = useHistory(50);
+    // P4-2: PUT failure banner (persistent, retryable) — P0-2 validation
+    // failures never set this (校验失败 ≠ 网络失败，文案分开).
+    const [saveError, setSaveError] = useState('');
     const isMountedRef = useRef(true);
     const instructionsRef = useRef([]);
     const activeInstructionIdRef = useRef(null);
@@ -52,6 +59,12 @@ export function useInstructionData(options = {}) {
     useEffect(() => {
         activeInstructionIdRef.current = activeInstructionId;
     }, [activeInstructionId]);
+
+    // P4-1: history is scoped to the ACTIVE instruction — switching resets both
+    // stacks (clearHistory is stable, so activeId is the only real trigger).
+    useEffect(() => {
+        clearHistory();
+    }, [activeInstructionId, clearHistory]);
 
     useEffect(() => {
         instructionsRef.current = instructions;
@@ -177,6 +190,8 @@ export function useInstructionData(options = {}) {
             setInstructionsState(data);
             reconcileActiveInstruction(data);
             setHasUnsavedChanges(false);
+            clearHistory(); // P4-1: reload = new baseline
+            setSaveError(''); // P4-2: server state supersedes a failed PUT
             if (!setExternalInstructions && onWebUpdate) onWebUpdate(data);
         } catch (err) {
             if (!isMountedRef.current || requestId !== instructionRequestIdRef.current) return;
@@ -189,10 +204,38 @@ export function useInstructionData(options = {}) {
         }
     }, [fetchInstructions, onWebUpdate, reconcileActiveInstruction, setExternalInstructions, setInstructionsState, showStatus]);
 
+    // P4-1: every working-copy edit funnels through here → snapshot the
+    // PREVIOUS version before applying (identical-content calls — e.g. a
+    // released no-op drag — don't pollute the undo stack). Undo/redo restore
+    // snapshots via undo()/redo() below and keep dirty semantics.
     const updateLocalInstruction = useCallback((updatedInst) => {
+        const prevInst = instructionsRef.current.find(i => i.id === updatedInst.id);
+        if (prevInst && JSON.stringify(prevInst) !== JSON.stringify(updatedInst)) {
+            pushHistory({ id: prevInst.id, inst: prevInst });
+        }
         setInstructionsState(prev => prev.map(i => i.id === updatedInst.id ? updatedInst : i));
         setHasUnsavedChanges(true);
-    }, [setInstructionsState]);
+    }, [setInstructionsState, pushHistory]);
+
+    // P4-1: undo/redo apply the stored snapshot for the ACTIVE instruction and
+    // keep dirty semantics (the restored copy still needs saving).
+    const undo = useCallback(() => {
+        const current = instructionsRef.current.find(i => i.id === activeInstructionIdRef.current);
+        if (!current) return;
+        const prev = popUndo({ id: current.id, inst: current });
+        if (!prev || prev.id !== current.id) return;
+        setInstructionsState(list => list.map(i => i.id === prev.id ? prev.inst : i));
+        setHasUnsavedChanges(true);
+    }, [popUndo, setInstructionsState]);
+
+    const redo = useCallback(() => {
+        const current = instructionsRef.current.find(i => i.id === activeInstructionIdRef.current);
+        if (!current) return;
+        const next = popRedo({ id: current.id, inst: current });
+        if (!next || next.id !== current.id) return;
+        setInstructionsState(list => list.map(i => i.id === next.id ? next.inst : i));
+        setHasUnsavedChanges(true);
+    }, [popRedo, setInstructionsState]);
 
     // CRUD ACTIONS
     const addInstruction = async (openConfirmCallback) => {
@@ -312,14 +355,23 @@ export function useInstructionData(options = {}) {
             await api.updateInstruction(currentInstruction.id, payload);
             showStatus('已保存', 1000);
             setHasUnsavedChanges(false);
+            clearHistory(); // P4-1: save = new baseline
+            setSaveError(''); // P4-2: success clears any previous failure banner
             if (!setExternalInstructions && onWebUpdate) onWebUpdate(instructions);
         } catch (e) {
+            // P4-2: PUT failure — dirty state is KEPT (no silent rollback); a
+            // persistent top-bar banner offers retry, RESET stays available.
+            // Distinct from P0-2 validation, which never reaches this catch.
             console.error(e);
-            if (e.response && (e.response.status === 400 || e.response.status === 422) && openConfirmCallback) {
-                showStatus(e.message);
-                openConfirmCallback(`保存失败：\n${e.message}`, () => { });
-            } else {
-                showStatus('保存失败');
+            const status = e?.response?.status;
+            const rawDetail = e?.response?.data?.detail;
+            const detail = typeof rawDetail === 'string' ? rawDetail : (e?.message || '未知错误');
+            setSaveError((status === 400 || status === 422)
+                ? `服务端拒绝（${status}）：${detail}`
+                : `网络/服务错误：${detail}`);
+            showStatus('保存失败');
+            if ((status === 400 || status === 422) && openConfirmCallback) {
+                openConfirmCallback(`保存失败：\n${detail}`, () => { });
             }
         }
     };
@@ -350,6 +402,12 @@ export function useInstructionData(options = {}) {
         loadInstructions,
         loadOperatorTemplates,
         updateLocalInstruction,
+        undo, // P4-1
+        redo, // P4-1
+        canUndo, // P4-1（栈空禁用按钮）
+        canRedo, // P4-1
+        saveError, // P4-2 保存失败横幅
+        setSaveError, // P4-2 关闭横幅
         addInstruction,
         duplicateInstruction,
         deleteInstruction,

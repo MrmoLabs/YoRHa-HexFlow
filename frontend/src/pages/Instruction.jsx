@@ -31,6 +31,12 @@ export default function Instruction({ instructions: initialInstructions, setInst
         loadInstructions,
         loadOperatorTemplates,
         updateLocalInstruction,
+        undo, // P4-1 撤销
+        redo, // P4-1 重做
+        canUndo, // P4-1 栈空禁用
+        canRedo, // P4-1 栈空禁用
+        saveError, // P4-2 保存失败横幅
+        setSaveError, // P4-2 关闭横幅
         addInstruction,
         duplicateInstruction,
         deleteInstruction,
@@ -112,6 +118,23 @@ export default function Instruction({ instructions: initialInstructions, setInst
     const [viewMode, setViewMode] = useState('list');
     const importInputRef = useRef(null);
     const [modalConfig, setModalConfig] = useState({ isOpen: false, message: '', onConfirm: null, onCancel: null });
+
+    // P4-1: Ctrl+Z / Ctrl+Shift+Z 撤销/重做 —— 输入控件聚焦时或弹窗打开时
+    // 不响应（不劫持正常文本撤销）。声明必须在 modalConfig 之后（依赖数组求值）。
+    useEffect(() => {
+        const onHistoryKey = (e) => {
+            const t = e.target;
+            const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+            if (typing || modalConfig.isOpen) return;
+            if (!(e.ctrlKey || e.metaKey)) return;
+            if (e.key === 'z' || e.key === 'Z') {
+                e.preventDefault();
+                if (e.shiftKey) redo(); else undo();
+            }
+        };
+        window.addEventListener('keydown', onHistoryKey);
+        return () => window.removeEventListener('keydown', onHistoryKey);
+    }, [undo, redo, modalConfig.isOpen]);
     const [datePickerState, setDatePickerState] = useState({ isOpen: false, value: null, onConfirmCallback: null });
 
     const openConfirm = (msg, action) => {
@@ -479,6 +502,22 @@ export default function Instruction({ instructions: initialInstructions, setInst
                     </div>
                     <div className="flex gap-2 items-center">
                         <button
+                            onClick={undo}
+                            disabled={!canUndo}
+                            title="撤销上一步编辑 (CTRL+Z)"
+                            className="border border-nier-light/40 px-1.5 leading-none hover:bg-nier-light hover:text-black disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                        >
+                            撤销
+                        </button>
+                        <button
+                            onClick={redo}
+                            disabled={!canRedo}
+                            title="重做 (CTRL+SHIFT+Z)"
+                            className="border border-nier-light/40 px-1.5 leading-none hover:bg-nier-light hover:text-black disabled:opacity-30 disabled:pointer-events-none transition-colors"
+                        >
+                            重做
+                        </button>
+                        <button
                             onClick={() => importInputRef.current && importInputRef.current.click()}
                             title="从 JSON 文件导入指令 (IMPORT)"
                             className="border border-nier-light/40 px-1.5 leading-none hover:bg-nier-light hover:text-black transition-colors"
@@ -504,6 +543,28 @@ export default function Instruction({ instructions: initialInstructions, setInst
                         )}
                     </div>
                 </div>
+                {/* P4-2: persistent save-failure banner (retryable) — P0-2
+                    validation failures use the modal path instead. */}
+                {saveError && (
+                    <div className="border-b border-[#E58D28]/60 bg-nier-dark flex items-center gap-3 px-4 py-1.5 text-[11px] font-mono text-[#FFB74D]">
+                        <span className="font-bold whitespace-nowrap">保存失败 SAVE FAILED</span>
+                        <span className="flex-1 truncate" title={saveError}>{saveError}</span>
+                        <span className="opacity-70 whitespace-nowrap">本地更改保留 · RESET 可放弃</span>
+                        <button
+                            onClick={() => saveChanges(openConfirm)}
+                            className="border border-[#FFB74D]/60 px-1.5 leading-none hover:bg-[#FFB74D] hover:text-black transition-colors"
+                        >
+                            重试
+                        </button>
+                        <button
+                            onClick={() => setSaveError('')}
+                            title="关闭横幅（本地更改仍保留）"
+                            className="border border-[#FFB74D]/60 px-1.5 leading-none hover:bg-[#FFB74D] hover:text-black transition-colors"
+                        >
+                            ×
+                        </button>
+                    </div>
+                )}
                 <input
                     ref={importInputRef}
                     type="file"
