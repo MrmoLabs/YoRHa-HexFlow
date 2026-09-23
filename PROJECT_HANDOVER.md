@@ -183,7 +183,7 @@
     测试锁形）。验收：后端 **205/205**（+14）、IMPORT-OK 55 路由、**curl 冒烟
     五轮全绿**（导出 BOM/过滤、回放 200/404、`BY-SOURCE manual=2 replay=1
     sequence=1 transaction=1` 四路铁证、清场复查 0）。明细见
-    `docs/PLAN_Backlog.md` §8.5。
+    `docs/PLAN_Backlog.md` §8.5。已提交 `aa20589`（db 同步 `b635eac`）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
