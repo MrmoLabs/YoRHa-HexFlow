@@ -97,17 +97,20 @@
     "shortcut": "D",
     "titleZh": "通讯调试",
     "titleEn": "Communication Terminal",
-    "implemented": false,
-    "status": "占位页 / 传输层已实装（E2），三面板未接入",
-    "summary": "当前项目的稳定主链路集中在协议定义、指令管理、指令加工和编排绑定。后端传输层与配置 API 已就绪（loopback/TCP/串口），但通讯调试页还没有接入会话 UI、发送记录面板与串口枚举，所以这里明确展示实现边界。",
+    "implemented": true,
+    "status": "已接入传输配置与三面板",
+    "summary": "通讯调试页提供传输配置模型（发送模式 loopback/TCP/串口 + 目标地址/串口参数，接 /transport/config）、连接状态与状态事件（GET /transport/status），以及发送历史 / 原始报文 / 响应与错误日志三面板（数据源 /dispatch 有界历史，raw/response/error 三类事件）。",
     "availableNow": [
-      "可以在“指令加工”页完成参数填写、payload 预组装，并经后端 /dispatch 试发（默认环回，可经 /transport/config 切 TCP/串口；有界历史，最多 100 条）。",
-      "可以在“编排绑定”页预览协议壳与指令内核合成后的结构。",
-      "后端已提供 /transport/config 配置与 /transport/status 连接状态 API，支持 loopback/TCP/串口三种传输，发送历史含原始/响应/错误三类事件。"
+      "配置发送模式与目标参数（loopback 默认；TCP host/port/连接与读取超时；串口 COM/波特率/数据位/校验位/停止位），应用后立即生效并刷新连接状态。",
+      "查看连接状态与状态事件（connected/disconnected/error，GET /transport/status），手动刷新。",
+      "发送历史面板：手动发送十六进制帧（非法输入禁用发送）、按记录选择（时间/通道/状态/字节/预览）、刷新与清空（清空需确认）。",
+      "原始报文面板：选中记录的完整帧 hex dump（8 字节/行）与 meta（ID/通道/字节数/状态）。",
+      "响应与错误日志面板：选中记录的响应事件 hex dump 或失败原因，以及全部 ERROR 记录汇总。"
     ],
     "nextSteps": [
-      "补通讯配置模型 UI：串口参数、目标地址、发送模式，接 /transport/config API。",
-      "在本页实装三面板：发送历史 / 原始报文 / 响应与错误日志。"
+      "串口端口枚举（列出本机可用 COM 口）与波特率预设表。",
+      "连接状态与发送历史的自动轮询或推送（当前为手动刷新）。",
+      "报文格式切换（hex / ascii / 二进制位图）。"
     ]
   },
   {

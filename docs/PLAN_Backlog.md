@@ -25,7 +25,7 @@
 | M2 | C3 数据中心页一期 + C4 协议页测试收敛 + C5 编排回归 + C6 加工页渲染下沉 + C7 隐式约定收敛 + C8 README 同步 | ✅（47904ef） |
 | E1 | B1 B2–B8 真实编码语义（6 子项，双端编码器解禁） | ⬜ |
 | E2 | B2 传输层 T1→T2→T3→T4→T5（T2 TCP 无依赖先行，T3 串口 pyserial） | ✅ |
-| E3 | B3 通讯调试页 /terminal 实装（依赖 E2） | ⬜ |
+| E3 | B3 通讯调试页 /terminal 实装（依赖 E2） | ✅ |
 | E4 | B4 编排绑定持久化（甲案：新表） | ⬜ |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
@@ -275,6 +275,28 @@
 - 通讯配置模型 UI（串口参数/目标地址/发送模式，接 E2 配置 API）
 - 三面板：发送历史 / 原始报文 / 响应与错误日志
 - 验收：`pageStatus.json` `terminal.implemented` → true，人工验证清单过
+
+> **E3 进度（2026-09-23，整批完成，随 E3 整批提交 · 待人工验证 · 验收字段已翻）**：
+> 页面 `Terminal.jsx` 全量重写（弃 FeaturePlaceholder 占位，组件保留未删——仅此一
+> 个使用方已迁走）：① 通讯配置面板 —— 三模式切换（loopback 默认，反白填充选中
+> 态）+ 按模式显隐字段（TCP host/port/连接读取超时；串口 COM/波特率/数据位/校验
+> 位/停止位，select 取值字符串 → `toPatch` 数字化，空串原样交后端 400 校验为
+> SSOT），APPLY 调 `POST /transport/config` 并回填生效配置 + 刷新状态；② 连接
+> 状态面板 —— mode/connected 标签（已连接 amber、未连接中性，无霓虹色）/
+> last_error / 状态事件最近 8 条（新→旧）+ 手动刷新；③ 三面板 —— 发送历史
+> （手动 hex 发送条：`hexInputInfo` 与后端 `hex_to_bytes` 同款清洗，非法/奇数位
+> 禁发；表格 TIME/CH/ST/B/HEX 预览、行选中反白、刷新 + NieRModal 确认清空）、
+> 原始报文（选中记录 raw 事件 8 字节/行 dump + ID/通道/字节/状态 meta）、响应与
+> 错误日志（选中记录 response dump 或失败原因红条 + 全量 ERROR 记录汇总）。
+> 视图模型纯函数抽 `utils/terminalPanes.js`（事件拆分/hexDump/预览截断/
+> historyRows/hexInputInfo，注释钉与后端 dispatch.py 同口径）。API 层新增
+> `api/transport.js`（get/set config + status）经 barrel 出口（顺手修正 index.js
+> 旧环回注释）。验收：`pageStatus.json` terminal `implemented` → **true**（六页
+> 全 true），`pageRegistry.test` 断言同步翻转；PAGE_STATUS terminal 节 / HANDOVER
+> 待办 2 划线同步。测试：前端 **359/359**（341+18：terminalPanes 11 + Terminal
+> 页面 7），后端 79/79（无改动回归），`vite build` EXIT=0（529 模块）、校验器
+> 5 文件 0 违规（新文件零引入；容器 padding 曾踩 `px-8/py-8`→`px-6` 仍拦 →
+> 改 `px-5 py-5` 过——校验器档位正则 ≥6 全拦）。
 
 ## 7. E4 明细（编排绑定持久化，甲案）
 

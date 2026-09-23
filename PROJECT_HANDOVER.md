@@ -86,7 +86,11 @@
     （loopback 默认 / TCP 标准库 socket / pyserial 串口）+ `POST /transport/config`、
     `GET /transport/status` API + 发送历史三类事件（原始/响应/错误）；`/dispatch`
     默认环回口径不变，TCP/串口为可切换真实传输。
-2.  **通讯调试页 (`/terminal`)**: 目前是占位页，接入发送历史、原始报文与响应面板。
+2.  ~~**通讯调试页 (`/terminal`)**~~ ✅ 已落地（2026-09-23，Backlog E3）：传输配置
+    UI（`/transport/config` 三模式 + TCP/串口参数）+ 连接状态与状态事件面板 +
+    发送历史 / 原始报文 / 响应与错误日志三面板（含手动 hex 发送与确认式清空）；
+    `pageStatus.json` `terminal.implemented` → true，纯函数视图模型
+    `utils/terminalPanes.js`。
 3.  **数据中心页 (`/datahub`)**: 占位页，补 JSON 导入导出、备份恢复。
 4.  **绑定持久化**: 编排页的 bindings 目前只在页面内存中。
 5.  ~~**位域强校验**~~ ✅ 已落地（2026-09-22，Backlog M1-C2）：`backend/routers/instruction.py`

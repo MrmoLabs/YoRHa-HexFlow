@@ -16,6 +16,7 @@ import {
 import { getOperatorTemplates } from './operators';
 import { exportHexFile, exportBinaryFromBlocks } from './export';
 import { dispatchPayload, getDispatchHistory, clearDispatchHistory } from './dispatch';
+import { getTransportConfig, setTransportConfig, getTransportStatus } from './transport';
 import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle } from './datahub';
 
 export const api = {
@@ -39,10 +40,13 @@ export const api = {
     exportHexFile,
     exportBinaryFromBlocks,
 
-    // Dispatch (in-memory loopback channel, no real serial/TCP transport)
+    // Dispatch / transport (loopback default; TCP/serial via /transport/config)
     dispatchPayload,
     getDispatchHistory,
     clearDispatchHistory,
+    getTransportConfig,
+    setTransportConfig,
+    getTransportStatus,
 
     // Data Hub (C3: status / aggregate export / db backup & restore)
     getDatahubStatus,
