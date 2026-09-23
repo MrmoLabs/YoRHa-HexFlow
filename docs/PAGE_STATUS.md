@@ -10,6 +10,7 @@
 - `编排绑定` (/orchestration)
 - `通讯调试` (/terminal)
 - `数据中心` (/datahub)
+- `序列编排` (/sequences)
 
 ## 占位或待实现页面
 
@@ -151,3 +152,23 @@
 ### 后续建议
 - 补数据包示例下载与算子模板/协议的独立导出包。
 - 编排绑定关系持久化后再纳入聚合导出范围。
+
+---
+
+## 序列编排 / Sequence Orchestration
+
+- 路径: `/sequences`
+- 快捷键: `F`
+- 当前状态: 新表 sequences / sequence_steps + 单槽后台 Runner + 1.5s 状态轮询 + 手动发送互斥
+- 摘要: 序列编排页维护多步骤发送序列：步骤帧保存时由 encodeInstruction 编译定值（表单参数冻结为 params），TIME/COUNTER/校验字段按 plan 在每次发送时重算；定义持久化到新表 sequences / sequence_steps，运行经单槽后台 Runner（协作式停止、出错即停开关），/sequences/status 每 1.5s 轮询运行快照；序列运行期手动 /dispatch 与事务发送 409 互斥。
+
+### 已具备
+- 序列定义 CRUD：新建、重命名/描述与配置（出错即停、读超时）、步骤增删与上移下移、整体保存（PUT 替换），删除需二次确认。
+- 步骤编辑器：选择指令 → RunnerFieldTree 动态表单填参 → 实时 hex 帧预览，「应用」编译 payload + 冻结 params + 生成发送计划。
+- 计划编译为纯函数 utils/sequenceView.buildPlan（键集与后端 normalize_plan 严格同形；动态字段计数与校验算法摘要徽标；自含重叠/算法不支持等后端会 400 的形态在生成侧降级为冻结并给警告）。
+- 运行控制：启动（404 缺失 / 400 无步骤 / 409 忙 分流提示）、停止（恒 200 幂等），运行期定义编辑/删除/启动入口前端禁用。
+- 状态面板 1.5s 轮询：待机/运行/完成/失败/停止徽标、进度 current/total、逐步状态（OK/ERROR/SKIPPED）与 RTT、运行级错误与停止请求标志。
+- 与手动发送互斥：序列运行中 /dispatch、/dispatch/transaction 返回 409（加工页发送错误条可见该文案）。
+
+### 后续建议
+- 步骤拖拽排序（当前为上移/下移按钮位序回写）。

@@ -147,6 +147,18 @@
     `/dispatch/transaction` 与二次 start 全 409）。验收：后端 191/191
     （+42）、curl 冒烟四轮全绿（补丁链 sum 反验 match=True、互斥 409×3、
     停止 SKIPPED）。P4 序列编排前端见 `docs/PLAN_Backlog.md` §1。
+9.  ~~**序列编排前端**~~ ✅ 已落地（2026-09-23，Backlog P4）：新菜单页「序列编排」
+    （pageStatus 第 7 项 / 快捷键 F、`/sequences` 路由，PAGE_REGISTRY 派生导航与
+    状态板自动收录，App.jsx 仅 +2 行）+ `api/sequences.js` 七端点入 barrel
+    （DELETE 204 无体特判）+ 纯函数 `utils/sequenceView.buildPlan`（键集与后端
+    `normalize_plan` 严格同形；**编码与计划走 raw op_code**——normalize 会把
+    TIME_ACCUMULATOR/AUTO_COUNTER 改写成 TIME_CUMULATIVE/INPUT，仅 raw 与后端
+    发送时重算 byte-equal；后端 400 形态生成侧降级为冻结 + 警告）+
+    `pages/Sequences.jsx`（三栏定义列表/步骤编辑/运行状态，RunnerFieldTree 复用 +
+    实时帧预览 + PUT 整体保存 + 运行期禁用 + `/status` 1.5s 轮询 + NieRModal
+    二次确认）+ `docs/PAGE_STATUS.md` 重生成。验收：前端 428/428（390+38）、
+    vite build EXIT=0、yorha-ui 校验器本批 UI 文件 0 违规（App.jsx 壳层 5 处
+    既有违规非本批引入，留待独立清理批）。P5 日志落库见 `docs/PLAN_Backlog.md` §1。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

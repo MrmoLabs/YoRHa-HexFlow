@@ -6,6 +6,7 @@ import InstructionProcessor from './pages/InstructionProcessor';
 import Orchestration from './pages/Orchestration';
 import Terminal from './pages/Terminal';
 import DataHub from './pages/DataHub';
+import Sequences from './pages/Sequences';
 import GlitchEffect from './components/visuals/GlitchEffect';
 import { api } from './api';
 import { PAGE_REGISTRY, PAGE_STATUS_BY_PATH } from './config/pageRegistry';
@@ -84,6 +85,8 @@ function Layout() {
                 return <Terminal />;
             case 'datahub':
                 return <DataHub />;
+            case 'sequences':
+                return <Sequences />;
             default:
                 return <Navigate to="/protocol" replace />;
         }

@@ -30,8 +30,8 @@
 | E4 | B4 编排绑定持久化（甲案：新表） | ✅（394c886） |
 | P1 | C 设备档案 + 连接持久化（新表 transport_settings / device_profiles） | ✅（550b73e，db 同步 d95c1e4） |
 | P2 | A 事务化发送引擎（应答匹配规则可配 + 超时重发 + RTT/成功率统计） | ✅（18b0dca，db 同步 b052139） |
-| P3 | B1 序列编排后端（新表 sequences / sequence_steps + 后台 Runner + 轮询状态 + 与手动发送互斥） | ✅ |
-| P4 | B2 序列编排前端（新菜单页「序列编排」，pageStatus 第 7 项，快捷键 F） | ⬜ |
+| P3 | B1 序列编排后端（新表 sequences / sequence_steps + 后台 Runner + 轮询状态 + 与手动发送互斥） | ✅（28c68e4，db 同步 9c84911） |
+| P4 | B2 序列编排前端（新菜单页「序列编排」，pageStatus 第 7 项，快捷键 F） | ✅ |
 | P5 | D 通讯日志落库 + 导出 + 回放（新表 dispatch_logs，三路写入，CSV/JSON 导出，日志重发） | ⬜ |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
@@ -462,6 +462,51 @@
 > 重启新增 sequences/sequence_steps 两表（文件变更，**不随本批提交**）。
 > 人工验证沿「浏览器断连、用户侧补做」先例：P4 序列编排页落地后一并补页面级
 > 验证（定义 CRUD、启停、1.5s 轮询、运行期手动发送禁用）。
+
+### 8.4 P4（序列编排前端）
+
+- pageStatus.json 第 7 项（key `sequences`、path `/sequences`、shortcut `F`
+  ——A/B/R/C/D/E 之后的新占用，`implemented: true`）+ 生成器重跑 →
+  `docs/PAGE_STATUS.md`。PAGE_REGISTRY 派生：导航项 / 状态板徽标 / 路由注册
+  表自动收录，`App.jsx` 仅 +2 行（import + `case 'sequences'`）。
+- **双轨指令处理（本批关键设计）**：表单渲染走 `normalizeRunnerInstruction`
+  （render 语义），**编码与计划编译走 raw op_code** —— normalize 会把
+  `TIME_ACCUMULATOR` 映成 `TIME_CUMULATIVE`、`AUTO_COUNTER` 映成 `INPUT`，
+  只有 raw 才与后端发送时重算 byte-equal。步骤编辑器复用
+  `useInstructionForm`(raw) + `RunnerFieldTree`(normalized)，实时帧预览
+  即保存产物（preview == payload 同源）。
+- `utils/sequenceView.js` 纯函数：`buildPlan` 逐条镜像编码器门槛（TIME/
+  COUNTER 需 `params.type` ''/'number' 门；Current = computed > input >
+  value > start_val，无源取 0 与 `floorNum(undefined)` 同口径；checksum 只认
+  `algorithm`、缺省 CRC_16_MODBUS、refs 数组顺序生成区间——crc16 拼接序锚、
+  悬空 ref 跳过、组 ref 取子树叶子并集、重复叶合并连续区间）。后端 400
+  形态**全部生成侧降级**（自含重叠 / 算法不支持 / crc16 非 2B / >4B /
+  refs 无区间 → 不入计划 + warning，保存必过）。键集与
+  `backend/core/sequence_plan.normalize_plan` 严格同形（未知键 400）。
+  另含状态/进度/计划摘要/字节数/位序调整辅助与 `EMPTY_CONFIG`。
+- `api/sequences.js` 七端点入 barrel（DELETE 204 无体特判，不走
+  `handleResponse` 的 json 解析）；启动 404/400/409 分流由页面红横幅承接
+  （409 = 忙 / 与手动发送互斥同文案口径）。
+- `pages/Sequences.jsx` 三栏：定义列表（新建 / 二次确认删除 / 刷新）·
+  定义与步骤编辑（名称/描述/出错即停/读超时 + 步骤行未编译/字节数/计划摘要
+  徽标 + 上移下移移除 + RunnerFieldTree 表单 + 实时帧预览 + PLAN 徽标 +
+  降级警告 + 应用编译 + PUT 整体保存剥离 id/step_order）· 运行状态
+  （启动/停止、结果徽标、进度、`/status` 挂载即拉 + 1.5s interval 卸载清理、
+  逐步 OK/ERROR/SKIPPED 与 RTT、stop_requested 与运行级错误）。
+  `canSave` = 非空名 + 步骤全编译 + 超时 1..60000 或空（0 步可存，空序列
+  启动被后端 400 拦）；运行期定义编辑/删除/新建/启动全禁用、停止恒可用
+  （幂等）。
+- 验收：前端 **428/428**（基线 390 + 新 38：sequenceView 24 +
+  Sequences 14，36 文件）EXIT=0；`vite build` EXIT=0；yorha-ui 校验器本批
+  UI 文件（Sequences.jsx / sequences.js / sequenceView.js /
+  Sequences.test.jsx）**0 违规**——首轮命中 `py-10` 已改 `py-4` 清零；
+  `App.jsx` 壳层 5 处（backdrop-blur×2、p-6/py-6/px-6）为**既有违规**
+  （`git diff` 证本批仅 +2 行未引入），留待独立 UI 清理批，本批不改以免
+  壳层视觉回归。测试环境教训：本仓**未装 jest-dom**——存在/禁用断言须用
+  `toBeTruthy()` / 元素 `.disabled` 属性。
+- 页面级人工验证沿「浏览器断连、用户侧补做」先例：F 页快捷徽标、步骤编译
+  预览、启停与 1.5s 轮询、运行期互斥禁用由用户侧补做；409 文案已自动化锁形。
+- 纯前端批次 → `yorha.db` 无变化，**本批不产生 db 同步提交**。
 
 ## 9. 保留勿动（非任务，勿清理）
 

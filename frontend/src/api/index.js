@@ -21,6 +21,16 @@ import { getBindings, createBinding, updateBinding, deleteBinding } from './bind
 import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle } from './datahub';
 import { getProfiles, createProfile, updateProfile, deleteProfile, activateProfile } from './profiles';
 import { getResponseSpec, saveResponseSpec, deleteResponseSpec, sendTransaction } from './responseSpecs';
+import {
+    listSequences,
+    getSequence,
+    createSequence,
+    updateSequence,
+    deleteSequence,
+    startSequence,
+    stopSequence,
+    getSequenceStatus
+} from './sequences';
 
 export const api = {
     // Protocols
@@ -74,7 +84,17 @@ export const api = {
     getResponseSpec,
     saveResponseSpec,
     deleteResponseSpec,
-    sendTransaction
+    sendTransaction,
+
+    // Sequences (P3 后端 + P4 页面: 定义 CRUD / 启停 / status 1.5s 轮询)
+    listSequences,
+    getSequence,
+    createSequence,
+    updateSequence,
+    deleteSequence,
+    startSequence,
+    stopSequence,
+    getSequenceStatus
 };
 
 export default api;
