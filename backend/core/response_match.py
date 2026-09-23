@@ -186,33 +186,53 @@ def _in_ranges(index: int, ranges: List[List[int]]) -> bool:
     return any(start <= index < end for start, end in ranges)
 
 
-def _checksum_reasons(cs: Dict[str, Any], frame: bytes) -> List[str]:
+def _checksum_span(frame: bytes, cs: Dict[str, Any]) -> Optional[bytes]:
+    """span 默认整帧；无论显式与否都排除校验字段自身（反算不自含）。
+
+    越界 → None（调用方映射 CHECKSUM_OUT_OF_RANGE）。P3 序列补丁的「发送时
+    写入」侧复用本区间语义（core/sequence_plan.py），写入与反算同源。
+    """
     field_off = cs["field_offset"]
     field_bl = cs["field_byte_length"]
     if field_off + field_bl > len(frame):
-        return ["CHECKSUM_OUT_OF_RANGE"]
-
-    # span 默认整帧；无论显式与否都排除校验字段自身（反算不自含）。
+        return None
     span_end = len(frame) if cs["span_end"] is None else min(cs["span_end"], len(frame))
     span_start = min(cs["span_start"], len(frame))
-    span_bytes = bytes(
+    return bytes(
         b
         for i, b in enumerate(frame)
         if span_start <= i < span_end and not (field_off <= i < field_off + field_bl)
     )
 
-    algo = cs["algo"]
-    if algo == "sum":
-        value = sum(span_bytes) % (256 ** field_bl)
-    elif algo == "xor":
-        value = 0
-        for b in span_bytes:
-            value ^= b
-    else:
-        value = crc16(span_bytes)
 
-    encoded = value.to_bytes(field_bl, cs["byte_order"])
-    actual = frame[field_off : field_off + field_bl]
+def checksum_value(algo: str, data: bytes, field_byte_length: int) -> int:
+    """按字段宽度计算 sum/xor/crc16_modbus 校验值（算法 SSOT 的公共入口）。
+
+    - sum：模 256^宽度（与 backend/handlers/checksum.py 同宽语义）；
+    - xor：逐字节异或（恒单字节值，宽度补零两侧一致）；
+    - crc16_modbus：反射 0xA001 / 初值 0xFFFF（与 checksum.py、
+      formula.js calculateChecksum 同一套）。
+    formula.js 的 SUM_8/XOR_8 按 8 位定义，字段 ≥2 字节的 sum 属契约外——
+    沿 E1-3/E1-4「各自现状锚」先例，此处保持 handler 宽度语义（应答反算与
+    P3 序列补丁写入共用本函数 → 自洽）。
+    """
+    if algo == "sum":
+        return sum(data) % (256 ** field_byte_length)
+    if algo == "xor":
+        value = 0
+        for b in data:
+            value ^= b
+        return value
+    return crc16(data)
+
+
+def _checksum_reasons(cs: Dict[str, Any], frame: bytes) -> List[str]:
+    span = _checksum_span(frame, cs)
+    if span is None:
+        return ["CHECKSUM_OUT_OF_RANGE"]
+    field_bl = cs["field_byte_length"]
+    encoded = checksum_value(cs["algo"], span, field_bl).to_bytes(field_bl, cs["byte_order"])
+    actual = frame[cs["field_offset"] : cs["field_offset"] + field_bl]
     if encoded != actual:
         return [f"CHECKSUM_MISMATCH(exp={encoded.hex().upper()},got={actual.hex().upper()})"]
     return []

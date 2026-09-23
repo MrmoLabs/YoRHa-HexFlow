@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from backend.core import response_match, transport
+from backend.core import response_match, sequence_runner, transport
 from backend.db.database import get_db
 from backend.db.models import ResponseSpec
 from backend.routers.export import hex_to_bytes
@@ -52,6 +52,9 @@ def _spaced(data: bytes) -> str:
 
 @router.post("/", response_model=DispatchRecord)
 def dispatch_frame(request: DispatchRequest):
+    # P3 互斥：序列运行期禁止手动发送（Runner 直连 transport 不经此路由，无自锁）
+    if sequence_runner.is_running():
+        raise HTTPException(status_code=409, detail="序列运行中，手动发送已互斥（先停止序列）")
     try:
         data = hex_to_bytes(request.hex_string)
     except ValueError as e:
@@ -201,6 +204,9 @@ def _resolve_spec(request: TransactionRequest, db) -> tuple:
 
 @router.post("/transaction", response_model=TransactionRecord)
 def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_db)):
+    # P3 互斥：序列运行期禁止手动事务发送（与 dispatch_frame 同口径）
+    if sequence_runner.is_running():
+        raise HTTPException(status_code=409, detail="序列运行中，手动发送已互斥（先停止序列）")
     try:
         data = hex_to_bytes(request.hex_string)
     except ValueError as e:

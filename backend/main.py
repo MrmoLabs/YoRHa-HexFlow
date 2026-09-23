@@ -14,6 +14,7 @@ from backend.routers.binding import router as binding_router
 from backend.routers.datahub import router as datahub_router
 from backend.routers.profile import router as profile_router
 from backend.routers.response_spec import router as response_spec_router
+from backend.routers.sequence import router as sequence_router
 
 
 @asynccontextmanager
@@ -70,6 +71,7 @@ app.include_router(binding_router)
 app.include_router(datahub_router)
 app.include_router(profile_router)
 app.include_router(response_spec_router)
+app.include_router(sequence_router)
 
 
 if __name__ == "__main__":

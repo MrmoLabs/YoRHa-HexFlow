@@ -29,8 +29,8 @@
 | E3 | B3 通讯调试页 /terminal 实装（依赖 E2） | ✅（530f0b4） |
 | E4 | B4 编排绑定持久化（甲案：新表） | ✅（394c886） |
 | P1 | C 设备档案 + 连接持久化（新表 transport_settings / device_profiles） | ✅（550b73e，db 同步 d95c1e4） |
-| P2 | A 事务化发送引擎（应答匹配规则可配 + 超时重发 + RTT/成功率统计） | ✅ |
-| P3 | B1 序列编排后端（新表 sequences / sequence_steps + 后台 Runner + 轮询状态 + 与手动发送互斥） | ⬜ |
+| P2 | A 事务化发送引擎（应答匹配规则可配 + 超时重发 + RTT/成功率统计） | ✅（18b0dca，db 同步 b052139） |
+| P3 | B1 序列编排后端（新表 sequences / sequence_steps + 后台 Runner + 轮询状态 + 与手动发送互斥） | ✅ |
 | P4 | B2 序列编排前端（新菜单页「序列编排」，pageStatus 第 7 项，快捷键 F） | ⬜ |
 | P5 | D 通讯日志落库 + 导出 + 回放（新表 dispatch_logs，三路写入，CSV/JSON 导出，日志重发） | ⬜ |
 
@@ -408,6 +408,60 @@
 > 后端重启新增 response_specs 表（文件变更，**不随本批提交**）。人工验证沿
 > 「浏览器断连、用户侧补做」先例：加工页打开规格编辑器 → 存规格 → 发送事务
 > 查看逐次 attempt 与 RTT。
+
+### 8.3 P3（序列编排后端）
+
+- 新表 `sequences` / `sequence_steps`（models.py 仅新增两表，既有表零改；逻辑
+  外键无 FK 约束，建表归 lifespan，同 E4/P1/P2 纪律）。
+- **契约定案（沿批复「序列步骤参数 = 保存时定值，TIME/COUNTER 发送时重算」）**：
+  步骤存三件套——`payload`（保存时前端 `encodeInstruction` 编译的完整帧 hex）、
+  `params`（冻结表单值，P4 回显）、`plan`（发送时重算计划）。发送时 `apply_plan`
+  仅补两类字节：
+  - `plan.dynamic`：TIME_ACCUMULATOR / AUTO_COUNTER 按发送墙钟重算等长替换
+    （编码走 E1-6 双端 byte-equal 的 `encode_time_accumulator` /
+    `encode_auto_counter`；offset/byte_len 来自前端 `byteMap`）。长度字段按
+    字节数计与值无关 → 冻结帧内长度字节恒有效，无需重算。
+  - `plan.checksum`：校验字段按 `regions`（refs 各字段帧内字节区间，**列示
+    顺序**拼接——sum/xor 序无关、crc16 按此序）反算写回并落 `byte_order`；
+    数值与区间语义抽自 `response_match`（`checksum_value` / `_checksum_span`
+    公共化，写入侧与应答反算侧同源；crc16 与 `handlers/checksum.py`、
+    `formula.js calculateChecksum` 同一套）。
+- 归一 SSOT `core/sequence_plan.py::normalize_plan`（保存与启动双入口，未知键/
+  越界/校验区间重叠字段 → ValueError → 400；`apply_plan` 传 hex 字符串亦
+  ValueError 防呆）。payload 上限 4096 字节、步骤 ≤200、delay 0..60000、
+  name/label ≤128；regions 与校验字段自身重叠 → 400（反算不自含）。
+- 后台 Runner `core/sequence_runner.py`：单槽 claim/execute（同步占槽防双启动
+  竞态；execute 阻塞——路由丢 daemon 线程、测试直调）；协作式停止（delay 50ms
+  分片查停止位，停止后余步 SKIPPED）；`stop_on_error` 两态（true 缺省 → 步
+  ERROR 即 failed；false 记错继续跑完 completed）；运行态只存内存、终态保留至
+  下次 claim（重启即 idle，定义持久化在库）。
+- 路由 `routers/sequence.py`（prefix `/sequences`）：GET/POST 定义、GET/PUT
+  （整体替换）/DELETE（204+404，删步骤级联）；`POST /{id}/start`（404 / 400
+  无步骤或库内脏数据 / 409 忙）、`POST /stop`（恒 200 幂等）、`GET /status`
+  （轮询契约，P4 1.5s；**注册在 `/{sequence_id}` 之前**防被吞成 404）。形状
+  缺失 422（pydantic，P2 先例）、业务 400。
+- 与手动发送互斥：运行期 `POST /dispatch`、`POST /dispatch/transaction` 入口
+  `sequence_runner.is_running()` → 409（`routers/dispatch.py` 两处）；Runner
+  直连 `transport.send` 不走被互斥路由，无自锁。编辑/删除运行中定义不打断
+  （Runner 持内存副本），编辑入口禁用由前端 P4 承担。
+- `response_match.py` 重构：抽公共 `_checksum_span` + `checksum_value`，
+  `_checksum_reasons` 改用之（行为等价，既有 `test_response_match` 验回归）。
+- 验收：`test_sequence_plan.py` 18 例（归一严格形态 + 补丁 byte-equal + crc16
+  regions 列示顺序锚 + **patched frame 过 `match_response` 往返锚**）+
+  `test_sequence.py` 7 例（loopback 全流程 / busy / SKIPPED / stop_on_error
+  两态 / 脏计划兜底）+ `test_sequence_api.py` 17 例（CRUD、config/步骤边界
+  400、404/204、启停轮询、互斥矩阵，临时库直调）。
+
+> **P3 进度（2026-09-23，实现与自动化验证完成，待提交）**：后端
+> **191/191**（149+42）EXIT=0；纯后端批次、无前端改动（无 build/校验器项，
+> pageStatus 不动）。curl 冒烟四轮全绿：CRUD 归一/校验矩阵（重名/坏 payload/
+> 坏 config/404）、真跑 completed、补丁链实测（TIME `0000→0DC3`、checksum
+> sum 反验 `expect=0181 got=0181 match=True`）、互斥 409×3（dispatch/transaction/
+> 二次 start）、停止 → 全 SKIPPED、释放后手动发送恢复 200；冒烟数据已清
+> （`/sequences` `[]`、`/dispatch/history` `[]`）。yorha.db 预期随本批后端
+> 重启新增 sequences/sequence_steps 两表（文件变更，**不随本批提交**）。
+> 人工验证沿「浏览器断连、用户侧补做」先例：P4 序列编排页落地后一并补页面级
+> 验证（定义 CRUD、启停、1.5s 轮询、运行期手动发送禁用）。
 
 ## 9. 保留勿动（非任务，勿清理）
 

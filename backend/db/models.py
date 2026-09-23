@@ -144,3 +144,32 @@ class ResponseSpec(Base):
     instruction_id = Column(String(36), nullable=False, unique=True)
     # 匹配规格 JSON：normalize_spec 归一后入库（core/response_match.py 为形态 SSOT）
     spec = Column(JSON, nullable=False)
+
+
+# 10. Sequences（P3: 序列编排 — 定义载体，新表；既有表零改）
+class Sequence(Base):
+    __tablename__ = "sequences"
+
+    id = Column(String(36), primary_key=True)
+    name = Column(String(128), nullable=False, unique=True)  # 序列名唯一（路由先查 400，DB 约束兜底）
+    description = Column(Text, nullable=True)
+    # 运行配置 JSON：normalize_config 归一（stop_on_error / read_timeout_ms）
+    config = Column(JSON, nullable=False, default=dict)
+
+
+# 11. Sequence Steps（P3: 步骤 = 保存时定值的帧快照 + 发送时重算计划，新表）
+class SequenceStep(Base):
+    __tablename__ = "sequence_steps"
+
+    id = Column(String(36), primary_key=True)
+    # 逻辑外键（同 op_code 先例，不加 FK 约束）：删除序列时按此列在路由内级联清理
+    sequence_id = Column(String(36), nullable=False)
+    step_order = Column(Integer, nullable=False, default=0)  # 执行序（读取按 step_order, id 排序）
+    instruction_id = Column(String(36), nullable=False)  # 逻辑外键 → instructions.id（审计回溯）
+    label = Column(String(128), nullable=True)  # 步骤显示名（缺省用指令名 / step-N）
+    delay_ms = Column(Integer, nullable=False, default=0)  # 本步执行前等待（0..60000）
+    # 保存时冻结的表单参数 {field_id: value}（TIME/COUNTER 不冻结，重算见 plan）
+    params = Column(JSON, nullable=True)
+    payload = Column(Text, nullable=False)  # 保存时编译的完整帧 hex（前端 encodeInstruction 产物）
+    # 发送时重算计划 {"dynamic": [...TIME/COUNTER 补丁], "checksum": {regions 重算}}；None = 原样发送
+    plan = Column(JSON, nullable=True)

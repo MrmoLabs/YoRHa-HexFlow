@@ -61,6 +61,14 @@
 *   语义：一指令一份事务应答匹配规格。五要素 = 帧头回显 `echo_header_bytes` / 长度自洽 `length`（`声明值 == 帧长 + offset_val`，对齐 `length.py` 的 offset 语义）/ 校验反算 `checksum`（sum·xor·crc16_modbus，恒排除字段自身，算法与 `handlers/checksum.py`、`formula.js calculateChecksum` 同一套且有 crc16 锚定测试）/ 掩码忽略区间 `ignore_ranges`（半开区间，echo 比对跳过）/ 前缀后缀 `prefix`·`suffix`；mode = echo（默认，结构 + 逐字节回显）/ rules（仅结构）/ any（非空即过）。
 *   判定纯函数 `backend/core/response_match.py`（`normalize_spec` 为形态 SSOT，非法 → 400；`match_response` 返回 `(ok, reasons)`）。API 见 `backend/routers/response_spec.py`（GET 列表/单查、PUT upsert、DELETE，路径键 = instruction_id）。事务端点 `POST /dispatch/transaction` 规格解析优先级：内联 > 按指令 > 缺省 echo。
 
+### I. `sequences`（P3 新增，序列定义）
+*   `id` (PK)、`name` (唯一)、`description`、`config` (JSON：`stop_on_error` 缺省 true / `read_timeout_ms` 1..60000 或 null，`_normalize_config` 严格键集归一)
+*   语义：序列编排定义头。运行态**不入库**——单槽内存 Runner（`core/sequence_runner.py`），重启即 idle；终态保留至下次启动覆盖。API 见 `backend/routers/sequence.py`（`/sequences` CRUD + `/{id}/start` + `/stop` + `/status` 轮询）。
+
+### J. `sequence_steps`（P3 新增，序列步骤 = 保存时定值）
+*   `id` (PK)、`sequence_id` (逻辑外键 → `sequences.id`，无 FK 约束，删除时路由内级联清理)、`step_order` (执行序)、`instruction_id` (逻辑外键 → `instructions.id`，审计回溯)、`label`、`delay_ms` (执行前等待 0..60000)、`params` (JSON，冻结表单值)、`payload` (Text，保存时前端 `encodeInstruction` 编译的完整帧 hex，紧凑大写入库)、`plan` (JSON，发送时重算计划)
+*   语义（用户批复：参数保存时定值，TIME/COUNTER 发送时重算）：`plan.dynamic` 按发送墙钟等长重算 TIME_ACCUMULATOR / AUTO_COUNTER（E1-6 byte-equal 编码器；长度字节按字节数计与值无关恒有效）；`plan.checksum` 按 `regions`（refs 字段帧内字节区间，列示顺序拼接）反算写回，与应答侧共用 `response_match.checksum_value`。归一 `core/sequence_plan.py::normalize_plan`（保存与启动双入口，非法 → 400），执行 `apply_plan`。
+
 ## 4. 编译与下发链路
 
 ### 前端编码（动态发送表单 + 预览）
@@ -119,7 +127,7 @@
     `transport_settings`（配置经钩子落库 + lifespan 启动恢复）+ `device_profiles`
     （命名快照 CRUD + 激活切换）+ `/profiles` API + 调试页设备档案区；
     后续 P2–P5（事务发送引擎 / 序列编排 / 日志落库回放）见 `docs/PLAN_Backlog.md` §1。
-7.  ~~**事务化发送引擎**~~ ✅ 已落地（2026-09-23，Backlog P2）：新表
+7.  ~~**事务化发送引擎**~~ ✅ 已落地（2026-09-23，Backlog P2，`18b0dca`）：新表
     `response_specs`（应答规格按指令持久化，`normalize_spec` SSOT）+
     `core/response_match.py` 判定纯函数（帧头回显/长度自洽/校验反算 sum·xor·
     crc16_modbus/掩码忽略区间/前缀后缀，mode echo·rules·any）+
@@ -128,6 +136,17 @@
     口径）+ `transport.send` 单次读超时覆盖 + 加工页 `TransactionPanel`
     （规格编辑器 + 事务发送 + attempt 展示；同批清零 InstructionRunner 10 处
     校验器违规）。验收：后端 149/149、前端 390/390、build EXIT=0、校验器 0 违规。
+8.  ~~**序列编排后端**~~ ✅ 已落地（2026-09-23，Backlog P3）：新表
+    `sequences` / `sequence_steps`（步骤存三件套 payload/冻结 params/plan，
+    参数保存时定值、TIME·COUNTER·checksum 发送时重算，`normalize_plan`
+    保存与启动双入口校验）+ `core/sequence_plan.py` 补丁纯函数 +
+    `core/sequence_runner.py` 单槽后台 Runner（claim/execute 直调可测、
+    协作式停止、`stop_on_error` 两态、终态保留至下次 claim）+
+    `/sequences` CRUD/`start`/`stop`/`status`（`/status`·`/stop` 先注册，
+    P4 1.5s 轮询契约）+ 手动发送互斥（运行期 `/dispatch`、
+    `/dispatch/transaction` 与二次 start 全 409）。验收：后端 191/191
+    （+42）、curl 冒烟四轮全绿（补丁链 sum 反验 match=True、互斥 409×3、
+    停止 SKIPPED）。P4 序列编排前端见 `docs/PLAN_Backlog.md` §1。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
