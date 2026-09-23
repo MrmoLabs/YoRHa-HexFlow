@@ -10,6 +10,7 @@ from backend.routers.compile import router as compile_router
 from backend.routers.export import router as export_router
 from backend.routers.dispatch import router as dispatch_router
 from backend.routers.transport import router as transport_router
+from backend.routers.binding import router as binding_router
 from backend.routers.datahub import router as datahub_router
 
 
@@ -56,6 +57,7 @@ app.include_router(compile_router)
 app.include_router(export_router)
 app.include_router(dispatch_router)
 app.include_router(transport_router)
+app.include_router(binding_router)
 app.include_router(datahub_router)
 
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import Canvas from '../components/editor/Canvas';
 import { api } from '../api';
@@ -6,49 +6,134 @@ import { mergeProtocolInstruction, buildLanes, getTotalBytes } from '../utils/bl
 import { toFrameBlocks } from '../utils/toFrameBlocks';
 import { triggerBlobDownload } from '../utils/download';
 
+// E4 编排绑定持久化：绑定列表接后端 /bindings CRUD（新表 protocol_bindings）。
+// 行为口径：挂载 GET 对账 → 空表种默认绑定（服务端也 POST 一份）→ 加/删即时
+// 写、协议/指令选择即时 PUT、label 输入 400ms 防抖合并（卸载冲刷）；加载失败
+// 降级为纯本地编辑（提示条，不写后端）。props 到位后回填缺失 id 并补写。
+
+// 本地态 ⇄ API 载荷（snake_case 出线，字段与 backend/schemas/binding_api.py 对齐）
+const toServer = (binding) => ({
+    id: binding.id,
+    protocol_id: binding.protocolId || '',
+    instruction_id: binding.instructionId || '',
+    label: binding.label || ''
+});
+
+const toLocal = (row) => ({
+    id: row.id,
+    label: row.label,
+    protocolId: row.protocol_id,
+    instructionId: row.instruction_id,
+    slotOrder: row.slot_order
+});
+
+const syncErrorText = (prefix, err) => `${prefix}：${err?.message || '后端不可用'}`;
+
 export default function Orchestration({ protocols, instructions }) {
     // State for Bindings (Mappings)
     const [bindings, setBindings] = useState([]);
     const [activeBindingId, setActiveBindingId] = useState(null);
     const [isExporting, setIsExporting] = useState(false);
     const [exportMsg, setExportMsg] = useState('');
+    const [loaded, setLoaded] = useState(false);
+    const [loadFailed, setLoadFailed] = useState(false);
+    const [syncMsg, setSyncMsg] = useState('');
 
-    // Initial Binding
+    // 持久化节拍：label 打字合并 400ms 防抖；pending 载荷用于卸载冲刷
+    const persistTimerRef = useRef(null);
+    const pendingRef = useRef(null);
+
+    const putBinding = (payload) =>
+        api.updateBinding(payload.id, payload)
+            .then(() => { pendingRef.current = null; })
+            .catch((err) => setSyncMsg(syncErrorText('更新失败', err)));
+
+    // 1) 挂载拉取服务端绑定；失败降级本地编辑并提示
     useEffect(() => {
-        if (bindings.length === 0) {
-            const initial = {
-                id: uuidv4(),
-                label: '默认绑定 (DEFAULT)',
-                protocolId: protocols[0]?.id,
-                instructionId: instructions[0]?.id
-            };
-            setBindings([initial]);
-            setActiveBindingId(initial.id);
+        let alive = true;
+        (async () => {
+            try {
+                const rows = await api.getBindings();
+                if (!alive) return;
+                setBindings(rows.map(toLocal));
+                if (rows.length) setActiveBindingId(rows[0].id);
+                setSyncMsg('');
+            } catch (err) {
+                if (!alive) return;
+                setLoadFailed(true);
+                setSyncMsg(syncErrorText('加载失败', err) + '（本地编辑不持久化）');
+            } finally {
+                if (alive) setLoaded(true);
+            }
+        })();
+        return () => { alive = false; };
+    }, []);
+
+    // 2) 加载完成后空表种默认绑定：服务端空则同步 POST 落库；加载失败仅本地
+    useEffect(() => {
+        if (!loaded || bindings.length) return;
+        const initial = {
+            id: uuidv4(),
+            label: '默认绑定 (DEFAULT)',
+            protocolId: protocols[0]?.id || '',
+            instructionId: instructions[0]?.id || ''
+        };
+        setBindings([initial]);
+        setActiveBindingId(initial.id);
+        if (!loadFailed) {
+            api.createBinding(toServer(initial))
+                .catch((err) => setSyncMsg(syncErrorText('创建失败', err)));
         }
-    }, [bindings.length, instructions, protocols]);
+    }, [loaded, loadFailed, bindings.length, protocols, instructions]);
 
+    // 3) props 到位后回填缺失的 protocol/instruction id，并补写服务端
     useEffect(() => {
-        if (!bindings.length) return;
+        if (!loaded || !bindings.length) return;
+        const changed = [];
+        const next = bindings.map((binding) => {
+            const protocolId = binding.protocolId || protocols[0]?.id || '';
+            const instructionId = binding.instructionId || instructions[0]?.id || '';
+            if (protocolId === binding.protocolId && instructionId === binding.instructionId) {
+                return binding;
+            }
+            const merged = { ...binding, protocolId, instructionId };
+            changed.push(merged);
+            return merged;
+        });
+        if (!changed.length) return;
+        setBindings(next);
+        if (!loadFailed) {
+            changed.forEach((binding) => {
+                api.updateBinding(binding.id, toServer(binding))
+                    .catch((err) => setSyncMsg(syncErrorText('更新失败', err)));
+            });
+        }
+    }, [loaded, loadFailed, instructions, protocols, bindings]);
 
-        setBindings(prev => prev.map(binding => ({
-            ...binding,
-            protocolId: binding.protocolId || protocols[0]?.id,
-            instructionId: binding.instructionId || instructions[0]?.id
-        })));
-    }, [instructions, protocols]);
+    // 卸载冲刷：仍有未落盘的防抖写 → 立即补一笔（路由切走/F5 场景）
+    useEffect(() => () => {
+        if (persistTimerRef.current) {
+            clearTimeout(persistTimerRef.current);
+            const payload = pendingRef.current;
+            if (payload) api.updateBinding(payload.id, payload).catch(() => {});
+        }
+    }, []);
 
     const currentBinding = bindings.find(b => b.id === activeBindingId) || bindings[0];
 
-    // CRUD Handlers
+    // CRUD Handlers（本地态即时反馈，服务端写入按上方口径）
     const handleAddBinding = () => {
         const newBinding = {
             id: uuidv4(),
             label: '新绑定 (NEW)',
-            protocolId: protocols[0]?.id,
-            instructionId: instructions[0]?.id
+            protocolId: protocols[0]?.id || '',
+            instructionId: instructions[0]?.id || ''
         };
         setBindings([...bindings, newBinding]);
         setActiveBindingId(newBinding.id);
+        if (loadFailed) return;
+        api.createBinding(toServer(newBinding))
+            .catch((err) => setSyncMsg(syncErrorText('创建失败', err)));
     };
 
     const handleDeleteBinding = (e, id) => {
@@ -57,10 +142,31 @@ export default function Orchestration({ protocols, instructions }) {
         const remaining = bindings.filter(b => b.id !== id);
         setBindings(remaining);
         if (activeBindingId === id) setActiveBindingId(remaining[0].id);
+        if (loadFailed) return;
+        api.deleteBinding(id)
+            .catch((err) => setSyncMsg(syncErrorText('删除失败', err)));
     };
 
     const handleUpdateBinding = (id, updates) => {
-        setBindings(bindings.map(b => b.id === id ? { ...b, ...updates } : b));
+        const next = bindings.map(b => b.id === id ? { ...b, ...updates } : b);
+        setBindings(next);
+        const merged = next.find(b => b.id === id);
+        if (!merged || loadFailed) return;
+
+        const payload = toServer(merged);
+        pendingRef.current = payload;
+        if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
+        if (Object.prototype.hasOwnProperty.call(updates, 'label')) {
+            // label 打字：400ms 尾随防抖，多次击键合并为最终快照
+            persistTimerRef.current = setTimeout(() => {
+                persistTimerRef.current = null;
+                putBinding(payload);
+            }, 400);
+        } else {
+            // 协议/指令选择：立即落盘（同时清掉更早的 label 待写，避免旧快照回冲）
+            persistTimerRef.current = null;
+            putBinding(payload);
+        }
     };
 
     // MERGE LOGIC: Combine Protocol + Instruction (see utils/blockMerge.js)
@@ -101,6 +207,11 @@ export default function Orchestration({ protocols, instructions }) {
                     <span className="text-xs font-bold tracking-widest">绑定列表 (Bindings)</span>
                     <button onClick={handleAddBinding} className="hover:text-white text-lg leading-none">+</button>
                 </div>
+                {syncMsg && (
+                    <div className="px-3 py-2 border-b border-nier-light/20 text-[10px] font-mono text-red-300 break-all">
+                        {syncMsg}
+                    </div>
+                )}
                 <div className="flex-1 overflow-y-auto">
                     {bindings.map(b => (
                         <div
@@ -112,6 +223,9 @@ export default function Orchestration({ protocols, instructions }) {
                             <button onClick={(e) => handleDeleteBinding(e, b.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-400">×</button>
                         </div>
                     ))}
+                </div>
+                <div className="p-2 border-t border-nier-light/20 text-[9px] font-mono opacity-40 tracking-widest text-center">
+                    PERSIST // /bindings CRUD
                 </div>
             </aside>
 

@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import Orchestration from '../Orchestration';
+import { api } from '../../api';
 
-// 总长度读数：值与 "Bytes" 单位分属兄弟节点，取标签所在块的合并文本
+// E4：编排页绑定读写接线 /bindings CRUD —— 挂载加载、加/删/改回写、防抖与降级。
 const totalSize = () => screen.getByText(/总长度/).parentElement.textContent;
 
 vi.mock('../../components/editor/Canvas', () => ({
@@ -13,12 +14,34 @@ vi.mock('../../components/editor/Canvas', () => ({
     )
 }));
 
+vi.mock('../../api', () => ({
+    api: {
+        getBindings: vi.fn(),
+        createBinding: vi.fn(),
+        updateBinding: vi.fn(),
+        deleteBinding: vi.fn(),
+        exportBinaryFromBlocks: vi.fn()
+    }
+}));
+
+const mountApis = () => {
+    api.getBindings.mockResolvedValue([]);
+    api.createBinding.mockImplementation((payload) => Promise.resolve({ ...payload, slot_order: 0 }));
+    api.updateBinding.mockImplementation((id, payload) => Promise.resolve({ ...payload, id }));
+    api.deleteBinding.mockResolvedValue({ status: 'deleted' });
+    api.exportBinaryFromBlocks.mockResolvedValue(new Blob(['']));
+};
+
+// 等待挂载加载 + 默认绑定落定（加载链路为异步微任务）
+const awaitDefaultBinding = () => screen.findByText('默认绑定 (DEFAULT)', undefined, { timeout: 2000 });
+
 describe('Orchestration Page', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mountApis();
     });
 
-    it('should inject instruction blocks into the protocol slot', () => {
+    it('should inject instruction blocks into the protocol slot', async () => {
         render(
             <Orchestration
                 protocols={[
@@ -44,13 +67,14 @@ describe('Orchestration Page', () => {
             />
         );
 
+        await awaitDefaultBinding();
         expect(screen.getByTestId('mock-canvas').textContent).toContain('帧头');
         expect(screen.getByTestId('mock-canvas').textContent).toContain('命令字');
         expect(screen.getByTestId('mock-canvas').textContent).toContain('帧尾');
         expect(screen.getByText('* Yellow indicates injected Payload')).toBeDefined();
     });
 
-    it('should add a second binding entry', () => {
+    it('should add a second binding entry', async () => {
         render(
             <Orchestration
                 protocols={[
@@ -62,6 +86,7 @@ describe('Orchestration Page', () => {
             />
         );
 
+        await awaitDefaultBinding();
         expect(screen.getAllByText(/绑定/i).length).toBeGreaterThan(0);
         fireEvent.click(screen.getByRole('button', { name: '+' }));
 
@@ -69,7 +94,7 @@ describe('Orchestration Page', () => {
         expect(screen.getByText('默认绑定 (DEFAULT)')).toBeDefined();
     });
 
-    it('should display total size including injected payload bytes', () => {
+    it('should display total size including injected payload bytes', async () => {
         render(
             <Orchestration
                 protocols={[
@@ -96,11 +121,12 @@ describe('Orchestration Page', () => {
             />
         );
 
+        await awaitDefaultBinding();
         // 2 (帧头) + 4 + 8 (载荷) + 1 (帧尾) = 15 —— 载荷不得计 0（C5 回归锁）
         expect(totalSize()).toContain('15 Bytes');
     });
 
-    it('should append payload when the protocol has no slot and count the full size', () => {
+    it('should append payload when the protocol has no slot and count the full size', async () => {
         render(
             <Orchestration
                 protocols={[
@@ -124,6 +150,7 @@ describe('Orchestration Page', () => {
             />
         );
 
+        await awaitDefaultBinding();
         const canvas = screen.getByTestId('mock-canvas').textContent;
         expect(canvas).toContain('帧头');
         expect(canvas).toContain('命令字');
@@ -132,7 +159,7 @@ describe('Orchestration Page', () => {
         expect(totalSize()).toContain('8 Bytes');
     });
 
-    it('should render hex stream for leaf blocks and bracket containers', () => {
+    it('should render hex stream for leaf blocks and bracket containers', async () => {
         const { container } = render(
             <Orchestration
                 protocols={[
@@ -159,6 +186,7 @@ describe('Orchestration Page', () => {
             />
         );
 
+        await awaitDefaultBinding();
         const stream = container.querySelector('.break-all');
         expect(stream).not.toBeNull();
         expect(stream.textContent).toContain('AA');
@@ -168,7 +196,7 @@ describe('Orchestration Page', () => {
         expect(totalSize()).toContain('3 Bytes');
     });
 
-    it('should keep the export button disabled while the merged assembly is empty', () => {
+    it('should keep the export button disabled while the merged assembly is empty', async () => {
         render(
             <Orchestration
                 protocols={[{ id: 'proto-1', label: '空协议', children: [] }]}
@@ -176,8 +204,136 @@ describe('Orchestration Page', () => {
             />
         );
 
+        await awaitDefaultBinding();
         expect(totalSize()).toContain('0 Bytes');
         const btn = screen.getByRole('button', { name: 'EXPORT .BIN' });
         expect(btn.disabled).toBe(true);
+    });
+
+    it('loads server-side bindings on mount and does not re-seed defaults', async () => {
+        api.getBindings.mockResolvedValue([
+            { id: 'srv-1', label: '服务端绑定A', protocol_id: 'proto-1', instruction_id: 'inst-1', slot_order: 0 },
+            { id: 'srv-2', label: '服务端绑定B', protocol_id: 'proto-1', instruction_id: 'inst-1', slot_order: 1 }
+        ]);
+
+        render(
+            <Orchestration
+                protocols={[{ id: 'proto-1', label: '协议A', children: [] }]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
+        );
+
+        expect(await screen.findByText('服务端绑定A')).toBeDefined();
+        expect(screen.getByText('服务端绑定B')).toBeDefined();
+        expect(api.getBindings).toHaveBeenCalledTimes(1);
+        // 服务端已有绑定 → 不种默认、不 POST
+        expect(screen.queryByText('默认绑定 (DEFAULT)')).toBeNull();
+        expect(api.createBinding).not.toHaveBeenCalled();
+        // 默认选中首条（服务端顺序）
+        expect(api.updateBinding).not.toHaveBeenCalled(); // id 齐全 → 无回填写入
+    });
+
+    it('persists a new binding via POST /bindings', async () => {
+        render(
+            <Orchestration
+                protocols={[{ id: 'proto-1', label: '协议A', children: [] }]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
+        );
+
+        await awaitDefaultBinding();
+        expect(api.createBinding).toHaveBeenCalledWith(expect.objectContaining({
+            protocol_id: 'proto-1',
+            instruction_id: 'inst-1',
+            label: '默认绑定 (DEFAULT)'
+        }));
+
+        fireEvent.click(screen.getByRole('button', { name: '+' }));
+        await waitFor(() => expect(api.createBinding).toHaveBeenCalledTimes(2));
+        expect(api.createBinding).toHaveBeenLastCalledWith(expect.objectContaining({
+            label: '新绑定 (NEW)',
+            protocol_id: 'proto-1',
+            instruction_id: 'inst-1'
+        }));
+    });
+
+    it('PUTs select changes immediately and debounces label edits (400ms)', async () => {
+        const { container } = render(
+            <Orchestration
+                protocols={[
+                    { id: 'proto-1', label: '协议A', children: [] },
+                    { id: 'proto-2', label: '协议B', children: [] }
+                ]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
+        );
+
+        await awaitDefaultBinding();
+        api.updateBinding.mockClear();
+
+        // 协议选择 → 即时 PUT（label/select 为兄弟节点结构，容器查询定位控件）
+        const protocolSelect = container.querySelectorAll('select')[0];
+        fireEvent.change(protocolSelect, { target: { value: 'proto-2' } });
+        await waitFor(() => expect(api.updateBinding).toHaveBeenCalledTimes(1));
+        expect(api.updateBinding).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+            protocol_id: 'proto-2'
+        }));
+
+        // label 输入 → 不立即 PUT（防抖），到期后按合并快照落盘
+        const beforeLabel = api.updateBinding.mock.calls.length;
+        const labelInput = screen.getByDisplayValue('默认绑定 (DEFAULT)');
+        fireEvent.change(labelInput, { target: { value: '改名了' } });
+        expect(api.updateBinding.mock.calls.length).toBe(beforeLabel);
+
+        await waitFor(
+            () => expect(api.updateBinding.mock.calls.length).toBeGreaterThan(beforeLabel),
+            { timeout: 2000 }
+        );
+        const lastCall = api.updateBinding.mock.calls.at(-1);
+        expect(lastCall[1]).toEqual(expect.objectContaining({
+            label: '改名了',
+            protocol_id: 'proto-2' // 防抖快照携带最新选择（不被旧值回冲）
+        }));
+    });
+
+    it('deletes a binding via DELETE and shrinks the list', async () => {
+        render(
+            <Orchestration
+                protocols={[{ id: 'proto-1', label: '协议A', children: [] }]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
+        );
+
+        await awaitDefaultBinding();
+        fireEvent.click(screen.getByRole('button', { name: '+' }));
+        expect(screen.getByText('新绑定 (NEW)')).toBeDefined();
+
+        const newRow = screen.getByText('新绑定 (NEW)').parentElement;
+        fireEvent.click(newRow.querySelector('button'));
+
+        expect(screen.queryByText('新绑定 (NEW)')).toBeNull(); // 本地即时收缩
+        await waitFor(() => expect(api.deleteBinding).toHaveBeenCalledTimes(1));
+        expect(api.deleteBinding).toHaveBeenCalledWith(expect.any(String));
+    });
+
+    it('degrades to local-only editing when loading fails', async () => {
+        api.getBindings.mockRejectedValue(new Error('backend down'));
+
+        render(
+            <Orchestration
+                protocols={[{ id: 'proto-1', label: '协议A', children: [] }]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
+        );
+
+        expect(await screen.findByText(/加载失败/)).toBeDefined();
+        expect(await screen.findByText('默认绑定 (DEFAULT)')).toBeDefined();
+        // 加载失败 → 不向后端写任何东西
+        expect(api.createBinding).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: '+' }));
+        expect(screen.getByText('新绑定 (NEW)')).toBeDefined();
+        expect(api.createBinding).not.toHaveBeenCalled();
+        expect(api.updateBinding).not.toHaveBeenCalled();
     });
 });

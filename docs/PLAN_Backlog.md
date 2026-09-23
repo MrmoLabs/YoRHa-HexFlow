@@ -26,7 +26,7 @@
 | E1 | B1 B2–B8 真实编码语义（6 子项，双端编码器解禁） | ⬜ |
 | E2 | B2 传输层 T1→T2→T3→T4→T5（T2 TCP 无依赖先行，T3 串口 pyserial） | ✅ |
 | E3 | B3 通讯调试页 /terminal 实装（依赖 E2） | ✅ |
-| E4 | B4 编排绑定持久化（甲案：新表） | ⬜ |
+| E4 | B4 编排绑定持久化（甲案：新表） | ✅ |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -303,6 +303,27 @@
 - `models.py` 新表 `ProtocolBinding`（不改既有表；`create_all` 自动建表）
 - 新端点 CRUD（绑定 = protocol_id + instruction_id + 插槽序）+ 编排页读写接线
 - 验收：刷新/重启后 bindings 仍在；编排页行为回归
+
+> **E4 进度（2026-09-23，整批完成，随 E4 整批提交 · 待人工验证）**：
+> ① `models.py` 新表 `protocol_bindings`（`id/protocol_id/instruction_id/label/
+> slot_order`；**逻辑外键**沿 `op_code` 先例不加 FK 约束——本库
+> `PRAGMA foreign_keys=ON`，占位期空串会炸真 FK；models.py 仅追加、既有表零改）。
+> ② `routers/binding.py`：`GET /bindings`（slot_order 升序 + id 兜底）/
+> `POST`（客户端可带 id，`slot_order` 缺省 `next_slot_order`=max+1 纯函数）/
+> `PUT /{id}`（None=不改的局部更新）/ `DELETE /{id}`（404 同馆规）；**无模块级
+> create_all**（protocol.py 的导入即写真实库不扩散，建表归 lifespan）；
+> schema `schemas/binding_api.py` 三件套。main.py 装配。③ 编排页接线：
+> 挂载 `GET` 对账 → 空表种默认（服务端同 POST，**加载失败降级纯本地**并挂侧栏
+> 错误条，不写后端）→ 加/删即时 POST/DELETE、协议/指令选择即时 PUT、label
+> 400ms 尾随防抖（每次变更清旧定时器防旧快照回冲；卸载冲刷 pending）→
+> props 到位回填缺失 id 并补 PUT。前端 `api/bindings.js` 四封装 + barrel 出口。
+> ④ 验收：`test_bindings.py` 12 例（`next_slot_order` 纯 5 + CRUD 7，**临时库
+> 文件直调路由函数无 TestClient**；含「关引擎重开=重启代理」持久化断言）——
+> Windows 连接池占文件 `WinError32` 已用 `engine.dispose()` 收口；编排页测试
+> 6→11（存量 6 异步化 + 服务端加载/POST/即时 PUT+防抖/DELETE/降级 5 例）。
+> 后端 **91/91**（79+12）、前端 **364/364**（359+5）。文档：pageStatus
+> orchestration 条目、PAGE_STATUS 编排节、HANDOVER 待办 4 划线同步。
+> yorha.db 预期随本批后端重启新增 protocol_bindings 表（文件变更，**不入库**）。
 
 ## 8. 保留勿动（非任务，勿清理）
 

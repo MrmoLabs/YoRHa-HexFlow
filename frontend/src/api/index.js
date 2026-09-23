@@ -17,6 +17,7 @@ import { getOperatorTemplates } from './operators';
 import { exportHexFile, exportBinaryFromBlocks } from './export';
 import { dispatchPayload, getDispatchHistory, clearDispatchHistory } from './dispatch';
 import { getTransportConfig, setTransportConfig, getTransportStatus } from './transport';
+import { getBindings, createBinding, updateBinding, deleteBinding } from './bindings';
 import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle } from './datahub';
 
 export const api = {
@@ -47,6 +48,12 @@ export const api = {
     getTransportConfig,
     setTransportConfig,
     getTransportStatus,
+
+    // Bindings (E4: 编排绑定持久化 → /bindings CRUD, 槽序 slot_order 由后端分配)
+    getBindings,
+    createBinding,
+    updateBinding,
+    deleteBinding,
 
     // Data Hub (C3: status / aggregate export / db backup & restore)
     getDatahubStatus,

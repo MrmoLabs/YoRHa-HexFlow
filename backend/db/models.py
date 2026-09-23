@@ -100,3 +100,17 @@ class BitField(Base):
     start_bit = Column(Integer, default=0, nullable=False)
     bit_len = Column(Integer, default=1, nullable=False)
     default_val = Column(Integer, default=0, nullable=False)
+
+
+# 5. Protocol Bindings (E4: 编排绑定持久化 — 新表，不改既有表)
+class ProtocolBinding(Base):
+    __tablename__ = "protocol_bindings"
+
+    id = Column(String(36), primary_key=True)
+    # 逻辑外键（同 op_code 先例，不加 FK 约束）：SQLite PRAGMA foreign_keys=ON 下
+    # 允许占位期空串，由编排页 props 回填 effect 补真实 id
+    protocol_id = Column(String(36), nullable=False)
+    instruction_id = Column(String(36), nullable=False)
+
+    label = Column(String(128), nullable=False, default="新绑定 (NEW)")
+    slot_order = Column(Integer, nullable=False, default=0)  # 插槽序：侧栏列表排序键

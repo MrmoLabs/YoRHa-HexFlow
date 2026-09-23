@@ -92,7 +92,11 @@
     `pageStatus.json` `terminal.implemented` → true，纯函数视图模型
     `utils/terminalPanes.js`。
 3.  **数据中心页 (`/datahub`)**: 占位页，补 JSON 导入导出、备份恢复。
-4.  **绑定持久化**: 编排页的 bindings 目前只在页面内存中。
+4.  ~~**绑定持久化**~~ ✅ 已落地（2026-09-23，Backlog E4）：新表
+    `protocol_bindings`（`slot_order` 插槽序，逻辑外键沿 op_code 先例）+
+    `/bindings` CRUD（`backend/routers/binding.py`，无模块级 create_all、建表归
+    lifespan）+ 编排页读写接线（挂载 GET 对账 / 加删即写 / 选择即时 PUT /
+    label 400ms 防抖 + 卸载冲刷 / 加载失败降级本地提示条）。
 5.  ~~**位域强校验**~~ ✅ 已落地（2026-09-22，Backlog M1-C2）：`backend/routers/instruction.py`
     `_validate_bitfields` 在 POST/PUT 落库前强校验，重叠 / 超容量位域 400 拒绝（unittest 8/8）。
 
