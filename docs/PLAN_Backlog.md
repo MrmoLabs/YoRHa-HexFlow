@@ -533,6 +533,45 @@
   **单独同步提交**（沿 `8f1b171`/`d95c1e4`/`b052139`/`9c84911` 先例）；P5
   自身 hash 提交后回填 §1。
 
+### 8.6 A+B（协议页卡片对标指令页 + 容器内联展开导航）
+
+- **范围**（纯前端 8 文件；动共享 `Block.jsx` → Instruction/Blueprint/
+  Orchestration/Protocol 四页全量回归；`Canvas.jsx` **零改动**）：
+  - **Tier A 卡片数据补齐**：`protocolTree.computeProtocolOffsets` 适配层
+    （children 树 → `computeByteOffsets` 扁平入参；容器打 `ARRAY_GROUP` 标仅限
+    适配层不落库 —— 空容器命中 `isGroupOp` 判已知 0B 组，不再被 `byte_length=0`
+    判未知尺寸污染后续偏移）经 `protocolOffsets.byId` 传入 Canvas；`Block.jsx`
+    四规则：`::` 判定与标签宽度地板统一 `isGroupMark`（op_code 组 ∥
+    `offsetMeta.isGroup`，同源单次计宽防重复 +18）、hex 上卡条件加
+    `type==='fixed'`、`type==='slot'` 沙底虚线（对齐调色板占位虚线语义）、设计期
+    `length/checksum` 中心值 `??`（对齐指令页 LENGTH_CALC/CHECKSUM 口径，替代
+    误导性 `00` 占位）。
+  - **Tier B 内联展开导航（下钻式 → 指令页范式替换）**：`pathIds`/面包屑退役 →
+    `expandedContainerIds` + `focusedParentId`；切协议默认全展开 + 焦点回根、
+    焦点自愈（逐行镜像 `useInstructionLanes:50-64`）；`buildProtocolLanes` 树版
+    buildLanes（DFS 序、展开门控，`Canvas.RenderLaneNode` 原样按 parentId 挂
+    子泳道与层级连线）；点容器卡 = 选中 + toggle 展开（Canvas 组双发以
+    `op_code==='ARRAY_GROUP'` 为闸，协议容器无 op_code → 页面层 `onSelect` 接，
+    **共享 Canvas 零改动**；展开覆焦新泳道、收起落父泳道，时序对齐
+    `handleNavigateGroup:236` + `Canvas.jsx:292`）；属性面板 ENTER = 确保展开 +
+    聚焦；调色板新容器自动展开 + 聚焦（镜像 `Instruction.jsx:266-271`）；
+    `moveNode` 跨容器落点接 `computeFinalPlacement`（含**环守卫**：目标为自身/
+    子孙原引用早退 —— 树成环 = `findNode`/buildLanes 栈溢出冻结，扁平
+    parent_id 模型仅块不可见，协议侧必须拒收）；删节点 = 子树剪枝（对齐指令页
+    级联删除最终效果）；加块落焦点泳道。
+- **测试**：前端 **447/447（37 文件）** EXIT=0（基线 428 + 新增
+  `protocolTree.test.js` 18 例纯函数锁形 + Protocol 净增 1 例；导航用例按新范式
+  重写：默认全展开 / 点卡 toggle / ENTER 重聚焦 / 深层编辑持久化整树 + 新容器
+  自动展开锁形）；`npm run build` EXIT=0；校验器触 `Protocol.jsx` + `Block.jsx`
+  0 违规 EXIT=0；后端零改动沿用 **205/205**。
+- **回归边界**：Blueprint/Orchestration 不传 offsets → 组卡/`::`/页脚零影响；
+  无 `hex_value` 的 fixed 块在新 hex 规则下渲染不变（`&& effectiveHex` 短路）；
+  指令页 `computedValue` 检查先于新 `??` 规则，公式结果优先不受影响。
+- **提交**：本批 9 文件（5 实现/测试 + `pageStatus.json` 手写条目 2 行 + 3 文档
+  —— PLAN/HANDOVER + `docs/PAGE_STATUS.md` 随生成器再生成）一提交；
+  纯前端无 DDL → **无 db 同步提交**；`Sequences.jsx` 配色修复留在工作树
+  待目视确认，独立 fix 批提交。
+
 ## 9. 保留勿动（非任务，勿清理）
 
 - `backend/core/processor.py` / `graph.py` 未接线（Phase-2 遗留，保留勿删，

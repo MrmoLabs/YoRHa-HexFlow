@@ -116,11 +116,8 @@ describe('Protocol Page', () => {
         });
     });
 
-    it('should keep nested navigation active while editing a child block and persist the nested tree', async () => {
-        api.updateProtocol.mockImplementation(async (id, payload) => ({
-            id,
-            ...payload
-        }));
+    it('A+B 内联展开：默认全展开，点容器卡 toggle，ENTER 重聚焦，深层编辑持久化整树', async () => {
+        api.updateProtocol.mockImplementation(async (id, payload) => ({ id, ...payload }));
 
         render(
             <ProtocolHarness
@@ -151,20 +148,24 @@ describe('Protocol Page', () => {
             />
         );
 
-        fireEvent.click(screen.getByRole('button', { name: '载荷容器' }));
-        fireEvent.click(screen.getByRole('button', { name: /进入容器/i }));
+        // 切协议默认全展开（镜像 useInstructionLanes:50-53）：根泳道 + 子泳道同时在场
+        const canvas = screen.getByTestId('mock-canvas');
+        expect(canvas.textContent).toContain('主协议:1');
+        expect(canvas.textContent).toContain('载荷容器:1');
 
-        expect(screen.getByRole('button', { name: '主协议' })).toBeDefined();
-        expect(screen.getByRole('button', { name: '载荷容器' })).toBeDefined();
+        // 点容器卡 = 选中 + 收起（指令页 select+navigate 双发的页面层实现）
+        fireEvent.click(screen.getByRole('button', { name: '载荷容器' }));
+        expect(screen.getByTestId('mock-canvas').textContent).not.toContain('载荷容器:1');
+
+        // 属性面板 ENTER 保留（内联化 = 确保展开 + 聚焦）
+        fireEvent.click(screen.getByRole('button', { name: /进入容器/i }));
         expect(screen.getByTestId('mock-canvas').textContent).toContain('载荷容器:1');
 
+        // 子泳道内叶块编辑 → 防抖持久化整棵深树
         fireEvent.click(screen.getByRole('button', { name: '固定头' }));
         fireEvent.change(screen.getByDisplayValue('固定头'), {
             target: { value: '固定尾' }
         });
-
-        expect(screen.getByRole('button', { name: '载荷容器' })).toBeDefined();
-        expect(screen.getByTestId('mock-canvas').textContent).toContain('载荷容器:1');
 
         await act(async () => {
             vi.advanceTimersByTime(400);
@@ -186,6 +187,42 @@ describe('Protocol Page', () => {
                             type: 'fixed'
                         })
                     ]
+                })
+            ]
+        }));
+    });
+
+    it('新容器从调色板加入后自动展开成内联泳道（镜像 Instruction.jsx:266-271）', async () => {
+        api.updateProtocol.mockImplementation(async (id, payload) => ({ id, ...payload }));
+
+        render(
+            <ProtocolHarness
+                initialProtocols={[
+                    { id: 'proto-1', label: '主协议', type: 'container', children: [] }
+                ]}
+            />
+        );
+
+        expect(screen.getByTestId('mock-canvas').textContent).not.toContain('新容器:');
+
+        fireEvent.click(screen.getByTitle('新建容器'));
+
+        expect(screen.getByRole('button', { name: '新容器' })).toBeDefined();
+        // 自动展开 → 新容器的空子泳道立即在场（不进折叠层盲加子块）
+        expect(screen.getByTestId('mock-canvas').textContent).toContain('新容器:0');
+
+        await act(async () => {
+            vi.advanceTimersByTime(400);
+            await Promise.resolve();
+        });
+
+        expect(api.updateProtocol).toHaveBeenCalledWith('proto-1', expect.objectContaining({
+            children: [
+                expect.objectContaining({
+                    label: '新容器',
+                    type: 'container',
+                    byte_length: 0,
+                    children: []
                 })
             ]
         }));

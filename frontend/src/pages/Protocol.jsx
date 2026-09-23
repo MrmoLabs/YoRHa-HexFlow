@@ -4,7 +4,7 @@ import ProtocolListSidebar from '../components/editor/ProtocolListSidebar';
 import ProtocolPropertiesPanel from '../components/editor/ProtocolPropertiesPanel';
 import { v4 as uuidv4 } from 'uuid';
 import { api } from '../api';
-import { serializeProtocol, findNode } from '../utils/protocolTree';
+import { serializeProtocol, findNode, buildProtocolLanes, computeProtocolOffsets, moveNode, removeNode, updateNode, collectContainerIds } from '../utils/protocolTree';
 import { BLOCK_TYPES, createBlock, isNestable } from '../config/blockTypes';
 
 export default function Protocol({ protocols, setProtocols }) {
@@ -83,7 +83,10 @@ export default function Protocol({ protocols, setProtocols }) {
     }, []);
 
     const currentProtocol = protocols.find(p => p.id === activeProtocolId) || protocols[0] || null;
-    const [pathIds, setPathIds] = useState(currentProtocol ? [currentProtocol.id] : []);
+    // A+B：内联展开 + 泳道焦点（对标 useInstructionLanes 的
+    // expandedGroupIds/focusedParentId；下钻 pathIds/面包屑退役）
+    const [expandedContainerIds, setExpandedContainerIds] = useState([]);
+    const [focusedParentId, setFocusedParentId] = useState(null);
 
     useEffect(() => {
         // Flush first: the dirty payload of the protocol we are leaving must be
@@ -91,36 +94,43 @@ export default function Protocol({ protocols, setProtocols }) {
         flushPendingSave();
 
         if (!currentProtocol) {
-            setPathIds([]);
+            setExpandedContainerIds([]);
+            setFocusedParentId(null);
             setSelectedId(null);
             lastPersistedSignatureRef.current = '';
             return;
         }
 
-        setPathIds([currentProtocol.id]);
+        // 切协议默认全展开 + 焦点回根（镜像 useInstructionLanes:50-53）
+        setExpandedContainerIds(collectContainerIds(currentProtocol));
+        setFocusedParentId(null);
         setSelectedId(null);
         lastPersistedSignatureRef.current = serializeProtocol(currentProtocol);
     }, [activeProtocolId, currentProtocol?.id]);
 
-    const activeContainerNode = currentProtocol
-        ? (findNode(currentProtocol, pathIds[pathIds.length - 1]) || currentProtocol)
-        : null;
-    const currentBlocks = activeContainerNode?.children || [];
-    const pathNodes = pathIds
-        .map((id) => findNode(currentProtocol, id))
-        .filter(Boolean);
-    const currentLanes = useMemo(() => [{
-        depth: 0,
-        parentId: null,
-        parentName: activeContainerNode?.label || 'ROOT SEQUENCE',
-        items: currentBlocks
-    }], [activeContainerNode, currentBlocks]);
+    const currentLanes = useMemo(
+        () => buildProtocolLanes(currentProtocol, expandedContainerIds),
+        [currentProtocol, expandedContainerIds]
+    );
+    // 偏移标尺：容器经适配层判组 → 中心 Σ/??、页脚 @范围（指令页同款效果）
+    const protocolOffsets = useMemo(
+        () => computeProtocolOffsets(currentProtocol),
+        [currentProtocol]
+    );
 
+    // 焦点自愈（镜像 useInstructionLanes:58-64）：指向已删/非容器 → 清根
     useEffect(() => {
-        if (selectedId && !currentBlocks.some(block => block.id === selectedId)) {
+        if (!focusedParentId) return;
+        const node = findNode(currentProtocol, focusedParentId);
+        if (!node || !isNestable(node.type)) setFocusedParentId(null);
+    }, [focusedParentId, currentProtocol]);
+
+    // 选中块从树上消失（结构删除）→ 清选
+    useEffect(() => {
+        if (selectedId && !findNode(currentProtocol, selectedId)) {
             setSelectedId(null);
         }
-    }, [currentBlocks, selectedId]);
+    }, [currentProtocol, selectedId]);
 
     const applyProtocolUpdate = useCallback((nextProtocol) => {
         setProtocols(prev => prev.map(protocol => protocol.id === nextProtocol.id ? nextProtocol : protocol));
@@ -201,58 +211,73 @@ export default function Protocol({ protocols, setProtocols }) {
         }
     };
 
-    const updateTree = useCallback((newChildren) => {
-        if (!currentProtocol || !activeContainerNode) return;
-
-        const updateRecursive = (node) => {
-            if (node.id === activeContainerNode.id) {
-                return { ...node, children: newChildren };
-            }
-            if (!node.children) return node;
-            return {
-                ...node,
-                children: node.children.map(updateRecursive)
-            };
-        };
-
-        const newRoot = updateRecursive(currentProtocol);
+    // ===== 树操作（protocolTree.js 纯函数；commit = 乐观更新 + 防抖持久化） =====
+    const commitTree = (newRoot) => {
         applyProtocolUpdate(newRoot);
         scheduleProtocolSave(newRoot);
-    }, [activeContainerNode, applyProtocolUpdate, currentProtocol, scheduleProtocolSave]);
-
-    const handleSetBlocks = (newBlocks) => {
-        updateTree(newBlocks);
     };
 
     const handleAddBlock = (type) => {
-        handleSetBlocks([...currentBlocks, createBlock(type, uuidv4)]);
+        if (!currentProtocol) return;
+        // 落点 = 焦点泳道（focusedParentId ?? 根），镜像指令页加块进焦点组
+        const parent = focusedParentId ? findNode(currentProtocol, focusedParentId) : currentProtocol;
+        if (!parent) return;
+        const block = createBlock(type, uuidv4);
+        commitTree(updateNode(currentProtocol, parent.id, {
+            children: [...(parent.children || []), block]
+        }));
+        // 新容器立即展开 + 聚焦（镜像 Instruction.jsx:266-271：否则用户往看不见的
+        // 折叠泳道里加子块）
+        if (isNestable(type)) {
+            setExpandedContainerIds(prev => (prev.includes(block.id) ? prev : [...prev, block.id]));
+            setFocusedParentId(block.id);
+        }
     };
 
     const handleDeleteBlock = (id) => {
-        const newBlocks = currentBlocks.filter(b => b.id !== id);
-        handleSetBlocks(newBlocks);
+        if (!currentProtocol) return;
+        // 树剪枝 = 子树整体移除（对齐指令页 flat 模型手写级联的最终效果）
+        commitTree(removeNode(currentProtocol, id));
         if (selectedId === id) setSelectedId(null);
     };
 
     const handleUpdateBlock = (id, updates) => {
-        const newBlocks = currentBlocks.map(b => b.id === id ? { ...b, ...updates } : b);
-        handleSetBlocks(newBlocks);
+        if (!currentProtocol) return;
+        commitTree(updateNode(currentProtocol, id, updates));
     };
 
-    // Navigation Logic
+    // 跨泳道拖拽落点（computeFinalPlacement 已算好 parentId/index）；环/非法
+    // 目标 moveNode 原引用早退 → 不持久化（同 moveField 缺源早退口径）
+    const handleMoveItem = (itemId, newParentId, newIndex) => {
+        if (!currentProtocol) return;
+        const next = moveNode(currentProtocol, itemId, newParentId, newIndex);
+        if (next !== currentProtocol) commitTree(next);
+    };
+
+    // 画布点卡 = 选中 + 容器 toggle 展开。共享 Canvas 对组的双发（select +
+    // onNavigateGroup）以 op_code==='ARRAY_GROUP' 为闸，协议容器无 op_code →
+    // 在页面层接，零动共享组件。焦点时序对齐指令页：收起时 Canvas 先经
+    // onSetFocusedLane 落父泳道（Canvas.jsx:292），展开时这里覆焦到新泳道。
+    const handleCanvasSelect = (id) => {
+        setSelectedId(id);
+        if (!id || !currentProtocol) return;
+        const node = findNode(currentProtocol, id);
+        if (!node || !isNestable(node.type)) return;
+        setExpandedContainerIds(prev => {
+            if (prev.includes(id)) return prev.filter(x => x !== id);
+            setFocusedParentId(id); // 镜像 handleNavigateGroup:236（updater 内覆焦，幂等）
+            return [...prev, id];
+        });
+    };
+
+    // ENTER = 确保展开 + 聚焦（原"下钻进入"的内联化，属性面板入口保留）
     const handleEnterContainer = (block) => {
-        if (isNestable(block.type)) {
-            setPathIds(prev => [...prev, block.id]);
-            setSelectedId(null);
-        }
+        if (!block || !isNestable(block.type)) return;
+        setExpandedContainerIds(prev => (prev.includes(block.id) ? prev : [...prev, block.id]));
+        setFocusedParentId(block.id);
     };
 
-    const handleBreadcrumbClick = (index) => {
-        setPathIds(prev => prev.slice(0, index + 1));
-        setSelectedId(null);
-    };
-
-    const selectedBlock = currentBlocks.find(b => b.id === selectedId);
+    const selectedBlock = selectedId ? findNode(currentProtocol, selectedId) : null;
 
     if (!currentProtocol) {
         return (
@@ -295,37 +320,17 @@ export default function Protocol({ protocols, setProtocols }) {
                 ))}
             </aside>
 
-            {/* Canvas Area */}
+            {/* Canvas Area — A+B: 层级由内联泳道标签/连线表达（指令页同款），
+                面包屑下钻条退役；偏移标尺、焦点泳道、跨容器落点全量接线 */}
             <section className="flex-1 relative bg-[url('/grid.png')] bg-repeat opacity-90 overflow-hidden flex flex-col">
-                {/* Breadcrumbs */}
-                    <div className="h-10 border-b border-nier-light bg-nier-dark/90 flex items-center px-4 gap-2 text-xs font-mono">
-                    {pathNodes.map((node, index) => (
-                        <React.Fragment key={node.id}>
-                            <button
-                                onClick={() => handleBreadcrumbClick(index)}
-                                className={`hover:underline ${index === pathNodes.length - 1 ? 'font-bold decoration-2' : 'opacity-60'}`}
-                            >
-                                {node.label}
-                            </button>
-                            {index < pathNodes.length - 1 && <span className="opacity-30">/</span>}
-                        </React.Fragment>
-                    ))}
-                </div>
-
                 <Canvas
                     lanes={currentLanes}
-                    onMoveItem={(itemId, _newParentId, newIndex) => {
-                        const reordered = [...currentBlocks];
-                        const oldIndex = reordered.findIndex(block => block.id === itemId);
-                        if (oldIndex === -1 || oldIndex === newIndex) return;
-                        const [moved] = reordered.splice(oldIndex, 1);
-                        reordered.splice(newIndex, 0, moved);
-                        handleSetBlocks(reordered);
-                    }}
+                    offsets={protocolOffsets.byId}
+                    onMoveItem={handleMoveItem}
                     selectedId={selectedId}
-                    onSelect={setSelectedId}
-                    focusedParentId={null}
-                    onSetFocusedLane={() => { }}
+                    onSelect={handleCanvasSelect}
+                    focusedParentId={focusedParentId}
+                    onSetFocusedLane={setFocusedParentId}
                 />
             </section>
 

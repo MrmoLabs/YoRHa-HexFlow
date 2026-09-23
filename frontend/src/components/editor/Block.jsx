@@ -43,10 +43,13 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
     // 标签。10px + tracking-widest ≈ CJK 11.5px / latin 8px 每字符（含估算安全
     // 量）；组卡另加 `::` 指示位。header 与 footer 分属两行 → 取较大值（非求和），
     // 短名称不触发（字节驱动宽度语义与 60px 地板保持不变）。
+    // `::` 判定（与 header 渲染同源）：op_code 组，或偏移标尺判组——协议容器
+    // 无 op_code，经 computeProtocolOffsets 的 isGroup 点亮（宽度地板须同步）。
+    const isGroupMark = op_code === 'ARRAY_GROUP' || offsetMeta?.isGroup === true;
     const labelPx = Math.ceil(
         [...displayLabel].reduce((w, ch) => w + (ch.charCodeAt(0) > 0x2e7f ? 11.5 : 8), 0)
-        + (op_code === 'ARRAY_GROUP' ? 18 : 0) // `::` + gap-1
-        + 6                                     // estimate safety margin
+        + (isGroupMark ? 18 : 0) // `::` + gap-1
+        + 6                      // estimate safety margin
     );
     const footerNeed = Math.ceil(footerText.length * 5.4) // 9px monospace ≈ 5.4px/char
         + (isGroupActive ? 26 : 0);            // OPEN marker + gap
@@ -81,6 +84,9 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
 
         if (isDark) return darkStyle;
         if (type === 'optional') return 'border-dashed border-nier-light text-nier-light opacity-80';
+        // 协议插槽 = 下游注入占位：沙底 + 虚线（对齐调色板 SLOT 虚线语义，
+        // 与 optional 同族但保留浅色实体底）
+        if (type === 'slot') return 'border-dashed border-nier-light bg-nier-dark text-nier-light';
 
         return lightStyle; // Default to Light (HEX_RAW, CMD, etc)
     };
@@ -137,10 +143,16 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
 
         // 2. If it's a HEX block with manual value
         // FIX: Also check OP_CODE because 'type' might not be 'hex' for raw blocks
-        if ((type === 'hex' || op_code === 'HEX_RAW') && effectiveHex) {
+        // A+B: 协议 fixed 块的 hex_value 也上卡（原条件 type==='hex' 协议永不
+        // 命中 → 属性面板改 hex 卡片零反馈）；无 hex_value 时保持默认占位。
+        if ((type === 'hex' || type === 'fixed' || op_code === 'HEX_RAW') && effectiveHex) {
             // Format "AA55" to "AA 55"
             return effectiveHex.replace(/\s/g, '').match(/.{1,2}/g)?.join(' ').toUpperCase() || effectiveHex;
         }
+
+        // 2.5 协议设计期长度/校验域无公式可算 → 对齐指令页 LENGTH_CALC/
+        // CHECKSUM 的 "??" 口径（运行期才有真值），替代误导性 00 占位。
+        if (type === 'length' || type === 'checksum') return '??';
 
         // 3. Default: "00 " repeated for unknown/unset
         const safeLen = Math.max(1, Math.floor(length));
@@ -171,8 +183,9 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
                 content floor 的 labelPx 把卡片宽度撑到容纳标签。 */}
             <div className="text-[10px] tracking-widest uppercase border-b border-current pb-1 mb-1 flex justify-between gap-1">
                 <span className="whitespace-nowrap" title={displayLabel}>{displayLabel}</span>
-                {/* Visual indicator for Group */}
-                {op_code === 'ARRAY_GROUP' && <span className="opacity-50 shrink-0">::</span>}
+                {/* Visual indicator for Group — isGroupMark 与宽度地板同源
+                    （协议容器经 offsetMeta.isGroup 点亮，指令组走 op_code） */}
+                {isGroupMark && <span className="opacity-50 shrink-0">::</span>}
             </div>
 
             {/* Byte Indicator centered */}

@@ -184,6 +184,22 @@
     五轮全绿**（导出 BOM/过滤、回放 200/404、`BY-SOURCE manual=2 replay=1
     sequence=1 transaction=1` 四路铁证、清场复查 0）。明细见
     `docs/PLAN_Backlog.md` §8.5。已提交 `aa20589`（db 同步 `b635eac`）。
+11. ~~**协议页卡片对标指令页 + 容器内联展开导航（A+B）**~~ ✅ 已落地
+    （2026-09-23，用户批准范围）：Tier A 卡片补齐 —— `protocolTree`
+    `computeProtocolOffsets` 适配层（children 树 → `computeByteOffsets`，
+    容器打 ARRAY_GROUP 标仅限适配层，空容器=已知 0B 组不污染偏移）接线
+    Canvas + `Block.jsx` 四规则（`isGroupMark` 统一 `::`/标签宽度地板、
+    `type==='fixed'` hex 上卡、`slot` 沙底虚线、设计期 `length/checksum`
+    中心 `??`）；Tier B 下钻 → 内联展开 —— `pathIds`/面包屑退役，
+    `expandedContainerIds`+`focusedParentId`（镜像 `useInstructionLanes:50-64`
+    切协议全展开 + 焦点自愈）、树版 `buildProtocolLanes`（DFS/展开门控）、
+    点容器卡选中+toggle（页面层 `onSelect` 接，**共享 Canvas 零改动**）、
+    ENTER=展开+聚焦、新容器自动展开+聚焦（镜像 `Instruction.jsx:266-271`）、
+    `moveNode` 跨容器落点 + **环守卫**（树成环=findNode 栈溢出，原引用拒收）、
+    删节点=子树剪枝、加块落焦点泳道。验收：前端 **447/447（37 文件）**
+    （+19：protocolTree 18 + Protocol 净增 1，导航用例按新范式重写）、
+    build EXIT=0、校验器 0 违规、后端零改动沿用 205/205；纯前端无 DDL →
+    无 db 提交。人工跨泳道拖拽目视待补。明细见 `docs/PLAN_Backlog.md` §8.6。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
