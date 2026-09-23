@@ -200,6 +200,24 @@
     （+19：protocolTree 18 + Protocol 净增 1，导航用例按新范式重写）、
     build EXIT=0、校验器 0 违规、后端零改动沿用 205/205；纯前端无 DDL →
     无 db 提交。人工跨泳道拖拽目视待补。明细见 `docs/PLAN_Backlog.md` §8.6。
+12. ~~**一期：协议 refs 引用 + 帧级合并 + 封装试发**~~ ✅ 已落地
+    （2026-09-23，用户批准范围 A8+B3+C3）：A —— refs 存
+    `parameter_config.refs`（同树 id 数组；禁 slot 锚/自引用：面板过滤 +
+    后端 `_validate_refs` 400 英文 detail），协议页 SELECT FIELDS 画布拾取
+    （切协议/改选中中止，镜像 `Instruction.jsx:104-112`）、芯片单删、
+    length 卡设计期 Σ = `formatToHex(Σ, byte_length)` pretty 注入（checksum
+    保持 `??`、悬空不注入、`displayLanes` 纯派生不落库）；B ——
+    `mergeProtocolInstruction` 收指令数组（N 指令 → 1 帧：DFS 填洞 / 空洞
+    保留发射归零 / 溢出 `.flat()` append），编排页同协议多绑定按 slot_order
+    升序依洞填装、洞位下拉稠密位次（改洞组内重编号 0..n-1 仅回写变化行，
+    挂载零回写）、`countSlots` 三态警示（无 SLOT/洞位不足/空洞）、侧栏按
+    （协议序, 洞号）重排；C —— 「封装试发」前端 InstructionEncoder 编译
+    （getInitialValues → resolveDependencies → encodeInstruction）→
+    `POST /dispatch` 载荷零改，`SENT: <hex>` / `SEND FAILED: <detail>`（409
+    透出）回显、空组装双闸禁发。验收：前端 **483/483（37 文件）**（+36，
+    UI 新 7 红转绿）、后端 **215/215**（+10）、build EXIT=0、校验器触
+    9 文件 0 违规；零 DDL → 无 db 提交。两页 + 两闭环人工目视待补。
+    明细见 `docs/PLAN_Backlog.md` §8.7。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

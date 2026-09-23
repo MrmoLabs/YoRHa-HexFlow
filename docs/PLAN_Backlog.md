@@ -572,6 +572,58 @@
   纯前端无 DDL → **无 db 同步提交**；`Sequences.jsx` 配色修复留在工作树
   待目视确认，独立 fix 批提交。
 
+### 8.7 一期（协议 refs 引用 + 帧级合并 + 封装试发）
+
+- **范围**（用户批准清单 A8+B3+C3；零 DDL，后端仅 refs 校验 + schema 两处，
+  `processor.py`/`graph.py`/`Blueprint.jsx`/共享 `Canvas.jsx`/`Block.jsx` 零改动）：
+  - **A refs 引用（协议页）**：`blockTypes.js` A1 `createBlock` 对 length/checksum
+    初始化 `parameter_config:{type,refs:[]}` + `BLOCK_PROPERTY_FIELDS` refs 字段
+    （dot-path key、`inputType:'refs'`、无 parse）；A2 `ProtocolPropertiesPanel`
+    refs 专用分支（FieldPickerParam 形态：`N REF(S)` 计数 + SELECT FIELDS/STOP
+    切换 + `data-testid="ref-chip-<id>"` 芯片单删、label 解自 `findNode` ——
+    dot-path key 通用 input 承载不了数组）；A3 `Protocol.jsx` 页内 picking
+    （anchorId=发起卡、`onUpdateRefs` 走 `handleUpdateBlock` 防抖落库；切协议/
+    改选中中止，镜像 `Instruction.jsx:104-112`；ESC 不接，画布背景
+    `onCancelPick` + STOP 双兜底；`handlePickBlock` 拒 slot 锚/自引用、toggle
+    去重）；A4 `protocolTree` `computeRefsSigma`/`injectRefsSigma` ——
+    `type==='length'` 注入 `formatToHex(Σ, byte_length)` **pretty 空格直出**
+    （checksum 保持 `??`；悬空/空 refs/尺寸 null 不注入），`displayLanes` 纯派生
+    不落库；refs 同树约束前端过滤 + 后端 `_validate_refs` 四类 400（英文 detail）；
+    `ProtocolNodeSchema.parameter_config` 入 schema、删 `protocol.py` 模块级
+    `create_all`（对齐 `binding.py` 先例）。
+  - **B 帧级合并（N 指令 → 1 帧）**：B1 `blockMerge.mergeProtocolInstruction`
+    第二参收指令数组（单对象/undefined/[] 向后兼容）—— payload 游标 DFS 填洞、
+    空洞保留 slot（发射归零）、溢出 `.flat()` append 根末尾，`cloneBlocks` 同步
+    p-/i- 前缀化 refs；B2 编排页组作用域 = 同 protocolId 绑定按 slot_order 升序
+    → 指令数组（单绑定退化 E4 原语义，缺指令 `filter(Boolean)` 跳过）+ 侧栏
+    `sortedBindings` 按（协议序, 洞号）重排（跨协议不按全局洞号穿插）；
+    B3 洞位下拉（**稠密位次**）：`toServer` 出线 `slot_order`、seed 初始
+    `slotOrder:0`、加/删/换洞经 `renumberGroup`/`handleSlotOrderChange` 组内
+    重编号 0..n-1 **仅回写真变化行**（挂载零回写零钳制）、`countSlots` DFS 三态
+    警示（无 SLOT/洞位不足/空洞）+ 右栏 N-填洞文案；`getTotalBytes` 与发射期
+    slot 归零，设计期 offsets 标尺不动。
+  - **C 封装试发**：C1 header「封装试发」= `getInitialValues` →
+    `resolveDependencies` → `encodeInstruction`（与指令页同链路；试发编译走
+    前端编码器 → `toFrameBlocks`/handlers/`POST /dispatch` 载荷**零改**，C3 零改）
+    → `api.dispatchPayload(hexString, instruction_name)`；回显 `SENT: <hex>` /
+    `SEND FAILED: <err.message>`（409 detail 透出）；空组装双闸禁发（disabled +
+    handler 守卫）。R2 记档不修：后端导出协议 length/checksum 因死 `config={}`
+    现状输出 00（既存缺陷，非本批引入）。
+- **测试**：前端 **483/483（37 文件）** EXIT=0（基线 447 + 新增 36，其中 UI 新
+  7 —— Protocol A2/A3（拾取→过滤→防抖持久化→芯片单删）/A4（Σ 注入 vs
+  checksum/悬空不注入）、Orchestration B2/B3/侧栏重排/C1 空禁发/C1 编译试发
+  409 透出；A2/A3 查询串随 Σ 注入修为 `/^LENGTH/` 前缀正则）；后端
+  **215/215** EXIT=0（+10 `test_protocol_refs`：四类 400 + parameter_config
+  透传）；`npm run build` EXIT=0；校验器触 9 文件 0 违规 EXIT=0。红测先行：
+  编码层红测与 UI 红测均先跑红（UI 7 红）再实现转绿。
+- **回归边界**：未触共享件 → 人工回归收敛为协议/编排两页 + refs 拾取、封装试发
+  两条闭环目视（用户侧待做）；指令/蓝图/编排既有断言（`总长度`、
+  `默认绑定 (DEFAULT)`、backfill 零回写）全量保持绿。
+- **提交**：19 文件（实现 9 + 测试 6 + 配置/文档 4 —— `pageStatus.json` 手写
+  2 条 + PLAN §8.7 + HANDOVER 待办 12 + `docs/PAGE_STATUS.md` 生成器再生成）
+  一提交；零 DDL → **无 db 同步提交**（`yorha.db` 工作树改动不入库）；
+  `Sequences.jsx` 配色修复留在工作树独立批。
+
 ## 9. 保留勿动（非任务，勿清理）
 
 - `backend/core/processor.py` / `graph.py` 未接线（Phase-2 遗留，保留勿删，

@@ -8,6 +8,8 @@ import {
     updateNode,
     collectContainerIds
 } from '../protocolTree';
+// 命名空间二段导入：injectRefsSigma/computeRefsSigma 系一期新增导出（红测期不拖垮同文件其余断言）
+import * as protocolTree from '../protocolTree';
 
 // 构造器：children 树的最小持久化形状（A+B 批协议页内联展开的纯函数层）
 const leaf = (id, extra = {}) => ({ id, label: id, type: 'fixed', byte_length: 1, hex_value: '00', ...extra });
@@ -156,5 +158,108 @@ describe('removeNode / updateNode / collectContainerIds', () => {
         expect(collectContainerIds(tree())).toEqual(['g']);
         expect(collectContainerIds(proto([cont('g1', [cont('g2', [])])]))).toEqual(['g1', 'g2']);
         expect(collectContainerIds(null)).toEqual([]);
+    });
+});
+
+// ─── 一期（A4/A5）：refs → 设计期 Σ 回显 ─────────────────────────────────
+// 口径：Σ = computeByteOffsets byId 尺寸之和（容器 = Σ 子）；任一 ref 悬空/
+// 尺寸未知 → 不注入（Block.jsx:155 维持 "??"）；checksum 卡设计期无真值 →
+// 不注入；派生副本，输入 lanes/协议树零改写（存储树只经 PUT 落库）。
+
+describe('computeRefsSigma / injectRefsSigma（refs 设计期 Σ 纯函数）', () => {
+    const lenCard = (id, refs, extra = {}) => ({
+        id, label: id, type: 'length', byte_length: 1, hex_value: '00',
+        parameter_config: { type: 'length', refs },
+        ...extra
+    });
+    const lanesOf = (protocol) => buildProtocolLanes(protocol, ['g']);
+
+    it('Σ 回显：叶子 + 容器 refs → 定宽 hex 注入（2+2=04）', () => {
+        const p = proto([
+            leaf('h', { byte_length: 2 }),
+            cont('g', [leaf('x'), leaf('y')]),
+            lenCard('L', ['h', 'g'])
+        ]);
+        const byId = computeProtocolOffsets(p).byId;
+        const lanes = protocolTree.injectRefsSigma(lanesOf(p), byId);
+        const card = lanes[0].items.find(i => i.id === 'L');
+        expect(card.parameter_config.computedValue).toBe('04');
+    });
+
+    it('宽度取卡自身 byte_length（Σ=3 @2B → 0003）', () => {
+        const p = proto([
+            leaf('h', { byte_length: 2 }),
+            leaf('x'),
+            lenCard('L', ['h', 'x'], { byte_length: 2 })
+        ]);
+        const byId = computeProtocolOffsets(p).byId;
+        const lanes = protocolTree.injectRefsSigma(lanesOf(p), byId);
+        // formatToHex 直出 pretty 口径（决策原文 + 指令页 useInstructionLanes:150
+        // 先例：useInstructionLanes.test:82 期望 '00 00 1C 20' 带空格），与
+        // Block.jsx:140 原样显示一致；断言核心锚 = 宽度取卡自身 byte_length（2B）。
+        expect(lanes[0].items.find(i => i.id === 'L').parameter_config.computedValue).toBe('00 03');
+    });
+
+    it('嵌套容器内的 length 卡同样注入（全泳道覆盖）', () => {
+        const p = proto([
+            leaf('h'),
+            cont('g', [leaf('x'), lenCard('L', ['x'])])
+        ]);
+        const byId = computeProtocolOffsets(p).byId;
+        const lanes = protocolTree.injectRefsSigma(lanesOf(p), byId);
+        const card = lanes[1].items.find(i => i.id === 'L');
+        expect(card.parameter_config.computedValue).toBe('01');
+    });
+
+    it('悬空 ref → 不注入（卡维持 "??"，无 computedValue 键）', () => {
+        const p = proto([leaf('h'), lenCard('L', ['ghost'])]);
+        const lanes = protocolTree.injectRefsSigma(lanesOf(p), computeProtocolOffsets(p).byId);
+        expect(lanes[0].items.find(i => i.id === 'L').parameter_config.computedValue).toBeUndefined();
+    });
+
+    it('尺寸未知（byte_length 非法 → size null）→ 不注入', () => {
+        const p = proto([leaf('bad', { byte_length: 0 }), lenCard('L', ['bad'])]);
+        const lanes = protocolTree.injectRefsSigma(lanesOf(p), computeProtocolOffsets(p).byId);
+        expect(lanes[0].items.find(i => i.id === 'L').parameter_config.computedValue).toBeUndefined();
+    });
+
+    it('空 refs → 不注入', () => {
+        const p = proto([leaf('h'), lenCard('L', [])]);
+        const lanes = protocolTree.injectRefsSigma(lanesOf(p), computeProtocolOffsets(p).byId);
+        expect(lanes[0].items.find(i => i.id === 'L').parameter_config.computedValue).toBeUndefined();
+    });
+
+    it('checksum 卡不注入（设计期无真值，维持 "??"）', () => {
+        const p = proto([
+            leaf('h'),
+            { id: 'C', label: 'C', type: 'checksum', byte_length: 1, hex_value: '00',
+                parameter_config: { type: 'checksum', refs: ['h'] } }
+        ]);
+        const lanes = protocolTree.injectRefsSigma(lanesOf(p), computeProtocolOffsets(p).byId);
+        expect(lanes[0].items.find(i => i.id === 'C').parameter_config.computedValue).toBeUndefined();
+    });
+
+    it('纯函数：输入 lanes 与协议树零改写，注入结果为副本', () => {
+        const p = proto([leaf('h', { byte_length: 2 }), lenCard('L', ['h'])]);
+        const byId = computeProtocolOffsets(p).byId;
+        const lanes = lanesOf(p);
+        const before = JSON.stringify(lanes);
+        const out = protocolTree.injectRefsSigma(lanes, byId);
+
+        expect(JSON.stringify(lanes)).toBe(before);
+        const src = lanes[0].items.find(i => i.id === 'L');
+        const dst = out[0].items.find(i => i.id === 'L');
+        expect(dst).not.toBe(src);
+        expect(src.parameter_config.computedValue).toBeUndefined();
+        expect(findNode(p, 'L').parameter_config.computedValue).toBeUndefined();
+    });
+
+    it('computeRefsSigma 直调：数值 / null（悬空 + 空 + 无配置）', () => {
+        const p = proto([leaf('h', { byte_length: 2 }), cont('g', [leaf('x'), leaf('y')])]);
+        const byId = computeProtocolOffsets(p).byId;
+        expect(protocolTree.computeRefsSigma({ parameter_config: { refs: ['h', 'g'] } }, byId)).toBe(4);
+        expect(protocolTree.computeRefsSigma({ parameter_config: { refs: [] } }, byId)).toBeNull();
+        expect(protocolTree.computeRefsSigma({ parameter_config: { refs: ['ghost'] } }, byId)).toBeNull();
+        expect(protocolTree.computeRefsSigma({}, byId)).toBeNull();
     });
 });

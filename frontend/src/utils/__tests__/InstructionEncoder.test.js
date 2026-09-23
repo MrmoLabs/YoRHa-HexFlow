@@ -601,3 +601,81 @@ describe('E1-6 TIME_ACCUMULATOR / AUTO_COUNTER 语义（B8 已解 · 双端 byte
         expect(strip(InstructionEncoder.encodeInstruction(instr, {}, {}))).toBe('0006');             // 静态 5 → (5+1)%10
     });
 });
+
+describe('R1 协议节点编码（children 树合并帧 · 一期封装试发前端引擎）', () => {
+    const strip = (r) => r.hexString.replace(/\s/g, '');
+    // 形状对齐 config/blockTypes.js createBlock 产物：type/hex_value/byte_length/children，
+    // 无 op_code / byte_len —— 试发编译走前端 InstructionEncoder（后端 LengthHandler/
+    // ChecksumHandler 是 target_start/end range 模型吃不了数组 refs；C3 /export/binary、
+    // handlers、dispatch 载荷零改）。
+    const pf = (id, hex, byte_length = 1) => ({ id, label: id, type: 'fixed', byte_length, hex_value: hex, children: undefined });
+    const pc = (id, children) => ({ id, label: id, type: 'container', byte_length: 0, children });
+    const ps = (id) => ({ id, label: id, type: 'slot', byte_length: 1, hex_value: '00' });
+    const pl = (id, refs, byte_length = 1) => ({ id, label: id, type: 'length', byte_length, hex_value: '00', parameter_config: { type: 'length', refs } });
+    const pk = (id, refs, extra = {}) => ({ id, label: id, type: 'checksum', byte_length: 1, hex_value: '00', parameter_config: { type: 'checksum', refs, ...extra } });
+    const run = (blocks) => {
+        const tree = { blocks };
+        const inputs = InstructionEncoder.getInitialValues(tree);
+        const computed = InstructionEncoder.resolveDependencies(tree, inputs);
+        return strip(InstructionEncoder.encodeInstruction(tree, inputs, computed));
+    };
+
+    it('协议容器递归发射 children（.fields 之外的树形，容器自身 0 字节）', () => {
+        expect(run([pc('g', [pf('a', 'AA'), pf('b', 'BB')])])).toBe('AABB');
+    });
+
+    it('空容器 = 0 字节，不产脏字节', () => {
+        expect(run([pc('g', []), pf('a', 'AA')])).toBe('AA');
+    });
+
+    it('fixed 直读 hex_value（无 op_code / parameter_config.hex 的协议叶）', () => {
+        expect(run([pf('a', 'DE AD')])).toBe('DEAD');
+    });
+
+    it('slot 归零：发射跳过（对齐 orchestrator:76 占位不吐字节）', () => {
+        expect(run([pf('a', 'AA'), ps('s'), pf('b', 'BB')])).toBe('AABB');
+    });
+
+    it('length 卡 PASS1 闸认 params.type=length：refs Σ 进流（宽度 = byte_length）', () => {
+        expect(run([
+            pf('a', 'AA'),
+            pc('g', [pf('x', '01'), pf('y', '02')]),
+            pl('L', ['a', 'g'], 2),
+        ])).toBe('AA' + '0102' + '0003'); // Σ=1+2=3，按 2B 定宽
+    });
+
+    it('fieldSizes 读 byte_length：容器 Σ 子、slot=0、空容器=0', () => {
+        // 'a' 给 byte_length=2（byte_len 缺省）：门修好后若 fieldSizes 仍 `|| 1`
+        // 归一 → Σ=1+1=2 而非 3，此断言同时锚死尺寸表的 byte_length 回退。
+        const tree = { blocks: [pf('a', 'DE AD', 2), pc('g', [pf('x', '01'), ps('s')]), pl('L', ['a', 'g'])] };
+        expect(InstructionEncoder.resolveDependencies(tree, {}).L).toBe(3); // 2 + (1+0)
+        const tree2 = { blocks: [pc('g', []), pl('L2', ['g'])] };
+        expect(InstructionEncoder.resolveDependencies(tree2, {}).L2).toBe(0); // 空容器已知 0
+    });
+
+    it('checksum 卡 PASS2 认 params.type=checksum：refs 字节 → 算法结果', () => {
+        expect(run([pf('a', 'AA'), pk('C', ['a'], { algorithm: 'SUM_8' })])).toBe('AA' + 'AA'); // SUM_8(AA)=AA
+    });
+
+    it('checksum refs 指向容器：组分支走 children 递归', () => {
+        const tree = { blocks: [pc('g', [pf('x', '01'), pf('y', '02')]), pk('C', ['g'], { algorithm: 'SUM_8' })] };
+        expect(InstructionEncoder.resolveDependencies(tree, {}).C).toBe(3); // 01+02
+    });
+
+    it('children 数组（无 parent_id，协议节点/合并树形状）：子节点不得丢，父=容器只发子字节', () => {
+        // 后端语义锚：datahub.to_block:138 有 kids → container、
+        // orchestrator._flatten_recursive:101 容器自身字节不入流 → 期望 'BB'。
+        // child 不带 parent_id（ProtocolNodeSchema 无此列 / cloneBlocks 不前缀化
+        // parent_id 的合并树同形）—— 现状 childrenOf 只认 fields+kidsOf → 父被当
+        // 叶发射 'AA'、子丢 → 红。
+        const parent = {
+            id: 'f1', label: '父', op_code: 'FIXED', byte_len: 1, sequence: 0,
+            parameter_config: { hex: 'AA' },
+            children: [{
+                id: 'f2', label: '子', op_code: 'FIXED', byte_len: 1, sequence: 0,
+                parameter_config: { hex: 'BB' },
+            }],
+        };
+        expect(strip(InstructionEncoder.encodeInstruction({ blocks: [parent] }, {}, {}))).toBe('BB');
+    });
+});

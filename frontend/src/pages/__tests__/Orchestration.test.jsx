@@ -20,7 +20,8 @@ vi.mock('../../api', () => ({
         createBinding: vi.fn(),
         updateBinding: vi.fn(),
         deleteBinding: vi.fn(),
-        exportBinaryFromBlocks: vi.fn()
+        exportBinaryFromBlocks: vi.fn(),
+        dispatchPayload: vi.fn()
     }
 }));
 
@@ -30,6 +31,7 @@ const mountApis = () => {
     api.updateBinding.mockImplementation((id, payload) => Promise.resolve({ ...payload, id }));
     api.deleteBinding.mockResolvedValue({ status: 'deleted' });
     api.exportBinaryFromBlocks.mockResolvedValue(new Blob(['']));
+    api.dispatchPayload.mockResolvedValue({ status: 'ok', hex_string: 'AA 05' });
 };
 
 // 等待挂载加载 + 默认绑定落定（加载链路为异步微任务）
@@ -335,5 +337,155 @@ describe('Orchestration Page', () => {
         expect(screen.getByText('新绑定 (NEW)')).toBeDefined();
         expect(api.createBinding).not.toHaveBeenCalled();
         expect(api.updateBinding).not.toHaveBeenCalled();
+    });
+
+    // B2 组作用域合并：同协议多绑定按 slot_order 升序 → 指令数组依洞序填洞
+    //（服务端行乱序返回也要按 slot_order 归位；单绑定退化为 E4 原语义）。
+    it('B2 组作用域合并：同协议多绑定按 slot_order 升序依洞填装', async () => {
+        api.getBindings.mockResolvedValue([
+            { id: 'srv-2', label: '绑定乙', protocol_id: 'proto-1', instruction_id: 'inst-2', slot_order: 1 },
+            { id: 'srv-1', label: '绑定甲', protocol_id: 'proto-1', instruction_id: 'inst-1', slot_order: 0 }
+        ]);
+
+        render(
+            <Orchestration
+                protocols={[{
+                    id: 'proto-1',
+                    label: '双洞协议',
+                    children: [
+                        { id: 's1', label: '洞一', type: 'slot', byte_length: 0, hex_value: '00' },
+                        { id: 's2', label: '洞二', type: 'slot', byte_length: 0, hex_value: '00' }
+                    ]
+                }]}
+                instructions={[
+                    { id: 'inst-1', name: '指令一', fields: [{ id: 'f1', parent_id: null, sequence: 0, name: '载荷1', byte_length: 1 }] },
+                    { id: 'inst-2', name: '指令二', fields: [{ id: 'f2', parent_id: null, sequence: 0, name: '载荷2', byte_length: 1 }] }
+                ]}
+            />
+        );
+
+        await screen.findByText('绑定乙');
+        const canvas = screen.getByTestId('mock-canvas');
+        await waitFor(() => expect(canvas.textContent).toContain('载荷1'));
+        expect(canvas.textContent).toContain('载荷2');
+        // slot_order 升序：甲(0)→洞一、乙(1)→洞二
+        expect(canvas.textContent.indexOf('载荷1')).toBeLessThan(canvas.textContent.indexOf('载荷2'));
+    });
+
+    // B3 洞位下拉（稠密位次）：改洞 → 组内重编号 0..n-1 仅回写变化行 →
+    // 填装序翻转；countSlots 对账 → 洞位不足/空洞/无 SLOT 警示。
+    it('B3 洞位下拉：换洞回写 slot_order 并翻转填装序，countSlots 洞位不足警示', async () => {
+        api.getBindings.mockResolvedValue([
+            { id: 'srv-1', label: '绑定甲', protocol_id: 'proto-1', instruction_id: 'inst-1', slot_order: 0 },
+            { id: 'srv-2', label: '绑定乙', protocol_id: 'proto-1', instruction_id: 'inst-2', slot_order: 1 }
+        ]);
+
+        render(
+            <Orchestration
+                protocols={[{
+                    id: 'proto-1',
+                    label: '单洞协议',
+                    children: [{ id: 's1', label: '洞一', type: 'slot', byte_length: 0, hex_value: '00' }]
+                }]}
+                instructions={[
+                    { id: 'inst-1', name: '指令一', fields: [{ id: 'f1', parent_id: null, sequence: 0, name: '载荷1', byte_length: 1 }] },
+                    { id: 'inst-2', name: '指令二', fields: [{ id: 'f2', parent_id: null, sequence: 0, name: '载荷2', byte_length: 1 }] }
+                ]}
+            />
+        );
+
+        await screen.findByText('绑定甲');
+        // 2 绑定 > 1 洞 → countSlots 对账警示
+        expect(screen.getByText(/洞位不足/)).toBeDefined();
+
+        // 洞号 = 同协议绑定按 slot_order 升序的位次（甲在首位 → #0）
+        const holeSelect = screen.getByLabelText(/洞位/);
+        expect(holeSelect.value).toBe('0');
+
+        api.updateBinding.mockClear();
+        fireEvent.change(holeSelect, { target: { value: '1' } });
+        await waitFor(() => {
+            expect(api.updateBinding).toHaveBeenCalledWith('srv-1', expect.objectContaining({ slot_order: 1 }));
+            expect(api.updateBinding).toHaveBeenCalledWith('srv-2', expect.objectContaining({ slot_order: 0 }));
+        });
+
+        // 组序翻转 → 乙(载荷2) 填第一洞
+        await waitFor(() => {
+            const canvas = screen.getByTestId('mock-canvas');
+            expect(canvas.textContent.indexOf('载荷2')).toBeLessThan(canvas.textContent.indexOf('载荷1'));
+        });
+    });
+
+    // 侧栏重排：服务端 GET /bindings 仍全局 slot_order 排 → 前端按
+    // (协议序, 洞号) 重排，跨协议绑定不按全局洞号穿插。
+    it('侧栏按（协议序, 洞号）重排', async () => {
+        api.getBindings.mockResolvedValue([
+            { id: 'b-a1', label: '甲1', protocol_id: 'proto-a', instruction_id: 'inst-1', slot_order: 1 },
+            { id: 'b-b1', label: '乙1', protocol_id: 'proto-b', instruction_id: 'inst-1', slot_order: 0 },
+            { id: 'b-a2', label: '甲2', protocol_id: 'proto-a', instruction_id: 'inst-1', slot_order: 0 }
+        ]);
+
+        const { container } = render(
+            <Orchestration
+                protocols={[
+                    { id: 'proto-a', label: '协议A', children: [] },
+                    { id: 'proto-b', label: '协议B', children: [] }
+                ]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
+        );
+
+        await screen.findByText('甲1');
+        const rows = [...container.querySelectorAll('aside:first-of-type .truncate')]
+            .map(el => el.textContent);
+        expect(rows).toEqual(['甲2', '甲1', '乙1']);
+    });
+
+    it('C1 封装试发：空组装禁发', async () => {
+        render(
+            <Orchestration
+                protocols={[{ id: 'proto-1', label: '空协议', children: [] }]}
+                instructions={[{ id: 'inst-1', name: '空指令', fields: [] }]}
+            />
+        );
+
+        await awaitDefaultBinding();
+        const btn = screen.getByRole('button', { name: /封装试发/ });
+        expect(btn.disabled).toBe(true);
+        fireEvent.click(btn);
+        expect(api.dispatchPayload).not.toHaveBeenCalled();
+    });
+
+    // C1 封装试发闭环：合并树前端编译（getInitialValues→resolveDependencies→
+    // encodeInstruction）→ POST /dispatch；失败（含 409 detail）透出。
+    it('C1 封装试发：编译合并树 → dispatchPayload，SENT 回显 / 失败透出', async () => {
+        render(
+            <Orchestration
+                protocols={[{
+                    id: 'proto-1',
+                    label: '壳协议',
+                    children: [
+                        { id: 'h', label: '帧头', type: 'fixed', byte_length: 1, hex_value: 'AA' },
+                        { id: 's', label: '洞', type: 'slot', byte_length: 0, hex_value: '00' }
+                    ]
+                }]}
+                instructions={[{
+                    id: 'inst-1',
+                    name: '示例指令',
+                    fields: [{ id: 'f1', parent_id: null, sequence: 0, name: '命令字', byte_length: 1 }]
+                }]}
+            />
+        );
+
+        await awaitDefaultBinding();
+
+        fireEvent.click(screen.getByRole('button', { name: /封装试发/ }));
+        await waitFor(() => expect(api.dispatchPayload).toHaveBeenCalledTimes(1));
+        expect(api.dispatchPayload).toHaveBeenCalledWith(expect.stringContaining('AA'), '示例指令');
+        expect(await screen.findByText(/^SENT:/)).toBeDefined();
+
+        api.dispatchPayload.mockRejectedValueOnce(new Error('409: dispatch in flight'));
+        fireEvent.click(screen.getByRole('button', { name: /封装试发/ }));
+        expect(await screen.findByText(/SEND FAILED: 409/)).toBeDefined();
     });
 });

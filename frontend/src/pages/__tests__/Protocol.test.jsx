@@ -13,13 +13,17 @@ vi.mock('../../api', () => ({
 }));
 
 vi.mock('../../components/editor/Canvas', () => ({
-    default: ({ lanes, onSelect, onMoveItem }) => (
+    // 拾取分支对标真实 Canvas handleBlockClick（:293 isActive → onPickBlock，
+    // 否则 onSelect）；computedValue 露出供 A4 Σ 回显断言（无值时不追加文本，
+    // 既有按钮 accessible name 不变）。
+    default: ({ lanes, onSelect, onMoveItem, pickingMode, onPickBlock }) => (
         <div data-testid="mock-canvas">
             <div>{lanes.map(lane => `${lane.parentName}:${lane.items.length}`).join('|')}</div>
             {lanes.flatMap(lane => lane.items).map((item, index) => (
                 <React.Fragment key={item.id}>
-                    <button onClick={() => onSelect(item.id)}>
+                    <button onClick={() => (pickingMode?.isActive ? onPickBlock?.(item.id) : onSelect(item.id))}>
                         {item.label}
+                        {item.parameter_config?.computedValue ? ` ${item.parameter_config.computedValue}` : ''}
                     </button>
                     {/* Drag surrogate: Canvas exposes onMoveItem for drag-and-drop */}
                     <button data-testid={`move-${item.id}`} onClick={() => onMoveItem(item.id, null, index + 1)}>
@@ -368,5 +372,116 @@ describe('Protocol Page', () => {
         } finally {
             errorSpy.mockRestore();
         }
+    });
+
+    // A2/A3 refs 拾取链路：面板 SELECT FIELDS → 画布点选 toggle 入 refs →
+    // 芯片单删；slot/自引用在页面层过滤（后端 400 兜底）；变更经防抖落库。
+    it('A2/A3 refs 拾取：点选入 refs、slot/自引用过滤、芯片单删、持久化', async () => {
+        api.updateProtocol.mockImplementation(async (id, payload) => ({ id, ...payload }));
+
+        render(
+            <ProtocolHarness
+                initialProtocols={[{
+                    id: 'proto-1',
+                    label: '主协议',
+                    type: 'container',
+                    children: [
+                        { id: 'fixed-a', label: '甲块', type: 'fixed', byte_length: 2, hex_value: 'DE AD' },
+                        { id: 'slot-a', label: '插槽', type: 'slot', byte_length: 1, hex_value: '00' },
+                        {
+                            id: 'len-a',
+                            label: 'LENGTH',
+                            type: 'length',
+                            byte_length: 2,
+                            hex_value: '00',
+                            parameter_config: { type: 'length', refs: [] }
+                        }
+                    ]
+                }]}
+            />
+        );
+
+        // 选中 length 卡 → 面板 refs 专用分支（计数 + SELECT FIELDS，非通用 input）
+        fireEvent.click(screen.getByRole('button', { name: 'LENGTH' }));
+        expect(screen.getByText('0 REF(S)')).toBeDefined();
+
+        // 进入拾取 → 画布点甲块 = 入 refs（mock 与真实 Canvas 同路由：isActive→onPickBlock）
+        fireEvent.click(screen.getByRole('button', { name: 'SELECT FIELDS' }));
+        fireEvent.click(screen.getByRole('button', { name: '甲块' }));
+        expect(screen.getByText('1 REF(S)')).toBeDefined();
+
+        // 过滤闸：slot 不可锚、自引用不可锚 —— refs 不变
+        fireEvent.click(screen.getByRole('button', { name: '插槽' }));
+        expect(screen.getByText('1 REF(S)')).toBeDefined();
+        // 自引用过滤：点锚卡自身。注意 A4 Σ 注入后卡名带尺寸（'LENGTH 00 02'），
+        // 用前缀正则匹配（'move LENGTH' 以 move 开头不会误中）。
+        fireEvent.click(screen.getByRole('button', { name: /^LENGTH/ }));
+        expect(screen.getByText('1 REF(S)')).toBeDefined();
+
+        // 防抖持久化：refs 落 children[i].parameter_config
+        await act(async () => {
+            vi.advanceTimersByTime(400);
+            await Promise.resolve();
+        });
+        expect(api.updateProtocol).toHaveBeenCalledWith('proto-1', expect.objectContaining({
+            children: expect.arrayContaining([
+                expect.objectContaining({
+                    id: 'len-a',
+                    parameter_config: expect.objectContaining({ type: 'length', refs: ['fixed-a'] })
+                })
+            ])
+        }));
+
+        // 芯片单删 → refs 清空（label 解自 findNode，删按钮在芯片内）
+        fireEvent.click(screen.getByTestId('ref-chip-fixed-a').querySelector('button'));
+        expect(screen.getByText('0 REF(S)')).toBeDefined();
+    });
+
+    // A4 设计期 Σ 回显：仅 length 卡注入 computedValue（宽度=卡 byte_length）；
+    // checksum 设计期无真值不注入、悬空 ref 不注入。
+    it('A4 Σ 回显：length 卡 refs 尺寸和注入画布，checksum/悬空不注入', () => {
+        render(
+            <ProtocolHarness
+                initialProtocols={[{
+                    id: 'proto-1',
+                    label: '主协议',
+                    type: 'container',
+                    children: [
+                        { id: 'fixed-a', label: '甲块', type: 'fixed', byte_length: 2, hex_value: 'DE AD' },
+                        {
+                            id: 'len-a',
+                            label: '长度',
+                            type: 'length',
+                            byte_length: 2,
+                            hex_value: '00',
+                            parameter_config: { type: 'length', refs: ['fixed-a'] }
+                        },
+                        {
+                            id: 'sum-a',
+                            label: '校验',
+                            type: 'checksum',
+                            byte_length: 1,
+                            hex_value: '00',
+                            parameter_config: { type: 'checksum', refs: ['fixed-a'] }
+                        },
+                        {
+                            id: 'len-b',
+                            label: '长度悬空',
+                            type: 'length',
+                            byte_length: 1,
+                            hex_value: '00',
+                            parameter_config: { type: 'length', refs: ['ghost'] }
+                        }
+                    ]
+                }]}
+            />
+        );
+
+        // Σ=2、卡 byte_length=2 → '00 02' 注入按钮文本（mock 露出 computedValue）
+        expect(screen.getByRole('button', { name: '长度 00 02' })).toBeDefined();
+        // checksum 不注入 → accessible name 仅 label
+        expect(screen.getByRole('button', { name: '校验' })).toBeDefined();
+        // 悬空 ref → size null → 不注入
+        expect(screen.getByRole('button', { name: '长度悬空' })).toBeDefined();
     });
 });

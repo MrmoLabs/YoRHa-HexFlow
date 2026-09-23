@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import Canvas from '../components/editor/Canvas';
 import { api } from '../api';
-import { mergeProtocolInstruction, buildLanes, getTotalBytes } from '../utils/blockMerge';
+import { mergeProtocolInstruction, buildLanes, getTotalBytes, countSlots } from '../utils/blockMerge';
+import { InstructionEncoder } from '../utils/InstructionEncoder';
 import { toFrameBlocks } from '../utils/toFrameBlocks';
 import { triggerBlobDownload } from '../utils/download';
 
@@ -16,7 +17,9 @@ const toServer = (binding) => ({
     id: binding.id,
     protocol_id: binding.protocolId || '',
     instruction_id: binding.instructionId || '',
-    label: binding.label || ''
+    label: binding.label || '',
+    // B2: 组内稠密位次出线（本地缺省按 0，服务端列默认 0 对齐）
+    slot_order: binding.slotOrder ?? 0
 });
 
 const toLocal = (row) => ({
@@ -35,6 +38,9 @@ export default function Orchestration({ protocols, instructions }) {
     const [activeBindingId, setActiveBindingId] = useState(null);
     const [isExporting, setIsExporting] = useState(false);
     const [exportMsg, setExportMsg] = useState('');
+    // C1 封装试发：发送中闸 + 回显（SENT: hex / SEND FAILED: detail 含 409）
+    const [isSending, setIsSending] = useState(false);
+    const [sendMsg, setSendMsg] = useState('');
     const [loaded, setLoaded] = useState(false);
     const [loadFailed, setLoadFailed] = useState(false);
     const [syncMsg, setSyncMsg] = useState('');
@@ -76,7 +82,8 @@ export default function Orchestration({ protocols, instructions }) {
             id: uuidv4(),
             label: '默认绑定 (DEFAULT)',
             protocolId: protocols[0]?.id || '',
-            instructionId: instructions[0]?.id || ''
+            instructionId: instructions[0]?.id || '',
+            slotOrder: 0
         };
         setBindings([initial]);
         setActiveBindingId(initial.id);
@@ -121,30 +128,101 @@ export default function Orchestration({ protocols, instructions }) {
 
     const currentBinding = bindings.find(b => b.id === activeBindingId) || bindings[0];
 
+    // B3 稠密位次：组内成员变更（加/删/换洞）→ 重编号 0..n-1，仅回写真变化行；
+    // 挂载不调用（零回写零钳制，服务端行原样显示）。
+    const renumberGroup = (base, protocolId) => {
+        const group = base
+            .filter(b => b.protocolId === protocolId)
+            .slice()
+            .sort((a, b) => (a.slotOrder ?? 0) - (b.slotOrder ?? 0));
+        const numbered = group.map((b, i) => ({ ...b, slotOrder: i }));
+        const byId = new Map(numbered.map(b => [b.id, b]));
+        const next = base.map(b => byId.get(b.id) || b);
+        const changed = numbered.filter((b, i) => (group[i].slotOrder ?? 0) !== i);
+        return { next, changed };
+    };
+
     // CRUD Handlers（本地态即时反馈，服务端写入按上方口径）
     const handleAddBinding = () => {
+        const protocolId = protocols[0]?.id || '';
         const newBinding = {
             id: uuidv4(),
             label: '新绑定 (NEW)',
-            protocolId: protocols[0]?.id || '',
-            instructionId: instructions[0]?.id || ''
+            protocolId,
+            instructionId: instructions[0]?.id || '',
+            // 组内追加：先占组尾洞号，renumberGroup 再落稠密位次
+            slotOrder: bindings.filter(b => b.protocolId === protocolId).length
         };
-        setBindings([...bindings, newBinding]);
+        const base = [...bindings, newBinding];
+        const { next, changed } = renumberGroup(base, protocolId);
+        const posted = next.find(b => b.id === newBinding.id) || newBinding;
+        setBindings(next);
         setActiveBindingId(newBinding.id);
         if (loadFailed) return;
-        api.createBinding(toServer(newBinding))
+        api.createBinding(toServer(posted))
             .catch((err) => setSyncMsg(syncErrorText('创建失败', err)));
+        // 组内老行位次被挤动 → 补写（新行随 createBinding 出线，不重复 PUT）
+        changed
+            .filter(b => b.id !== newBinding.id)
+            .forEach(b => putBinding(toServer(b)));
     };
 
     const handleDeleteBinding = (e, id) => {
         e.stopPropagation();
         if (bindings.length <= 1) return;
-        const remaining = bindings.filter(b => b.id !== id);
-        setBindings(remaining);
-        if (activeBindingId === id) setActiveBindingId(remaining[0].id);
+        const target = bindings.find(b => b.id === id);
+        const base = bindings.filter(b => b.id !== id);
+        const { next, changed } = target
+            ? renumberGroup(base, target.protocolId)
+            : { next: base, changed: [] };
+        setBindings(next);
+        if (activeBindingId === id) setActiveBindingId(next[0].id);
         if (loadFailed) return;
         api.deleteBinding(id)
             .catch((err) => setSyncMsg(syncErrorText('删除失败', err)));
+        changed.forEach(b => putBinding(toServer(b)));
+    };
+
+    // B3 洞位下拉：组内换位（目标位次钳在 0..组内余数）→ 稠密重编号 → 回写变化行
+    const handleSlotOrderChange = (targetIndex) => {
+        if (!currentBinding) return;
+        const group = bindings
+            .filter(b => b.protocolId === currentBinding.protocolId)
+            .slice()
+            .sort((a, b) => (a.slotOrder ?? 0) - (b.slotOrder ?? 0));
+        const without = group.filter(b => b.id !== currentBinding.id);
+        const at = Math.max(0, Math.min(Number(targetIndex), without.length));
+        const reordered = [...without.slice(0, at), currentBinding, ...without.slice(at)]
+            .map((b, i) => ({ ...b, slotOrder: i }));
+        const byId = new Map(reordered.map(b => [b.id, b]));
+        setBindings(prev => prev.map(b => byId.get(b.id) || b));
+        if (loadFailed) return;
+        reordered.forEach((b) => {
+            const before = bindings.find(x => x.id === b.id);
+            if ((before?.slotOrder ?? 0) !== b.slotOrder) putBinding(toServer(b));
+        });
+    };
+
+    // C1 封装试发：合并树走前端 InstructionEncoder 编译（与指令页同链路：
+    // getInitialValues → resolveDependencies → encodeInstruction）→ POST /dispatch。
+    // instruction_name 用当前绑定指令名；409/失败 detail 透出在 sendMsg。
+    const handleTrialSend = async () => {
+        if (!mergedBlocks.length || isSending) return;
+        setIsSending(true);
+        setSendMsg('');
+        try {
+            const source = { blocks: mergedBlocks };
+            const inputs = InstructionEncoder.getInitialValues(source);
+            const computed = InstructionEncoder.resolveDependencies(source, inputs);
+            const { hexString } = InstructionEncoder.encodeInstruction(source, inputs, computed);
+            const instructionName = selectedInstruction?.label || selectedInstruction?.name || null;
+            await api.dispatchPayload(hexString, instructionName);
+            setSendMsg(`SENT: ${hexString}`);
+        } catch (err) {
+            setSendMsg(`SEND FAILED: ${err?.message || 'UNKNOWN'}`);
+        } finally {
+            setIsSending(false);
+        }
     };
 
     const handleUpdateBinding = (id, updates) => {
@@ -169,13 +247,52 @@ export default function Orchestration({ protocols, instructions }) {
         }
     };
 
-    // MERGE LOGIC: Combine Protocol + Instruction (see utils/blockMerge.js)
+    // B2 组作用域合并：组 = 同 protocolId 的绑定按 slot_order（洞号）升序 →
+    // 指令数组依洞序填洞；指令缺失的行跳过（filter(Boolean)）。单绑定退化为
+    // E4 原语义（数组长度 1 走同一路径）。
+    const groupBindings = useMemo(() => {
+        if (!currentBinding) return [];
+        return bindings
+            .filter(b => b.protocolId === currentBinding.protocolId)
+            .slice()
+            .sort((a, b) => (a.slotOrder ?? 0) - (b.slotOrder ?? 0));
+    }, [bindings, currentBinding]);
+
     const mergedBlocks = useMemo(() => {
         if (!currentBinding) return [];
         const protocol = protocols.find(p => p.id === currentBinding.protocolId);
-        const instruction = instructions.find(i => i.id === currentBinding.instructionId);
-        return mergeProtocolInstruction(protocol, instruction);
-    }, [currentBinding, instructions, protocols]);
+        const groupInstructions = groupBindings
+            .map(b => instructions.find(i => i.id === b.instructionId))
+            .filter(Boolean);
+        return mergeProtocolInstruction(protocol, groupInstructions);
+    }, [currentBinding, groupBindings, instructions, protocols]);
+
+    // B3 洞位/对账：洞号 = 当前绑定在组内的稠密位次；洞数 = 协议树 DFS slot 计数。
+    const holeRank = Math.max(0, groupBindings.findIndex(b => b.id === currentBinding?.id));
+    const holeCount = useMemo(() => {
+        const protocol = protocols.find(p => p.id === currentBinding?.protocolId);
+        return countSlots(protocol?.children || []);
+    }, [protocols, currentBinding?.protocolId]);
+    const holeWarning = !currentBinding
+        ? ''
+        : holeCount === 0
+            ? '无 SLOT：指令将追加末尾'
+            : groupBindings.length > holeCount
+                ? `洞位不足：${groupBindings.length} 条绑定 > ${holeCount} 个洞（溢出追加末尾）`
+                : groupBindings.length < holeCount
+                    ? `空洞：${holeCount - groupBindings.length} 个洞未被绑定填充`
+                    : '';
+
+    // 侧栏按（协议序, 洞号）重排：协议序 = protocols 数组序；服务端 GET /bindings
+    // 仍全局 slot_order 排，前端不按全局洞号穿插跨协议绑定。
+    const sortedBindings = useMemo(() => {
+        const protoIndex = (b) => {
+            const i = protocols.findIndex(p => p.id === b.protocolId);
+            return i === -1 ? protocols.length : i;
+        };
+        return [...bindings].sort((a, b) => protoIndex(a) - protoIndex(b)
+            || ((a.slotOrder ?? 0) - (b.slotOrder ?? 0)));
+    }, [bindings, protocols]);
 
     const mergedLanes = useMemo(() => buildLanes(mergedBlocks), [mergedBlocks]);
 
@@ -213,7 +330,7 @@ export default function Orchestration({ protocols, instructions }) {
                     </div>
                 )}
                 <div className="flex-1 overflow-y-auto">
-                    {bindings.map(b => (
+                    {sortedBindings.map(b => (
                         <div
                             key={b.id}
                             onClick={() => setActiveBindingId(b.id)}
@@ -262,16 +379,31 @@ export default function Orchestration({ protocols, instructions }) {
                             <div className="ml-auto flex flex-col items-end">
                                 <label className="text-[10px] opacity-70 uppercase tracking-widest">总长度 (Total Size)</label>
                                 <div className="text-xl font-bold font-mono">{totalBytes} <span className="text-sm font-normal opacity-50">Bytes</span></div>
-                                <button
-                                    onClick={handleExportBinary}
-                                    disabled={!mergedBlocks.length || isExporting}
-                                    className="mt-1 border border-nier-light/60 text-nier-light text-[10px] font-mono tracking-widest px-3 py-1 hover:bg-nier-light hover:text-nier-dark transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                                >
-                                    {isExporting ? 'EXPORTING...' : 'EXPORT .BIN'}
-                                </button>
+                                <div className="flex gap-2 mt-1">
+                                    <button
+                                        onClick={handleExportBinary}
+                                        disabled={!mergedBlocks.length || isExporting}
+                                        className="border border-nier-light/60 text-nier-light text-[10px] font-mono tracking-widest px-3 py-1 hover:bg-nier-light hover:text-nier-dark transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        {isExporting ? 'EXPORTING...' : 'EXPORT .BIN'}
+                                    </button>
+                                    {/* C1 封装试发：同合并树前端编译 → POST /dispatch */}
+                                    <button
+                                        onClick={handleTrialSend}
+                                        disabled={!mergedBlocks.length || isSending}
+                                        className="border border-nier-light/60 text-nier-light text-[10px] font-mono tracking-widest px-3 py-1 hover:bg-nier-light hover:text-nier-dark transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        {isSending ? 'SENDING...' : '封装试发 (TRIAL SEND)'}
+                                    </button>
+                                </div>
                                 {exportMsg && (
                                     <div className={`text-[9px] font-mono mt-0.5 ${exportMsg === 'EXPORT OK' ? 'text-green-400' : 'text-red-400'}`}>
                                         {exportMsg}
+                                    </div>
+                                )}
+                                {sendMsg && (
+                                    <div className={`text-[9px] font-mono mt-0.5 break-all ${sendMsg.startsWith('SENT') ? 'text-green-400' : 'text-red-400'}`}>
+                                        {sendMsg}
                                     </div>
                                 )}
                             </div>
@@ -328,14 +460,38 @@ export default function Orchestration({ protocols, instructions }) {
                             />
                         </div>
 
+                        {/* B3 洞位下拉：value = 组内稠密位次（holeRank）；改洞 →
+                            handleSlotOrderChange 组内重编号 0..n-1 仅回写变化行 */}
+                        <div className="flex flex-col gap-1">
+                            <label htmlFor="hole-rank" className="text-xs opacity-70 uppercase tracking-widest">
+                                洞位 (HOLE) · #{holeRank} / {Math.max(groupBindings.length - 1, 0)}
+                            </label>
+                            <select
+                                id="hole-rank"
+                                value={holeRank}
+                                onChange={(e) => handleSlotOrderChange(Number(e.target.value))}
+                                className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono"
+                            >
+                                {groupBindings.map((b, i) => (
+                                    <option key={b.id} value={i} className="bg-nier-dark text-white">
+                                        {i}{b.id === currentBinding.id ? ` · 本绑定` : ` · ${b.label}`}
+                                    </option>
+                                ))}
+                            </select>
+                            {holeWarning && (
+                                <div data-testid="hole-warning" className="text-[10px] font-mono text-yellow-400 tracking-widest">
+                                    ⚠ {holeWarning}
+                                </div>
+                            )}
+                        </div>
+
                         <div className="p-4 border border-dashed border-nier-light/30 bg-nier-light/5 text-xs leading-5">
                             <h3 className="font-bold mb-2">AUTO-ASSEMBLY RULE</h3>
                             <p className="opacity-70">
-                                The system looks for a 'SLOT' block in the Protocol.
-                                It replaces the Slot with the entire Instruction block list.
+                                同协议的 {groupBindings.length} 条绑定按洞号（slot_order 升序）依次填入协议的 {holeCount} 个 SLOT。
                             </p>
                             <p className="mt-2 opacity-70">
-                                If no Slot is found, instructions are appended to the end.
+                                绑定多于洞时溢出部分追加末尾；洞多于绑定时空洞保留（发射期归零）。
                             </p>
                         </div>
                     </div>

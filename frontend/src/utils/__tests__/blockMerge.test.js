@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { mergeProtocolInstruction, buildLanes, getTotalBytes } from '../blockMerge';
+// 命名空间二段导入：countSlots 系一期新增导出 —— 红测期不以命名缺失拖垮同文件其余断言
+import * as blockMerge from '../blockMerge';
+import { InstructionEncoder } from '../InstructionEncoder';
 
 // C5 编排回归：总长度 / 插槽缺失 / 边界结构。
 // 口径来自 utils/blockMerge.js 实测：
@@ -194,5 +197,159 @@ describe('buildLanes（边界结构）', () => {
         const lanes = buildLanes([{ id: 'f', label: '字段', children: [] }]);
 
         expect(lanes).toHaveLength(1);
+    });
+});
+
+// ─── 一期（R1/B1/A8）：refs 引用 + 帧级合并 ───────────────────────────────
+// 语义基线：洞号 = 同协议绑定按 slot_order 升序的位次（稠密位次）——
+// 指令数组序即洞序；洞未填保留 slot（发射归零）；洞不够 append 末尾。
+
+describe('B1 数组合并（同协议多洞 · 稠密位次指令序）', () => {
+    it('两条指令按洞序填两个 slot', () => {
+        const merged = mergeProtocolInstruction(
+            shell([
+                { id: 's1', label: '槽1', type: 'slot', byte_length: 0 },
+                { id: 's2', label: '槽2', type: 'slot', byte_length: 0 }
+            ]),
+            [
+                instruction([field('f1', '甲', 0, 2)]),
+                instruction([field('f2', '乙', 1, 4)])
+            ]
+        );
+
+        expect(merged.map(b => b.label)).toEqual(['甲', '乙']);
+        expect(merged.every(b => b.isInjected)).toBe(true);
+    });
+
+    it('嵌套容器内的 slot 参与 DFS 洞序（跨层枚举）', () => {
+        const merged = mergeProtocolInstruction(
+            shell([
+                { id: 's1', label: '槽1', type: 'slot', byte_length: 0 },
+                {
+                    id: 'grp', label: '组', type: 'container',
+                    children: [{ id: 's2', label: '槽2', type: 'slot', byte_length: 0 }]
+                }
+            ]),
+            [
+                instruction([field('f1', '甲', 0, 2)]),
+                instruction([field('f2', '乙', 1, 4)])
+            ]
+        );
+
+        expect(merged.map(b => b.label)).toEqual(['甲', '组']);
+        expect(merged[1].children.map(c => c.label)).toEqual(['乙']);
+    });
+
+    it('指令多于洞：溢出追加到末尾（沿用 append fallback）', () => {
+        const merged = mergeProtocolInstruction(
+            shell([
+                { id: 's1', label: '槽1', type: 'slot', byte_length: 0 },
+                { id: 't', label: '帧尾', type: 'fixed', byte_length: 1 }
+            ]),
+            [
+                instruction([field('f1', '甲', 0, 2)]),
+                instruction([field('f2', '乙', 1, 4)])
+            ]
+        );
+
+        expect(merged.map(b => b.label)).toEqual(['甲', '帧尾', '乙']);
+    });
+
+    it('指令少于洞：未填 slot 保留（type=slot，发射层归零）', () => {
+        const merged = mergeProtocolInstruction(
+            shell([
+                { id: 's1', label: '槽1', type: 'slot', byte_length: 0 },
+                { id: 's2', label: '槽2', type: 'slot', byte_length: 1 }
+            ]),
+            [instruction([field('f1', '甲', 0, 2)])]
+        );
+
+        expect(merged.map(b => b.label)).toEqual(['甲', '槽2']);
+        expect(merged[1].type).toBe('slot');
+    });
+
+    it('空数组 = 未传指令（协议克隆原样返回）', () => {
+        expect(mergeProtocolInstruction(shell([{ id: 'h', label: '帧头', type: 'fixed' }]), []))
+            .toEqual([expect.objectContaining({ id: 'p-h' })]);
+    });
+});
+
+describe('A8 cloneBlocks refs 前缀化（合并树 id 失配修复）', () => {
+    it('协议块 parameter_config.refs 加 p- 前缀', () => {
+        const merged = mergeProtocolInstruction(
+            shell([
+                { id: 'h', label: '帧头', type: 'fixed', byte_length: 1 },
+                {
+                    id: 'len', label: 'LEN', type: 'length', byte_length: 2,
+                    parameter_config: { type: 'length', refs: ['h'] }
+                }
+            ]),
+            instruction([field('f1', '命令字', 0, 2)])
+        );
+
+        const len = merged.find(b => b.id === 'p-len');
+        expect(len.parameter_config.refs).toEqual(['p-h']);
+    });
+
+    it('指令字段 parameter_config.refs 加 i- 前缀（注入侧同规则）', () => {
+        const merged = mergeProtocolInstruction(
+            shell([{ id: 's', label: '槽', type: 'slot', byte_length: 0 }]),
+            {
+                id: 'i1', name: '指令',
+                fields: [
+                    field('f1', '命令字', 0, 2),
+                    { ...field('f2', '校验', 1, 1), parameter_config: { type: 'checksum', refs: ['f1'] } }
+                ]
+            }
+        );
+
+        const ck = merged.find(b => b.label === '校验');
+        expect(ck.parameter_config.refs).toEqual(['i-f1']);
+    });
+
+    it('前缀化 refs 命中合并树 id：length Σ 经 resolveDependencies 解出', () => {
+        const merged = mergeProtocolInstruction(
+            shell([
+                { id: 'h', label: '帧头', type: 'fixed', byte_length: 1 },
+                { id: 's', label: '槽', type: 'slot', byte_length: 0 },
+                {
+                    id: 'len', label: 'LEN', type: 'length', byte_length: 1,
+                    parameter_config: { type: 'length', refs: ['h'] }
+                }
+            ]),
+            instruction([field('f1', '命令字', 0, 3)])
+        );
+
+        const computed = InstructionEncoder.resolveDependencies({ blocks: merged }, {});
+        expect(computed['p-len']).toBe(1); // p-h = 1B；无前缀化时查无 p-h → 0
+    });
+});
+
+describe('countSlots（洞数统计 · 供 B3 洞位不足/空洞警告）', () => {
+    it('DFS 统计嵌套 slot', () => {
+        expect(blockMerge.countSlots([
+            { id: 's1', type: 'slot' },
+            {
+                id: 'grp', type: 'container',
+                children: [{ id: 's2', type: 'slot' }, { id: 'x', type: 'fixed' }]
+            },
+            { id: 'y', type: 'fixed' }
+        ])).toBe(2);
+    });
+
+    it('空/无 slot/缺入参 → 0', () => {
+        expect(blockMerge.countSlots([])).toBe(0);
+        expect(blockMerge.countSlots([{ id: 'x', type: 'fixed', children: [] }])).toBe(0);
+        expect(blockMerge.countSlots(undefined)).toBe(0);
+    });
+});
+
+describe('getTotalBytes slot 归零（发射层同口径）', () => {
+    it('未填 slot 不计字节（即便带 byte_length）', () => {
+        expect(getTotalBytes([
+            { id: 'h', byte_length: 1 },
+            { id: 's', type: 'slot', byte_length: 1 },
+            { id: 't', byte_length: 1 }
+        ])).toBe(2);
     });
 });

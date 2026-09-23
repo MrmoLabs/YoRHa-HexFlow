@@ -4,7 +4,7 @@ import ProtocolListSidebar from '../components/editor/ProtocolListSidebar';
 import ProtocolPropertiesPanel from '../components/editor/ProtocolPropertiesPanel';
 import { v4 as uuidv4 } from 'uuid';
 import { api } from '../api';
-import { serializeProtocol, findNode, buildProtocolLanes, computeProtocolOffsets, moveNode, removeNode, updateNode, collectContainerIds } from '../utils/protocolTree';
+import { serializeProtocol, findNode, buildProtocolLanes, computeProtocolOffsets, moveNode, removeNode, updateNode, collectContainerIds, injectRefsSigma } from '../utils/protocolTree';
 import { BLOCK_TYPES, createBlock, isNestable } from '../config/blockTypes';
 
 export default function Protocol({ protocols, setProtocols }) {
@@ -116,6 +116,12 @@ export default function Protocol({ protocols, setProtocols }) {
     const protocolOffsets = useMemo(
         () => computeProtocolOffsets(currentProtocol),
         [currentProtocol]
+    );
+    // A4 设计期 Σ 回显：纯派生注入 computedValue（不落库、checksum 不注入、
+    // 悬空/尺寸 null 不注入）→ 画布 Block.jsx:140 原样显示。
+    const displayLanes = useMemo(
+        () => injectRefsSigma(currentLanes, protocolOffsets.byId),
+        [currentLanes, protocolOffsets]
     );
 
     // 焦点自愈（镜像 useInstructionLanes:58-64）：指向已删/非容器 → 清根
@@ -277,6 +283,38 @@ export default function Protocol({ protocols, setProtocols }) {
         setFocusedParentId(block.id);
     };
 
+    // A3 refs 拾取：锚 = 发起 refs 分支的卡（length/checksum）。slot 不可锚
+    // （后端 _validate_refs 400）、自引用不可锚（面板发起即锚定当前卡，点锚
+    // 自身直接拒绝）。toggle 经 onUpdateRefs 回写 parameter_config.refs
+    // （handleUpdateBlock → 防抖落库）；镜像 useSelectionSystem 的中止语义。
+    const [pickingMode, setPickingMode] = useState({
+        isActive: false, fieldKey: null, anchorId: null, currentRefs: [], onUpdateRefs: null
+    });
+    const handleStartPicking = (fieldKey, currentRefs, onUpdateRefs) => {
+        setPickingMode({ isActive: true, fieldKey, anchorId: selectedId, currentRefs: currentRefs || [], onUpdateRefs });
+    };
+    const handleStopPicking = () => {
+        setPickingMode({ isActive: false, fieldKey: null, anchorId: null, currentRefs: [], onUpdateRefs: null });
+    };
+    const handlePickBlock = (targetId) => {
+        if (!pickingMode.isActive || !currentProtocol) return;
+        const target = findNode(currentProtocol, targetId);
+        if (!target || target.type === 'slot' || targetId === pickingMode.anchorId) return;
+        const current = pickingMode.currentRefs || [];
+        const next = current.includes(targetId)
+            ? current.filter(x => x !== targetId)
+            : [...current, targetId];
+        setPickingMode(prev => ({ ...prev, currentRefs: next }));
+        pickingMode.onUpdateRefs?.(next);
+    };
+    // 中止闸（镜像 Instruction.jsx:104-112）：切协议 / 改选中 → 取消拾取
+    useEffect(() => {
+        setPickingMode(prev => (prev.isActive
+            ? { isActive: false, fieldKey: null, anchorId: null, currentRefs: [], onUpdateRefs: null }
+            : prev));
+    }, [activeProtocolId, selectedId]);
+    // ESC 不接（焦点在输入时不拦截）：面板 STOP 按钮 + 画布背景点击 onCancelPick 兜底
+
     const selectedBlock = selectedId ? findNode(currentProtocol, selectedId) : null;
 
     if (!currentProtocol) {
@@ -324,13 +362,16 @@ export default function Protocol({ protocols, setProtocols }) {
                 面包屑下钻条退役；偏移标尺、焦点泳道、跨容器落点全量接线 */}
             <section className="flex-1 relative bg-[url('/grid.png')] bg-repeat opacity-90 overflow-hidden flex flex-col">
                 <Canvas
-                    lanes={currentLanes}
+                    lanes={displayLanes}
                     offsets={protocolOffsets.byId}
                     onMoveItem={handleMoveItem}
                     selectedId={selectedId}
                     onSelect={handleCanvasSelect}
                     focusedParentId={focusedParentId}
                     onSetFocusedLane={setFocusedParentId}
+                    pickingMode={pickingMode}
+                    onPickBlock={handlePickBlock}
+                    onCancelPick={handleStopPicking}
                 />
             </section>
 
@@ -346,6 +387,9 @@ export default function Protocol({ protocols, setProtocols }) {
                 onEnterContainer={handleEnterContainer}
                 onUpdateBlock={handleUpdateBlock}
                 onDeleteBlock={handleDeleteBlock}
+                pickingMode={pickingMode}
+                onStartPicking={handleStartPicking}
+                onStopPicking={handleStopPicking}
             />
         </div>
     );

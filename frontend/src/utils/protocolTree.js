@@ -6,6 +6,7 @@
 
 import { computeByteOffsets } from './byteOffsets';
 import { isNestable } from '../config/blockTypes';
+import { formatToHex } from './formula';
 
 export const serializeProtocol = (protocol) => JSON.stringify({
     label: protocol?.label || '',
@@ -136,3 +137,37 @@ export const collectContainerIds = (root) => {
     walk(root?.children);
     return ids;
 };
+
+// ─── 一期（A4/A5）：refs → 设计期 Σ 回显 ─────────────────────────────────
+// Σ = computeByteOffsets byId 尺寸之和（容器已按 Σ 子入表）；任一 ref 悬空/
+// 尺寸 null → null（调用方不注入，Block.jsx:155 维持 "??"）；空 refs → null。
+// 纯函数：不触碰输入 block/lanes，注入结果为派生副本（存储树只经 PUT 落库）。
+export const computeRefsSigma = (block, byId) => {
+    const refs = block?.parameter_config?.refs;
+    if (!Array.isArray(refs) || refs.length === 0) return null;
+    let sum = 0;
+    for (const refId of refs) {
+        const entry = byId.get(refId);
+        if (!entry || entry.size == null) return null;
+        sum += entry.size;
+    }
+    return sum;
+};
+
+// 全泳道扫描注入：仅 length 卡吃 Σ（checksum 设计期无真值 → 不注入）；
+// 宽度锚卡自身 byte_length（formatToHex 定宽，1B → 04 / 2B → 0003）。
+export const injectRefsSigma = (lanes, byId) => (lanes || []).map(lane => ({
+    ...lane,
+    items: (lane.items || []).map(item => {
+        if (item?.type !== 'length') return item;
+        const sigma = computeRefsSigma(item, byId);
+        if (sigma == null) return item;
+        return {
+            ...item,
+            parameter_config: {
+                ...item.parameter_config,
+                computedValue: formatToHex(sigma, item.byte_length || 1)
+            }
+        };
+    })
+}));

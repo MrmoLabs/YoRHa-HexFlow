@@ -83,7 +83,10 @@ export const InstructionEncoder = {
     // encodeInstruction 注入（opts.now），缺省 Date.now()；组递归逐层透传。
     getFieldBytes: function (field, inputs, computedValues, allFields, now) {
         const bytes = this._encodeFieldBytes(field, inputs, computedValues, allFields, now);
-        const isGroup = field.fields && field.fields.length > 0;
+        // R1: children 树组（协议容器/合并树）与 fields 组同权 —— 容器整体不做
+        // LITTLE 逆序（子叶在递归中各自按 endianness 处理，E1-2 语义不变）。
+        const isGroup = (field.fields && field.fields.length > 0)
+            || (field.children && field.children.length > 0);
         if (!isGroup
             && bytes.length > 1
             && String(field.endianness || '').toUpperCase() === 'LITTLE') {
@@ -102,15 +105,23 @@ export const InstructionEncoder = {
      */
     _encodeFieldBytes: function (field, inputs, computedValues, allFields, now) {
         const params = field.parameter_config || {};
-        const byteLen = field.byte_len || 1;
+        // R1: byte_len（指令扁平字段）|| byte_length（协议节点/合并块），皆缺或
+        // 0 → 1 —— E1-3 既有 `byte_len || 1` 归一保持（指令字段无 byte_length
+        // 键，链尾回退不改其口径）；协议卡宽度自此锚 byte_length。
+        const byteLen = field.byte_len || field.byte_length || 1;
         const op = field.op_code;
 
         // 0. Groups / Arrays (Recursive)
         // If it has children, its bytes are the sum of its children
-        if (field.fields && field.fields.length > 0) {
+        // R1: children 树组（协议容器 / 合并树）与 fields 组同权 —— 后端语义锚
+        // datahub.to_block:138 有 kids → container、_flatten_recursive:101 容器
+        // 自身字节不入流。
+        const groupChildren = (field.fields && field.fields.length > 0) ? field.fields
+            : (field.children && field.children.length > 0) ? field.children : null;
+        if (groupChildren) {
             let groupBytes = [];
             // Sort children
-            const children = [...field.fields].sort((a, b) => (a.sequence ?? a.order ?? 0) - (b.sequence ?? b.order ?? 0));
+            const children = [...groupChildren].sort((a, b) => (a.sequence ?? a.order ?? 0) - (b.sequence ?? b.order ?? 0));
             children.forEach(child => {
                 const childBytes = this.getFieldBytes(child, inputs, computedValues, allFields, now);
                 groupBytes = groupBytes.concat(childBytes);
@@ -125,6 +136,10 @@ export const InstructionEncoder = {
             return out;
         }
 
+        // R1: 协议树特殊叶 —— slot 占位不发射（orchestrator.py:76 跳过 SLOT 同
+        // 口径）；容器（children:[] 空容器落此）只发子字节 → 0 字节，不产脏 00。
+        if (field.type === 'slot' || field.type === 'container') return [];
+
         // LEAF NODES logic
         const inputValue = inputs[field.id];
         const computedVal = computedValues[field.id];
@@ -136,6 +151,11 @@ export const InstructionEncoder = {
         else if (inputValue !== undefined) value = inputValue;
         else if (params.hex && (op === 'FIXED' || op === 'HEADER' || op === 'TAIL')) return this.parseHexBytes(params.hex);
         else if (op === 'HEX_RAW' && params.hex) return this.parseHexBytes(params.hex); // Raw Hex string
+        // R1: 协议 fixed 直读 hex_value（无 op_code / parameter_config.hex 的协议叶，
+        // 对齐 datahub.to_block 固定帧 hex_value 出流）；协议 length/checksum 卡的
+        // hex_value='00' 被上文 computedVal（PASS1/PASS2 注入）压制，仅在 refs 未
+        // 算出时兜底占位。
+        else if (field.hex_value) return this.parseHexBytes(field.hex_value);
         else value = params.value || 0;
 
         // E1-3 (B4): SCALED_DECIMAL → (value+offset)*factor 定标后再编码。
@@ -380,11 +400,17 @@ export const InstructionEncoder = {
         // 0.1 Leaf Sizes
         allFieldsMap.forEach(field => {
             const params = field.parameter_config || {};
-            // If group, skip (will calc later)
-            if (field.fields?.length > 0) return;
+            // R1: 组（fields/children 非空）跳过 → 0.2 汇总；空容器（children:[]）
+            // 已知 0；slot 占位归零（对齐 LengthHandler:29 / ChecksumHandler:27
+            // 排除 slot 的发射口径，编码期 fieldSizes 即 0）。
+            if (field.fields?.length > 0 || field.children?.length > 0) return;
+            if (field.type === 'container') { fieldSizes[field.id] = 0; return; }
+            if (field.type === 'slot') { fieldSizes[field.id] = 0; return; }
 
-            // Default
-            let size = field.byte_len || 1;
+            // Default —— byte_len（指令字段）|| byte_length（协议节点），皆缺/0 → 1。
+            // E1-3 的 byte_len=0 归一契约不变；协议卡自此读 byte_length（R1 修
+            // 死 config 缺口），与 computeByteOffsets 的 byte_len ?? byte_length 同尺。
+            let size = field.byte_len || field.byte_length || 1;
 
             if (params.type === 'string') {
                 const val = inputs[field.id] || params.value || '';
@@ -400,9 +426,11 @@ export const InstructionEncoder = {
         const getOrCalcSize = (item) => {
             if (fieldSizes[item.id] !== undefined) return fieldSizes[item.id];
 
-            if (item.fields && item.fields.length > 0) {
+            // R1: children 树组与 fields 组同权（0.1 只跳过非空组，落此必非空）。
+            const kids = (item.fields?.length > 0) ? item.fields : item.children;
+            if (kids && kids.length > 0) {
                 let total = 0;
-                item.fields.forEach(child => total += getOrCalcSize(child));
+                kids.forEach(child => total += getOrCalcSize(child));
                 fieldSizes[item.id] = total;
                 return total;
             }
@@ -416,8 +444,11 @@ export const InstructionEncoder = {
 
         // --- PASS 1: RESOLVE LENGTH_CALC ---
         allFieldsMap.forEach(field => {
-            if (field.op_code !== 'LENGTH_CALC') return;
             const params = field.parameter_config || {};
+            // R1 对称闸：指令侧 LENGTH_CALC 算子与协议侧 length 卡（无 op_code，
+            // 认 parameter_config.type='length' —— A1 createBlock 初始化保证）
+            // 同走 refs Σ / formula 路径；width 用卡自身 byte_length 定宽。
+            if (field.op_code !== 'LENGTH_CALC' && params.type !== 'length') return;
             const refs = params.refs || [];
 
             // Build Symbol Table for Formula (Name/ID -> Size)
@@ -538,6 +569,11 @@ export const InstructionEncoder = {
 
         const childrenOf = (field) => {
             if (field.fields && field.fields.length > 0) return [...field.fields].sort(bySeq);
+            // R1: children 树归属（协议节点无 parent_id / 合并树 cloneBlocks 不
+            // 前缀化 parent_id → kidsOf 必失配）走 children 数组；空容器返回 []
+            // —— 走组路径发 0 字节，不当叶产脏 00。
+            if (field.children && field.children.length > 0) return [...field.children].sort(bySeq);
+            if (field.type === 'container') return [];
             const kids = kidsOf.get(field.id);
             return kids && kids.length > 0 ? kids : null;
         };

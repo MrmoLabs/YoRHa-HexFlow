@@ -20,6 +20,14 @@ export const BLOCK_PROPERTY_FIELDS = {
         label: '十六进制值 (Hex)',
         inputType: 'text',
         parse: (value) => value
+    },
+    // A2 refs 引用（一期）：length/checksum 卡选同协议块 —— inputType 引导
+    // ProtocolPropertiesPanel 走专用拾取分支（计数 + 芯片 + SELECT FIELDS），
+    // key 为点路径，通用 input 不直接读（面板按 inputType 分流）。
+    refs: {
+        key: 'parameter_config.refs',
+        label: '结构引用 (Refs)',
+        inputType: 'refs'
     }
 };
 
@@ -48,7 +56,9 @@ export const BLOCK_TYPES = [
         defaultByteLength: 1,
         nestable: false,
         palette: { title: '添加长度 (Length)', mainLabel: '长度', subLabel: 'LEN', dashed: false },
-        fields: ['length']
+        // A2: length 卡加 refs 结构引用（选同协议块 → 设计期 Σ 回显 / 编码期
+        // PASS1 求和）。
+        fields: ['length', 'refs']
     },
     {
         type: 'checksum',
@@ -56,7 +66,8 @@ export const BLOCK_TYPES = [
         defaultByteLength: 1,
         nestable: false,
         palette: { title: '添加校验 (Checksum)', mainLabel: '校验', subLabel: 'CRC', dashed: false },
-        fields: ['length']
+        // A2: checksum 卡加 refs（编码期 PASS2 按算法吃 refs 字节）。
+        fields: ['length', 'refs']
     },
     {
         type: 'slot',
@@ -86,6 +97,12 @@ export const createBlock = (type, makeId) => {
         byte_length: def.defaultByteLength ?? 1,
         hex_value: '00',
         children: def.nestable ? [] : undefined,
-        config: {}
+        config: {},
+        // A1: length/checksum 卡初始化 parameter_config —— type 使编码器
+        // PASS1（:419 对称闸）/ PASS2（:453 checksum 兜底）命中，refs 为拾取
+        // 槽（UI 写入）。后端导出仍走死 config={}（R2 记档的既存边界，不修）。
+        ...(type === 'length' || type === 'checksum'
+            ? { parameter_config: { type, refs: [] } }
+            : {})
     };
 };

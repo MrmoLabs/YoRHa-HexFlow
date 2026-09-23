@@ -24,6 +24,15 @@ const normalizeInstructionBlocks = (instruction) => {
 const cloneBlocks = (blocks, prefix) => {
     return blocks.map(b => {
         const newBlock = { ...b, id: `${prefix}-${b.id}` };
+        // A8: refs 锚定同树 id —— 合并树 id 前缀化后 refs 必须同步，否则
+        // encoder 查无目标（length Σ 恒 0 / checksum 空字节）。协议侧 refs → p-、
+        // 指令侧 refs → i-（跨树引用为契约外，PUT 侧已拦悬空/锚 slot）。
+        if (Array.isArray(newBlock.parameter_config?.refs)) {
+            newBlock.parameter_config = {
+                ...newBlock.parameter_config,
+                refs: newBlock.parameter_config.refs.map(r => `${prefix}-${r}`)
+            };
+        }
         if (newBlock.children) {
             newBlock.children = cloneBlocks(newBlock.children, prefix);
         }
@@ -31,9 +40,11 @@ const cloneBlocks = (blocks, prefix) => {
     });
 };
 
-// MERGE LOGIC: Combine Protocol + Instruction
-// Logic: Find the FIRST 'slot' block and inject instruction blocks.
-// If no slot found, append to the end of the root container (fallback).
+// MERGE LOGIC: Combine Protocol + Instruction(s)
+// 洞序 = 协议树 DFS（一期稠密位次语义：指令数组序 i → 第 i 个 slot，洞号即
+// 同协议绑定按 slot_order 升序的位次）；洞未填保留 slot（发射归零）；指令多
+// 于洞 → 溢出 append 根末尾（沿用单指令 fallback）。单指令对象 / undefined /
+// [] 向后兼容（包成数组走同一路径，E4 单绑定语义不变）。
 export const mergeProtocolInstruction = (protocol, instruction) => {
     if (!protocol) return [];
 
@@ -43,31 +54,33 @@ export const mergeProtocolInstruction = (protocol, instruction) => {
         mergedRoot.children = cloneBlocks(mergedRoot.children, 'p');
     }
 
-    if (instruction) {
-        const instructionBlocks = cloneBlocks(normalizeInstructionBlocks(instruction), 'i');
+    const list = Array.isArray(instruction)
+        ? instruction
+        : (instruction ? [instruction] : []);
 
-        const injectIntoSlot = (nodes) => {
-            for (let i = 0; i < nodes.length; i++) {
+    if (list.length && mergedRoot.children) {
+        // 每条指令 → 一组已克隆（i- 前缀）+ isInjected 标记的根块
+        const payloads = list.map(ins => cloneBlocks(normalizeInstructionBlocks(ins), 'i')
+            .map(b => ({ ...b, isInjected: true })));
+
+        let cursor = 0;
+        const fill = (nodes) => {
+            for (let i = 0; i < nodes.length && cursor < payloads.length; i++) {
                 if (nodes[i].type === 'slot') {
-                    // FOUND SLOT: Replace with instruction blocks
-                    // Mark them as "Injected" for styling if needed
-                    const injected = instructionBlocks.map(ib => ({ ...ib, isInjected: true }));
+                    const injected = payloads[cursor++];
                     nodes.splice(i, 1, ...injected);
-                    return true; // Stop after first slot filled
-                }
-                if (nodes[i].children) {
-                    if (injectIntoSlot(nodes[i].children)) return true;
+                    i += injected.length - 1; // 跳过已注入块，继续向后枚举洞
+                } else if (nodes[i].children) {
+                    fill(nodes[i].children); // DFS：嵌套容器内 slot 同参与洞序
                 }
             }
-            return false;
         };
+        fill(mergedRoot.children);
 
-        const injected = injectIntoSlot(mergedRoot.children || []);
-
-        if (!injected && mergedRoot.children) {
-            // Fallback: Append if no slot
-            const injected = instructionBlocks.map(ib => ({ ...ib, isInjected: true }));
-            mergedRoot.children.push(...injected);
+        // 溢出：洞不够 → 剩余指令追加到根末尾（append fallback）。
+        // payloads 每项本身是块数组 → slice 后须 flat 摊平，否则推入子数组。
+        if (cursor < payloads.length) {
+            mergedRoot.children.push(...payloads.slice(cursor).flat());
         }
     }
 
@@ -91,9 +104,24 @@ export const buildLanes = (nodes, parentId = null, parentName = 'ROOT SEQUENCE',
     return lanes;
 };
 
+// R1/B3: 洞数统计（DFS，嵌套容器内 slot 同计）—— 编排页「洞位不足 / 空洞」
+// 警告与侧栏重排共用的纯函数口径（稠密位次：洞号 = 同协议绑定位次）。
+export const countSlots = (blocks) => {
+    if (!blocks?.length) return 0;
+    let n = 0;
+    blocks.forEach(b => {
+        if (b.type === 'slot') n += 1;
+        if (b.children?.length) n += countSlots(b.children);
+    });
+    return n;
+};
+
 export const getTotalBytes = (blocks) => {
     let total = 0;
     blocks.forEach(b => {
+        // R1: slot 占位归零 —— 发射跳过（orchestrator.py:76 不吐字节），即便
+        // 携带 byte_length 也不计入显示总长（与编码期 fieldSizes=0 同尺）。
+        if (b.type === 'slot') return;
         // Leaf = node without child nodes. `children: []` (which
         // normalizeInstructionBlocks attaches to every field) is NOT a
         // container — counting it as one recursed into nothing and dropped
