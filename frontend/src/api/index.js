@@ -20,6 +20,7 @@ import { getTransportConfig, setTransportConfig, getTransportStatus } from './tr
 import { getBindings, createBinding, updateBinding, deleteBinding } from './bindings';
 import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle } from './datahub';
 import { getProfiles, createProfile, updateProfile, deleteProfile, activateProfile } from './profiles';
+import { getResponseSpec, saveResponseSpec, deleteResponseSpec, sendTransaction } from './responseSpecs';
 
 export const api = {
     // Protocols
@@ -67,7 +68,13 @@ export const api = {
     createProfile,
     updateProfile,
     deleteProfile,
-    activateProfile
+    activateProfile,
+
+    // Response specs / transaction (P2: 应答规格按指令持久化 + /dispatch/transaction)
+    getResponseSpec,
+    saveResponseSpec,
+    deleteResponseSpec,
+    sendTransaction
 };
 
 export default api;

@@ -133,3 +133,14 @@ class DeviceProfile(Base):
     id = Column(String(36), primary_key=True)
     label = Column(String(128), nullable=False, unique=True)  # 档案名唯一（路由先查给 400，DB 约束兜底）
     config = Column(JSON, nullable=False)  # 完整三段传输配置快照（validate_config 归一后入库）
+
+
+# 9. Response Specs（P2: 事务化发送引擎 — 按指令持久化的应答匹配规格，新表）
+class ResponseSpec(Base):
+    __tablename__ = "response_specs"
+
+    id = Column(String(36), primary_key=True)
+    # 逻辑外键（同 op_code 先例，不加 FK 约束）：一指令一规格，路由先查保证唯一、DB unique 兜底
+    instruction_id = Column(String(36), nullable=False, unique=True)
+    # 匹配规格 JSON：normalize_spec 归一后入库（core/response_match.py 为形态 SSOT）
+    spec = Column(JSON, nullable=False)

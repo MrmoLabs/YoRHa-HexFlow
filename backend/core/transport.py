@@ -258,15 +258,21 @@ def reset() -> None:
         _persist_hook = None
 
 
-def send(data: bytes) -> bytes:
-    """按当前模式发送并返回响应字节（loopback 为回显）。失败抛 TransportError。"""
+def send(data: bytes, read_timeout_ms: Optional[int] = None) -> bytes:
+    """按当前模式发送并返回响应字节（loopback 为回显）。失败抛 TransportError。
+
+    P2 事务引擎：read_timeout_ms 覆盖本次读超时（不落配置、不断连接）——
+    事务逐次 attempt 的 deadline 与配置项解耦；None = 用配置值（既有口径不变）。
+    """
+    if read_timeout_ms is not None:
+        _require_timeout(read_timeout_ms, "read_timeout_ms")
     with _lock:
         mode = _config["mode"]
         if mode == "loopback":
             return data
         if mode == "tcp":
-            return _tcp_send(data)
-        return _serial_send(data)
+            return _tcp_send(data, read_timeout_ms)
+        return _serial_send(data, read_timeout_ms)
 
 
 def _tcp_connect(cfg: Dict[str, Any]) -> socket.socket:
@@ -308,14 +314,16 @@ def _tcp_read(sock: socket.socket, timeout_ms: int) -> "tuple[bytes, bool]":
     return bytes(buf), False
 
 
-def _tcp_send(data: bytes) -> bytes:
+def _tcp_send(data: bytes, read_timeout_ms: Optional[int] = None) -> bytes:
     cfg = _config["tcp"]
+    # P2：事务逐次 attempt 用调用方读超时覆盖配置值（send 入口已校验）
+    timeout_ms = cfg["read_timeout_ms"] if read_timeout_ms is None else read_timeout_ms
     sock = _tcp_sock
     if sock is None:
         sock = _tcp_connect(cfg)
     try:
         sock.sendall(data)
-        response, peer_closed = _tcp_read(sock, cfg["read_timeout_ms"])
+        response, peer_closed = _tcp_read(sock, timeout_ms)
     except TransportError:
         raise
     except OSError as e:
@@ -371,15 +379,17 @@ def _serial_read(inst: Any, timeout_ms: int) -> bytes:
     return bytes(buf)
 
 
-def _serial_send(data: bytes) -> bytes:
+def _serial_send(data: bytes, read_timeout_ms: Optional[int] = None) -> bytes:
     cfg = _config["serial"]
+    # P2：事务逐次 attempt 用调用方读超时覆盖配置值（send 入口已校验）
+    timeout_ms = cfg["read_timeout_ms"] if read_timeout_ms is None else read_timeout_ms
     inst = _serial_inst
     if inst is None or not inst.is_open:
         inst = _serial_connect(cfg)
     try:
         inst.reset_input_buffer()
         inst.write(data)
-        return _serial_read(inst, cfg["read_timeout_ms"])
+        return _serial_read(inst, timeout_ms)
     except TransportError:
         raise
     except Exception as e:

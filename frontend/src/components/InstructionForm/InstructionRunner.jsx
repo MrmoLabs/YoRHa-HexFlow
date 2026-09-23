@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { normalizeRunnerInstruction } from './normalizeRunnerInstruction';
 import RunnerFieldTree from './RunnerFieldTree';
 import TransmissionLog from './TransmissionLog';
+import TransactionPanel from './TransactionPanel';
 import { triggerBlobDownload } from '../../utils/download';
 
 export default function InstructionRunner({ instruction, onSend, onOpenDatePicker }) {
@@ -111,9 +112,9 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
     const instructionName = normalizedInstruction.name || normalizedInstruction.label || 'Unnamed Protocol';
 
     return (
-        <div className="flex-1 flex flex-col h-full bg-nier-bg p-8 gap-8 overflow-hidden">
+        <div className="flex-1 flex flex-col h-full bg-nier-bg p-5 gap-8 overflow-hidden">
             {/* Header */}
-            <div className="border-b-4 border-nier-light/20 pb-6 flex justify-between items-end">
+            <div className="border-b-4 border-nier-light/20 pb-5 flex justify-between items-end">
                 <div>
                     <div className="text-[10px] font-black font-mono text-nier-light/40 mb-2 tracking-[0.3em] uppercase">:: Operational Protocol ::</div>
                     <h2 className="text-4xl font-black text-nier-light tracking-tighter leading-none mb-2">
@@ -133,7 +134,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
 
             <div className="flex-1 flex gap-8 overflow-hidden">
                 {/* Left: Dynamic Form */}
-                <div className="flex-[2] overflow-y-auto pr-8 custom-scrollbar">
+                <div className="flex-[2] overflow-y-auto pr-5 custom-scrollbar">
                     <div className="mb-8 flex items-center gap-4">
                         <div className="h-[1px] flex-1 bg-nier-light/10"></div>
                         <span className="text-xs font-black font-mono text-nier-light/60 uppercase tracking-[0.4em] whitespace-nowrap">
@@ -153,12 +154,12 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                 </div>
 
                 {/* Right: Preview */}
-                <div className="w-1/3 flex flex-col gap-6 border-l-2 border-nier-light/5 pl-8">
-                    <div className="bg-[#4a4a4a] text-[#dad4bb] p-6 relative shadow-inner">
+                <div className="w-1/3 flex flex-col gap-6 border-l-2 border-nier-light/5 pl-5 overflow-y-auto custom-scrollbar">
+                    <div className="bg-[#4a4a4a] text-[#dad4bb] p-3 relative border border-[#5c5c5c]">
                         <div className="absolute top-0 right-0 bg-[#5c5c5c] text-[9px] px-2 py-0.5 font-bold tracking-widest">
                             BYTE_STREAM_OUTPUT
                         </div>
-                        <div className="font-mono text-2xl break-all leading-tight tracking-[0.1em] mt-4 font-black drop-shadow-sm transition-all duration-300">
+                        <div className="font-mono text-2xl break-all leading-tight tracking-[0.1em] mt-4 font-black transition-all duration-300">
                             {hexPreview || '00'}
                         </div>
                     </div>
@@ -166,7 +167,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                     <button
                         onClick={handleSend}
                         disabled={isSending}
-                        className="bg-nier-light text-white py-4 px-8 font-black text-sm tracking-[0.2em] hover:bg-[#2a2a2a] transition-all active:scale-95 flex items-center justify-between group shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="bg-nier-light text-white py-4 px-5 font-black text-sm tracking-[0.2em] hover:bg-[#2a2a2a] transition-all active:scale-95 flex items-center justify-between group disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <span>{isSending ? 'TRANSMITTING...' : 'TRANSMIT_DATA'}</span>
                         <div className="flex items-center gap-2">
@@ -178,7 +179,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                     <button
                         onClick={handleExport}
                         disabled={isExporting}
-                        className="border border-nier-light text-nier-light py-2 px-6 font-black text-xs tracking-[0.2em] hover:bg-nier-light hover:text-nier-dark transition-all flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="border border-nier-light text-nier-light py-2 px-5 font-black text-xs tracking-[0.2em] hover:bg-nier-light hover:text-nier-dark transition-all flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <span>{isExporting ? 'EXPORTING...' : 'EXPORT_HEX'}</span>
                         <span className="text-[10px] font-mono opacity-50">.HEX</span>
@@ -189,7 +190,12 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                         </div>
                     )}
 
-                    <TransmissionLog logs={logs} />
+                    {/* P2 事务发送：规格编辑 + 超时重发/广播 + 逐次 attempt/RTT */}
+                    <TransactionPanel instruction={instruction} payload={hexPreview.replace(/\s/g, '')} />
+
+                    <div className="min-h-[240px] flex flex-col">
+                        <TransmissionLog logs={logs} />
+                    </div>
                 </div>
             </div>
         </div>

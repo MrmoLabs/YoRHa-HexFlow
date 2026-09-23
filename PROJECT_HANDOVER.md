@@ -56,6 +56,11 @@
 *   `id` (PK)、`label` (唯一)、`config` (JSON，完整三段传输配置快照，`validate_config` 归一后入库)
 *   语义：传输配置的命名快照。省略 `config` 创建 = 服务端快照当前生效配置且即视为激活；激活 = `transport.set_config` + 回写指针；手工改配置经钩子清指针（档案失活）；删除激活档案只清指针不动生效配置。API 见 `backend/routers/profile.py`（`/profiles` CRUD + `/profiles/{id}/activate`）。
 
+### H. `response_specs`（P2 新增，应答规格）
+*   `id` (PK)、`instruction_id` (逻辑外键 → `instructions.id`，唯一，无 FK 约束)、`spec` (JSON，`normalize_spec` 归一后入库)
+*   语义：一指令一份事务应答匹配规格。五要素 = 帧头回显 `echo_header_bytes` / 长度自洽 `length`（`声明值 == 帧长 + offset_val`，对齐 `length.py` 的 offset 语义）/ 校验反算 `checksum`（sum·xor·crc16_modbus，恒排除字段自身，算法与 `handlers/checksum.py`、`formula.js calculateChecksum` 同一套且有 crc16 锚定测试）/ 掩码忽略区间 `ignore_ranges`（半开区间，echo 比对跳过）/ 前缀后缀 `prefix`·`suffix`；mode = echo（默认，结构 + 逐字节回显）/ rules（仅结构）/ any（非空即过）。
+*   判定纯函数 `backend/core/response_match.py`（`normalize_spec` 为形态 SSOT，非法 → 400；`match_response` 返回 `(ok, reasons)`）。API 见 `backend/routers/response_spec.py`（GET 列表/单查、PUT upsert、DELETE，路径键 = instruction_id）。事务端点 `POST /dispatch/transaction` 规格解析优先级：内联 > 按指令 > 缺省 echo。
+
 ## 4. 编译与下发链路
 
 ### 前端编码（动态发送表单 + 预览）
@@ -110,10 +115,19 @@
     label 400ms 防抖 + 卸载冲刷 / 加载失败降级本地提示条）。
 5.  ~~**位域强校验**~~ ✅ 已落地（2026-09-22，Backlog M1-C2）：`backend/routers/instruction.py`
     `_validate_bitfields` 在 POST/PUT 落库前强校验，重叠 / 超容量位域 400 拒绝（unittest 8/8）。
-6.  ~~**设备档案 + 连接持久化**~~ ✅ 已落地（2026-09-23，Backlog P1）：新表
+6.  ~~**设备档案 + 连接持久化**~~ ✅ 已落地（2026-09-23，Backlog P1，`550b73e`）：新表
     `transport_settings`（配置经钩子落库 + lifespan 启动恢复）+ `device_profiles`
     （命名快照 CRUD + 激活切换）+ `/profiles` API + 调试页设备档案区；
     后续 P2–P5（事务发送引擎 / 序列编排 / 日志落库回放）见 `docs/PLAN_Backlog.md` §1。
+7.  ~~**事务化发送引擎**~~ ✅ 已落地（2026-09-23，Backlog P2）：新表
+    `response_specs`（应答规格按指令持久化，`normalize_spec` SSOT）+
+    `core/response_match.py` 判定纯函数（帧头回显/长度自洽/校验反算 sum·xor·
+    crc16_modbus/掩码忽略区间/前缀后缀，mode echo·rules·any）+
+    `POST /dispatch/transaction`（超时→按间隔重发 N 次、广播无应答、逐次 attempt
+    + RTT/统计，规格解析内联 > 按指令 > 缺省，同时入 `/dispatch/history` 三事件
+    口径）+ `transport.send` 单次读超时覆盖 + 加工页 `TransactionPanel`
+    （规格编辑器 + 事务发送 + attempt 展示；同批清零 InstructionRunner 10 处
+    校验器违规）。验收：后端 149/149、前端 390/390、build EXIT=0、校验器 0 违规。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

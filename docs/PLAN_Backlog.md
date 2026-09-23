@@ -28,8 +28,8 @@
 | E2 | B2 传输层 T1→T2→T3→T4→T5（T2 TCP 无依赖先行，T3 串口 pyserial） | ✅（3149726） |
 | E3 | B3 通讯调试页 /terminal 实装（依赖 E2） | ✅（530f0b4） |
 | E4 | B4 编排绑定持久化（甲案：新表） | ✅（394c886） |
-| P1 | C 设备档案 + 连接持久化（新表 transport_settings / device_profiles） | 🔄 实现与自动化验证完成，待提交 |
-| P2 | A 事务化发送引擎（应答匹配规则可配 + 超时重发 + RTT/成功率统计） | ⬜ |
+| P1 | C 设备档案 + 连接持久化（新表 transport_settings / device_profiles） | ✅（550b73e，db 同步 d95c1e4） |
+| P2 | A 事务化发送引擎（应答匹配规则可配 + 超时重发 + RTT/成功率统计） | ✅ |
 | P3 | B1 序列编排后端（新表 sequences / sequence_steps + 后台 Runner + 轮询状态 + 与手动发送互斥） | ⬜ |
 | P4 | B2 序列编排前端（新菜单页「序列编排」，pageStatus 第 7 项，快捷键 F） | ⬜ |
 | P5 | D 通讯日志落库 + 导出 + 回放（新表 dispatch_logs，三路写入，CSV/JSON 导出，日志重发） | ⬜ |
@@ -331,7 +331,9 @@
 > orchestration 条目、PAGE_STATUS 编排节、HANDOVER 待办 4 划线同步。
 > yorha.db 预期随本批后端重启新增 protocol_bindings 表（文件变更，**不入库**）。
 
-## 8. P1 明细（设备档案 + 连接持久化）
+## 8. P 批次明细
+
+### 8.1 P1（设备档案 + 连接持久化）
 
 - `models.py` 两张**新表**（既有表零改）：`transport_settings`（单行 `id="current"`，
   `config` JSON + `active_profile_id` 逻辑外键）+ `device_profiles`（`label` 唯一 +
@@ -359,6 +361,53 @@
 > transport_settings / device_profiles 两表（文件变更，**不随本批提交**）。
 > 人工验证沿「浏览器断连、用户侧补做」先例：调试页存档 → 应用 → 手工改配置失活
 > → 重启后端配置与档案仍在。
+
+### 8.2 P2（事务化发送引擎）
+
+- `models.py` **新表** `response_specs`（`instruction_id` 逻辑唯一 + `spec` JSON
+  归一入库；既有表零改）。
+- 判定核心 `backend/core/response_match.py`（纯函数）：`normalize_spec` 为形态
+  SSOT（未知字段/模式/区间重叠/越界 → ValueError → 400）；`match_response` 返回
+  `(ok, reasons)`——五要素 = 帧头回显 `echo_header_bytes` / 长度自洽 `length`
+  （`声明值 == 帧长 + offset_val`，对齐 `length.py` 的 offset 语义）/ 校验反算
+  `checksum`（sum·xor·crc16_modbus，**恒排除字段自身**，span 可配、crc16 缺省
+  2 字节，算法与 `handlers/checksum.py`、`formula.js` 同一套，crc16 有双端锚定
+  测试）/ 掩码忽略区间 `ignore_ranges` / 前缀后缀 `prefix`·`suffix`；mode =
+  echo（默认，结构 + 逐字节回显）/ rules（仅结构）/ any（非空即过）。
+- `transport.send(data, read_timeout_ms=None)`：新增**单次读超时覆盖**（不落配置、
+  不断连接）——事务逐次 attempt 的 deadline 与配置解耦；缺省 None = 原口径
+  （既有调用与 `test_transport` 零改动）。
+- `POST /dispatch/transaction`（`routers/dispatch.py` 追加）：超时 → 按间隔重发
+  N 次（总尝试 = retries + 1）；广播 = 读侧 1ms 放弃 + 不判匹配（协议保证广播帧
+  不回包）；规格解析优先级 **内联 > 按指令（response_specs）> 缺省 echo**；
+  响应恒 200（成败在 `status`，保住 attempts 明细），参数/规格非法仍 400；
+  逐次 attempt（OK / NO_RESPONSE / MATCH_FAILED / TRANSPORT_ERROR + RTT +
+  reasons/error）+ 统计（rtt last/avg/max 只聚「拿到字节」的样本）；同时按
+  SENT/ERROR + raw/response/error 口径写入 `/dispatch/history`
+  （`DispatchRecord` 形态与 `/dispatch` 手工口径零改）。
+- `/response-specs` CRUD（`routers/response_spec.py`，路径键 = instruction_id，
+  PUT 为 upsert、保存即归一；无模块级 create_all，建表归 lifespan）。
+- 前端：加工页右列新增 `TransactionPanel`（超时/重发/间隔 + 广播开关 +
+  SEND_TRANSACTION + 汇总/逐次 attempt 展示 + 折叠式规格编辑器；脏规格内联
+  发送、干净规格交后端按 instruction_id 解析；规格 404 → 本地缺省常态、非 404
+  降级本地 + 错误条）；视图模型纯函数 `utils/transactionView.js`；api
+  `responseSpecs.js` 四封装 + barrel。**同批整改 InstructionRunner 既有 10 处
+  校验器违规**（shadow-inner/drop-shadow-sm/shadow-lg 阴影 → 移除/1px 边框，
+  7 处松散 padding ≥6 → 5 档）。
+- 验收：`test_response_match.py` 23 例（归一 9 + 判定 14）+
+  `test_response_specs.py` 7 例 + `test_dispatch_transaction.py` 10 例
+  （静默对端 NO_RESPONSE 重试、拒连 TRANSPORT_ERROR 重试、失配重发间隔计时、
+  成功落第 2 次 attempt、广播跳过匹配、规格三级解析、脏库 400、手工
+  `/dispatch` 口径不回归）。
+
+> **P2 进度（2026-09-23，实现与自动化验证完成，待提交）**：
+> 后端 **149/149**（109+40）、前端 **390/390**（375+15：面板 7 + 视图 8）、
+> `vite build` EXIT=0（535 模块 / 482.31 kB）、yorha-ui 校验器 0 violations
+> （InstructionRunner + TransactionPanel）。文档：pageStatus processing 条目、
+> PAGE_STATUS 已重跑生成脚本、HANDOVER H 表 + 待办 7。yorha.db 预期随本批
+> 后端重启新增 response_specs 表（文件变更，**不随本批提交**）。人工验证沿
+> 「浏览器断连、用户侧补做」先例：加工页打开规格编辑器 → 存规格 → 发送事务
+> 查看逐次 attempt 与 RTT。
 
 ## 9. 保留勿动（非任务，勿清理）
 
