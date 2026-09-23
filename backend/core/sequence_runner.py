@@ -56,6 +56,8 @@ class _Run:
 
 _lock = threading.Lock()
 _state: Optional[_Run] = None
+# P5 通讯日志钩子（set_log_hook 注入；None = 未注入不落库，reset 一并清）
+_log_hook = None
 
 
 def _idle_snapshot() -> Dict[str, Any]:
@@ -119,10 +121,17 @@ def request_stop() -> None:
 
 
 def reset() -> None:
-    """清运行态（测试 setUp/tearDown 与 transport.reset 同期调用，防用例间泄漏）。"""
-    global _state
+    """清运行态与日志钩子（测试 setUp/tearDown 与 transport.reset 同期调用，防用例间泄漏）。"""
+    global _state, _log_hook
     with _lock:
         _state = None
+        _log_hook = None
+
+
+def set_log_hook(fn) -> None:
+    """注入 P5 通讯日志写入回调（lifespan 传 log_store.log_hook(SessionLocal)；None = 不落库）。"""
+    global _log_hook
+    _log_hook = fn
 
 
 def start(sequence_id: str, sequence_name: str, steps: List[Dict[str, Any]], config: Dict[str, Any]) -> Dict[str, Any]:
@@ -169,6 +178,30 @@ def _skip_remaining(run: _Run, from_n: int) -> None:
         run.results.append(_step_record(run.steps[index], index + 1, "SKIPPED"))
 
 
+def _log_step(step: Dict[str, Any], n: int, record: Dict[str, Any], run: _Run) -> None:
+    """P5 通讯日志旁路写入：钩子未注入则跳过；写失败在 safe_log 内吞掉，不反噬执行。"""
+    if _log_hook is None:
+        return
+    # SKIPPED 不经此路（_skip_remaining 直写 results，未发生通讯不落日志）；
+    # PLAN 错误 record["sent"] 为空 → 落基础帧（保可回放）。
+    payload = record.get("sent") or " ".join(
+        f"{b:02X}" for b in (step.get("payload") or b"")
+    )
+    _log_hook(
+        source="sequence",
+        status="OK" if record["status"] == "OK" else "ERROR",
+        channel=transport.get_config()["mode"].upper(),
+        hex_string=payload,
+        echo=record.get("received") or "",
+        instruction_name=record.get("label") or f"step-{n}",
+        instruction_id=record.get("instruction_id") or None,
+        sequence_id=run.sequence_id,
+        step_order=n,
+        rtt_ms=record.get("rtt_ms"),
+        error=record.get("error"),
+    )
+
+
 def execute(run: _Run) -> None:
     """阻塞执行 claim 到的槽；任何路径都 finalize（running=False）并留终态。"""
     stop_on_error = bool((run.config or {}).get("stop_on_error", True))
@@ -203,6 +236,7 @@ def execute(run: _Run) -> None:
                 record["received"] = response.hex().upper()
                 record["rtt_ms"] = round((time.perf_counter() - started) * 1000, 2)
             run.results.append(record)
+            _log_step(step, n, record, run)
 
             if record["status"] != "OK" and stop_on_error:
                 _skip_remaining(run, n + 1)

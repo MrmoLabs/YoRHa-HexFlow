@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.core import response_match, sequence_runner, transport
 from backend.db.database import get_db
+from backend.db.log_store import safe_log
 from backend.db.models import ResponseSpec
 from backend.routers.export import hex_to_bytes
 
@@ -50,8 +51,13 @@ def _spaced(data: bytes) -> str:
     return " ".join(f"{b:02X}" for b in data)
 
 
+def append_history(record: DispatchRecord) -> None:
+    """公开入栈口：/logs 回放复用三事件口径（不外泄 _history 私有态）。"""
+    _history.appendleft(record)
+
+
 @router.post("/", response_model=DispatchRecord)
-def dispatch_frame(request: DispatchRequest):
+def dispatch_frame(request: DispatchRequest, db: Session = Depends(get_db)):
     # P3 互斥：序列运行期禁止手动发送（Runner 直连 transport 不经此路由，无自锁）
     if sequence_runner.is_running():
         raise HTTPException(status_code=409, detail="序列运行中，手动发送已互斥（先停止序列）")
@@ -84,6 +90,12 @@ def dispatch_frame(request: DispatchRequest):
             ],
             **base,
         ))
+        # P5 落库：手动路 ERROR（safe_log 旁路 —— 直调未传 db 时跳过，写失败不反噬响应）
+        safe_log(
+            db, source="manual", status="ERROR", channel=channel,
+            hex_string=payload_spaced, echo="", byte_count=len(data),
+            instruction_name=request.instruction_name, error=str(e),
+        )
         raise HTTPException(status_code=502, detail=f"Transport error: {e}")
 
     record = DispatchRecord(
@@ -96,6 +108,12 @@ def dispatch_frame(request: DispatchRequest):
         **base,
     )
     _history.appendleft(record)
+    # P5 落库：手动路 OK（error 保持 NULL）
+    safe_log(
+        db, source="manual", status="OK", channel=channel,
+        hex_string=payload_spaced, echo=record.echo, byte_count=len(data),
+        instruction_name=request.instruction_name,
+    )
     return record
 
 
@@ -291,6 +309,8 @@ def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_
     )
 
     # 写 /dispatch/history：状态与事件类型沿用 SENT/ERROR + raw/response/error 口径
+    # （P5：reason 提升两用 —— history 文案与落库 error 同源，格式不变）
+    reason: Optional[str] = None
     if status == "OK":
         history_status = "SENT"
         history_events = [
@@ -319,4 +339,15 @@ def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_
         echo=record.echo,
         events=history_events,
     ))
+    # P5 落库：事务路（status 归一 OK/ERROR，error 与 history 文案同源）
+    safe_log(
+        db, source="transaction",
+        status="OK" if status == "OK" else "ERROR",
+        channel=channel, hex_string=payload_spaced, echo=record.echo,
+        byte_count=len(data),
+        instruction_name=request.instruction_name,
+        instruction_id=request.instruction_id,
+        rtt_ms=record.stats.rtt_ms_last,
+        error=reason,
+    )
     return record

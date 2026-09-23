@@ -15,6 +15,7 @@ from backend.routers.datahub import router as datahub_router
 from backend.routers.profile import router as profile_router
 from backend.routers.response_spec import router as response_spec_router
 from backend.routers.sequence import router as sequence_router
+from backend.routers.logs import router as logs_router
 
 
 @asynccontextmanager
@@ -38,6 +39,11 @@ async def lifespan(app: FastAPI):
 
         restore_transport_config(db)
         transport.set_persist_hook(persist_hook(SessionLocal))
+        # P5 日志钩子：Runner 每步独立会话写 dispatch_logs（测试在 setUp 自注、reset 清）
+        from backend.core import sequence_runner
+        from backend.db.log_store import log_hook
+
+        sequence_runner.set_log_hook(log_hook(SessionLocal))
     finally:
         db.close()
     yield
@@ -72,6 +78,7 @@ app.include_router(datahub_router)
 app.include_router(profile_router)
 app.include_router(response_spec_router)
 app.include_router(sequence_router)
+app.include_router(logs_router)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Enum, JSON, Boolean
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Enum, JSON, Boolean, Float
 from sqlalchemy.orm import relationship, backref
 from backend.db.database import Base
 import enum
@@ -173,3 +173,26 @@ class SequenceStep(Base):
     payload = Column(Text, nullable=False)  # 保存时编译的完整帧 hex（前端 encodeInstruction 产物）
     # 发送时重算计划 {"dynamic": [...TIME/COUNTER 补丁], "checksum": {regions 重算}}；None = 原样发送
     plan = Column(JSON, nullable=True)
+
+
+# 12. Dispatch Logs（P5: 通讯日志落库 — 三路写入（manual/transaction/sequence）
+# + 回放（replay），查询/导出见 routers/logs.py、写侧件见 db/log_store.py；
+# 新表，既有表零改）
+class DispatchLog(Base):
+    __tablename__ = "dispatch_logs"
+
+    # 自增整型 PK（日志高频插入，顺序即时间序；查询恒 id 降序）
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    created_at = Column(String(40), nullable=False)  # ISO-8601 UTC
+    source = Column(String(16), nullable=False)  # manual | transaction | sequence | replay
+    channel = Column(String(16), nullable=False)  # 发送时通道 LOOPBACK / TCP / SERIAL
+    status = Column(String(16), nullable=False)  # OK | ERROR（历史 SENT/FAILED 归一）
+    byte_count = Column(Integer, nullable=False, default=0)
+    hex_string = Column(Text, nullable=False)  # 发送帧 space-separated uppercase
+    echo = Column(Text, nullable=False, default="")  # 末次应答 compact hex（无 = ""）
+    instruction_name = Column(String(128), nullable=True)  # 手动/事务标签 · 序列步 label
+    instruction_id = Column(String(64), nullable=True)  # 逻辑外键：事务规格指令 / 序列步指令
+    sequence_id = Column(String(36), nullable=True)  # 序列路专用（其余路 = NULL）
+    step_order = Column(Integer, nullable=True)  # 1-based 步序（仅序列路）
+    rtt_ms = Column(Float, nullable=True)  # 事务=末次样本 / 序列=本步；manual·replay 无
+    error = Column(Text, nullable=True)  # ERROR 原因（OK 为 NULL）

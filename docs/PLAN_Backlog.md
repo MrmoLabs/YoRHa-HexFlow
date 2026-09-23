@@ -31,8 +31,8 @@
 | P1 | C 设备档案 + 连接持久化（新表 transport_settings / device_profiles） | ✅（550b73e，db 同步 d95c1e4） |
 | P2 | A 事务化发送引擎（应答匹配规则可配 + 超时重发 + RTT/成功率统计） | ✅（18b0dca，db 同步 b052139） |
 | P3 | B1 序列编排后端（新表 sequences / sequence_steps + 后台 Runner + 轮询状态 + 与手动发送互斥） | ✅（28c68e4，db 同步 9c84911） |
-| P4 | B2 序列编排前端（新菜单页「序列编排」，pageStatus 第 7 项，快捷键 F） | ✅ |
-| P5 | D 通讯日志落库 + 导出 + 回放（新表 dispatch_logs，三路写入，CSV/JSON 导出，日志重发） | ⬜ |
+| P4 | B2 序列编排前端（新菜单页「序列编排」，pageStatus 第 7 项，快捷键 F） | ✅（d33c319） |
+| P5 | D 通讯日志落库 + 导出 + 回放（新表 dispatch_logs，三路写入，CSV/JSON 导出，日志重发） | ✅ |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -507,6 +507,31 @@
 - 页面级人工验证沿「浏览器断连、用户侧补做」先例：F 页快捷徽标、步骤编译
   预览、启停与 1.5s 轮询、运行期互斥禁用由用户侧补做；409 文案已自动化锁形。
 - 纯前端批次 → `yorha.db` 无变化，**本批不产生 db 同步提交**。
+
+### 8.5 P5（通讯日志落库 / 导出 / 回放）
+
+- **范围**：新表 `dispatch_logs`（第 12 表，`models.py` 既有表零改）+ 写侧
+  `backend/db/log_store.py` + 读侧 `backend/routers/logs.py`（挂 `main.py`）+
+  `sequence_runner.set_log_hook` 钩子接线；`/dispatch/history` 内存口径不变
+  （E2-T4 deque，既有测试锁形零回归）。纯后端批次 —— 前端零改动，无构建/
+  校验器环节；`dispatch_frame` 新增 db 参数，既有直调不传 db 经 `safe_log`
+  isinstance 守卫零回归。
+- **测试**：后端 **205/205**（基线 191 + 新增 14 `backend/tests/test_logs.py`
+  —— 四路落行/旁路守卫/过滤 400/导出 BOM/回放矩阵/清场）EXIT=0；
+  `python -c "from backend.main import app"` → IMPORT-OK 55 路由。
+- **curl 冒烟五轮全绿**（重启 uvicorn 载入 P5，lifespan `create_all` 建表）：
+  R1 手动双发 200 + `/logs` 降序 2 条 + `source=manual` 过滤 200 +
+  `source=bogus` 400（detail 业务口径）；R2 导出 `csv` 200（**BOM=YES**、14 列
+  表头逐字节正确、附件头）/ `json` 200 / `xml` 400 / 过滤导出不含
+  transaction；R3 回放 200 SENT（echo 回显）+ 落 `replay` 新行 + 三事件入
+  history、`999999` → 404「日志不存在」；R4 事务 200 + 序列
+  create→start→completed→delete 全链 200/204；**合计 `BY-SOURCE manual=2
+  replay=1 sequence=1 transaction=1`（四路写入铁证）**；R5 `DELETE /logs` →
+  `{"status":"cleared","remaining":0}` + 复查 0 条、history 清 200（冒烟数据
+  全清，仅表结构留在 db）。
+- **提交**：本批 9 文件（7 实现/测试 + 2 文档）一提交；`yorha.db` 因新表 DDL
+  **单独同步提交**（沿 `8f1b171`/`d95c1e4`/`b052139`/`9c84911` 先例）；P5
+  自身 hash 提交后回填 §1。
 
 ## 9. 保留勿动（非任务，勿清理）
 

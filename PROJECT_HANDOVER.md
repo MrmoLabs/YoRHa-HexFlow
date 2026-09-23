@@ -69,6 +69,10 @@
 *   `id` (PK)、`sequence_id` (逻辑外键 → `sequences.id`，无 FK 约束，删除时路由内级联清理)、`step_order` (执行序)、`instruction_id` (逻辑外键 → `instructions.id`，审计回溯)、`label`、`delay_ms` (执行前等待 0..60000)、`params` (JSON，冻结表单值)、`payload` (Text，保存时前端 `encodeInstruction` 编译的完整帧 hex，紧凑大写入库)、`plan` (JSON，发送时重算计划)
 *   语义（用户批复：参数保存时定值，TIME/COUNTER 发送时重算）：`plan.dynamic` 按发送墙钟等长重算 TIME_ACCUMULATOR / AUTO_COUNTER（E1-6 byte-equal 编码器；长度字节按字节数计与值无关恒有效）；`plan.checksum` 按 `regions`（refs 字段帧内字节区间，列示顺序拼接）反算写回，与应答侧共用 `response_match.checksum_value`。归一 `core/sequence_plan.py::normalize_plan`（保存与启动双入口，非法 → 400），执行 `apply_plan`。
 
+### K. `dispatch_logs`（P5 新增，通讯日志落库）
+*   `id` (自增整型 PK，顺序即时间序，查询恒 id 降序)、`created_at` (ISO-8601 UTC)、`source` (`manual` | `transaction` | `sequence` | `replay`)、`channel` (发送时通道 LOOPBACK/TCP/SERIAL)、`status` (**统一 OK|ERROR** —— 历史 SENT/FAILED 归一)、`byte_count`、`hex_string` (发送帧 space-separated；序列 PLAN 错误未发出 → 落基础帧保可回放)、`echo` (末次应答 compact hex，无 = 空串)、`instruction_name` (手动/事务标签 · 序列步 label，缺省 step-N)、`instruction_id` (逻辑外键)、`sequence_id`·`step_order` (仅序列路；回放是独立发送不挂回原序列)、`rtt_ms` (事务=末次样本 / 序列=本步；manual·replay 空)、`error` (ERROR 原因，与 history 文案同源)
+*   语义：三路 + 回放写入，写侧 SSOT `backend/db/log_store.py`（`record_log` 字段校验 / **`safe_log` 旁路** —— 直调未传 db 跳过、写失败回滚不反噬响应，区别于 P1 persist_hook；`log_hook(session_factory)` 为 Runner 造回调）。manual·transaction 在 `routers/dispatch.py` 路由内直写（`dispatch_frame` 新增 db 参数，既有直调不传 db 经守卫零回归）；sequence 经 `core/sequence_runner.py::set_log_hook` 注入（lifespan 传 SessionLocal、测试传临时库工厂、`reset` 一并清；**SKIPPED 不落行 = 未发生通讯**）；replay 写 `source=replay`。读侧 `routers/logs.py`（挂 `main.py`）：`GET /logs`（id 降序 · limit 1..1000 静默钳制 · source/status 过滤非法 400）、`GET /logs/export`（csv 带 utf-8 BOM + 附件头 / json 同形数组，过滤同参、无行数上限，format 非法 400）、`POST /logs/{id}/replay`（**现行**传输配置重发，存档 channel 仅记录当时通道；序列运行期 409 同文案 / 200 SENT / 502 传输错，成败皆入 `/dispatch/history` + 落新行；存档帧损坏 400、日志不存在 404）、`DELETE /logs` 清空（形态同 `DELETE /dispatch/history`）。**`/dispatch/history` 内存口径不变**（E2-T4 deque 100，既有测试锁形）；建表归 lifespan `create_all`（同全表纪律，路由无模块级 create_all）。
+
 ## 4. 编译与下发链路
 
 ### 前端编码（动态发送表单 + 预览）
@@ -159,6 +163,27 @@
     二次确认）+ `docs/PAGE_STATUS.md` 重生成。验收：前端 428/428（390+38）、
     vite build EXIT=0、yorha-ui 校验器本批 UI 文件 0 违规（App.jsx 壳层 5 处
     既有违规非本批引入，留待独立清理批）。P5 日志落库见 `docs/PLAN_Backlog.md` §1。
+10. ~~**通讯日志落库 / 导出 / 回放**~~ ✅ 已落地（2026-09-23，Backlog P5）：新表
+    `dispatch_logs`（第 12 表，`models.py` 既有表零改，见 §3-K）+ 写侧
+    `backend/db/log_store.py`（`record_log` 字段校验 / **`safe_log` 旁路** ——
+    直调未传 db 跳过、写失败回滚不反噬响应，区别于 P1 persist_hook —— /
+    `log_hook(session_factory)` 工厂）三路 + 回放：manual·transaction 在
+    `dispatch_frame`（新增 db 参数，既有直调不传 db 零回归）/
+    `dispatch_transaction` 路由内直写（transaction 的 reason 提升两用，history
+    文案不变）、sequence 经 `sequence_runner.set_log_hook` 注入（lifespan 传
+    SessionLocal、测试传临时库工厂、`reset` 一并清；**SKIPPED 不落行 = 未发生
+    通讯**）、replay 写 `source=replay`。读侧 `backend/routers/logs.py`（挂
+    `main.py`）：`GET /logs` 查询（id 降序 · limit 1..1000 钳制 · source/status
+    过滤非法 400）、`GET /logs/export`（csv 带 utf-8 BOM + 附件头 / json 同形
+    数组，过滤同参、无行数上限，format 非法 400）、`POST /logs/{id}/replay`
+    （**现行**传输配置重发，口径同 POST /dispatch：序列运行期 409 同文案 /
+    200 SENT / 502 传输错，成败皆入 `/dispatch/history` + 落新行；存档帧损坏
+    400、日志不存在 404）、`DELETE /logs` 清空。状态统一 **OK|ERROR**（历史
+    SENT/FAILED 归一）；`/dispatch/history` 内存口径不变（E2-T4 deque，既有
+    测试锁形）。验收：后端 **205/205**（+14）、IMPORT-OK 55 路由、**curl 冒烟
+    五轮全绿**（导出 BOM/过滤、回放 200/404、`BY-SOURCE manual=2 replay=1
+    sequence=1 transaction=1` 四路铁证、清场复查 0）。明细见
+    `docs/PLAN_Backlog.md` §8.5。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
