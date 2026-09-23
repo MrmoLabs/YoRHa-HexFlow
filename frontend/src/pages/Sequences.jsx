@@ -343,7 +343,7 @@ export default function Sequences() {
     const formReady = !!step && !!formInstruction;
 
     return (
-        <div className="flex-1 overflow-auto bg-[radial-gradient(circle_at_top,#1a1a1a,#0d0d0d)] text-nier-light">
+        <div className="flex-1 overflow-auto bg-[radial-gradient(circle_at_top,_rgba(218,212,187,0.12),_transparent_45%),linear-gradient(180deg,_rgba(212,206,178,0.04),_rgba(10,10,10,0))] text-nier-light">
             <div className="p-5 flex flex-col gap-4">
                 {/* Header（registry 驱动，DataHub 同款） */}
                 <section className="border border-nier-light/30 bg-nier-dark/70 p-3">
