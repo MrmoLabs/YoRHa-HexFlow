@@ -1,32 +1,92 @@
 // Maps frontend blocks to the backend FrameRequest block schema for
 // POST /export/binary (Orchestrator compile).
-// Extracted verbatim from pages/Orchestration.jsx (logic unchanged).
+// Extracted verbatim from pages/Orchestration.jsx (logic unchanged), extended
+// in 批次四 (see buildLogicConfig below).
 //
 // Backend Block schema requires id/type/label/byte_length; frontend blocks
 // carry byte_len/op_code/name, so map them explicitly before posting.
-export const toFrameBlocks = (nodes) => (nodes || []).map(node => {
-    const children = node.children?.length ? toFrameBlocks(node.children) : [];
-    const opCode = String(node.op_code || '').toUpperCase();
-    let type = node.type;
-    if (!type) {
-        if (opCode === 'LENGTH_CALC') type = 'length';
-        else if (opCode === 'CHECKSUM_CRC') type = 'checksum';
-        else if (opCode === 'ARRAY_GROUP' || children.length) type = 'container';
-        else type = 'fixed';
-    }
-    const byteLength = Number.isFinite(node.byte_length)
-        ? node.byte_length
-        : (Number.isFinite(node.byte_len) ? node.byte_len : 0);
 
-    return {
-        id: String(node.id),
-        type: String(type),
-        label: String(node.label || node.name || node.id),
-        byte_length: byteLength,
-        hex_value: node.hex_value || node.parameter_config?.hex || null,
-        config: node.config || null,
-        children,
-        is_container: Boolean(node.is_container) || children.length > 0,
-        is_enabled: node.is_enabled !== false
+// 批次四: ChecksumAlgo（前端枚举，formula.js）→ 后端 ChecksumHandler 枚举。
+// 缺省 CRC_16_MODBUS 与前端编码器 `params.algorithm || CRC_16_MODBUS` 同源
+// （后端 handler 自身的 "sum" 缺省只服务旧 range 模式，refs 模式下算法恒由
+// 此处显式给出）。
+const BACKEND_ALGO = { SUM_8: 'sum', XOR_8: 'xor', CRC_16_MODBUS: 'crc16_modbus' };
+
+// 批次四 (R2 打通): length/checksum 此前以死 config={} 直通 —— 后端
+// LengthHandler/ChecksumHandler 的 range（target_start_id/target_end_id）
+// 永不启动 → 恒输出 00。此处把前端 SSOT parameter_config 翻译进
+// config.params，handlers 走新增的 **refs 集合模式**（range 模式仅作无
+// refs 时的旧契约保留）：
+// - params.refs = 按 **refs 数组序** 展开的叶子 id 列表（容器 ref 展开为其
+//   子树叶子的文档序、悬空丢弃 —— 镜像前端 PASS2 逐 ref 取字节 / PASS1
+//   组 ref 展开的口径；range 区间模型只认连续区间，非连续 refs 会把区间内
+//   无关块算进来，故不采用 target_start/end）；
+// - params.algorithm = 算法枚举映射（checksum 专属）；
+// - params.offset = 显式数值才带（协议侧无此概念，缺省 0 同两端）。
+// pc.refs 键缺失（存量行无 parameter_config）→ 维持既有 config 直通，
+// 行为与批次四前逐字节一致。
+const buildLogicConfig = (node, type, byId) => {
+    const pc = node.parameter_config;
+    if (!pc || !Array.isArray(pc.refs)) return node.config || null;
+    const leafIds = [];
+    const expand = (id) => {
+        const target = byId.get(id);
+        if (!target) return; // 悬空 → 丢（前端 encoder find 失败同样跳过）
+        const kids = target.children || [];
+        if (kids.length > 0) kids.forEach(child => expand(child.id));
+        else leafIds.push(id);
     };
-});
+    pc.refs.forEach(expand);
+    const params = { refs: leafIds };
+    if (type === 'checksum') {
+        params.algorithm = BACKEND_ALGO[pc.algorithm] || 'crc16_modbus';
+    }
+    const offset = Number(pc.offset);
+    if (type === 'length' && Number.isFinite(offset)) params.offset = offset;
+    return {
+        ...(node.config && typeof node.config === 'object' ? node.config : {}),
+        params
+    };
+};
+
+export const toFrameBlocks = (nodes) => {
+    // 全林索引一次（refs 可跨兄弟子树解析）；递归映射共享同一份 byId。
+    const byId = new Map();
+    const index = (list) => (list || []).forEach(n => {
+        if (n && typeof n === 'object' && n.id != null) {
+            if (!byId.has(n.id)) byId.set(n.id, n);
+            index(n.children);
+        }
+    });
+    index(nodes);
+
+    const mapNode = (node) => {
+        const children = node.children?.length ? node.children.map(mapNode) : [];
+        const opCode = String(node.op_code || '').toUpperCase();
+        let type = node.type;
+        if (!type) {
+            if (opCode === 'LENGTH_CALC') type = 'length';
+            else if (opCode === 'CHECKSUM_CRC') type = 'checksum';
+            else if (opCode === 'ARRAY_GROUP' || children.length) type = 'container';
+            else type = 'fixed';
+        }
+        const byteLength = Number.isFinite(node.byte_length)
+            ? node.byte_length
+            : (Number.isFinite(node.byte_len) ? node.byte_len : 0);
+
+        const isLogic = type === 'length' || type === 'checksum';
+        return {
+            id: String(node.id),
+            type: String(type),
+            label: String(node.label || node.name || node.id),
+            byte_length: byteLength,
+            hex_value: node.hex_value || node.parameter_config?.hex || null,
+            config: isLogic ? buildLogicConfig(node, type, byId) : (node.config || null),
+            children,
+            is_container: Boolean(node.is_container) || children.length > 0,
+            is_enabled: node.is_enabled !== false
+        };
+    };
+
+    return (nodes || []).map(mapNode);
+};

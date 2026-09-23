@@ -325,6 +325,32 @@ describe('A8 cloneBlocks refs 前缀化（合并树 id 失配修复）', () => {
     });
 });
 
+describe('B4 refs→槽 填槽改写（② 发送期真值解析）', () => {
+    it('嵌套槽被填后，引用该槽的 refs 改写为注入块 id（p-s → i-f1）', () => {
+        const proto = shell([
+            { id: 'len', label: 'LEN', type: 'length', byte_length: 2,
+                parameter_config: { type: 'length', refs: ['s'] } },
+            { id: 'grp', label: '组', type: 'container',
+                children: [{ id: 's', label: '槽', type: 'slot', byte_length: 0 }] }
+        ]);
+        const merged = mergeProtocolInstruction(proto, instruction([field('f1', '命令字', 0, 2)]));
+        const len = merged.find(n => n.id === 'p-len');
+        expect(len.parameter_config.refs).toEqual(['i-f1']);
+        expect(merged.some(n => n.type === 'slot')).toBe(false);
+    });
+
+    it('空洞未填：refs 保持 p- 前缀（仍解析到在场槽，编码期 0 字节）', () => {
+        const proto = shell([
+            { id: 'len', label: 'LEN', type: 'length', byte_length: 2,
+                parameter_config: { type: 'length', refs: ['s'] } },
+            { id: 'grp', label: '组', type: 'container',
+                children: [{ id: 's', label: '槽', type: 'slot', byte_length: 0 }] }
+        ]);
+        const merged = mergeProtocolInstruction(proto, []);
+        expect(merged.find(n => n.id === 'p-len').parameter_config.refs).toEqual(['p-s']);
+    });
+});
+
 describe('countSlots（洞数统计 · 供 B3 洞位不足/空洞警告）', () => {
     it('DFS 统计嵌套 slot', () => {
         expect(blockMerge.countSlots([

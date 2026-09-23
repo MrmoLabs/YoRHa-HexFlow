@@ -54,8 +54,8 @@ describe('useInstructionLanes', () => {
         const rootLane = result.current.processedLanes.find(l => l.parentId === null);
         const calcBlock = rootLane.items.find(i => i.id === 'calc');
 
-        // Formula: ([b1] + 10) -> (5 + 10) = 15 -> 0F
-        expect(calcBlock.parameter_config.computedValue).toBe('0F');
+        // Formula: ([b1] + 10) -> (5 + 10) = 15 → 长度十进制直出 15B
+        expect(calcBlock.parameter_config.computedValue).toBe('15B');
     });
 
     it('should process TIME_ACCUMULATOR', () => {
@@ -115,7 +115,7 @@ describe('useInstructionLanes', () => {
     });
 
     it('resolves LENGTH_CALC formulas referencing a group (group value = Σ children, seed 示例状态包 scenario)', () => {
-        // Mirrors backend/db/seed.py 示例状态包: [状态块](组 1+2+1=4B) + [帧尾](1B) → 05
+        // Mirrors backend/db/seed.py 示例状态包: [状态块](组 1+2+1=4B) + [帧尾](1B) → 5B
         const statusMock = {
             fields: [
                 { id: 'hdr', name: '帧头', op_code: 'HEX_RAW', sequence: 0, byte_len: 2 },
@@ -134,13 +134,14 @@ describe('useInstructionLanes', () => {
 
         const root = result.current.processedLanes.find(l => l.parentId === null);
         const lenBlock = root.items.find(i => i.id === 'len');
-        expect(lenBlock.parameter_config.computedValue).toBe('05'); // 4 + 1
+        expect(lenBlock.parameter_config.computedValue).toBe('5B'); // 4 + 1
 
-        // P1: the group item itself carries its Σ extent as computedValue
-        // (insurance for cards rendered without the offset-ruler prop).
+        // 组卡中央值 = 嵌套内容逐块拼接（子块无字面 hex → 按 byte_len 出等量 ??，
+        // 1B+2B+1B → 四个 ??）；Σ 尺寸 4B 仍由页脚/偏移标尺承担。
+        // （insurance for cards rendered without the offset-ruler prop。）
         const groupBlock = root.items.find(i => i.id === 'g');
         expect(groupBlock.byte_len).toBe(0);
-        expect(groupBlock.parameter_config.computedValue).toBe('4B');
+        expect(groupBlock.parameter_config.computedValue).toBe('?? ?? ?? ??');
     });
 
     it('keeps group-in-formula as ?? when the group total is undeterminable', () => {
@@ -180,7 +181,7 @@ describe('useInstructionLanes', () => {
         const { result } = renderHook(() => useInstructionLanes(refsOnlyMock, 'inst-682'));
         const root = result.current.processedLanes.find(l => l.parentId === null);
         const lenBlock = root.items.find(i => i.id === 'len');
-        expect(lenBlock.parameter_config.computedValue).toBe('04'); // 1 + 1 + 2
+        expect(lenBlock.parameter_config.computedValue).toBe('4B'); // 1 + 1 + 2
     });
 
     it('refs-only LENGTH_CALC with a dangling ref stays ?? (honest unknown)', () => {
@@ -196,5 +197,29 @@ describe('useInstructionLanes', () => {
         const root = result.current.processedLanes.find(l => l.parentId === null);
         const lenBlock = root.items.find(i => i.id === 'len');
         expect(lenBlock.parameter_config.computedValue).toBe('??');
+    });
+
+    // ─── 卡面取值口径：组卡中央值 = 嵌套内容逐块拼接 ─────────────────────────
+    it('group center = nested content concat (known hex child pretty, unknown child per-byte ??)', () => {
+        const contentMock = {
+            fields: [
+                { id: 'g', name: '组', op_code: 'ARRAY_GROUP', sequence: 0, byte_len: 0 },
+                { id: 'h', parent_id: 'g', name: '头', op_code: 'HEX_RAW', sequence: 0, byte_len: 2, parameter_config: { hex: 'AA55' } },
+                { id: 'v', parent_id: 'g', name: '值', op_code: 'INT_UNSIGNED', sequence: 1, byte_len: 2 },
+            ],
+        };
+        const { result } = renderHook(() => useInstructionLanes(contentMock, 'inst-content'));
+        const root = result.current.processedLanes.find(l => l.parentId === null);
+        // AA 55（字面 hex）+ ?? ??（2B 无字面值）→ 与决策示例同形
+        expect(root.items.find(i => i.id === 'g').parameter_config.computedValue).toBe('AA 55 ?? ??');
+    });
+
+    // TIME 无基准 → 差值不可知：按字节数出等量 ??（不再留空落到误导性 00 占位）
+    it('TIME_ACCUMULATOR without base_time injects per-byte unknowns', () => {
+        const timeMock = {
+            fields: [{ id: 't2', op_code: 'TIME_ACCUMULATOR', parameter_config: {}, byte_len: 4 }],
+        };
+        const { result } = renderHook(() => useInstructionLanes(timeMock, 'inst-nobase'));
+        expect(result.current.processedLanes[0].items[0].parameter_config.computedValue).toBe('?? ?? ?? ??');
     });
 });

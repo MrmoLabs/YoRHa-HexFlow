@@ -7,6 +7,7 @@ export default function ProtocolListSidebar({
     activeProtocolId,
     onSelect, // (id) => void
     onAdd, // () => void
+    onDuplicate, // (id) => void | null (null hides the button) — 批次三 P1-1 复制协议
     onDelete // (event, id) => void
 }) {
     return (
@@ -23,7 +24,23 @@ export default function ProtocolListSidebar({
                         className={`p-3 border-b border-nier-light/10 cursor-pointer hover:bg-white/5 flex justify-between group ${p.id === activeProtocolId ? 'bg-nier-light/10 text-white font-bold' : 'text-nier-light/70'}`}
                     >
                         <div className="truncate text-xs">{p.label}</div>
-                        <button onClick={(e) => onDelete(e, p.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-400">×</button>
+                        <div className="flex items-center gap-2 shrink-0">
+                            {onDuplicate && (
+                                // 镜像 InstructionListSidebar:56-67 的副本按钮（stopPropagation
+                                // 免得顺手选中源行 —— 复制成功本就会切到副本）
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onDuplicate(p.id);
+                                    }}
+                                    title="复制协议 (DUPLICATE)"
+                                    className={`hidden group-hover:block text-[9px] font-bold tracking-widest leading-none px-1 transition-colors ${p.id === activeProtocolId ? 'text-nier-dark/70 hover:text-nier-dark' : 'text-nier-light/70 hover:text-nier-light'}`}
+                                >
+                                    副本
+                                </button>
+                            )}
+                            <button onClick={(e) => onDelete(e, p.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-400">×</button>
+                        </div>
                     </div>
                 ))}
             </div>

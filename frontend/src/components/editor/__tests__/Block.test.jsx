@@ -17,7 +17,7 @@ const centerOf = (container) => container.querySelector('.flex-1');
 const offsetSpanOf = (container) => container.querySelector('[title^="字节偏移"]');
 
 describe('Block (P1 offset ruler + smart width)', () => {
-    it('group card: center shows Σ, footer shows bytes before offset, width follows Σ extent', () => {
+    it('group card: center shows per-byte unknowns when content is un-injected, footer shows Σ bytes before offset, width follows Σ extent', () => {
         const { container } = renderBlock({
             name: '状态块',
             op_code: 'ARRAY_GROUP',
@@ -25,7 +25,8 @@ describe('Block (P1 offset ruler + smart width)', () => {
             offsetMeta: { offset: 2, size: 4, isGroup: true },
         });
 
-        expect(centerOf(container).textContent).toBe('4B');
+        // 内容未注入 → 中央 = 按尺寸的等量 ??（未知出等量 ?；页脚仍显尺寸 4B）
+        expect(centerOf(container).textContent).toBe('?? ?? ?? ??');
 
         // Order: bytes (`4B`) come before the offset badge (`@02..`)
         const offsetSpan = offsetSpanOf(container);
@@ -37,14 +38,14 @@ describe('Block (P1 offset ruler + smart width)', () => {
         expect(cardOf(container).style.width).toBe('160px');
     });
 
-    it('group card without the ruler falls back to the lanes-injected computedValue', () => {
+    it('group card without the ruler shows the lanes-injected nested content string', () => {
         const { container } = renderBlock({
             name: '状态块',
             op_code: 'ARRAY_GROUP',
-            parameter_config: { computedValue: '4B' },
+            parameter_config: { computedValue: 'AA 55 ?? ??' },
         });
 
-        expect(centerOf(container).textContent).toBe('4B');
+        expect(centerOf(container).textContent).toBe('AA 55 ?? ??');
         expect(offsetSpanOf(container)).toBeNull();
     });
 
@@ -101,5 +102,38 @@ describe('Block (P1 offset ruler + smart width)', () => {
         // 11 CJK + `_`: ceil(11×11.5 + 8 + 6) = 141 → +20 = 161px ≥ 150，
         // 宽度地板被标签撑开，覆盖单行完整显示（byte_len=1 本为 60px）。
         expect(parseInt(cardOf(container).style.width, 10)).toBeGreaterThanOrEqual(150);
+    });
+
+    // ─── 卡面取值口径：能确定 → 直接显示；不确定 → 按字节数出等量 ?? ───────
+    it('length / checksum cards show per-byte unknowns (2B → "?? ??", not a single ??)', () => {
+        const twoByteLen = renderBlock({
+            name: '长度', type: 'length', byte_length: 2,
+            offsetMeta: { offset: 0, size: 2 },
+        });
+        expect(centerOf(twoByteLen.container).textContent).toBe('?? ??');
+
+        cleanup();
+        const oneByteCrc = renderBlock({
+            name: '校验', type: 'checksum', byte_length: 1,
+            offsetMeta: { offset: 2, size: 1 },
+        });
+        expect(centerOf(oneByteCrc.container).textContent).toBe('??');
+    });
+
+    it('TIME_ACCUMULATOR renders a BASE line under the center value (configured / unconfigured)', () => {
+        const { container } = renderBlock({
+            name: '基准时间', op_code: 'TIME_ACCUMULATOR', byte_len: 4,
+            parameter_config: { base_time: '2026-09-23T14:00:00Z' },
+            offsetMeta: { offset: 0, size: 4 },
+        });
+        // ISO T 分隔与秒位剥除 → YYYY-MM-DD HH:mm
+        expect(container.textContent).toContain('BASE 2026-09-23 14:00');
+
+        cleanup();
+        const unconfigured = renderBlock({
+            name: '基准时间', op_code: 'TIME_ACCUMULATOR', byte_len: 4,
+            offsetMeta: { offset: 0, size: 4 },
+        });
+        expect(unconfigured.container.textContent).toContain('BASE ?');
     });
 });

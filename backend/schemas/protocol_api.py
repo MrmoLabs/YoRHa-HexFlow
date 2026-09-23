@@ -34,11 +34,15 @@ class ProtocolCreate(ProtocolBase):
 
 
 class ProtocolUpdate(ProtocolBase):
-    pass
+    # 批次五: version 乐观并发 —— 缺省 None = 旧客户端 / curl 直调，跳过比对
+    # 直接覆盖（向后兼容先例: 批次四无 refs 键的旧 range 模式原样保留）。
+    version: Optional[int] = None
 
 
 class ProtocolResponse(ProtocolBase):
     id: str
+    # 批次五: 回读 version 供客户端下一次 PUT 携带（新建恒 1，每次成功写 +1）。
+    version: int = 1
 
     class Config:
         from_attributes = True

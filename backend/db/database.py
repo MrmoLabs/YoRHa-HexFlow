@@ -30,3 +30,23 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def ensure_protocol_version_column(bind):
+    """批次五: version 乐观并发列自愈（main.py lifespan 在 create_all 后调用）。
+
+    create_all 只建缺失的表、**不给既有表补列**（本仓无迁移框架，见
+    backend/db/migrations/README）→ 既有 yorha.db 的 protocols 表缺 version
+    列时启动即 ALTER ADD COLUMN（SQLite 无 IF NOT EXISTS，须 PRAGMA 先查）。
+    DEFAULT 1 顺带回填存量行为 1；幂等（已存在 / 表尚不存在则 no-op —— 后者
+    由 create_all 按 models 建全列）。
+    """
+    with bind.connect() as conn:
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(protocols)")}
+        if not columns:
+            return
+        if "version" not in columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE protocols ADD COLUMN version INTEGER NOT NULL DEFAULT 1"
+            )
+            conn.commit()

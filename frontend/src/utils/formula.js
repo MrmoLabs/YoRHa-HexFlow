@@ -41,6 +41,18 @@ export function formatToHex(value, byteLen) {
 }
 
 /**
+ * 设计期未知占位：按字节数出等量 "??"（1B → "??"、2B → "?? ??"、
+ * 4B → "?? ?? ?? ??"），替代固定单个 "??"——占位宽度与字段真实
+ * 占据的字节数一致，读卡时一眼能看出该字段有几字节未知。
+ * byteLen 缺失/非法/小于1 → 按 1 字节出 "??"。
+ */
+export function formatUnknown(byteLen) {
+    const n = Math.floor(Number(byteLen));
+    const count = Number.isFinite(n) && n >= 1 ? n : 1;
+    return Array(count).fill('??').join(' ');
+}
+
+/**
  * IEEE 754 Floating Point to Hex
  * Supports 4 bytes (Float32) as standard protocol decimal.
  */

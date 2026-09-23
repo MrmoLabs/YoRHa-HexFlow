@@ -10,7 +10,8 @@ from backend.db.database import Base
 from backend.routers.protocol import create_protocol, get_protocol, update_protocol
 from backend.schemas.protocol_api import ProtocolCreate, ProtocolNodeSchema, ProtocolUpdate
 
-# A6/A7 refs 透传 + 三类 400 校验：stdlib unittest 直调路由函数（同
+# A6/A7 refs 透传 + 400 校验（悬空/非数组非字符串/自引用；锚 slot 经② 放开）：
+# stdlib unittest 直调路由函数（同
 # test_bindings 夹具模式，临时库证明落库）。parameter_config 走 children
 # JSON 列 —— models.py 零改动（零 DDL），仅 ProtocolNodeSchema 增字段透传，
 # 否则 pydantic 丢字段、刷新后 refs 失效。
@@ -93,7 +94,7 @@ class ProtocolRefsTest(unittest.TestCase):
         created = self._create([node("h"), node("len", ntype="length", refs=[])])
         self.assertEqual(created.children[1]["parameter_config"]["refs"], [])
 
-    # ── A7: 三类 400 校验（悬空/非数组非字符串/锚 slot + 自引用） ─────────
+    # ── A7: 400 校验（悬空/非数组非字符串 + 自引用；锚 slot 经② 范围修订放开） ──
 
     def _with_slot(self):
         return self._create([node("h"), node("s", ntype="slot")])
@@ -106,13 +107,16 @@ class ProtocolRefsTest(unittest.TestCase):
             node("len", ntype="length", refs=["ghost"]),
         ])
 
-    def test_slot_anchor_400(self):
-        p = self._with_slot()
-        self._expect_400(p.id, [
+    def test_slot_ref_allowed(self):
+        """② 范围修订：refs→slot 合法 —— 定义期值不可知（前端 Σ 不注入维持 ??），
+        发送期由 blockMerge 填槽改写为注入块 id 后按真值 Σ（原锚 slot 400 放开）。"""
+        updated = update_protocol(self._with_slot().id, ProtocolUpdate(label="协议A", children=[
             node("h"),
             node("s", ntype="slot"),
             node("len", ntype="length", refs=["s"]),
-        ])
+        ]), db=self.db)
+        pc = updated.children[2].get("parameter_config")
+        self.assertEqual(pc.get("refs"), ["s"])
 
     def test_self_ref_400(self):
         p = self._with_slot()

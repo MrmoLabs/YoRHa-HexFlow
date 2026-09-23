@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { getBlockFields, isNestable } from '../../config/blockTypes';
 import { findNode } from '../../utils/protocolTree';
 
@@ -8,20 +8,79 @@ export default function ProtocolPropertiesPanel({
     showProtocolLevel, // activeProtocolId && currentProtocol && !selectedId
     currentProtocol,
     selectedBlock,
-    onProtocolLabelChange, // (updatedProtocol) => void  (apply + schedule save)
+    onProtocolMetaChange, // (updatedProtocol) => void  (apply + schedule save) — 批次四: label + description 共用（原 onProtocolLabelChange 改名）
     onEnterContainer, // (block) => void
     onUpdateBlock, // (id, updates) => void
     onDeleteBlock, // (id) => void
+    onDuplicateBlock, // (id) => void | undefined — 批次三 P1-2 复制块（深拷贝插源后）
     pickingMode, // { isActive, fieldKey, anchorId, currentRefs, onUpdateRefs }
     onStartPicking, // (fieldKey, currentRefs, onUpdateRefs) => void
-    onStopPicking // () => void
+    onStopPicking, // () => void
+    validationIssues, // { errors, warnings } — 批次二 P0-4 结构校验（页面级）
+    onLocateBlock // (blockId) => void — 点击清单条目定位（展开祖先 + 选中）
 }) {
+    // warnings 展开态（镜像 BlockPropertiesPanel:34 / :261-269 折叠口径）
+    const [showWarnings, setShowWarnings] = useState(false);
     return (
         <aside className="w-80 border-l border-nier-light bg-nier-dark/95 p-4 flex flex-col z-20 shadow-[-5px_0_15px_rgba(0,0,0,0.1)]">
             <h2 className="text-lg border-b-2 border-nier-light mb-6 pb-1 font-bold tracking-wider">属性配置 (PROPERTIES)</h2>
 
+            {/* 批次二 P0-4: 结构校验清单 —— 与指令页 BlockPropertiesPanel:233-281
+                同款（errors 红容器 + 可点击定位、warnings 折叠）。差异：协议页
+                清单**常驻面板顶部**（选中块时不隐藏）—— 防抖保存下用户点定位
+                后恰在块视图里边修边看。 */}
+            {validationIssues && (validationIssues.errors.length > 0 || validationIssues.warnings.length > 0) && (
+                <div className={`p-2 space-y-1 border mb-4 ${validationIssues.errors.length > 0 ? 'border-[#D94834] bg-[#D94834]/15' : 'border-[#E58D28] bg-[#E58D28]/10'}`}>
+                    <div className="flex flex-wrap gap-2 items-baseline mb-1">
+                        {validationIssues.errors.length > 0 && (
+                            <span className="bg-[#D94834] text-nier-light font-bold uppercase tracking-widest px-1 py-0.5 text-[10px]">
+                                ⛔ {validationIssues.errors.length} 结构错误
+                            </span>
+                        )}
+                        <span className="bg-[#E58D28] text-nier-dark font-bold uppercase tracking-widest px-1 py-0.5 text-[10px]">
+                            ⚠ {validationIssues.warnings.length} 提醒
+                        </span>
+                        {validationIssues.errors.length === 0 && (
+                            <span className="text-[10px] text-nier-light/70">（不阻断保存）</span>
+                        )}
+                    </div>
+                    {validationIssues.errors.slice(0, 8).map((err, i) => (
+                        <button
+                            key={`err-${i}`}
+                            type="button"
+                            onClick={() => err.blockId && onLocateBlock?.(err.blockId)}
+                            className="block w-full text-left text-[11px] font-bold text-nier-light hover:text-white hover:underline truncate"
+                        >
+                            ⛔ {err.message}
+                        </button>
+                    ))}
+                    {validationIssues.warnings.length > 0 && (
+                        <button
+                            type="button"
+                            onClick={() => setShowWarnings(v => !v)}
+                            className="text-[10px] font-bold text-[#E58D28] underline"
+                        >
+                            {showWarnings ? '收起提醒' : `展开提醒 (${validationIssues.warnings.length})`}
+                        </button>
+                    )}
+                    {showWarnings && validationIssues.warnings.slice(0, 20).map((warn, i) => (
+                        <button
+                            key={`warn-${i}`}
+                            type="button"
+                            onClick={() => warn.blockId && onLocateBlock?.(warn.blockId)}
+                            className="block w-full text-left text-[10px] text-nier-light hover:text-white truncate"
+                        >
+                            ⚠ {warn.message}
+                        </button>
+                    ))}
+                </div>
+            )}
+
             {showProtocolLevel && currentProtocol && (
-                /* Protocol Level Properties */
+                /* Protocol Level Properties — 批次四: + description（schema
+                    既有字段，此前无 UI 入口；落库经 saveProtocol 载荷 :189 既有
+                    description 键，签名 serializeProtocol 含 description → 防抖
+                    链自然覆盖） */
                 <div className="space-y-6 text-sm">
                     <div className="flex flex-col gap-1">
                         <label className="text-xs opacity-70 uppercase tracking-widest">协议名称 (Protocol Name)</label>
@@ -30,9 +89,22 @@ export default function ProtocolPropertiesPanel({
                             value={currentProtocol.label}
                             onChange={(e) => {
                                 const updatedProto = { ...currentProtocol, label: e.target.value };
-                                onProtocolLabelChange(updatedProto);
+                                onProtocolMetaChange(updatedProto);
                             }}
                             className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono tracking-wide"
+                        />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                        <label className="text-xs opacity-70 uppercase tracking-widest">协议描述 (Description)</label>
+                        <textarea
+                            rows={4}
+                            value={currentProtocol.description || ''}
+                            placeholder="可选：用途 / 版本备注…"
+                            onChange={(e) => {
+                                const updatedProto = { ...currentProtocol, description: e.target.value };
+                                onProtocolMetaChange(updatedProto);
+                            }}
+                            className="bg-transparent border border-nier-light/50 focus:border-nier-light focus:outline-none p-2 font-mono tracking-wide resize-y text-xs"
                         />
                     </div>
                 </div>
@@ -117,6 +189,35 @@ export default function ProtocolPropertiesPanel({
                                 </div>
                             );
                         }
+                        // 批次四: select 分支（dot-path 存点 parameter_config.*
+                        // 通用 input 无法承载 —— 同 refs 口径按 inputType 分流）。
+                        // 读 pc[末段] ?? field.default；写入时带 type（镜像 refs
+                        // 分支，存量行缺 type 时补上编码器 PASS1 闸用的键）。
+                        if (field.inputType === 'select') {
+                            const pc = selectedBlock.parameter_config || {};
+                            const propKey = field.key.split('.').pop();
+                            const value = pc[propKey] ?? field.default ?? '';
+                            return (
+                                <div key={field.id} className="flex flex-col gap-1">
+                                    <label className="text-xs opacity-70 uppercase tracking-widest">{field.label}</label>
+                                    <select
+                                        value={value}
+                                        onChange={(e) => onUpdateBlock(selectedBlock.id, {
+                                            parameter_config: {
+                                                ...pc,
+                                                type: selectedBlock.type,
+                                                [propKey]: e.target.value
+                                            }
+                                        })}
+                                        className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono tracking-wide"
+                                    >
+                                        {field.options.map(opt => (
+                                            <option key={opt.value} value={opt.value} className="bg-nier-dark text-nier-light">{opt.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            );
+                        }
                         return (
                             <div key={field.id} className="flex flex-col gap-1">
                                 <label className="text-xs opacity-70 uppercase tracking-widest">{field.label}</label>
@@ -131,7 +232,16 @@ export default function ProtocolPropertiesPanel({
                         );
                     })}
 
-                    <div className="pt-4 border-t border-nier-light/20">
+                    <div className="pt-4 border-t border-nier-light/20 space-y-2">
+                        {/* 批次三 P1-2: 复制块按钮照抄 BlockPropertiesPanel:502-505 */}
+                        {onDuplicateBlock && (
+                            <button
+                                onClick={() => onDuplicateBlock(selectedBlock.id)}
+                                className="w-full bg-nier-light/10 border border-nier-light/70 text-nier-light hover:bg-nier-light hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors"
+                            >
+                                复制块 (DUPLICATE)
+                            </button>
+                        )}
                         <button
                             onClick={() => onDeleteBlock(selectedBlock.id)}
                             className="w-full border border-red-500/50 text-red-400 hover:bg-red-500 hover:text-white py-2 px-4 uppercase text-xs tracking-widest transition-colors"

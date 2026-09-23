@@ -28,6 +28,22 @@ export const BLOCK_PROPERTY_FIELDS = {
         key: 'parameter_config.refs',
         label: '结构引用 (Refs)',
         inputType: 'refs'
+    },
+    // 批次四: checksum 算法配置 —— 存点 parameter_config.algorithm（镜像
+    // 指令页 B1 aliasChecksumAlgo 的前端编码器存点，PASS2 同源直读），
+    // 出口由 toFrameBlocks 翻成后端 config.params.algorithm（sum/xor/
+    // crc16_modbus）。值域 = formula.js ChecksumAlgo 三值（CRC_32 无实现，
+    // 不列入）。key 点路径 + inputType select → 面板专用分支（同 refs 口径）。
+    algo: {
+        key: 'parameter_config.algorithm',
+        label: '校验算法 (Algorithm)',
+        inputType: 'select',
+        default: 'CRC_16_MODBUS',
+        options: [
+            { value: 'SUM_8', label: 'SUM8' },
+            { value: 'XOR_8', label: 'XOR8' },
+            { value: 'CRC_16_MODBUS', label: 'CRC16-MODBUS' }
+        ]
     }
 };
 
@@ -67,7 +83,8 @@ export const BLOCK_TYPES = [
         nestable: false,
         palette: { title: '添加校验 (Checksum)', mainLabel: '校验', subLabel: 'CRC', dashed: false },
         // A2: checksum 卡加 refs（编码期 PASS2 按算法吃 refs 字节）。
-        fields: ['length', 'refs']
+        // 批次四: + algo 算法下拉（存 parameter_config.algorithm）。
+        fields: ['length', 'refs', 'algo']
     },
     {
         type: 'slot',
@@ -100,7 +117,10 @@ export const createBlock = (type, makeId) => {
         config: {},
         // A1: length/checksum 卡初始化 parameter_config —— type 使编码器
         // PASS1（:419 对称闸）/ PASS2（:453 checksum 兜底）命中，refs 为拾取
-        // 槽（UI 写入）。后端导出仍走死 config={}（R2 记档的既存边界，不修）。
+        // 槽（UI 写入）、algorithm 为算法槽（批次四下拉写入）。
+        // 批次四（R2 打通）: 后端导出所需的 config 不在此持久 —— 出口由
+        // toFrameBlocks 从 parameter_config 翻译（refs 叶子展开 + 算法枚举
+        // 映射），单一 SSOT 不双写。
         ...(type === 'length' || type === 'checksum'
             ? { parameter_config: { type, refs: [] } }
             : {})

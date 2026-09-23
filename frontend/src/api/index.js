@@ -2,6 +2,7 @@
 // (directory import resolves here, keeping the original `./api` path stable).
 import {
     getProtocols,
+    getProtocol,
     createProtocol,
     updateProtocol,
     deleteProtocol
@@ -35,6 +36,7 @@ import {
 export const api = {
     // Protocols
     getProtocols,
+    getProtocol,
     createProtocol,
     updateProtocol,
     deleteProtocol,

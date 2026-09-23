@@ -1,0 +1,127 @@
+// 批次二 P0-4: structural validation of a protocol working copy —— mirror
+// validateInstruction.js 形态（纯函数、{errors, warnings}、条目
+// {blockId, code, message} 可点击定位）。跑点 = saveProtocol 唯一咽喉
+// （防抖保存 / 切协议 flush / 横幅重试全覆盖），清单实时渲染在
+// ProtocolPropertiesPanel 顶部（选中块时也不隐藏，边修边看）。
+//
+// Errors   → block the save（真实结构问题 / 落库即污染的形态）。
+// Warnings → never block。
+//
+// Keep this tolerant: a false-positive error would lock users out of saving
+// （协议页是防抖自动保存，误报 = 既成事实编辑无法落库）。When in doubt,
+// warn. 依据：后端 _validate_refs 只拦 refs 四类，对 hex 垃圾零校验
+// （fromhex 失败静默 → 错帧），故 hex 非法字符在前端升级为闸。
+
+import { isNestable } from '../config/blockTypes';
+
+const normalizeHex = (h) => String(h ?? '').replace(/\s/g, '');
+
+// W4 (批次四): 算法值域 = formula.js ChecksumAlgo 三值（CRC_32 无实现，
+// mapChecksumAlgo 也把它归到 CRC_16_MODBUS → 不在合法集）。
+const VALID_ALGOS = new Set(['SUM_8', 'XOR_8', 'CRC_16_MODBUS']);
+
+export function validateProtocol(protocol) {
+    const errors = [];
+    const warnings = [];
+    if (!protocol) return { errors, warnings };
+
+    // 全树预序收集（顺序即报告顺序）
+    const nodes = [];
+    const walk = (items) => (items || []).forEach(node => {
+        nodes.push(node);
+        walk(node.children);
+    });
+    walk(protocol.children);
+
+    // --- E0: 重复 id（findNode/moveNode/refs 解析全按 id 唯一假设工作） ---
+    const byId = new Map();
+    nodes.forEach(node => {
+        if (byId.has(node.id)) {
+            errors.push({ blockId: node.id, code: 'ID_DUPLICATE', message: `块 id 重复（${node.id}）` });
+        } else {
+            byId.set(node.id, node);
+        }
+    });
+
+    // --- W0: 同层标签重复（默认标签「固定块」加两个即中，后端不校验 → 不阻断）---
+    // 每层独立 seen 集（递归作用域即天然分层，无需父 id 拼键）。
+    const walkLayers = (items) => {
+        const seen = new Set();
+        (items || []).forEach(node => {
+            const label = node.label || '';
+            if (label && seen.has(label)) {
+                warnings.push({ blockId: node.id, code: 'LABEL_DUPLICATE', message: `同层标签重复「${label}」` });
+            }
+            seen.add(label);
+            walkLayers(node.children);
+        });
+    };
+    walkLayers(protocol.children, null);
+
+    nodes.forEach(node => {
+        const label = node.label || node.id;
+        const nestable = isNestable(node.type);
+
+        // --- hex 家族（容器跳过：byte_length 0 + 占位 hex 是组语义，非数据） ---
+        if (!nestable && node.hex_value != null) {
+            const hex = normalizeHex(node.hex_value);
+            if (hex.length > 0) {
+                // --- E1: 非 hex 字符 / 位数奇（任何叶子：发射路径 fromhex 失败即静默错帧） ---
+                if (!/^[0-9A-Fa-f]+$/.test(hex)) {
+                    errors.push({ blockId: node.id, code: 'HEX_INVALID', message: `「${label}」HEX 含非十六进制字符（${normalizeHex(node.hex_value)}）` });
+                } else if (node.type === 'fixed') {
+                    // --- E2: fixed 的 hex 就是线上字节 → 长度必须严等 byte_length×2 ---
+                    const expected = (Number(node.byte_length) || 0) * 2;
+                    if (expected > 0 && hex.length !== expected) {
+                        errors.push({ blockId: node.id, code: 'HEX_LENGTH', message: `「${label}」HEX 长度与字节长度不符（需 ${expected} 字符，实际 ${hex.length}）` });
+                    } else if (expected === 0) {
+                        warnings.push({ blockId: node.id, code: 'HEX_EMPTY', message: `「${label}」HEX 值为空` });
+                    }
+                } else {
+                    // --- W1: length/checksum/slot 运行期重算/填槽 → 仅提醒对齐 ---
+                    const expected = (Number(node.byte_length) || 0) * 2;
+                    if (expected > 0 && hex.length !== expected) {
+                        warnings.push({ blockId: node.id, code: 'HEX_LENGTH', message: `「${label}」HEX 与字节长度不一致（${hex.length}/${expected} 字符，运行期按算法重算/填槽）` });
+                    }
+                }
+            } else if (node.type === 'fixed') {
+                // --- W2: fixed 空 hex（后端有 00 兜底分支，提醒即可） ---
+                warnings.push({ blockId: node.id, code: 'HEX_EMPTY', message: `「${label}」HEX 值为空` });
+            }
+        }
+
+        // --- E3-E6: refs 四类（镜像后端 _validate_refs，前端先拦给中文可定位文案） ---
+        const pc = node.parameter_config || {};
+        if ('refs' in pc) {
+            const refs = pc.refs;
+            if (!Array.isArray(refs)) {
+                errors.push({ blockId: node.id, code: 'REFS_NOT_ARRAY', message: `「${label}」结构引用必须是数组` });
+            } else {
+                refs.forEach(ref => {
+                    if (typeof ref !== 'string') {
+                        errors.push({ blockId: node.id, code: 'REFS_NOT_STRING', message: `「${label}」结构引用含非字符串项` });
+                    } else if (ref === node.id) {
+                        errors.push({ blockId: node.id, code: 'REFS_SELF', message: `「${label}」不能引用自身` });
+                    } else if (!byId.has(ref)) {
+                        errors.push({ blockId: node.id, code: 'REF_DANGLING', message: `「${label}」引用了不存在的块（${ref}）` });
+                    }
+                });
+            }
+        }
+
+        // --- W3: checksum 未挂引用（无 config 算法路径下编码期按 0 输出） ---
+        if (node.type === 'checksum' && (!Array.isArray(pc.refs) || pc.refs.length === 0)) {
+            warnings.push({ blockId: node.id, code: 'CHECKSUM_NO_REFS', message: `「${label}」校验块未挂引用，编码期按 0 输出（SELECT FIELDS 挂引用后按算法求和）` });
+        }
+
+        // --- W4 (批次四): checksum 算法枚举外 —— 导入已 mapChecksumAlgo 净化、
+        // UI 下拉只产枚举值 → 此处兜底手改库/其他写入方。枚举外值两端回退
+        // 口径不一（前端 calculateChecksum default → 0、后端 crc16），不阻断
+        // 保存但必须可见；重新下拉选择即归一。 ---
+        if (node.type === 'checksum' && pc.algorithm !== undefined && !VALID_ALGOS.has(pc.algorithm)) {
+            warnings.push({ blockId: node.id, code: 'ALGO_UNKNOWN', message: `「${label}」校验算法「${pc.algorithm}」不在枚举内（两端回退口径不一，请重新选择）` });
+        }
+    });
+
+    return { errors, warnings };
+}

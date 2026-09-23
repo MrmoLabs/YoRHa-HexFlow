@@ -6,6 +6,13 @@ export const getProtocols = async () => {
     return handleResponse(response);
 };
 
+// 批次五: version 乐观并发冲突处理用 —— 「强制覆盖/加载最新」按 id 拉当前
+// 行（含最新 version），不必整列表回读。
+export const getProtocol = async (id) => {
+    const response = await fetch(`${API_BASE}/protocols/${id}`);
+    return handleResponse(response);
+};
+
 export const createProtocol = async (data) => {
     const response = await fetch(`${API_BASE}/protocols/`, {
         method: 'POST',

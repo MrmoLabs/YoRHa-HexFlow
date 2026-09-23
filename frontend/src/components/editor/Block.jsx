@@ -3,6 +3,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { OP_CODES } from '../../constants';
 import { formatOffset } from '../../utils/byteOffsets';
+import { formatUnknown } from '../../utils/formula';
 
 export default function Block({ id, label, name, byte_length, byte_len, type, op_code, hex_value, parameter_config, children, isSelected, isPickMode, isPickRef, isGroupActive, offsetMeta, onClick }) {
     // Normalize Props (Backend v4 vs v3)
@@ -23,6 +24,19 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
     // byteOffsets via offsetMeta) instead of a hard-coded "??" — "??" stays
     // only for a genuinely unknown size (some child byte_len missing).
     const isGroupCard = op_code === OP_CODES.ARRAY_GROUP || op_code === OP_CODES.STRUCT || offsetMeta?.isGroup === true;
+
+    // TIME_ACCUMULATOR：基准时间必须第一时间可见（BASE 小字，中央值下方）。
+    // 未配置 → `BASE ?`；配置值规整到 `YYYY-MM-DD HH:mm`（ISO T 分隔与秒位
+    // 剥除），已是目标格式则原样直出。判定对齐 getThemeStyle 的 op 取链。
+    const timeOp = op_code || parameter_config?.op_code;
+    const isTimeAccum = timeOp === OP_CODES.TIME_ACCUMULATOR || type === 'time_cumulative';
+    const baseTimeStr = React.useMemo(() => {
+        const raw = parameter_config?.base_time;
+        if (!raw) return null;
+        const s = String(raw).replace('T', ' ');
+        return s.length > 16 ? s.slice(0, 16) : s;
+    }, [parameter_config?.base_time]);
+    const baseLineText = `BASE ${baseTimeStr || '?'}`;
 
     // Footer byte length: trust byteOffsets when the ruler is wired (accurate
     // "??B" for unknown instead of the legacy `|| 1` guess); fall back to the
@@ -53,7 +67,10 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
     );
     const footerNeed = Math.ceil(footerText.length * 5.4) // 9px monospace ≈ 5.4px/char
         + (isGroupActive ? 26 : 0);            // OPEN marker + gap
-    const contentMin = Math.max(footerNeed, labelPx) + 20; // card padding + safety margin
+    // BASE 行地板：TIME 卡的 `BASE 2026-09-23 14:00`（8px mono ≈ 4.8px/char）
+    // 单行放不下会折行，宽度须容纳（与 footer/label 同属取较大值口径）。
+    const baseNeed = isTimeAccum ? Math.ceil(baseLineText.length * 4.8) + 8 : 0;
+    const contentMin = Math.max(footerNeed, labelPx, baseNeed) + 20; // card padding + safety margin
 
     const style = {
         transform: CSS.Transform.toString(transform),
@@ -126,19 +143,25 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
 
 
     // Logic for display value
+    // 卡面取值口径：能确定 → 直接显示（组/容器=嵌套内容拼接串，长度=十进制，
+    // HEX=字面 hex）；不确定 → 按字节数出等量 "??"（1B→"??"、2B→"?? ??"），
+    // 不再用固定 "??" 或误导性 "00"。
     const displayValue = React.useMemo(() => {
-        // Special Case: Nested Group — length is the group's total, not a value
-        if (isGroupCard) {
-            if (offsetMeta && typeof offsetMeta.size === 'number') return `${offsetMeta.size}B`;
-            // Fallback: Σ injected by processedLanes — the group still shows
-            // its total even where the offset ruler prop isn't wired.
-            if (parameter_config?.computedValue !== undefined) return parameter_config.computedValue;
-            return "??"; // User Request: Show ?? when undeterminable
-        }
-
-        // 1. If explicit computed value (from formula engine), use it
+        // 1. Injected computed value wins: group/container content concat
+        //    (lanes 注入的嵌套内容串) or formula engine result.
         if (parameter_config?.computedValue !== undefined) {
             return parameter_config.computedValue;
+        }
+
+        // Special Case: Nested Group — 中央值 = 嵌套内容逐块拼接（已知出 hex、
+        // 未知出等量 ??）；内容未注入但尺寸已知 → 按尺寸出等量 ??（页脚仍
+        // 显示 `4B @00` 尺寸口径）；尺寸未知 → "??"。
+        if (isGroupCard) {
+            if (offsetMeta && typeof offsetMeta.size === 'number') {
+                const size = offsetMeta.size;
+                return size > 0 ? formatUnknown(size) : '0B';
+            }
+            return "??"; // User Request: Show ?? when undeterminable
         }
 
         // 2. If it's a HEX block with manual value
@@ -151,8 +174,9 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
         }
 
         // 2.5 协议设计期长度/校验域无公式可算 → 对齐指令页 LENGTH_CALC/
-        // CHECKSUM 的 "??" 口径（运行期才有真值），替代误导性 00 占位。
-        if (type === 'length' || type === 'checksum') return '??';
+        // CHECKSUM 的 "??" 口径（运行期才有真值），按字节数出等量占位，
+        // 替代误导性 00 占位。
+        if (type === 'length' || type === 'checksum') return formatUnknown(length);
 
         // 3. Default: "00 " repeated for unknown/unset
         const safeLen = Math.max(1, Math.floor(length));
@@ -192,6 +216,13 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
             <div className="flex-1 flex items-center justify-center text-sm font-bold font-mono break-all text-center leading-tight overflow-hidden px-1">
                 {displayValue}
             </div>
+
+            {/* TIME_ACCUMULATOR 基准时间：中央值下方小字（未配置 → BASE ?） */}
+            {isTimeAccum && (
+                <div className="text-[8px] font-mono text-center opacity-70 leading-tight break-all px-1">
+                    {baseLineText}
+                </div>
+            )}
 
             {/* Footer info: byte len + P1 offset ruler (@00 plain / @00.. group / ·· unknown) */}
             <div className="text-[9px] flex justify-between opacity-70 mt-1 w-full min-h-[14px] gap-1">

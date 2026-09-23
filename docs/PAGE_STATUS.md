@@ -31,12 +31,24 @@
 - 协议修改会通过防抖保存同步到后端。
 - 交互测试覆盖拖拽重排、块属性编辑、调色板添加与保存失败提示（C4）。
 - 块类型与属性定义收敛到 config/blockTypes.js，调色板与属性面板由配置驱动、零页面硬编码（C4）。
-- length/checksum 卡可挂 refs 结构引用（SELECT FIELDS 画布点选取/删，slot 与自引用过滤，refs 存 parameter_config.refs 防抖落库；一期 A2/A3）。
-- length 卡设计期 Σ 回显：refs 引用块尺寸和注入卡面（pretty 空格口径，checksum 保持 ??，悬空不注入；一期 A4）。
+- length/checksum 卡可挂 refs 结构引用（SELECT FIELDS 画布点选取/删，自引用拒并给 SYS 状态提示，slot 可引 —— 定义期卡面维持按字节数等量 ??（2B → ?? ??）、发送期填槽改写为注入块后按真值 Σ，refs 存 parameter_config.refs 防抖落库；一期 A2/A3 + ②）。
+- length 卡设计期 Σ 回显：refs 引用块尺寸和注入卡面（十进制 `${sigma}B` 直出，checksum 保持按字节等量 ??，悬空/refs 含槽不注入；一期 A4 + ②）。
+- 删除协议前检查编排绑定引用：有引用弹窗警示连带清理（确认后端 DELETE 同事务级联删 protocol_bindings 并回显「连带清理 N 条」），无引用直删；仅剩一个协议禁删并给 SYS 提示（批次一 P0-1）。
+- 删块级联剥离其他块指向它的 refs（含容器子孙），防悬空引用落库 400「refs target not found」整树卡保存（批次一 P0-2，protocolTree 单测锁形）。
+- 保存失败恢复：顶栏横幅区分「服务端拒绝 / 网络·服务错误」并透传后端 detail，失败负载归还 pending（切协议/卸载继续冲刷、离开拦截重新武装），重试 = 冲刷待存负载、× 只关横幅不清脏态；创建/删除失败状态栏同样透传 detail（批次一 P0-3）。
+- 保存前结构校验 validateProtocol：errors 阻断防抖落库（HEX 非 hex 字符、fixed 长度严等 byte_length×2、refs 四类悬空/自引、重复 id），warnings 不阻断（运算块长度差/同层重名/checksum 未挂引用）；属性面板常驻问题清单，点击条目展开祖先容器并选中问题块，修复后下一次防抖自动放行（批次二 P0-4，validateProtocol 单测 10 例锁形）。
+- 撤销/重做：顶栏 撤销/重做 按钮 + Ctrl+Z / Ctrl+Shift+Z（输入聚焦或弹窗打开不响应），栈上限 50、新编辑作废 redo；自动保存语义下撤销同样走防抖链即时落库、保存不清史、切协议清史（批次二 P1-5，复用指令页 useHistory）。
+- 复制协议：侧栏行悬停「副本」按钮 → 整树新 id + refs 自含重映射（丢悬空防 POST 400）+ label「(副本)」升序防撞，POST 直建并切到副本（批次三 P1-1，protocolTree 单测锁形）。
+- 复制块：属性面板「复制块 (DUPLICATE)」→ 深拷贝插源块之后（子树全新 id、根标签同层 _N 防撞、refs 保持指原块 = un-wired 副本），副本立即选中、容器副本顺手展开（批次三 P1-2，镜像指令页 P2-1）。
+- 协议 JSON 导出/导入：顶栏 导出 = 当前工作副本原样下盘 {schemaVersion, protocols:[…]}；导入 = parse → analyzeProtocolImport（结构校验 + 全树重生 id + refs 自含重映射 + 撞名「(导入)」升序）→ 预览弹窗 → 顺序 POST 追加**不覆盖**，成功切到首个导入项（批次四 P3-2，镜像指令页 importInputRef 范式，importExport 单测锁形）。
+- 协议级属性：属性面板协议级视图新增「协议描述」textarea（schema 既有字段零 DDL，落库走既有 description 载荷 + serializeProtocol 签名 → 防抖链自然覆盖；onProtocolLabelChange 改名 onProtocolMetaChange，label/description 共用 apply+schedule）（批次四 P3-1）。
+- checksum 算法配置：卡面「校验算法」下拉（SUM8 / XOR8 / CRC16-MODBUS，缺省 CRC16-MODBUS）存 parameter_config.algorithm（前端编码器 PASS2 同源直读）；编排导出 toFrameBlocks 出口把 refs（按数组序展开叶子 id、容器 ref 展开子树文档序、悬空丢弃）+ 算法枚举翻译进 config.params，后端 LengthHandler/ChecksumHandler 新增 refs 集合模式 —— 打通 R2 死 config:{} 恒 00 断点（无 refs 键的旧 range 模式原样保留）；validateProtocol 新增 W4 算法枚举外 warning（批次四 P3-3，toFrameBlocks / 后端 test_logic_refs_config 锁形）。
+- 卡面取值口径：能确定的值直接显示、不确定按字节数出等量 ??（formula.formatUnknown，1B→??、4B→?? ?? ?? ??）—— length/checksum 无真值出等量 ??；容器卡中央值 = 嵌套内容逐块拼接（字面 hex 子块出 pretty、未知子块按 byte_length 出等量 ??，如 AA 55 ?? ??，空容器不注入落尺寸分支 0B，页脚仍显尺寸 @偏移；protocolTree.injectContainerContent 链式接入 displayLanes，纯派生不落库；卡面取值口径改造，protocolTree/Block 单测锁形）。
+- version 乐观并发：读取响应带 version（新建恒 1、每次成功写 +1），保存携带本地最后见到的值、服务端不符 409 拒收陈旧写（先于 refs 校验）；保存失败横幅三分类（版本冲突 / 服务端拒绝 / 网络·服务错误），冲突态给「强制覆盖」（按 id 拉最新 version 后带本地负载重发）与「加载最新」（放弃本地、服务端版本替换工作副本并清历史）双动作，非冲突仍走「重试」；不带 version 的直调写跳过比对直接覆盖（旧客户端兼容）；存量库缺列由启动自愈补列回填（批次五）。
 
 ### 后续建议
 - 跨容器拖拽落点 moveNode 已实现并经 protocolTree 单测锁形（含环守卫）；人工跨泳道拖拽目视验证待补。
-- refs 拾取与 Σ 回显链路人工目视验证待补。
+- ② slot refs 新语义人工复测待补（slot 拾取计数进位/自引用 SYS 提示/含槽卡面 ??/组装试发 SENT 长度含载荷真值）。
 
 ---
 
@@ -54,7 +66,7 @@
 - 新增 BITFIELD 位域算子：独立位布局编辑器，bits 明细持久化到 bit_fields 表。
 - 保存前结构校验：位域重叠/超容量、引用悬空、标签重复、公式循环依赖、校验块覆盖区为空会阻断保存，问题清单可点击定位到块。
 - B2–B8 编码器未实现语义已在配置面显式标注（⚠角标/横幅与保存提醒，仅记录不生效）。
-- 字节偏移标尺与指令总长：每块 footer 显示 @偏移（组显示 @00..、动态未知显示 ··），顶栏 LEN 总长并标注 FIXED/VAR（定长直示 nB，变长可算 ~nB，未知下限 nB+），组卡片直显 Σ 子块可算长度（仅真未知才 ??），拖拽/增删后实时重算。
+- 字节偏移标尺与指令总长：每块 footer 显示 @偏移（组显示 @00..、动态未知显示 ··），顶栏 LEN 总长并标注 FIXED/VAR（定长直示 nB，变长可算 ~nB，未知下限 nB+），组卡片中央值 = 嵌套内容逐块拼接（字面 hex 子块出 pretty、未知子块按字节数出等量 ??，如 AA 55 ?? ??，页脚/标尺仍显 Σ 尺寸），拖拽/增删后实时重算。
 - 复制指令/复制块：列表「副本」一键派生新指令（重生成字段 id、重映射 parent/repeat/refs、名称与代号自动去重后落库并选中）；属性面板「复制块」深拷贝子树（含位域）插入源块之后并自动改名，副本内引用保持指向原块。
 - 画布平移：在画布任意空白处（卡片与控件除外）长按鼠标左键拖动即可横纵平移视图，内容层带滚动余量保证双轴可拖，松手不会清除选中或误触泳道聚焦；拖卡行为不受影响。
 - 表格视图：侧栏指令库头部可切换「表格」视图（列 = 代号/设备/名称/总长 FIXED-VAR/字段数，内容全部居中、表头自带检索框并与侧栏搜索同步），与列表共享同一搜索过滤与未保存更改确认，切回列表状态不丢；无更新时间列（后端字段无 updated_at）。
@@ -63,6 +75,7 @@
 - 保存失败恢复：PUT 失败不清脏态，顶栏横幅区分「服务端拒绝」与「网络/服务错误」并提供重试与关闭，RESET 可放弃；结构校验失败仍走独立弹窗（两者文案分流）。
 - 拖拽落点：悬停目标卡片时在其左/右缘显示 2px 琥珀插入线，拖拽期间 refs 连线整体隐藏并在落定后自动重算，Esc 取消会回滚预览并清理指示线。
 - 页面↔hook 契约显式化（C7）：选项校验抽为 hooks/instructionDataOptions.js（非法选项降级+警告）、hook 全量 JSDoc、页面解构键 ⊆ hook 返回键的静态契约测试。
+- 卡面取值口径：能确定的值直接显示、不确定按字节数出等量 ??（formula.formatUnknown）—— LENGTH_CALC 结果十进制 `${result}B` 直出（公式含未知/无公式同样出等量 ??）、CHECKSUM 空 refs 出等量 ??、TIME_ACCUMULATOR 中央值下方新增 BASE 基准时间小字（如 BASE 2026-09-23 14:00，未配置 → BASE ?；无基准注入等量 ?? 占位、有基准保留 hex 差值口径）（卡面取值口径改造，useInstructionLanes/Block 单测锁形）。
 
 ### 后续建议
 - 补更细的字段引用测试（块移动与保存失败恢复已覆盖）。

@@ -52,6 +52,10 @@ class ProtocolTemplate(Base):
     type = Column(String(32), default="container", nullable=False)
     description = Column(Text, nullable=True)
     children = Column(JSON, nullable=False, default=list)
+    # 批次五: version 乐观并发 —— PUT 携带客户端最后见到的 version，与当前行
+    # 不符 409（陈旧写拒收），每次成功写 +1。存量库缺列由
+    # database.ensure_protocol_version_column 启动自愈（create_all 不补列）。
+    version = Column(Integer, nullable=False, default=1)
 
 # 3. Instruction Fields
 class InstructionField(Base):

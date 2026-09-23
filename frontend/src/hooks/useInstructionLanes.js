@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { evaluateFormula, formatToHex, calculateChecksum } from '../utils/formula';
+import { evaluateFormula, formatToHex, formatUnknown, calculateChecksum } from '../utils/formula';
 import { mapChecksumAlgo } from '../utils/normalizeInstruction';
 import { computeByteOffsets } from '../utils/byteOffsets';
 
@@ -119,6 +119,28 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
             }
         });
 
+        // 组卡中央值 = 嵌套内容逐块拼接（决策口径：已知子块出字面 hex、未知出
+        // 等量 ??，如 `AA 55 ?? ??`）。hex-ish 子块（HEX_RAW/hex/fixed）pretty 化，
+        // 其余（INT/MAPPING/LENGTH_CALC…）按 byte_len 出等量 ??；空组不产内容
+        // （回退尺寸分支落 0B /未知落 ??）。子块取原始字段序（childrenByParentId
+        // 已按 sequence 排好）；泳道是 DFS 序、组自身先于子孙泳道处理 → 读到的
+        // 恒为原始字段，不受本轮派生 computedValue 影响。
+        const fieldContent = (field) => {
+            if (field.op_code === 'ARRAY_GROUP') {
+                const kids = childrenByParentId.get(field.id) || [];
+                if (kids.length === 0) return null;
+                const parts = kids.map(fieldContent).filter(p => p != null);
+                return parts.length ? parts.join(' ') : null;
+            }
+            if (field.op_code === 'HEX_RAW' || field.type === 'hex' || field.type === 'fixed') {
+                const hexVal = String(field.hex_value || field.parameter_config?.hex || '').replace(/\s/g, '');
+                if (hexVal && /^[\dA-Fa-f]+$/.test(hexVal)) {
+                    return (hexVal.match(/.{1,2}/g) || []).join(' ').toUpperCase();
+                }
+            }
+            return formatUnknown(field.byte_len);
+        };
+
         // Map lanes to process formula blocks
         return uiLanes.map(lane => ({
             ...lane,
@@ -139,24 +161,29 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
                         }).join(' + ');
                     }
                     if (!formula) {
-                        return { ...f, parameter_config: { ...f.parameter_config, computedValue: "??" } };
+                        return { ...f, parameter_config: { ...f.parameter_config, computedValue: formatUnknown(f.byte_len || 1) } };
                     }
                     try {
                         const involvedVars = formula.match(/\[([^\]]+)\]/g)?.map(m => m.slice(1, -1)) || [];
                         const hasUnknown = involvedVars.some(v => !(v in nameToValueMap) || nameToValueMap[v] === "??");
-                        if (hasUnknown) return { ...f, parameter_config: { ...f.parameter_config, computedValue: "??" } };
+                        if (hasUnknown) return { ...f, parameter_config: { ...f.parameter_config, computedValue: formatUnknown(f.byte_len || 1) } };
 
                         const result = evaluateFormula(formula, nameToValueMap);
-                        const hex = formatToHex(result, f.byte_len || 1);
-                        return { ...f, parameter_config: { ...f.parameter_config, computedValue: hex } };
+                        // 长度是"数量"不是字节内容 → 十进制直出 `${result}B`（hex `05`
+                        // 会被读成字节值）。卡片宽度/页脚另由 byte_len 与偏移标尺承担。
+                        return { ...f, parameter_config: { ...f.parameter_config, computedValue: `${result}B` } };
                     } catch (e) {
-                        return { ...f, parameter_config: { ...f.parameter_config, computedValue: "??" } };
+                        return { ...f, parameter_config: { ...f.parameter_config, computedValue: formatUnknown(f.byte_len || 1) } };
                     }
                 }
                 // 2. Time Accumulation
                 if (f.op_code === 'TIME_ACCUMULATOR') {
                     const baseStr = f.parameter_config?.base_time;
-                    if (!baseStr) return f;
+                    // 无基准 → 差值不可知：按字节数出等量 ??（原样返回会让 Block
+                    // 落到误导性的 00 占位）。BASE 小字行由 Block.jsx 统一渲染。
+                    if (!baseStr) {
+                        return { ...f, parameter_config: { ...f.parameter_config, computedValue: formatUnknown(f.byte_len || 4) } };
+                    }
                     const baseDate = new Date(baseStr);
                     const now = new Date();
                     const diffSec = Math.floor((now.getTime() - baseDate.getTime()) / 1000);
@@ -175,7 +202,7 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
                 if (f.op_code === 'CHECKSUM_CRC') {
                     const refs = f.parameter_config?.refs || [];
                     if (refs.length === 0) {
-                        return { ...f, parameter_config: { ...f.parameter_config, computedValue: '??' } };
+                        return { ...f, parameter_config: { ...f.parameter_config, computedValue: formatUnknown(f.byte_len || 1) } };
                     }
                     const collectLeaves = (groupId, acc = []) => {
                         (childrenByParentId.get(groupId) || []).forEach(child => {
@@ -203,20 +230,20 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
                     const result = calculateChecksum(algo, bytes);
                     return { ...f, parameter_config: { ...f.parameter_config, computedValue: formatToHex(result, f.byte_len || 1) } };
                 }
-                // Dynamic Group Sizing — inject the Σ extent as computedValue so
-                // the group card can show "4B" even where the offset ruler prop
-                // isn't wired. byteOffsets' group branch is Σ-of-children only and
-                // never reads computedValue, so this cannot feed back into size
-                // resolution (and "??" stays when the total is unknowable).
+                // Dynamic Group Sizing — 中央值 = 嵌套内容逐块拼接（fieldContent
+                // 递归；无字面 hex 的子块出等量 ??）。byteOffsets 的组分支只走 Σ 子、
+                // 从不读 computedValue → 不会反馈进尺寸解析；尺寸仅在拼不出内容时
+                // 兜底（空组 0B /未知 ??），页脚仍显 Σ 尺寸。
                 if (f.op_code === 'ARRAY_GROUP') {
                     const meta = offsets.byId.get(f.id);
                     const known = meta && typeof meta.size === 'number';
+                    const content = fieldContent(f);
                     return {
                         ...f,
                         byte_len: 0,
                         parameter_config: {
                             ...f.parameter_config,
-                            computedValue: known ? `${meta.size}B` : '??'
+                            computedValue: content != null ? content : (known ? `${meta.size}B` : '??')
                         }
                     };
                 }

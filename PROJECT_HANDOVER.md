@@ -216,8 +216,138 @@
     `POST /dispatch` 载荷零改，`SENT: <hex>` / `SEND FAILED: <detail>`（409
     透出）回显、空组装双闸禁发。验收：前端 **483/483（37 文件）**（+36，
     UI 新 7 红转绿）、后端 **215/215**（+10）、build EXIT=0、校验器触
-    9 文件 0 违规；零 DDL → 无 db 提交。两页 + 两闭环人工目视待补。
+    9 文件 0 违规；零 DDL → 无 db 提交。两页 + 两闭环人工目视已验
+    （2026-09-23 用户回「通过」）。
     明细见 `docs/PLAN_Backlog.md` §8.7。
+13. **② 范围修订：slot 作 refs 目标**（2026-09-23 用户确认新语义，红测先行
+    独立批落地）：定义期长度字段可引某 slot —— 卡面维持 `??`
+    （`computeRefsSigma` 签名扩展 root 参判槽→null，不改共享 byId 契约）、
+    `handlePickBlock` 放开 slot（自引用仍拒 + `SYS: 不能引用自身` 提示）、
+    后端 `_validate_refs` 删锚 slot 400、`mergeProtocolInstruction` 填槽改写表
+    把引用该槽的 refs 换成注入块 ids → 编码器 `Σ fieldSizes` 零改动算含载荷
+    真长度。验收：前端 **486/486**（基线 483 + ② 新 3）、后端 **215/215**、
+    build EXIT=0、校验器触 6 文件 0 违规；后端活探针 slot refs POST 200。
+    **待办：人工复测**（slot 拾取计数进位 / 自引用 SYS 提示 / 含槽卡面 `??` /
+    组装试发 SENT 长度含载荷真值）；零 DDL → 无 db 提交，明细见 PLAN §8.7。
+    运维注（代理侧重启惯例）：本批曾踩两连坑 —— ① StatReload **静默失效**
+    （日志只剩历史 Reloading 行、强触 mtime 无新检测、worker 带旧码续服，
+    无 traceback）；② `start-dev.ps1` 的 `-NoExit -Command` 窗口包裹在代理
+    重启下被 PS 5.1 `NativeCommandError`（uvicorn 全量 stderr）带崩 reload
+    整链（`Reloading...` 后无下文、reloader 消失）。代理侧改用
+    `Start-Process python -ArgumentList @('-m','uvicorn',…,'--reload')
+    -RedirectStandardOutput/-RedirectStandardError <log> -WindowStyle Hidden`
+    （不经控制台管道），改后端代码后以 curl 探针 + `backend.err.log`
+    `Reloading` 行双验在位；**勿**用 `CommandLine -match 'uvicorn'` 全量过滤
+    杀窗口（命令行含过滤字面量会自匹配误杀执行 shell，已发生一次）。
+14. **协议页批次一：级联引用清理 + 保存失败恢复**（2026-09-23 协议页分析
+    P0 批落地）：P0-1 删协议前查 `/bindings` 引用 → 有引用 `NieRModal`
+    警示连带清理（`DELETE /protocols/{id}` 同事务级联删 `protocol_bindings`
+    返回 `deleted_bindings`，状态回显"连带清理 N 条"），无引用直删、仅剩一个
+    协议禁删给 `SYS` 提示；P0-2 `removeNode` 收集被删子树 id 集后级联剥离
+    剩余树 `parameter_config.refs` 命中项（含容器子孙），防悬空 400
+    "refs target not found" 整树卡保存；P0-3 保存失败横幅（镜像指令页 P4-2）
+    区分「服务端拒绝 / 网络·服务错误」透传 detail，失败负载归还
+    `pendingSaveRef`（flush / beforeunload 重新武装、in-flight 窗口同样守），
+    重试 = `flushPendingSave`、× 只关横幅不清脏态；创建/删除失败状态栏透传
+    `error.message`。验收：前端 **492/492**（基线 486 + 新 6：protocolTree
+    +2 / Protocol +4）、后端 **218/218**（基线 215 + 新 3
+    `test_protocol_delete`）、build EXIT=0、校验器触 `Protocol.jsx` 0 违规；
+    `Protocol.jsx` 存量 1 error 2 warnings（react-hooks/immutability +
+    exhaustive-deps，HEAD 同报）不计入本批。零 DDL → 无 db 提交，明细见
+    PLAN §8.7 批次一条目。**待办：批次二** → 已落地（见 15）。
+15. **协议页批次二：保存前结构校验 + 撤销/重做**（2026-09-23 用户「继续」
+    批准，P0-4 + P1-5 批落地）：`utils/validateProtocol.js` 纯函数校验
+    （errors 阻断 / warnings 提醒，条目带 blockId 可定位），跑点 =
+    `saveProtocol` 唯一咽喉 —— errors 不 PUT、pending 归还（beforeunload
+    继续拦）、`SYS: 保存被阻止 N 个结构错误`；问题清单**常驻属性面板顶部**
+    （选中块不隐藏）、点条目 `findAncestors` 展开祖先 + 选中定位，修复后
+    下一次防抖自动放行，保存成功状态栏并入 `· N 提醒`。撤销/重做复用
+    指令页 `useHistory(50)`：`commitTree` 压旧快照（协议改名同入口），
+    undo/redo 换快照重新入防抖链（自动保存语义下撤销即时落库），**保存
+    不清史**、切协议清史、新编辑作废 redo；顶栏新增 `PROTOCOL EDITOR` 条
+    （镜像指令页）挂 撤销/重做 按钮 + Ctrl+Z / Ctrl+Shift+Z（输入聚焦或
+    删除弹窗打开不响应）。验收：前端 **505/505**（基线 492 + 新 13：
+    validateProtocol +10 / protocolTree +1 / Protocol +2）、后端
+    **218/218**（本批零后端改动全量回归）、build EXIT=0、校验器触
+    `Protocol.jsx`/`ProtocolPropertiesPanel.jsx` 0 违规；改写存量 1 例
+    `edit block properties`（4 字节 hex 改 8 字符适配 fixed 严等），
+    ESLint 仍为 HEAD 存量 1 error 2 warnings 不计入本批。零 DDL → 无 db
+    提交，明细见 PLAN §8.7 批次二条目。**待办：批次三** → 已落地（见 16）。
+16. **协议页批次三：复制协议 / 复制块**（2026-09-23 用户「继续」批准，
+    P1-1 + P1-2 批落地，全前端零后端改动）：`buildDuplicateProtocolPayload`
+    —— 协议级整树重生 id + refs 全量自含重映射（丢悬空防 POST
+    `_validate_refs` 400）+ label「(副本)」升序，侧栏行悬停「副本」按钮
+    触发 POST 直建并切到副本（防抖自动保存下无 dirty 确认语义，切协议即
+    flush）；`duplicateNode` —— 块级深拷贝插源块之后（子树全新 id、根标签
+    同层 `_N` 防撞、**refs 保持指原块 = un-wired 副本**、pc 零别名），属性
+    面板「复制块 (DUPLICATE)」触发，副本立即选中、容器副本顺手展开。共享
+    `cloneTreeWithNewIds` 两阶段发号。验收：前端 **511/511**（基线 505 +
+    新 6：protocolTree +4 / Protocol +2）、后端 **218/218**（零后端改动
+    回归）、build EXIT=0、校验器触 `Protocol.jsx`/`ProtocolListSidebar.jsx`/
+    `ProtocolPropertiesPanel.jsx` 0 违规；ESLint 仍为 HEAD 存量 1 error
+    2 warnings 不计入本批。零 DDL → 无 db 提交，明细见 PLAN §8.7 批次三
+    条目。**待办：批次四** → 已落地（见 17）；批次五 `version` 乐观并发 → 已落地（见 19）。
+17. **协议页批次四：协议 JSON 导入/导出 + 协议级属性 + checksum 算法配置**
+    （2026-09-23 用户「继续」批准，P3-1/P3-2/P3-3 批落地，前端为主 +
+    后端 handlers refs 集合模式）：顶栏 导出/导入 按钮 —— 导出当前工作
+    副本原样下盘 `{schemaVersion, protocols:[…]}`；导入 parse →
+    `analyzeProtocolImport`（结构校验 + 全树重生 id + refs 自含重映射 +
+    撞名「(导入)」升序）→ 预览弹窗 → 顺序 POST 追加**不覆盖**并切到首项
+    （镜像指令页 P3-2 范式；后端 label 不唯一故无 conflicts）。协议级视图
+    新增 description textarea（schema 既有字段零 DDL，`onProtocolLabelChange`
+    改名 `onProtocolMetaChange` 共用 apply+schedule）。checksum 卡新增
+    「校验算法」下拉（SUM8/XOR8/CRC16-MODBUS，缺省 CRC16-MODBUS）存
+    `parameter_config.algorithm`（编码器 PASS2 同源直读）；编排导出
+    `toFrameBlocks` 出口把 refs（数组序叶子展开）+ 算法枚举翻译进
+    `config.params`，后端 Length/ChecksumHandler 新增 refs 集合模式 ——
+    **打通 R2 死 `config:{}` 恒 00 断点**（无 refs 键的旧 range 模式原样
+    保留）。验收：前端 **525/525**（基线 511 + 新 14：toFrameBlocks +5 /
+    importExport +5 / validateProtocol +1 / Protocol +3）、后端
+    **230/230**（基线 218 + 新 12：`test_logic_refs_config`）、build
+    EXIT=0、校验器触 `Protocol.jsx`/`ProtocolPropertiesPanel.jsx`/
+    `ProtocolListSidebar.jsx` 0 违规；ESLint 仍为 HEAD 存量 1 error
+    2 warnings 不计入本批。零 DDL → 无 db 提交，明细见 PLAN §8.7 批次四
+    条目。**待办：批次五** → 已落地（见 19）。
+
+18. **两页卡面取值口径改造：能确定 → 直接显示数值，不确定 → 按字节数等量 ??**
+    （2026-09-24 用户直接下达、三问确认口径，纯前端展示层零后端）：
+    `formula.js` 新增 `formatUnknown(byteLen)` 按字节数出等量 `??`
+    （1B→`??`、4B→`?? ?? ?? ??`，替代写死单个 `??`）；长度值十进制化 ——
+    协议页 `injectRefsSigma` → `${sigma}B`、指令页 `LENGTH_CALC` →
+    `${result}B`（hex `0F` 会被读成字节值；宽度/页脚与偏移标尺另承担尺寸
+    口径）。组/容器卡中央值 = **嵌套内容逐块拼接**（字面 hex 出 pretty、
+    未知按 byte_length 出等量 ??，如 `AA 55 ?? ??`，页脚仍显尺寸
+    `4B @00`）—— 指令页 `useInstructionLanes.fieldContent` 递归、协议页新
+    导出 `injectContainerContent` 链式接入 `Protocol.jsx displayLanes`
+    （length/checksum/slot 的 hex_value `'00'` 建块默认占位不算已知；空容器
+    不注入落尺寸分支 `0B`）；协议 length/checksum 与指令 CHECKSUM 空 refs →
+    等量 ??，组卡尺寸已知无内容 → 按尺寸出等量 ??（size=0 → `0B`）。
+    TIME_ACCUMULATOR 中央值下方新增 `BASE 2026-09-23 14:00` 小字（未配置
+    → `BASE ?`；无基准注入等量 ?? 占位、有基准保留 hex 差值口径）。注入全为
+    派生副本不落库，`byteOffsets` 回退已核实不破坏（组分支只走 Σ 子不读
+    computedValue）。验收：前端 **531/531**（基线 525 + 新 6：Block +2 /
+    useInstructionLanes +2 / protocolTree +2，存量断言 hex→十进制与组卡
+    `4B`→内容串/等量 ?? 属预期更新）、后端 **230/230**（零后端改动回归）、
+    build EXIT=0、校验器触 `Block.jsx`/`Protocol.jsx` 0 违规；ESLint 与
+    HEAD 存量逐文件对齐无新增（Block 1e+1w / useInstructionLanes 3e+5w /
+    protocolTree 0 / Protocol 1e+2w）。零 DDL → 无 db 提交，明细见 PLAN
+    §8.7 卡面口径条目。**待办：批次五** → 已落地（见 19）。
+
+19. **协议页批次五：version 乐观并发**（2026-09-24 用户批准，三口径确认：
+    有 DDL 整数列 / 缺 version 直通 / 冲突双动作）：`protocols` 表新增
+    `version INTEGER NOT NULL DEFAULT 1`（本仓无迁移框架 → 启动
+    `ensure_protocol_version_column` PRAGMA 查缺列则 ALTER 自愈、DEFAULT 1
+    回填存量行、幂等）。PUT 携带客户端最后见到的 version、不符 **409** 拒收
+    陈旧写（先于 refs 校验），成功写恒 +1，`ProtocolResponse` 回读；缺
+    version 的直调写（旧客户端/curl）跳过比对直接覆盖。前端 `saveProtocol`
+    携带本地 version，保存失败横幅三分类（版本冲突/服务端拒绝/网络），冲突
+    态换「强制覆盖」（按 id 拉最新 version 带本地负载重发）与「加载最新」
+    （放弃本地、服务端版本替换工作副本并清历史）双动作，非冲突仍「重试」。
+    验收：前端 **534/534**（基线 531 + 新 3：Protocol +3）、后端 **240/240**
+    （基线 230 + 新 10：`test_protocol_version`）、build EXIT=0、校验器触
+    `Protocol.jsx`/`Protocol.test.jsx`/两 api 文件 0 违规；ESLint
+    `Protocol.jsx` 仍 1 error 2 warnings 无新增。**本批含 DDL** → yorha.db
+    随本批入库，明细见 PLAN §8.7 批次五条目。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
