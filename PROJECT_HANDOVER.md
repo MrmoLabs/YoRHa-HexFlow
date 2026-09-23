@@ -48,6 +48,14 @@
 ### E. `protocols`
 *   `id` (PK)、`label`、`type`、`description`、`children` (JSON 块树)
 
+### F. `transport_settings`（P1 新增，单行表）
+*   `id` (恒为 `"current"`)、`config` (JSON)、`active_profile_id` (逻辑外键 → `device_profiles.id`，无 FK 约束)
+*   语义：当前生效传输配置 + 最后激活的设备档案指针。写入口仅两处——`transport.set_persist_hook` 注册的配置变更钩子（落配置并清指针）与 `/profiles/{id}/activate`（配置 + 指针一起落）。lifespan 启动顺序：建表 → 恢复配置 → 再挂钩（避免回写）。
+
+### G. `device_profiles`（P1 新增，设备档案）
+*   `id` (PK)、`label` (唯一)、`config` (JSON，完整三段传输配置快照，`validate_config` 归一后入库)
+*   语义：传输配置的命名快照。省略 `config` 创建 = 服务端快照当前生效配置且即视为激活；激活 = `transport.set_config` + 回写指针；手工改配置经钩子清指针（档案失活）；删除激活档案只清指针不动生效配置。API 见 `backend/routers/profile.py`（`/profiles` CRUD + `/profiles/{id}/activate`）。
+
 ## 4. 编译与下发链路
 
 ### 前端编码（动态发送表单 + 预览）
@@ -91,7 +99,10 @@
     发送历史 / 原始报文 / 响应与错误日志三面板（含手动 hex 发送与确认式清空）；
     `pageStatus.json` `terminal.implemented` → true，纯函数视图模型
     `utils/terminalPanes.js`。
-3.  **数据中心页 (`/datahub`)**: 占位页，补 JSON 导入导出、备份恢复。
+3.  ~~**数据中心页 (`/datahub`)**~~ ✅ 已落地（2026-09-22，Backlog M2-C3 一期）：环境
+    状态面板（GET /datahub/status）+ 聚合导出 ZIP（instructions.json + manifest +
+    逐指令 frames）+ 备份/恢复（backend/db/backups/，恢复前自动安全快照）。原待办
+    「JSON 导入导出、备份恢复」已覆盖，导入由指令管理页 JSON 导入承接。
 4.  ~~**绑定持久化**~~ ✅ 已落地（2026-09-23，Backlog E4）：新表
     `protocol_bindings`（`slot_order` 插槽序，逻辑外键沿 op_code 先例）+
     `/bindings` CRUD（`backend/routers/binding.py`，无模块级 create_all、建表归
@@ -99,6 +110,10 @@
     label 400ms 防抖 + 卸载冲刷 / 加载失败降级本地提示条）。
 5.  ~~**位域强校验**~~ ✅ 已落地（2026-09-22，Backlog M1-C2）：`backend/routers/instruction.py`
     `_validate_bitfields` 在 POST/PUT 落库前强校验，重叠 / 超容量位域 400 拒绝（unittest 8/8）。
+6.  ~~**设备档案 + 连接持久化**~~ ✅ 已落地（2026-09-23，Backlog P1）：新表
+    `transport_settings`（配置经钩子落库 + lifespan 启动恢复）+ `device_profiles`
+    （命名快照 CRUD + 激活切换）+ `/profiles` API + 调试页设备档案区；
+    后续 P2–P5（事务发送引擎 / 序列编排 / 日志落库回放）见 `docs/PLAN_Backlog.md` §1。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

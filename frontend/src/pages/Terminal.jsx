@@ -10,10 +10,13 @@ import {
     rawHexOf,
     responseHexOf
 } from '../utils/terminalPanes';
+import { profileBadges, profileOptionLabel, profileSummary } from '../utils/profileView';
 
 // E3 通讯调试页：传输配置模型 UI（发送模式/目标地址/串口参数，接 E2
 // /transport/config|status）+ 三面板 —— 发送历史 / 原始报文 / 响应与错误
 // 日志（数据源 /dispatch 有界历史，raw/response/error 三类事件）。
+// P1 设备档案区（/profiles 命名快照 + 激活切换）：传输配置经 lifespan 钩子
+// 落库（transport_settings），重启恢复；档案视图模型在 utils/profileView.js。
 // 状态与历史为手动刷新；报文视图纯函数在 utils/terminalPanes.js。
 
 const PanelTitle = ({ children, hint }) => (
@@ -95,8 +98,14 @@ export default function Terminal() {
     const [statusError, setStatusError] = useState('');
     const [historyError, setHistoryError] = useState('');
     const [sendHex, setSendHex] = useState('');
-    const [busy, setBusy] = useState(''); // 'config' | 'send' | 'clear'
+    const [busy, setBusy] = useState(''); // 'config' | 'send' | 'clear' | 'profile'
     const [confirmClear, setConfirmClear] = useState(false);
+    // P1 设备档案：列表 / 选中 / 新档名 / 区内错误 / 删除确认
+    const [profiles, setProfiles] = useState([]);
+    const [selectedProfileId, setSelectedProfileId] = useState('');
+    const [profileName, setProfileName] = useState('');
+    const [profileError, setProfileError] = useState('');
+    const [confirmDeleteProfile, setConfirmDeleteProfile] = useState(false);
 
     const refreshConfig = useCallback(async () => {
         try {
@@ -127,11 +136,22 @@ export default function Terminal() {
         }
     }, []);
 
+    const refreshProfiles = useCallback(async () => {
+        try {
+            const list = await api.getProfiles();
+            setProfiles(Array.isArray(list) ? list : []);
+            setProfileError('');
+        } catch (err) {
+            setProfileError(err?.message || '无法连接后端服务');
+        }
+    }, []);
+
     useEffect(() => {
         refreshConfig();
         refreshStatus();
         refreshHistory();
-    }, [refreshConfig, refreshStatus, refreshHistory]);
+        refreshProfiles();
+    }, [refreshConfig, refreshStatus, refreshHistory, refreshProfiles]);
 
     const handleApplyConfig = async () => {
         setBusy('config');
@@ -142,7 +162,7 @@ export default function Terminal() {
             setDraft(toDraft(effective));
             setConfigError('');
             setSysMsg(`配置已生效：模式 ${String(effective.mode).toUpperCase()}`);
-            await refreshStatus(); // 配置变更会断开既有真实连接，状态随之重置
+            await Promise.all([refreshStatus(), refreshProfiles()]); // 手工改配置会清激活指针
         } catch (err) {
             setConfigError(err?.message || '配置应用失败');
         } finally {
@@ -183,6 +203,78 @@ export default function Terminal() {
         }
     };
 
+    // ---- P1 设备档案 ----
+    const handleProfileCreate = async () => {
+        const label = profileName.trim();
+        if (!label) return;
+        setBusy('profile');
+        setProfileError('');
+        try {
+            // 省略 config → 服务端快照当前生效配置
+            const created = await api.createProfile({ label });
+            setProfileName('');
+            setSelectedProfileId(created.id);
+            setSysMsg(`档案已保存：${created.label}`);
+            await refreshProfiles();
+        } catch (err) {
+            setProfileError(err?.message || '保存档案失败');
+        } finally {
+            setBusy('');
+        }
+    };
+
+    const handleProfileActivate = async () => {
+        const target = profiles.find((profile) => profile.id === selectedProfileId);
+        if (!target) return;
+        setBusy('profile');
+        setProfileError('');
+        try {
+            const active = await api.activateProfile(target.id);
+            setConfig(active.config);
+            setDraft(toDraft(active.config));
+            setSysMsg(`档案已应用：${active.label} · 模式 ${String(active.config.mode).toUpperCase()}`);
+            await Promise.all([refreshStatus(), refreshProfiles()]); // 生效会断开既有真实连接
+        } catch (err) {
+            setProfileError(err?.message || '应用档案失败');
+        } finally {
+            setBusy('');
+        }
+    };
+
+    const handleProfileUpdate = async () => {
+        const target = profiles.find((profile) => profile.id === selectedProfileId);
+        if (!target || !config) return;
+        setBusy('profile');
+        setProfileError('');
+        try {
+            await api.updateProfile(target.id, { config }); // 当前生效配置写入所选档案
+            setSysMsg(`档案已更新：${target.label} ← 当前生效配置`);
+            await refreshProfiles();
+        } catch (err) {
+            setProfileError(err?.message || '更新档案失败');
+        } finally {
+            setBusy('');
+        }
+    };
+
+    const handleProfileDelete = async () => {
+        setConfirmDeleteProfile(false);
+        const target = profiles.find((profile) => profile.id === selectedProfileId);
+        if (!target) return;
+        setBusy('profile');
+        setProfileError('');
+        try {
+            await api.deleteProfile(target.id);
+            if (selectedProfileId === target.id) setSelectedProfileId('');
+            setSysMsg(`档案已删除：${target.label}`);
+            await refreshProfiles();
+        } catch (err) {
+            setProfileError(err?.message || '删除档案失败');
+        } finally {
+            setBusy('');
+        }
+    };
+
     const rows = historyRows(history);
     const selected = history.find((record) => record.id === selectedId) || history[0] || null;
     const errorRecords = history.filter((record) => record.status === 'ERROR');
@@ -191,6 +283,7 @@ export default function Terminal() {
     const responseLines = selected && selected.status !== 'ERROR' ? hexDump(responseHexOf(selected)) : [];
     const selectedError = selected ? errorMessageOf(selected) : null;
     const connected = Boolean(status?.connected);
+    const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) || null;
 
     return (
         <div className="flex-1 overflow-auto bg-[radial-gradient(circle_at_top,_rgba(218,212,187,0.12),_transparent_45%),linear-gradient(180deg,_rgba(212,206,178,0.04),_rgba(10,10,10,0))] text-nier-light">
@@ -199,6 +292,12 @@ export default function Terminal() {
                 message={`确认清空发送历史？\n\n· 当前 ${history.length} 条记录（有界 100 条）\n· 仅内存历史，清空不可恢复`}
                 onConfirm={handleClearConfirm}
                 onCancel={() => setConfirmClear(false)}
+            />
+            <NieRModal
+                isOpen={confirmDeleteProfile}
+                message={`确认删除档案「${selectedProfile?.label || '—'}」？\n\n· 仅删除档案快照\n· 当前生效传输配置不受影响`}
+                onConfirm={handleProfileDelete}
+                onCancel={() => setConfirmDeleteProfile(false)}
             />
 
             <div className="px-5 py-5 flex flex-col gap-6">
@@ -394,6 +493,72 @@ export default function Terminal() {
                         </div>
                     </section>
                 </div>
+
+                {/* P1 设备档案：命名快照 + 激活切换（重启不丢） */}
+                <section className="border border-nier-light/30 bg-nier-dark/60">
+                    <PanelTitle hint="/profiles · 重启后仍在">设备档案 (DEVICE PROFILES)</PanelTitle>
+                    <div className="p-4 space-y-3 text-xs font-mono">
+                        <div className="flex flex-wrap items-end gap-4">
+                            <label className={labelClass}>
+                                档案 PROFILE
+                                <select
+                                    value={selectedProfileId}
+                                    onChange={(event) => setSelectedProfileId(event.target.value)}
+                                    className={inputClass}
+                                >
+                                    <option value="">— 未选择 —</option>
+                                    {profiles.map((profile) => (
+                                        <option key={profile.id} value={profile.id}>
+                                            {profileOptionLabel(profile)}
+                                        </option>
+                                    ))}
+                                </select>
+                            </label>
+                            <div className="flex items-center gap-2 pb-1">
+                                <span className="text-[10px] opacity-50">当前生效 {profileSummary(config)}</span>
+                                {selectedProfile && profileBadges(selectedProfile).map((badge) => (
+                                    <span
+                                        key={badge.text}
+                                        className={`border px-2 py-0.5 text-[10px] tracking-[0.2em] ${badge.className}`}
+                                    >
+                                        {badge.text}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3 border-t border-nier-light/20 pt-3">
+                            <ActionButton onClick={handleProfileActivate} disabled={!selectedProfileId} busy={busy === 'profile'}>
+                                应用档案 (ACTIVATE)
+                            </ActionButton>
+                            <ActionButton onClick={handleProfileUpdate} disabled={!selectedProfileId || !config} busy={busy === 'profile'}>
+                                更新 (UPDATE)
+                            </ActionButton>
+                            <ActionButton onClick={() => setConfirmDeleteProfile(true)} disabled={!selectedProfileId} busy={busy === 'profile'}>
+                                删除档案 (DELETE)
+                            </ActionButton>
+                            <ActionButton onClick={refreshProfiles}>刷新列表 (RELOAD)</ActionButton>
+                            <span className="text-[10px] opacity-50">应用 = 档案配置生效；更新 = 当前生效配置写入所选档案</span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3 border-t border-nier-light/20 pt-3">
+                            <input
+                                type="text"
+                                placeholder="新档案名称，如「产线网关」"
+                                value={profileName}
+                                onChange={(e) => setProfileName(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && profileName.trim() && busy !== 'profile' && handleProfileCreate()}
+                                className={`${inputClass} flex-1`}
+                            />
+                            <ActionButton onClick={handleProfileCreate} disabled={!profileName.trim()} busy={busy === 'profile'}>
+                                存为档案 (SAVE)
+                            </ActionButton>
+                            <span className="text-[10px] opacity-50">存为当前生效配置的快照（服务端落库）</span>
+                        </div>
+
+                        {profileError && <div className="text-red-300 text-[11px]">ERR: {profileError}</div>}
+                    </div>
+                </section>
 
                 {/* 三面板 */}
                 <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">

@@ -114,3 +114,22 @@ class ProtocolBinding(Base):
 
     label = Column(String(128), nullable=False, default="新绑定 (NEW)")
     slot_order = Column(Integer, nullable=False, default=0)  # 插槽序：侧栏列表排序键
+
+
+# 7. Transport Settings（P1: 连接持久化 — 单行表，id 恒为 "current"）
+class TransportSetting(Base):
+    __tablename__ = "transport_settings"
+
+    id = Column(String(16), primary_key=True)  # 恒为 "current"（单行约定）
+    config = Column(JSON, nullable=False)  # 当前生效传输配置（transport.default_config 形态）
+    # 逻辑指针（同 op_code 先例不加 FK）：最后激活的设备档案；手工改配置/删档案时置空
+    active_profile_id = Column(String(36), nullable=True)
+
+
+# 8. Device Profiles（P1: 设备档案 — 传输配置的命名快照）
+class DeviceProfile(Base):
+    __tablename__ = "device_profiles"
+
+    id = Column(String(36), primary_key=True)
+    label = Column(String(128), nullable=False, unique=True)  # 档案名唯一（路由先查给 400，DB 约束兜底）
+    config = Column(JSON, nullable=False)  # 完整三段传输配置快照（validate_config 归一后入库）

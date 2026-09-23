@@ -11,7 +11,12 @@ vi.mock('../../api', () => ({
         getTransportStatus: vi.fn(),
         getDispatchHistory: vi.fn(),
         clearDispatchHistory: vi.fn(),
-        dispatchPayload: vi.fn()
+        dispatchPayload: vi.fn(),
+        getProfiles: vi.fn(),
+        createProfile: vi.fn(),
+        updateProfile: vi.fn(),
+        deleteProfile: vi.fn(),
+        activateProfile: vi.fn()
     }
 }));
 
@@ -59,11 +64,24 @@ const RECORDS = [
     }
 ];
 
+// P1 设备档案夹具：pf-2 激活中且被改过（is_active + modified 徽标各一）。
+const PROFILES = [
+    { id: 'pf-1', label: '环回基准', config: CONFIG, is_active: false, modified: false },
+    {
+        id: 'pf-2',
+        label: '产线网关',
+        config: { ...CONFIG, mode: 'tcp', tcp: { host: '10.1.2.3', port: 502, connect_timeout_ms: 3000, read_timeout_ms: 2000 } },
+        is_active: true,
+        modified: true
+    }
+];
+
 const mountApis = () => {
     api.getTransportConfig.mockResolvedValue(CONFIG);
     api.getTransportStatus.mockResolvedValue(STATUS);
     api.getDispatchHistory.mockResolvedValue(RECORDS);
     api.clearDispatchHistory.mockResolvedValue({ status: 'cleared', remaining: 0 });
+    api.getProfiles.mockResolvedValue(PROFILES);
 };
 
 describe('Terminal Page（E3 通讯调试）', () => {
@@ -231,5 +249,107 @@ describe('Terminal Page（E3 通讯调试）', () => {
         expect(screen.getByText(/ERR: network down/)).toBeDefined();
         expect(screen.getByRole('button', { name: /发送 \(SEND\)/ })).toBeDefined();
         expect(screen.getByRole('button', { name: /刷新 \(REFRESH\)/ })).toBeDefined();
+    });
+
+    // ---- P1 设备档案 ----
+
+    it('P1: 挂载拉取档案并渲染选项与激活星标', async () => {
+        render(<Terminal />);
+        await waitFor(() => expect(api.getProfiles).toHaveBeenCalledTimes(1));
+
+        expect(screen.getByText('设备档案 (DEVICE PROFILES)')).toBeDefined();
+        expect(screen.getByLabelText(/档案 PROFILE/)).toBeDefined();
+        // 选项文案 = 名称 · 摘要（激活加 ★），来自 profileOptionLabel 纯函数
+        expect(screen.getByText('环回基准 · LOOPBACK')).toBeDefined();
+        expect(screen.getByText('产线网关 · TCP 10.1.2.3:502 ★')).toBeDefined();
+        expect(screen.getByText(/当前生效 LOOPBACK/)).toBeDefined();
+    });
+
+    it('P1: 输入名称存为档案 → createProfile({label}) + 列表刷新 + 输入清空', async () => {
+        api.createProfile.mockResolvedValue({
+            id: 'pf-3', label: '新台架', config: CONFIG, is_active: true, modified: false
+        });
+        render(<Terminal />);
+        await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
+
+        const saveBtn = screen.getByRole('button', { name: /存为档案/ });
+        expect(saveBtn.disabled).toBe(true); // 无名称禁用
+
+        fireEvent.change(screen.getByPlaceholderText(/新档案名称/), { target: { value: '新台架' } });
+        expect(saveBtn.disabled).toBe(false);
+        fireEvent.click(saveBtn);
+
+        await waitFor(() => expect(api.createProfile).toHaveBeenCalledWith({ label: '新台架' }));
+        await waitFor(() => expect(api.getProfiles).toHaveBeenCalledTimes(2));
+        expect(screen.getByText(/档案已保存：新台架/)).toBeDefined();
+        expect(screen.getByPlaceholderText(/新档案名称/).value).toBe('');
+    });
+
+    it('P1: 应用档案 → activate 回填生效配置、刷新状态与档案、展示徽标', async () => {
+        api.activateProfile.mockResolvedValue({
+            id: 'pf-2',
+            label: '产线网关',
+            is_active: true,
+            modified: false,
+            config: {
+                ...CONFIG,
+                mode: 'tcp',
+                tcp: { host: '10.1.2.3', port: 502, connect_timeout_ms: 3000, read_timeout_ms: 2000 }
+            }
+        });
+        render(<Terminal />);
+        await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
+
+        const actBtn = screen.getByRole('button', { name: /应用档案/ });
+        expect(actBtn.disabled).toBe(true); // 未选档案禁用
+
+        fireEvent.change(screen.getByLabelText(/档案 PROFILE/), { target: { value: 'pf-2' } });
+        fireEvent.click(screen.getByRole('button', { name: /应用档案/ }));
+
+        await waitFor(() => expect(api.activateProfile).toHaveBeenCalledWith('pf-2'));
+        await waitFor(() => expect(api.getProfiles).toHaveBeenCalledTimes(2));
+        expect(screen.getByText(/档案已应用：产线网关 · 模式 TCP/)).toBeDefined();
+        expect(api.getTransportStatus).toHaveBeenCalledTimes(2); // 挂载 1 + 应用后刷新
+        // 生效配置回填 → 草稿切到 TCP 表单
+        expect(screen.getByRole('button', { name: /网络 TCP/ })).toBeDefined();
+        expect(screen.getByDisplayValue('10.1.2.3')).toBeDefined();
+        // 选中的激活档案展示徽标（pf-2 夹具 is_active + modified）
+        expect(screen.getByText('已激活')).toBeDefined();
+        expect(screen.getByText('已修改')).toBeDefined();
+    });
+
+    it('P1: 更新写入当前生效配置；删除需确认后才 DELETE', async () => {
+        api.updateProfile.mockResolvedValue({
+            id: 'pf-1', label: '环回基准', config: CONFIG, is_active: false, modified: false
+        });
+        api.deleteProfile.mockResolvedValue({ status: 'deleted', id: 'pf-1' });
+        render(<Terminal />);
+        await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
+
+        fireEvent.change(screen.getByLabelText(/档案 PROFILE/), { target: { value: 'pf-1' } });
+        fireEvent.click(screen.getByRole('button', { name: /更新 \(UPDATE\)/ }));
+        await waitFor(() => expect(api.updateProfile).toHaveBeenCalledWith('pf-1', { config: CONFIG }));
+        await waitFor(() => expect(screen.getByText(/档案已更新：环回基准/)).toBeDefined());
+
+        fireEvent.click(screen.getByRole('button', { name: /删除档案/ }));
+        expect(screen.getByText(/确认删除档案/)).toBeDefined();
+        expect(api.deleteProfile).not.toHaveBeenCalled(); // 未确认不发 DELETE
+
+        fireEvent.click(screen.getByRole('button', { name: /确认/ }));
+        await waitFor(() => expect(api.deleteProfile).toHaveBeenCalledWith('pf-1'));
+        await waitFor(() => expect(api.getProfiles).toHaveBeenCalledTimes(3)); // 挂载 + 更新 + 删除
+        expect(screen.getByText(/档案已删除：环回基准/)).toBeDefined();
+        expect(screen.getByLabelText(/档案 PROFILE/).value).toBe(''); // 选中已清
+    });
+
+    it('P1: 档案操作失败显示区内错误条', async () => {
+        api.createProfile.mockRejectedValue(new Error('档案名已存在：环回基准'));
+        render(<Terminal />);
+        await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
+
+        fireEvent.change(screen.getByPlaceholderText(/新档案名称/), { target: { value: '环回基准' } });
+        fireEvent.click(screen.getByRole('button', { name: /存为档案/ }));
+
+        await waitFor(() => expect(screen.getByText(/ERR: 档案名已存在/)).toBeDefined());
     });
 });

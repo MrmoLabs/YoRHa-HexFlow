@@ -137,6 +137,15 @@ _tcp_sock: Optional[socket.socket] = None
 _serial_inst: Any = None
 _state_events: List[Dict[str, Any]] = []
 _last_error: Optional[str] = None
+# P1 连接持久化：配置变更钩子（main.py lifespan 注册后，每次 set_config 生效且
+# 有变化时回调新配置；测试不挂钩 → 零落库，test_transport 行为不变）。
+_persist_hook: Optional[Any] = None
+
+
+def set_persist_hook(hook) -> None:
+    """注册 / 注销（None）配置变更持久化钩子。"""
+    global _persist_hook
+    _persist_hook = hook
 
 
 def _now_iso() -> str:
@@ -196,17 +205,28 @@ def get_config() -> Dict[str, Any]:
 
 
 def set_config(patch: Dict[str, Any]) -> Dict[str, Any]:
-    """把 patch 深合并到当前配置，整体校验后生效；生效时断开既有真实连接。"""
+    """把 patch 深合并到当前配置，整体校验后生效；生效时断开既有真实连接。
+
+    P1：配置有变化时触发持久化钩子（lifespan 注册；测试不挂钩行为不变）。
+    """
     global _config, _last_error
     if not isinstance(patch, dict):
         raise ValueError("传输配置必须是对象")
     normalized = validate_config(_deep_merge(_config, patch))
+    changed = False
     with _lock:
         if normalized != _config:
             if _tcp_sock is not None or _serial_inst is not None:
                 _close_all("配置变更")
             _config = normalized
             _last_error = None
+            changed = True
+    if changed and _persist_hook is not None:
+        # 持久化尽力而为：钩子失败不回滚已生效的配置（下次变更重试落库）
+        try:
+            _persist_hook(deepcopy(normalized))
+        except Exception:
+            pass
     return get_config()
 
 
@@ -228,13 +248,14 @@ def get_status() -> Dict[str, Any]:
 
 
 def reset() -> None:
-    """恢复默认 loopback 配置并清空连接与状态（测试/进程重置用）。"""
-    global _config, _last_error, _state_events
+    """恢复默认 loopback 配置并清空连接与状态（测试/进程重置用）；持久化钩子一并清空。"""
+    global _config, _last_error, _state_events, _persist_hook
     with _lock:
         _close_all(None)
         _config = default_config()
         _last_error = None
         _state_events = []
+        _persist_hook = None
 
 
 def send(data: bytes) -> bytes:

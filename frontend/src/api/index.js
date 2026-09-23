@@ -19,6 +19,7 @@ import { dispatchPayload, getDispatchHistory, clearDispatchHistory } from './dis
 import { getTransportConfig, setTransportConfig, getTransportStatus } from './transport';
 import { getBindings, createBinding, updateBinding, deleteBinding } from './bindings';
 import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle } from './datahub';
+import { getProfiles, createProfile, updateProfile, deleteProfile, activateProfile } from './profiles';
 
 export const api = {
     // Protocols
@@ -59,7 +60,14 @@ export const api = {
     getDatahubStatus,
     createDbBackup,
     restoreDbBackup,
-    exportDataBundle
+    exportDataBundle,
+
+    // Profiles (P1: 设备档案 → /profiles CRUD + activate，传输配置命名快照)
+    getProfiles,
+    createProfile,
+    updateProfile,
+    deleteProfile,
+    activateProfile
 };
 
 export default api;

@@ -11,10 +11,11 @@
 - 解禁 `frontend/src/utils/InstructionEncoder.js` 与 `backend/core/orchestrator.py`
   的**编码语义**（仅 E1 批逐子项动；每子项动前设计、动后双端一致性测试）。
 - 解禁新增 pip 依赖：**pyserial**（仅 E2-T3 串口模式；其余一律不加依赖）。
-- 解禁 `backend/db/models.py`：**仅限 E4 绑定持久化新表**（不改既有表结构，
-  SQLite `create_all` 自动建表）。
+- 解禁 `backend/db/models.py`：**仅新增表、不改既有表**（E4 起沿用；2026-09-23
+  用户批复 P 系列 C/D/B 新表继续此口径，SQLite `create_all` 自动建表）。
 - 其余硬约束继续有效：不碰 `processor.py` / `graph.py` / `Blueprint.jsx`；
-  不移除 `pymysql`；`yorha.db` 保持 git 跟踪；`/dispatch` 环回口径在 E2-T5
+  不移除 `pymysql`；`yorha.db` 保持 git 跟踪、**不随批提交**（需同步时单独本地
+  commit，先例 8f1b171）；`/dispatch` 环回口径在 E2-T5
   真实传输落地前不变；提交时机 = 每批人工验证后。
 
 ## 1. 批次总览与执行顺序
@@ -23,10 +24,15 @@
 |---|---|---|
 | M1 | A1 加工页 refs 无 formula 修复 + C1 指令页测试债 + C2 位域后端强校验 | ✅（0ad7a1c） |
 | M2 | C3 数据中心页一期 + C4 协议页测试收敛 + C5 编排回归 + C6 加工页渲染下沉 + C7 隐式约定收敛 + C8 README 同步 | ✅（47904ef） |
-| E1 | B1 B2–B8 真实编码语义（6 子项，双端编码器解禁） | ⬜ |
-| E2 | B2 传输层 T1→T2→T3→T4→T5（T2 TCP 无依赖先行，T3 串口 pyserial） | ✅ |
-| E3 | B3 通讯调试页 /terminal 实装（依赖 E2） | ✅ |
-| E4 | B4 编排绑定持久化（甲案：新表） | ✅ |
+| E1 | B1 B2–B8 真实编码语义（6 子项，双端编码器解禁） | ✅（23ca9c5） |
+| E2 | B2 传输层 T1→T2→T3→T4→T5（T2 TCP 无依赖先行，T3 串口 pyserial） | ✅（3149726） |
+| E3 | B3 通讯调试页 /terminal 实装（依赖 E2） | ✅（530f0b4） |
+| E4 | B4 编排绑定持久化（甲案：新表） | ✅（394c886） |
+| P1 | C 设备档案 + 连接持久化（新表 transport_settings / device_profiles） | 🔄 实现与自动化验证完成，待提交 |
+| P2 | A 事务化发送引擎（应答匹配规则可配 + 超时重发 + RTT/成功率统计） | ⬜ |
+| P3 | B1 序列编排后端（新表 sequences / sequence_steps + 后台 Runner + 轮询状态 + 与手动发送互斥） | ⬜ |
+| P4 | B2 序列编排前端（新菜单页「序列编排」，pageStatus 第 7 项，快捷键 F） | ⬜ |
+| P5 | D 通讯日志落库 + 导出 + 回放（新表 dispatch_logs，三路写入，CSV/JSON 导出，日志重发） | ⬜ |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -325,7 +331,36 @@
 > orchestration 条目、PAGE_STATUS 编排节、HANDOVER 待办 4 划线同步。
 > yorha.db 预期随本批后端重启新增 protocol_bindings 表（文件变更，**不入库**）。
 
-## 8. 保留勿动（非任务，勿清理）
+## 8. P1 明细（设备档案 + 连接持久化）
+
+- `models.py` 两张**新表**（既有表零改）：`transport_settings`（单行 `id="current"`，
+  `config` JSON + `active_profile_id` 逻辑外键）+ `device_profiles`（`label` 唯一 +
+  `config` 完整三段快照）。
+- 落库走 **transport 钩子**：`set_persist_hook`（`set_config` 生效且有变化时回调，
+  落配置并清激活指针；钩子失败不回滚已生效配置）——`routers/transport.py` 与
+  `test_transport.py` 零改动；`reset()` 一并清钩子防测试间泄漏。
+- lifespan 顺序：建表 → 种子 → **先恢复配置再挂钩**（避免启动回写）→ 注册钩子。
+- `/profiles` CRUD + `/profiles/{id}/activate`（`routers/profile.py`，无模块级
+  create_all，建表归 lifespan）；语义：省略 config 创建 = 快照当前生效配置且即激活；
+  快照 == 生效 → 创建即落指针；激活 = set_config（钩子清指针）→ 路由**末次回写指针**；
+  手工改配置经钩子失活；删激活档案清悬空指针不动生效配置。
+- 前端：调试页「设备档案」区（下拉 `profileOptionLabel` 摘要 + 激活 ★、已激活/已修改
+  徽标、存为/应用/更新/删除 + 确认弹窗、区内错误条）；视图模型纯函数
+  `utils/profileView.js`（`profileBadges` 防御性忽略 modified ⊆ is_active 之外的输入）。
+- 验收：`test_profiles.py` 18 例（store 6 + CRUD/激活 12，临时库直调，含「关引擎
+  重开 = 重启代理」持久化断言与钩子清指针断言）；前端 `profileView` 6 例 +
+  `Terminal.test.jsx` 7→12（档案挂载/存档/激活回填/更新删除确认/失败条 5 例）。
+
+> **P1 进度（2026-09-23，实现与自动化验证完成，待提交）**：
+> 后端 **109/109**（91+18）、前端 **375/375**（364+11）、`vite build` EXIT=0、
+> yorha-ui 校验器 0 violations（Terminal.jsx + profileView.js）。文档：pageStatus
+> terminal 条目、PAGE_STATUS 已重跑生成脚本、HANDOVER F/G 表 + 待办 3 过期字样
+> 修正（DataHub 实为 M2-C3 已落地）。yorha.db 预期随后端重启新增
+> transport_settings / device_profiles 两表（文件变更，**不随本批提交**）。
+> 人工验证沿「浏览器断连、用户侧补做」先例：调试页存档 → 应用 → 手工改配置失活
+> → 重启后端配置与档案仍在。
+
+## 9. 保留勿动（非任务，勿清理）
 
 - `backend/core/processor.py` / `graph.py` 未接线（Phase-2 遗留，保留勿删，
   勿引入新依赖）

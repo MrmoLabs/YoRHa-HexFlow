@@ -100,16 +100,19 @@
     "titleZh": "通讯调试",
     "titleEn": "Communication Terminal",
     "implemented": true,
-    "status": "已接入传输配置与三面板",
-    "summary": "通讯调试页提供传输配置模型（发送模式 loopback/TCP/串口 + 目标地址/串口参数，接 /transport/config）、连接状态与状态事件（GET /transport/status），以及发送历史 / 原始报文 / 响应与错误日志三面板（数据源 /dispatch 有界历史，raw/response/error 三类事件）。",
+    "status": "已接入传输配置、设备档案与三面板",
+    "summary": "通讯调试页提供传输配置模型（发送模式 loopback/TCP/串口 + 目标地址/串口参数，接 /transport/config）、设备档案区（/profiles 命名快照 + 激活切换，配置经 lifespan 钩子落库、重启恢复）、连接状态与状态事件（GET /transport/status），以及发送历史 / 原始报文 / 响应与错误日志三面板（数据源 /dispatch 有界历史，raw/response/error 三类事件）。",
     "availableNow": [
       "配置发送模式与目标参数（loopback 默认；TCP host/port/连接与读取超时；串口 COM/波特率/数据位/校验位/停止位），应用后立即生效并刷新连接状态。",
+      "传输配置持久化（P1）：每次应用配置即落库 transport_settings，后端重启自动恢复上次生效配置。",
+      "设备档案区（P1）：把当前生效配置存为命名档案（存为档案）、一键切换（应用档案）、用当前配置覆盖所选档案（更新）、删除（需确认）；下拉项带摘要与激活 ★，已激活/已修改徽标随选中展示，激活后被手工改配置会自动失活。",
       "查看连接状态与状态事件（connected/disconnected/error，GET /transport/status），手动刷新。",
       "发送历史面板：手动发送十六进制帧（非法输入禁用发送）、按记录选择（时间/通道/状态/字节/预览）、刷新与清空（清空需确认）。",
       "原始报文面板：选中记录的完整帧 hex dump（8 字节/行）与 meta（ID/通道/字节数/状态）。",
       "响应与错误日志面板：选中记录的响应事件 hex dump 或失败原因，以及全部 ERROR 记录汇总。"
     ],
     "nextSteps": [
+      "档案重命名与排序（当前仅创建/更新配置/删除/激活）。",
       "串口端口枚举（列出本机可用 COM 口）与波特率预设表。",
       "连接状态与发送历史的自动轮询或推送（当前为手动刷新）。",
       "报文格式切换（hex / ascii / 二进制位图）。"
