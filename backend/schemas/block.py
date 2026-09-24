@@ -56,3 +56,18 @@ class CompileResponse(BaseModel):
     hex_string: str
     total_length: int
     debug_info: List[str] = Field(default_factory=list)
+
+# 批次一 1b (D4-A): POST /compile/wrapped —— 协议 + 已编码内核 hex 载荷
+# 走后端唯一封装入口 build_wrapped（指令编码仍在前端，D4/D11 分批收敛）。
+# slot_ids 存协议原始 id（绑定表同源），按 payload 位次一一对应、允许
+# null/缺省（该条走 start_order 起的稠密位次）。
+class WrappedCompileRequest(BaseModel):
+    protocol_id: str
+    payloads: List[str]
+    slot_ids: Optional[List[Optional[str]]] = None
+    start_order: int = 0
+
+class WrappedCompileResponse(BaseModel):
+    hex_string: str
+    total_length: int
+    warnings: List[str] = Field(default_factory=list)

@@ -8,7 +8,7 @@ import TransmissionLog from './TransmissionLog';
 import TransactionPanel from './TransactionPanel';
 import { triggerBlobDownload } from '../../utils/download';
 
-export default function InstructionRunner({ instruction, onSend, onOpenDatePicker }) {
+export default function InstructionRunner({ instruction, onSend, onOpenDatePicker, wrapInfo }) {
     // 1. Normalize Instruction Object (Schema Mapping)
     const normalizedInstruction = React.useMemo(
         () => normalizeRunnerInstruction(instruction),
@@ -28,6 +28,57 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
     const [isExporting, setIsExporting] = useState(false);
     const [exportMsg, setExportMsg] = useState('');
 
+    // 批次一 (D4-A): 封装开关 —— 仅 wrap 状态机 ok 时可开；开 → TRANSMIT 与
+    // TransactionPanel 同带 wrap（内核载荷出线、后端套壳），预览 300ms 防抖调
+    // compileWrapped（与发送同参 → 同字节）。默认开（DESIGN_CorePipeline §7 批次一
+    // 1c 口径：无绑定/拉取失败自动降级裸发，开关仅在 ok 态可手动关）。
+    const wrap = wrapInfo?.status === 'ok' ? wrapInfo.wrap : null;
+    const [wrapOn, setWrapOn] = useState(true);
+    const [wrapPreview, setWrapPreview] = useState(null); // { hex, warnings } | null
+    const [wrapPreviewErr, setWrapPreviewErr] = useState('');
+    const [wrapPreviewing, setWrapPreviewing] = useState(false);
+    const activeWrap = wrapOn && wrap ? wrap : null;
+
+    // 换绑定/换指令 → 复位为默认开（新解析结果从默认态起步）与清预览
+    const wrapKey = wrap ? `${wrap.protocol_id}|${wrap.slot_id || ''}|${wrap.slot_order}` : '';
+    useEffect(() => { setWrapOn(true); }, [wrapKey]);
+
+    // 封装预览：300ms 防抖调 POST /compile/wrapped；关开关/换指令即弃在途请求。
+    useEffect(() => {
+        if (!activeWrap) {
+            setWrapPreview(null);
+            setWrapPreviewErr('');
+            return undefined;
+        }
+        const kernel = hexPreview.replace(/\s/g, '');
+        if (!kernel) {
+            setWrapPreview(null);
+            return undefined;
+        }
+        let alive = true;
+        const timer = setTimeout(async () => {
+            setWrapPreviewing(true);
+            try {
+                const result = await api.compileWrapped({
+                    protocolId: activeWrap.protocol_id,
+                    payloads: [kernel],
+                    slotIds: [activeWrap.slot_id || null],
+                    startOrder: activeWrap.slot_order ?? 0
+                });
+                if (!alive) return;
+                setWrapPreview({ hex: result.hex_string, warnings: result.warnings || [] });
+                setWrapPreviewErr('');
+            } catch (err) {
+                if (!alive) return;
+                setWrapPreview(null);
+                setWrapPreviewErr(err?.message || 'WRAP COMPILE FAILED');
+            } finally {
+                if (alive) setWrapPreviewing(false);
+            }
+        }, 300);
+        return () => { alive = false; clearTimeout(timer); };
+    }, [activeWrap, hexPreview]);
+
     // Keyboard Shortcuts
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -38,7 +89,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [inputs, hexPreview, isSending]);
+    }, [inputs, hexPreview, isSending, activeWrap]);
 
     const handleSend = async () => {
         if (!instruction || !normalizedInstruction || isSending) return;
@@ -68,7 +119,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
 
         try {
             if (onSend) {
-                await onSend(payload);
+                await onSend(payload, activeWrap);
             }
             setLogs(prev => prev.map(l => l.id === entryId ? { ...l, status: 'SENT' } : l));
         } catch (err) {
@@ -110,6 +161,19 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
     const deviceCode = normalizedInstruction.device_code || 'GENERIC-DEV';
     const instructionCode = normalizedInstruction.code || normalizedInstruction.id;
     const instructionName = normalizedInstruction.name || normalizedInstruction.label || 'Unnamed Protocol';
+
+    // 批次一 (D4-A): 封装状态文案（状态机四态 + loading 瞬态，均落「降级裸发」）
+    const wrapStatusText = !wrap
+        ? (wrapInfo?.status === 'missing'
+            ? 'PROTOCOL MISSING — 降级裸发'
+            : wrapInfo?.status === 'failed'
+                ? 'BINDING LOAD FAILED — 降级裸发'
+                : wrapInfo?.status === 'loading'
+                    ? 'RESOLVING BINDING...'
+                    : 'NO DEFAULT BINDING — 裸发')
+        : wrapOn
+            ? `WRAP ACTIVE // ${wrap.protocol_id} · ${wrap.slot_id || 'DENSE'}`
+            : 'WRAP READY // DEFAULT BINDING';
 
     return (
         <div className="flex-1 flex flex-col h-full bg-nier-bg p-5 gap-8 overflow-hidden">
@@ -164,6 +228,45 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                         </div>
                     </div>
 
+                    {/* 批次一 (D4-A): 封装开关 —— 状态机 ok 才可开；开 → 预览/TRANSMIT/事务同轨 */}
+                    <div className="border border-nier-light/20 p-2 flex items-center justify-between gap-2">
+                        <span className="text-[9px] font-mono text-nier-light/40 uppercase tracking-[0.2em] whitespace-nowrap">:: Wrap ::</span>
+                        <button
+                            type="button"
+                            onClick={() => setWrapOn(on => !on)}
+                            disabled={!wrap}
+                            aria-pressed={Boolean(activeWrap)}
+                            title={wrap ? '协议封装开关 (WRAP)' : '无可用默认绑定 — 仅裸发'}
+                            className={`text-[9px] font-mono uppercase tracking-widest border px-2 py-1 transition-colors duration-100 ${activeWrap
+                                ? 'border-nier-light bg-nier-light text-nier-dark'
+                                : 'border-nier-light/20 text-nier-light/50 hover:border-nier-light/60 hover:text-nier-light'} disabled:opacity-40 disabled:cursor-not-allowed`}
+                        >
+                            {activeWrap ? 'WRAP ●' : 'WRAP ○'}
+                        </button>
+                    </div>
+                    <div data-testid="wrap-status" className="text-[9px] font-mono text-nier-light/40 uppercase tracking-widest break-all">
+                        {wrapStatusText}
+                    </div>
+
+                    {/* 封装预览：300ms 防抖 compileWrapped 结果（与发送同参 → 同字节） */}
+                    {activeWrap && (
+                        <div className="bg-[#4a4a4a] text-[#dad4bb] p-3 relative border border-[#5c5c5c]">
+                            <div className="absolute top-0 right-0 bg-[#5c5c5c] text-[9px] px-2 py-0.5 font-bold tracking-widest">
+                                WRAPPED_STREAM
+                            </div>
+                            <div className="font-mono text-xl break-all leading-tight tracking-[0.1em] mt-4">
+                                {wrapPreviewErr
+                                    ? <span className="text-red-400 text-[10px]">{wrapPreviewErr}</span>
+                                    : (wrapPreview?.hex || (wrapPreviewing ? '···' : '--'))}
+                            </div>
+                            {wrapPreview?.warnings?.length > 0 && (
+                                <div className="mt-2 text-[9px] font-mono text-yellow-400 tracking-widest break-all">
+                                    ⚠ {wrapPreview.warnings.join(' · ')}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
                     <button
                         onClick={handleSend}
                         disabled={isSending}
@@ -190,8 +293,8 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                         </div>
                     )}
 
-                    {/* P2 事务发送：规格编辑 + 超时重发/广播 + 逐次 attempt/RTT */}
-                    <TransactionPanel instruction={instruction} payload={hexPreview.replace(/\s/g, '')} />
+                    {/* P2 事务发送：规格编辑 + 超时重发/广播 + 逐次 attempt/RTT（wrap 开→同带协议外壳） */}
+                    <TransactionPanel instruction={instruction} payload={hexPreview.replace(/\s/g, '')} wrap={activeWrap} />
 
                     <div className="min-h-[240px] flex flex-col">
                         <TransmissionLog logs={logs} />

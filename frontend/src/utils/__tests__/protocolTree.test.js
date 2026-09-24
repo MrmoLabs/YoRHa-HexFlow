@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { ChecksumAlgo, calculateChecksum, formatToHex } from '../formula';
 import {
     findNode,
     computeProtocolOffsets,
@@ -373,14 +374,89 @@ describe('computeRefsSigma / injectRefsSigma（refs 设计期 Σ 纯函数）', 
         expect(lanes[0].items.find(i => i.id === 'L').parameter_config.computedValue).toBeUndefined();
     });
 
-    it('checksum 卡不注入（设计期无真值，维持 "??"）', () => {
+    // 人工验证反馈 2（严格口径）：refs 全为可确定内容 → 设计期真值直填；
+    // 含 slot / 未配置字面 / 悬空 → 维持等量 ??（不注入）。
+    it('checksum 卡：refs 全为字面 fixed → 注入设计期真值（SUM_8 手算可验）', () => {
         const p = proto([
-            leaf('h'),
+            leaf('h', { hex_value: 'AA 55', byte_length: 2 }),
             { id: 'C', label: 'C', type: 'checksum', byte_length: 1, hex_value: '00',
+                parameter_config: { type: 'checksum', refs: ['h'], algorithm: 'SUM_8' } }
+        ]);
+        const lanes = protocolTree.injectRefsSigma(lanesOf(p), computeProtocolOffsets(p).byId, p);
+        // 0xAA + 0x55 = 0xFF → 1B "FF"（手算直钉）
+        expect(lanes[0].items.find(i => i.id === 'C').parameter_config.computedValue).toBe('FF');
+    });
+
+    it('checksum 卡：缺省算法按 CRC_16_MODBUS（与编码器同源：calculateChecksum 同参）', () => {
+        const p = proto([
+            leaf('h', { hex_value: 'AA 55', byte_length: 2 }),
+            { id: 'C', label: 'C', type: 'checksum', byte_length: 2, hex_value: '00',
                 parameter_config: { type: 'checksum', refs: ['h'] } }
         ]);
-        const lanes = protocolTree.injectRefsSigma(lanesOf(p), computeProtocolOffsets(p).byId);
+        const lanes = protocolTree.injectRefsSigma(lanesOf(p), computeProtocolOffsets(p).byId, p);
+        const want = formatToHex(calculateChecksum(ChecksumAlgo.CRC_16_MODBUS, [0xAA, 0x55]), 2);
+        expect(lanes[0].items.find(i => i.id === 'C').parameter_config.computedValue).toBe(want);
+    });
+
+    it('checksum 卡：refs 含 slot → 不注入（发送期内容不可知）', () => {
+        const p = proto([
+            leaf('h', { hex_value: 'AA', byte_length: 1 }),
+            { id: 's', label: 's', type: 'slot', byte_length: 1, hex_value: '00' },
+            { id: 'C', label: 'C', type: 'checksum', byte_length: 1, hex_value: '00',
+                parameter_config: { type: 'checksum', refs: ['h', 's'], algorithm: 'SUM_8' } }
+        ]);
+        const lanes = protocolTree.injectRefsSigma(lanesOf(p), computeProtocolOffsets(p).byId, p);
         expect(lanes[0].items.find(i => i.id === 'C').parameter_config.computedValue).toBeUndefined();
+    });
+
+    it('checksum 卡：refs 含未配置字面的 fixed（hex_value 空）→ 不注入', () => {
+        const p = proto([
+            leaf('h', { hex_value: 'AA', byte_length: 1 }),
+            leaf('u', { hex_value: '' }),
+            { id: 'C', label: 'C', type: 'checksum', byte_length: 1, hex_value: '00',
+                parameter_config: { type: 'checksum', refs: ['h', 'u'], algorithm: 'SUM_8' } }
+        ]);
+        const lanes = protocolTree.injectRefsSigma(lanesOf(p), computeProtocolOffsets(p).byId, p);
+        expect(lanes[0].items.find(i => i.id === 'C').parameter_config.computedValue).toBeUndefined();
+    });
+
+    it('checksum 卡：refs 悬空 → 不注入（带 root 仍拒）', () => {
+        const p = proto([
+            leaf('h', { hex_value: 'AA', byte_length: 1 }),
+            { id: 'C', label: 'C', type: 'checksum', byte_length: 1, hex_value: '00',
+                parameter_config: { type: 'checksum', refs: ['ghost'], algorithm: 'SUM_8' } }
+        ]);
+        const lanes = protocolTree.injectRefsSigma(lanesOf(p), computeProtocolOffsets(p).byId, p);
+        expect(lanes[0].items.find(i => i.id === 'C').parameter_config.computedValue).toBeUndefined();
+    });
+
+    it('length 卡：refs 指向含 slot 的容器 → 不注入（嵌套槽令 Σ 发送期才定）', () => {
+        const p = proto([
+            cont('g', [
+                leaf('x', { hex_value: 'AA', byte_length: 2 }),
+                { id: 's', label: 's', type: 'slot', byte_length: 1, hex_value: '00', children: [] }
+            ]),
+            lenCard('L', ['g'])
+        ]);
+        const lanes = protocolTree.injectRefsSigma(lanesOf(p), computeProtocolOffsets(p).byId, p);
+        expect(lanes[0].items.find(i => i.id === 'L').parameter_config.computedValue).toBeUndefined();
+    });
+
+    it('容器卡中央值：可确定 checksum 子块出真值（injectContainerContent 带 byId/root）', () => {
+        const p = proto([
+            leaf('h', { hex_value: 'AA 55', byte_length: 2 }),
+            cont('g', [
+                leaf('k', { hex_value: 'EE', byte_length: 1 }),
+                { id: 'C', label: 'C', type: 'checksum', byte_length: 1, hex_value: '00',
+                    parameter_config: { type: 'checksum', refs: ['h'], algorithm: 'SUM_8' } }
+            ]),
+            leaf('tail', { hex_value: 'ED', byte_length: 1 })
+        ]);
+        const byId = computeProtocolOffsets(p).byId;
+        const lanes = protocolTree.injectContainerContent(
+            protocolTree.injectRefsSigma(lanesOf(p), byId, p), byId, p
+        );
+        expect(lanes[0].items.find(i => i.id === 'g').parameter_config.computedValue).toBe('EE FF');
     });
 
     it('纯函数：输入 lanes 与协议树零改写，注入结果为副本', () => {

@@ -33,6 +33,7 @@
 | P3 | B1 序列编排后端（新表 sequences / sequence_steps + 后台 Runner + 轮询状态 + 与手动发送互斥） | ✅（28c68e4，db 同步 9c84911） |
 | P4 | B2 序列编排前端（新菜单页「序列编排」，pageStatus 第 7 项，快捷键 F） | ✅（d33c319） |
 | P5 | D 通讯日志落库 + 导出 + 回放（新表 dispatch_logs，三路写入，CSV/JSON 导出，日志重发） | ✅（aa20589，db 同步 b635eac） |
+| CP1 | Core Pipeline 批次一：1a 绑定三列 DDL + 1b frame_builder + 1c 发送 wrap 接线 + 1d 文档（`DESIGN_CorePipeline.md` §7 首批） | 实现完成（2026-09-24），人工验证反馈 1（星标设默认确认）已并入，待复验 |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -859,6 +860,110 @@
   `Protocol.jsx`/`Protocol.test.jsx`/两 api 文件 0 违规；ESLint
   `Protocol.jsx` 仍 1 error 2 warnings 无新增。**本批含 DDL**（protocols
   一列，启动自愈落真库）→ yorha.db 随本批入库。
+
+### 8.8 Core Pipeline 批次一（主线闭环：绑定 → 封装 → 发送，1a–1d）
+
+> **人工验证期反馈 1（并入本批）**：星标设默认增加点击确认环节（NieRModal 确认弹窗，
+> 确认才 PUT 落库；取消默认为低风险逆操作单击直执行）——Orchestration D1 用例改钉
+> 「设默认弹确认 / 取消不 PUT / 确认才 PUT / 取消星直执行」（Orchestration.test 17 例绿）。
+
+> 设计依据 `docs/DESIGN_CorePipeline.md`（§2/§4/§7）+ `docs/DESIGN_Decisions.md`
+> 12 条拍板（2026-09-24 全 A）。进度（2026-09-24）：1a–1d 全部实现，红测先行、
+> 自动化验收全绿；**本批含 DDL**（`protocol_bindings` 三列 + 两个部分唯一索引，
+> 启动自愈 `ensure_binding_columns` 创建）→ yorha.db 沿 `8f1b171` 先例
+> **单独同步提交**。待人工验证 → 一批一提交。
+
+- **1a 数据层（DDL）**：`models.py::ProtocolBinding` 仅新增 `slot_id`（显式
+  目标槽）/ `is_default`（该指令默认封装协议）/ `priority`（多候选择序，预留）
+  三列；`database.ensure_binding_columns` 启动自愈补列（镜像
+  `ensure_protocol_version_column`，幂等、表缺 no-op）并**只在自愈路径**创建
+  两个部分唯一索引 `ux_bindings_default(instruction_id) WHERE is_default=1`、
+  `ux_bindings_slot(protocol_id, slot_id) WHERE slot_id IS NOT NULL`（测试
+  setUp 必须调用同一函数）；`schemas/binding_api.py` 三字段 wire 出线
+  （is_default bool / slot_id 可空 / priority int）、`routers/binding.py`
+  三字段 CRUD + `GET /bindings?instruction_id=` 过滤 + 设默认同事务清旧默认
+  （IntegrityError → 400）+ 绑定期关系校验（slot_id 存在且 type=slot、
+  accepts 设备白名单命中；占位期无 slot_id 放行）。验收：`test_bindings.py`
+  29 例全绿（本批 +17：三字段透传 / 设默认清旧 / 唯一索引冲突 400 / 存量
+  行缺省回填 / 关系校验 / 过滤 / 补列自愈幂等）。
+- **1b frame_builder（红测先行）**：`core/frame_builder.py`
+  `build_wrapped(protocol_children, payloads, slot_ids=None, start_order=0)`
+  → `{"hex", "total_length", "warnings"}`（克隆 p- 前缀 + orig→cloned 映射 →
+  DFS 收槽（遇 slot 不下钻）→ 显式槽/稠密位次两趟分配（slot_id 优先、稠密
+  cursor 跳过已占槽、溢出 extend 根末、欠载保留槽、空载荷 `""` 删槽）→
+  splice 注入 `i-payload-*` → rewrite 后置 pass → toFrameBlocks 镜像转 Block
+  （JS Number/`||` 口径 helper）→ Orchestrator.process → length/checksum refs
+  真值重算）+ `schemas/block.py` `WrappedCompileRequest/Response` +
+  `POST /compile/wrapped`（**同步 def**、404 "Protocol not found"、
+  ValueError → 400）；语义错误 raise、溢出/欠载仅 warning 不阻断（fit_policy
+  reject 批次二）。验收：`test_frame_builder.py` 21 例全绿（红测期复核定值
+  两处期望：at_zero 文档序跳洞 `02 01 02 00` / 空载荷帧内零字节
+  `AA 02 01 02 BB`）。
+- **1c 发送接线**：后端 `routers/dispatch.py` `WrapSpec{protocol_id, slot_id?,
+  slot_order?}` + `_apply_wrap`，`/dispatch` 与 `/dispatch/transaction`
+  可选 `wrap`（**缺省裸帧行为逐字节不变**；hex 校验移到 wrap 之后；两端点
+  409 文案相同）；前端 api 层 `compile.js`（compileWrapped）+ `dispatch.js`
+  第三参 wrap + `bindings.js` instruction_id 过滤 + barrel，`blockMerge.js`
+  导出 `normalizeInstructionBlocks`。接线：加工页 wrap 状态机
+  （ok / none / failed / missing，非 ok 一律降级裸发 + 状态提示）+ 封装
+  预览（300ms 防抖 `compileWrapped`，与发送同参同字节、warnings 回显）+
+  「:: Wrap ::」开关**默认开**（DESIGN §7 1c 口径）→ TRANSMIT 与
+  TransactionPanel 同带 wrap；编排页 toServer/toLocal 出线三字段 + 星标
+  默认封装（删除按钮后，点星 PUT 后端清同指令旧默认、本地同步清星）+
+  试发改线（组内逐指令 encode → `compileWrapped` → `dispatchPayload`，
+  SENT 附 warnings）。验收：`test_wrap_api.py` 18 例全绿（compile 端点 /
+  loopback 单发 wrap / 事务 wrap / 显式槽 / 稠密 slot_order / slot_id 优先 /
+  404 / 400 / 裸帧不回归）。
+- **1d 文档（本节）**：pageStatus.json processing/orchestration 条目 +
+  `node scripts/generate-page-status.mjs` 重生成 `docs/PAGE_STATUS.md` +
+  本节 + `PROJECT_HANDOVER.md` 待办/链路/目录地图 + `DESIGN_CorePipeline.md`
+  §2/§4/§7 偏离与进度注记 + `DESIGN_Decisions.md` D1 实施注。
+- **测试/验收**：BE **296/296**（基线 240 + 1a 17 + 1b 21 + 1c 18）、FE
+  **542/542（40 文件）**（基线 534 + 新 8：blockMerge 共享向量 1 +
+  Orchestration 星标 1 + InstructionProcessor 6）、`vite build` EXIT=0、
+  yorha-ui 校验器触 4 个 UI 文件 0 违规。
+- **共享向量**：主向量 `FA FA 02 01 02 ED` **三端同钉**
+  （`backend/tests/test_frame_builder.py` + `test_wrap_api.py` +
+  `frontend/src/utils/__tests__/blockMerge.test.js`，改一必改三）。
+
+**偏离注记（2026-09-24 批次一实施确认，两处均相对设计稿）**：
+
+1. **撤销「`(protocol_id, instruction_id)` 至多一行」基数约束**（`DESIGN_
+   CorePipeline.md` §2 基数约定、`DESIGN_Decisions.md` D1 选项 A 同款措辞，
+   两处已同步注记）：同一 (协议, 指令) **允许多行** —— 编排页「同协议多绑定
+   按 slot_order 依洞填装」（一期 B1/B2）本就是一对多，加唯一约束直接打破
+   既有语义。防重复职责收敛到两个部分唯一索引：每指令至多一个默认
+   （`ux_bindings_default`）、协议内显式槽不重复（`ux_bindings_slot`）。
+2. **`build_wrapped` 签名偏离（payloads-hex）**：设计稿 §4 草案
+   `build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) ->
+   WrapResult{hex, byte_count, warnings, errors}`，实施为
+   `build_wrapped(protocol_children, payloads, slot_ids=None, start_order=0)
+   -> {hex, total_length, warnings}` —— 指令编码留在前端（加工页/编排页既有
+   `encodeInstruction` 链路），后端入参收**已编码内核 hex 载荷**；同因
+   `/compile/wrapped` 请求为 `{protocol_id, payloads, slot_ids?,
+   start_order?}` 而非「instruction_id + 参数」。取舍 = D4-A/D11-A 分批
+   收敛：本批先收**封装唯一入口**（协议树查库 + 洞位分配 + length/checksum
+   真值重算恒在后端，前端不复制任何封装逻辑），编译权威全量收敛（前端仅
+   乐观预览）留后续批。
+
+### 8.9 人工验证反馈 2（协议页确定值直填：checksum 严格口径）
+
+- 背景：协议定义页卡片对「已确定的内容」仍显示等量 ?? 占位（人工验证反馈 2；用户定调
+  「类似指令管理页面，确定的内容直接填充」+ 严格口径「全确定才填」，回翻一期
+  「checksum 设计期无真值恒不注入」口径）。
+- 实现：`protocolTree.injectRefsSigma` 新增严格可确定性（`hasSlotInSubtree` /
+  `strictSigma` / `collectDeterministicBytes` / `collectRefsBytes`）—— checksum 卡
+  refs 全为可确定内容（fixed 字面 hex、全子可确定容器、Σ 可解析 length；无槽、无悬空、
+  无未配置字面）→ 按 `mapChecksumAlgo`（缺省 CRC_16_MODBUS，同编码器同源）算出设计期
+  真值直填；任一不可确定 → 维持按字节等量 ??。length 带 root 时升级 strictSigma
+  （嵌套容器裹槽同拒——旧 computeRefsSigma 只查直接槽，容器裹槽的 Σ 填充后会变）；
+  `injectContainerContent(lanes, byId, root)` 容器中央值同步直填（不带 byId/root 的
+  旧调用行为不变）；`Protocol.jsx` 调用点传入 byId/root。
+- 测试：protocolTree.test +6（43 例绿：SUM_8 手算向量 `FF`、缺省 CRC 同源、slot/
+  未配置字面/悬空/嵌套槽不注入、容器拼接 `EE FF`）；Protocol.test A4 改钉新口径
+  （确定 checksum 卡 name 追加真值 `校验 <hex>`，悬空仍不出值）。
+- 验收：FE 548/548（40 文件）EXIT=0、`vite build` EXIT=0、yorha-ui 校验器触变更
+  文件 0 违规、后端 296/296 OK（本反馈纯前端，后端零改动回归）。
 
 ## 9. 保留勿动（非任务，勿清理）
 

@@ -8,9 +8,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.core import response_match, sequence_runner, transport
+from backend.core.frame_builder import build_wrapped
 from backend.db.database import get_db
 from backend.db.log_store import safe_log
-from backend.db.models import ResponseSpec
+from backend.db.models import ResponseSpec, ProtocolTemplate
 from backend.routers.export import hex_to_bytes
 
 router = APIRouter(prefix="/dispatch", tags=["dispatch"])
@@ -22,9 +23,23 @@ _MAX_HISTORY = 100
 _history: deque = deque(maxlen=_MAX_HISTORY)
 
 
+class WrapSpec(BaseModel):
+    """批次一 1c (D4-A): 可选封装 —— hex_string 视作已编码内核载荷（单条），
+    发送前经后端唯一封装入口 build_wrapped 套上协议外壳。
+
+    slot_id 显式指定插槽（存协议原始 id，绑定表同源）优先；缺省则按
+    slot_order 起的稠密位次（同协议组内 0..n-1 位次，绑定 slot_order 同源）。
+    wrap 缺省 → 裸帧路径与既有行为逐字节一致（§0 硬约束）。"""
+
+    protocol_id: str
+    slot_id: Optional[str] = None
+    slot_order: Optional[int] = None
+
+
 class DispatchRequest(BaseModel):
-    hex_string: str = Field(..., description="Assembled hex stream to send")
+    hex_string: str = Field(..., description="Assembled hex stream to send (wrap 存在时为内核载荷)")
     instruction_name: Optional[str] = Field(None, description="Source instruction label")
+    wrap: Optional[WrapSpec] = Field(None, description="批次一: 可选协议封装（缺省裸帧）")
 
 
 class DispatchEvent(BaseModel):
@@ -56,13 +71,38 @@ def append_history(record: DispatchRecord) -> None:
     _history.appendleft(record)
 
 
+def _apply_wrap(wrap: WrapSpec, payloads: List[str], db: Session) -> str:
+    """批次一 1c: wrap → build_wrapped（单 payload：slot_id 显式优先，否则
+    稠密位次 start_order=slot_order）。协议 404 / 语义 400 原样透出；产出 hex
+    再交 hex_to_bytes 终检 —— 校验顺序 wrap 先于 hex（裸帧路径逐字节不变）。"""
+    protocol = db.query(ProtocolTemplate) \
+        .filter(ProtocolTemplate.id == wrap.protocol_id).first()
+    if protocol is None:
+        raise HTTPException(status_code=404, detail="Protocol not found")
+    try:
+        result = build_wrapped(
+            protocol.children or [],
+            payloads,
+            slot_ids=[wrap.slot_id] if wrap.slot_id else None,
+            start_order=wrap.slot_order or 0,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result["hex"]
+
+
 @router.post("/", response_model=DispatchRecord)
 def dispatch_frame(request: DispatchRequest, db: Session = Depends(get_db)):
     # P3 互斥：序列运行期禁止手动发送（Runner 直连 transport 不经此路由，无自锁）
     if sequence_runner.is_running():
         raise HTTPException(status_code=409, detail="序列运行中，手动发送已互斥（先停止序列）")
+    # 批次一 1c: wrap 存在 → hex_string 视作内核载荷，先封装再终检 hex
+    # （wrap 缺省 → 下方裸帧路径与既有行为逐字节一致，§0 硬约束）。
+    hex_string = request.hex_string
+    if request.wrap is not None:
+        hex_string = _apply_wrap(request.wrap, [request.hex_string], db)
     try:
-        data = hex_to_bytes(request.hex_string)
+        data = hex_to_bytes(hex_string)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
 
@@ -138,9 +178,10 @@ def clear_history():
 
 
 class TransactionRequest(BaseModel):
-    hex_string: str = Field(..., description="Assembled hex stream to send")
+    hex_string: str = Field(..., description="Assembled hex stream to send (wrap 存在时为内核载荷)")
     instruction_name: Optional[str] = Field(None, description="Source instruction label")
     instruction_id: Optional[str] = Field(None, description="逻辑外键 → instructions.id（规格解析）")
+    wrap: Optional[WrapSpec] = Field(None, description="批次一: 可选协议封装（缺省裸帧）")
     response_spec: Optional[Dict[str, Any]] = Field(
         None, description="内联规格覆盖（优先于按指令持久化的规格）"
     )
@@ -225,8 +266,12 @@ def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_
     # P3 互斥：序列运行期禁止手动事务发送（与 dispatch_frame 同口径）
     if sequence_runner.is_running():
         raise HTTPException(status_code=409, detail="序列运行中，手动发送已互斥（先停止序列）")
+    # 批次一 1c: 与 dispatch_frame 同口径 —— wrap 先封装、hex 终检在后
+    hex_string = request.hex_string
+    if request.wrap is not None:
+        hex_string = _apply_wrap(request.wrap, [request.hex_string], db)
     try:
-        data = hex_to_bytes(request.hex_string)
+        data = hex_to_bytes(hex_string)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
 

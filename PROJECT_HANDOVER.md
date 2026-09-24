@@ -93,6 +93,8 @@
 *   `POST /export/binary?filename=` — 块森林 → Orchestrator 编译 → `.bin` 下载（编排页 "EXPORT .BIN" 按钮；前端经 `toFrameBlocks` 映射 `byte_len→byte_length`、`op_code→type`）。
 *   `POST /dispatch/` — 经 **transport 抽象**（`backend/core/transport.py`）发送并返回记录，保存在有界 deque（最多 100 条，含 raw/response/error 三类事件）；`GET /dispatch/history`、`DELETE /dispatch/history`。
     *   **诚实说明**: **默认模式仍是进程内环回，`/dispatch` 口径不变**；E2 已实装 TCP（标准库 socket）与串口（pyserial）真实传输，经 `POST /transport/config` 切换、`GET /transport/status` 查看连接状态事件（connected/disconnected/error）。无真实设备时请保持 loopback。
+*   `POST /compile/wrapped` — 协议 + **已编码内核 hex 载荷** → 完整封装帧（批次一 1b；后端唯一封装入口 `backend/core/frame_builder.py::build_wrapped`：协议树按 `slot_id ?? slot_order` 填洞、溢出追加帧末/欠载保留槽、length/checksum refs 真值重算；返回 `hex_string/total_length/warnings`，协议缺失 404、载荷/槽语义错误 400）。请求形 `{protocol_id, payloads, slot_ids?, start_order?}`。
+*   发送端点可选 `wrap`（批次一 1c）：`POST /dispatch/` 与 `POST /dispatch/transaction` 接 `{wrap: {protocol_id, slot_id?, slot_order?}}` —— 入参 hex 视作已编码内核载荷、后端套协议外壳；**缺省不带 wrap = 裸帧路径逐字节不变**。
 
 ## 5. 当前实施状态
 ### ✅ 已完成
@@ -349,6 +351,26 @@
     `Protocol.jsx` 仍 1 error 2 warnings 无新增。**本批含 DDL** → yorha.db
     随本批入库，明细见 PLAN §8.7 批次五条目。
 
+20. **Core Pipeline 批次一：绑定 → 封装 → 发送主线闭环（1a–1d）**（2026-09-24
+    12 条设计拍板全 A 后实施，`docs/DESIGN_CorePipeline.md` §7 首批）：1a
+    `protocol_bindings` 三列 DDL（`slot_id`/`is_default`/`priority`，仅新增 +
+    启动自愈 `ensure_binding_columns` 补列并创建两部分唯一索引）+ 绑定 CRUD
+    三字段与 `GET /bindings?instruction_id=` 过滤 + 设默认同事务清旧默认；
+    1b `core/frame_builder.py` + `POST /compile/wrapped`（协议树填洞 →
+    length/checksum 真值重算的**后端唯一封装入口**，主向量 `FA FA 02 01 02 ED`
+    与前端 merge+encode 三端同钉、改一必改三）；1c `/dispatch`·
+    `/dispatch/transaction` 可选 `wrap`（**缺省裸帧逐字节不变**）+ 加工页
+    wrap 状态机（ok/none/failed/missing 降级裸发）与封装预览（300ms 防抖
+    compileWrapped）、「:: Wrap ::」开关**默认开**（TRANSMIT 与事务同轨）+
+    编排页星标默认封装（is_default，删除按钮后）与试发改线（逐指令编码 →
+    compileWrapped → dispatchPayload）；1d 文档同步（pageStatus/
+    PAGE_STATUS 重生成/PLAN §8.8/设计稿三处偏离注记）。验收：后端
+    **296/296**（基线 240 + 56）、前端 **542/542（40 文件）**（基线 534 +
+    8）、build EXIT=0、校验器触 4 个 UI 文件 0 违规。**本批含 DDL** →
+    yorha.db 单独同步提交。两处偏离（撤销 `(protocol_id, instruction_id)`
+    至多一行约束 / `build_wrapped` 收已编码内核 hex 签名）见
+    `docs/PLAN_Backlog.md` §8.8 偏离注记。**待办：人工验证 → 一批一提交。**
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
@@ -387,7 +409,7 @@
 ### frontend/src/
 | 文件 | 职责 | 状态 |
 |---|---|---|
-| `src/api/` | 全部 HTTP 调用，按域拆分：`client.js`（fetch 助手）/ `protocols.js` / `instructions.js` / `operators.js` / `export.js` / `dispatch.js` + `index.js` 桶导出 `api` 对象；**导入路径 `./api` 不变** | ✅ 原 `src/api.js` 已拆 |
+| `src/api/` | 全部 HTTP 调用，按域拆分：`client.js`（fetch 助手）/ `protocols.js` / `instructions.js` / `operators.js` / `export.js` / `bindings.js` / `compile.js` / `dispatch.js` / `responseSpecs.js` / `sequences.js` 等 + `index.js` 桶导出 `api` 对象；**导入路径 `./api` 不变** | ✅ 原 `src/api.js` 已拆 |
 | `src/constants.js` | `OP_CODES` / `CATEGORIES` / `OP_PRIORITY` / `CATEGORY_ORDER`（BITFIELD 已含） | ✅ |
 | `src/utils/InstructionEncoder.js` | **编码核心**（hex 生成、依赖解析、BITFIELD 打包） | ✅ 权威编码逻辑，勿随意改 |
 | `src/utils/formula.js` | 公式求值 / 校验和算法 | ✅ |

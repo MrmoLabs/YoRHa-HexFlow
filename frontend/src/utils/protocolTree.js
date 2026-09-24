@@ -6,7 +6,7 @@
 
 import { computeByteOffsets } from './byteOffsets';
 import { isNestable } from '../config/blockTypes';
-import { formatUnknown } from './formula';
+import { formatUnknown, calculateChecksum, formatToHex } from './formula';
 import { mapChecksumAlgo } from './normalizeInstruction';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -356,22 +356,111 @@ export const computeRefsSigma = (block, byId, root) => {
     return sum;
 };
 
-// 全泳道扫描注入：仅 length 卡吃 Σ（checksum 设计期无真值 → 不注入）；
-// 十进制直出 `${sigma}B`（长度是"数量"不是字节内容，hex `04` 会被读成字节值；
-// 卡片宽度/页脚另由 byte_length 与偏移标尺承担）。
+// ─── 人工验证反馈 2（严格口径）：设计期"全确定"才直填真值 ────────────────────
+// hasSlotInSubtree: 嵌套槽同样令 Σ/值到发送期才定（computeRefsSigma 只查
+// 直接 slot，漏"容器包裹槽"——其设计期尺寸把槽算 0/占位，填充后会变）。
+const hasSlotInSubtree = (node) => node.type === 'slot'
+    || (node.children || []).some(hasSlotInSubtree);
+
+// strictSigma: computeRefsSigma + 嵌套槽拒绝（root 必需；任一 ref 悬空/含槽/
+// 尺寸未知 → null，调用方不注入，卡面维持等量 ??）。
+const strictSigma = (owner, byId, root) => {
+    const refs = owner?.parameter_config?.refs;
+    if (!Array.isArray(refs) || refs.length === 0 || !root) return null;
+    let sum = 0;
+    for (const refId of refs) {
+        const target = findNode(root, refId);
+        if (!target || hasSlotInSubtree(target)) return null;
+        const entry = byId.get(refId);
+        if (!entry || entry.size == null) return null;
+        sum += entry.size;
+    }
+    return sum;
+};
+
+const bytesToHex = (bytes) => bytes
+    .map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+
+// collectDeterministicBytes: 严格可确定性 —— 引用内容全部为字面/可计算才出
+// 字节数组，否则 null（卡维持等量 ??）。fixed = 字面 hex；length = Σ 值的大端
+// 字节（超宽由 formatToHex 截低位，与编码器同口径）；checksum = 递归自身
+// refs 求值；容器 = 全子拼接；slot/未配置字面/悬空 → null。
+// checksum 分支经 collectRefsBytes 反向引用（模块内互递归，调用均发生在模块
+// 初始化之后 → const TDZ 无虞）。
+const collectDeterministicBytes = (node, byId, root) => {
+    if (!node) return null;
+    const kids = node.children || [];
+    if (kids.length > 0) {
+        const out = [];
+        for (const kid of kids) {
+            const b = collectDeterministicBytes(kid, byId, root);
+            if (b == null) return null;
+            out.push(...b);
+        }
+        return out;
+    }
+    if (node.type === 'slot') return null;
+    if (node.type === 'length') {
+        const sigma = strictSigma(node, byId, root);
+        if (sigma == null) return null;
+        return (formatToHex(sigma, node.byte_length).match(/.{1,2}/g) || [])
+            .map(p => parseInt(p, 16));
+    }
+    if (node.type === 'checksum') {
+        const bytes = collectRefsBytes(node, byId, root);
+        if (bytes == null) return null;
+        const algo = mapChecksumAlgo(node.parameter_config?.algorithm || node.parameter_config?.algo);
+        return (formatToHex(calculateChecksum(algo, bytes), node.byte_length).match(/.{1,2}/g) || [])
+            .map(p => parseInt(p, 16));
+    }
+    const hexVal = String(node.hex_value || node.parameter_config?.hex || '').replace(/\s/g, '');
+    if (hexVal && /^[\dA-Fa-f]+$/.test(hexVal)) {
+        return (hexVal.match(/.{1,2}/g) || []).map(p => parseInt(p, 16));
+    }
+    return null;
+};
+
+// collectRefsBytes: 引用目标逐个取可确定字节（悬空/任一不可确定 → null）。
+const collectRefsBytes = (owner, byId, root) => {
+    const refs = owner?.parameter_config?.refs;
+    if (!Array.isArray(refs) || refs.length === 0 || !root) return null;
+    const out = [];
+    for (const refId of refs) {
+        const target = findNode(root, refId);
+        if (!target) return null;
+        const b = collectDeterministicBytes(target, byId, root);
+        if (b == null) return null;
+        out.push(...b);
+    }
+    return out;
+};
+
+const withComputedValue = (item, value) => ({
+    ...item,
+    parameter_config: { ...item.parameter_config, computedValue: value }
+});
+
+// 全泳道扫描注入（人工验证反馈 2 起为严格口径）：length → 设计期 Σ 回显（十进
+// 制 `${sigma}B`，长度是"数量"不是字节内容，hex `04` 会被读成字节值；卡片宽度/
+// 页脚另由 byte_length 与偏移标尺承担）；checksum → refs 全可确定时按算法算出
+// 设计期真值直填（mapChecksumAlgo 缺省 CRC_16_MODBUS，与编码器同源），否则不
+// 注入（维持等量 ??）。无 root 的纯函数直调（既有单测）长度仍走 computeRefsSigma。
 export const injectRefsSigma = (lanes, byId, root) => (lanes || []).map(lane => ({
     ...lane,
     items: (lane.items || []).map(item => {
-        if (item?.type !== 'length') return item;
-        const sigma = computeRefsSigma(item, byId, root);
-        if (sigma == null) return item;
-        return {
-            ...item,
-            parameter_config: {
-                ...item.parameter_config,
-                computedValue: `${sigma}B`
-            }
-        };
+        if (item?.type === 'length') {
+            const sigma = root ? strictSigma(item, byId, root) : computeRefsSigma(item, byId, root);
+            if (sigma == null) return item;
+            return withComputedValue(item, `${sigma}B`);
+        }
+        if (item?.type === 'checksum') {
+            const bytes = collectRefsBytes(item, byId, root);
+            if (bytes == null) return item;
+            const algo = mapChecksumAlgo(item.parameter_config?.algorithm || item.parameter_config?.algo);
+            return withComputedValue(item,
+                formatToHex(calculateChecksum(algo, bytes), item.byte_length));
+        }
+        return item;
     })
 }));
 
@@ -381,15 +470,22 @@ export const injectRefsSigma = (lanes, byId, root) => (lanes || []).map(lane => 
 // length/checksum/slot 的 hex_value '00' 是建块默认占位、非真值（Block 卡面也
 // 不走 hex 分支）→ 一律按 byte_length 出等量 ??；空容器拼不出内容 → 不注入
 // （Block 落尺寸分支显 0B）。递归嵌套、纯函数（仅命中容器时复制副本）。
-const nodeContent = (node) => {
+// byId/root 可选（人工验证反馈 2）：给出时 length/checksum/slot 子块先走严格
+// 可确定性（真值字节直出），不可确定/未给出 → 回落按字节等量 ??（既有
+// injectContainerContent(lanes) 单测不带 byId/root → 行为不变）。
+const nodeContent = (node, byId, root) => {
     const kids = node.children || [];
     const isContainer = isNestable(node.type) || kids.length > 0;
     if (isContainer) {
         if (kids.length === 0) return null;
-        const parts = kids.map(nodeContent).filter(p => p != null);
+        const parts = kids.map(k => nodeContent(k, byId, root)).filter(p => p != null);
         return parts.length ? parts.join(' ') : null;
     }
     if (node.type === 'length' || node.type === 'checksum' || node.type === 'slot') {
+        if (byId && root) {
+            const bytes = collectDeterministicBytes(node, byId, root);
+            if (bytes != null) return bytesToHex(bytes);
+        }
         return formatUnknown(node.byte_length);
     }
     const hexVal = String(node.hex_value || node.parameter_config?.hex || '').replace(/\s/g, '');
@@ -399,13 +495,13 @@ const nodeContent = (node) => {
     return formatUnknown(node.byte_length);
 };
 
-export const injectContainerContent = (lanes) => (lanes || []).map(lane => ({
+export const injectContainerContent = (lanes, byId, root) => (lanes || []).map(lane => ({
     ...lane,
     items: (lane.items || []).map(item => {
         if (!item) return item;
         const kids = item.children || [];
         if (!(isNestable(item.type) || kids.length > 0)) return item;
-        const content = nodeContent(item);
+        const content = nodeContent(item, byId, root);
         if (content == null) return item;
         return {
             ...item,

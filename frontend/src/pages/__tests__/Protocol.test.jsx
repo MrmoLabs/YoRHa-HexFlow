@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor, act, within } from '@testing-librar
 import Protocol from '../Protocol';
 import { api } from '../../api';
 import { triggerBlobDownload } from '../../utils/download';
+import { ChecksumAlgo, calculateChecksum, formatToHex } from '../../utils/formula';
 
 vi.mock('../../api', () => ({
     api: {
@@ -465,8 +466,9 @@ describe('Protocol Page', () => {
     });
 
     // A4 设计期 Σ 回显：仅 length 卡注入 computedValue（宽度=卡 byte_length）；
-    // checksum 设计期无真值不注入、悬空 ref 不注入。
-    it('A4 Σ 回显：length 卡 refs 尺寸和注入画布，checksum/悬空不注入', () => {
+    // 人工验证反馈 2（严格口径）：checksum refs 全可确定 → 设计期真值注入
+    // （name 追加值）；悬空 ref 不注入（维持等量 ??）。
+    it('A4 Σ 回显：length 卡 refs 尺寸和注入画布，确定 checksum 注入真值、悬空不注入', () => {
         render(
             <ProtocolHarness
                 initialProtocols={[{
@@ -507,7 +509,9 @@ describe('Protocol Page', () => {
         // Σ=2 → 十进制 `2B` 注入按钮文本（mock 露出 computedValue）
         expect(screen.getByRole('button', { name: '长度 2B' })).toBeDefined();
         // checksum 不注入 → accessible name 仅 label
-        expect(screen.getByRole('button', { name: '校验' })).toBeDefined();
+        // 确定 checksum 注入真值：缺省 CRC_16_MODBUS（与编码器同源）→ name 追加值
+        const want = formatToHex(calculateChecksum(ChecksumAlgo.CRC_16_MODBUS, [0xDE, 0xAD]), 1);
+        expect(screen.getByRole('button', { name: `校验 ${want}` })).toBeDefined();
         // 悬空 ref → size null → 不注入
         expect(screen.getByRole('button', { name: '长度悬空' })).toBeDefined();
     });

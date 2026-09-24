@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import Canvas from '../components/editor/Canvas';
+import NieRModal from '../components/ui/NieRModal';
 import { api } from '../api';
-import { mergeProtocolInstruction, buildLanes, getTotalBytes, countSlots } from '../utils/blockMerge';
+import { mergeProtocolInstruction, buildLanes, getTotalBytes, countSlots, normalizeInstructionBlocks } from '../utils/blockMerge';
 import { InstructionEncoder } from '../utils/InstructionEncoder';
 import { toFrameBlocks } from '../utils/toFrameBlocks';
 import { triggerBlobDownload } from '../utils/download';
@@ -19,7 +20,11 @@ const toServer = (binding) => ({
     instruction_id: binding.instructionId || '',
     label: binding.label || '',
     // B2: 组内稠密位次出线（本地缺省按 0，服务端列默认 0 对齐）
-    slot_order: binding.slotOrder ?? 0
+    slot_order: binding.slotOrder ?? 0,
+    // 批次一 (D1 一行两用): 显式槽 id（null=按位次）/ 指令默认封装星标 / 优先级
+    slot_id: binding.slotId || null,
+    is_default: Boolean(binding.isDefault),
+    priority: binding.priority ?? 0
 });
 
 const toLocal = (row) => ({
@@ -27,7 +32,10 @@ const toLocal = (row) => ({
     label: row.label,
     protocolId: row.protocol_id,
     instructionId: row.instruction_id,
-    slotOrder: row.slot_order
+    slotOrder: row.slot_order,
+    slotId: row.slot_id ?? null,
+    isDefault: Boolean(row.is_default),
+    priority: row.priority ?? 0
 });
 
 const syncErrorText = (prefix, err) => `${prefix}：${err?.message || '后端不可用'}`;
@@ -41,6 +49,8 @@ export default function Orchestration({ protocols, instructions }) {
     // C1 封装试发：发送中闸 + 回显（SENT: hex / SEND FAILED: detail 含 409）
     const [isSending, setIsSending] = useState(false);
     const [sendMsg, setSendMsg] = useState('');
+    // 人工验证反馈 1: 星标设默认须经点击确认环节 → 待确认的绑定 id（null = 无）
+    const [starConfirmId, setStarConfirmId] = useState(null);
     const [loaded, setLoaded] = useState(false);
     const [loadFailed, setLoadFailed] = useState(false);
     const [syncMsg, setSyncMsg] = useState('');
@@ -183,6 +193,41 @@ export default function Orchestration({ protocols, instructions }) {
         changed.forEach(b => putBinding(toServer(b)));
     };
 
+    // 批次一 (D1 一行两用): 星标 = 指令默认封装绑定（is_default 出线，加工页
+    // wrap 状态机读它）。服务端 PUT 同事务清同指令旧默认（部分唯一索引兜底）
+    // → 本地同步清星、被清行不再回写（DB 已是 0）。
+    // 人工验证反馈 1: 设默认 = 改变绑定关系语义 → 点击先开确认弹窗（确认才
+    // 落库）；取消默认是低风险逆操作 → 直执行不弹。
+    const handleToggleDefault = (e, id) => {
+        e.stopPropagation();
+        const target = bindings.find(b => b.id === id);
+        if (!target) return;
+        if (!target.isDefault) {
+            setStarConfirmId(id);
+            return;
+        }
+        applyStarConfirm(id);
+    };
+
+    // 确认弹窗「确认」回调：执行星标翻转（设默认/取消默认同一落库路径）。
+    const applyStarConfirm = (id) => {
+        setStarConfirmId(null);
+        const target = bindings.find(b => b.id === id);
+        if (!target) return;
+        const makeDefault = !target.isDefault;
+        const next = bindings.map(b => {
+            if (b.id === id) return { ...b, isDefault: makeDefault };
+            if (makeDefault && b.isDefault && b.instructionId === target.instructionId) {
+                return { ...b, isDefault: false };
+            }
+            return b;
+        });
+        setBindings(next);
+        if (loadFailed) return;
+        const starred = next.find(b => b.id === id);
+        putBinding(toServer(starred));
+    };
+
     // B3 洞位下拉：组内换位（目标位次钳在 0..组内余数）→ 稠密重编号 → 回写变化行
     const handleSlotOrderChange = (targetIndex) => {
         if (!currentBinding) return;
@@ -203,21 +248,37 @@ export default function Orchestration({ protocols, instructions }) {
         });
     };
 
-    // C1 封装试发：合并树走前端 InstructionEncoder 编译（与指令页同链路：
-    // getInitialValues → resolveDependencies → encodeInstruction）→ POST /dispatch。
-    // instruction_name 用当前绑定指令名；409/失败 detail 透出在 sendMsg。
+    // C1 封装试发（批次一 D4 改线）：逐指令前端编码内核 hex（normalizeInstructionBlocks
+    // → getInitialValues → resolveDependencies → encodeInstruction，与加工页同链路）
+    // → POST /compile/wrapped（后端唯一封装入口，洞位分配/length·checksum 重算）
+    // → POST /dispatch 发封装后帧。instruction_name 用当前绑定指令名；
+    // 409/失败 detail 透出在 sendMsg；warnings（洞位不足/空洞）随 SENT 回显。
     const handleTrialSend = async () => {
         if (!mergedBlocks.length || isSending) return;
         setIsSending(true);
         setSendMsg('');
         try {
-            const source = { blocks: mergedBlocks };
-            const inputs = InstructionEncoder.getInitialValues(source);
-            const computed = InstructionEncoder.resolveDependencies(source, inputs);
-            const { hexString } = InstructionEncoder.encodeInstruction(source, inputs, computed);
+            const group = groupBindings
+                .map(b => ({ binding: b, instruction: instructions.find(i => i.id === b.instructionId) }))
+                .filter(g => g.instruction);
+            const payloads = group.map(({ instruction }) => {
+                const source = { blocks: normalizeInstructionBlocks(instruction) };
+                const inputs = InstructionEncoder.getInitialValues(source);
+                const computed = InstructionEncoder.resolveDependencies(source, inputs);
+                const { hexString } = InstructionEncoder.encodeInstruction(source, inputs, computed);
+                return hexString.replace(/\s/g, '');
+            });
+            const slotIds = group.map(({ binding }) => binding.slotId || null);
+            const result = await api.compileWrapped({
+                protocolId: currentBinding.protocolId,
+                payloads,
+                slotIds,
+                startOrder: 0
+            });
             const instructionName = selectedInstruction?.label || selectedInstruction?.name || null;
-            await api.dispatchPayload(hexString, instructionName);
-            setSendMsg(`SENT: ${hexString}`);
+            await api.dispatchPayload(result.hex_string, instructionName);
+            const warnings = result.warnings?.length ? ` · ${result.warnings.join(' · ')}` : '';
+            setSendMsg(`SENT: ${result.hex_string}${warnings}`);
         } catch (err) {
             setSendMsg(`SEND FAILED: ${err?.message || 'UNKNOWN'}`);
         } finally {
@@ -337,7 +398,21 @@ export default function Orchestration({ protocols, instructions }) {
                             className={`p-3 border-b border-nier-light/10 cursor-pointer hover:bg-white/5 flex justify-between group ${b.id === activeBindingId ? 'bg-nier-light/10 text-white font-bold' : 'text-nier-light/70'}`}
                         >
                             <div className="truncate text-xs">{b.label}</div>
-                            <button onClick={(e) => handleDeleteBinding(e, b.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-400">×</button>
+                            <div className="flex items-center gap-1 shrink-0">
+                                <button onClick={(e) => handleDeleteBinding(e, b.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-400">×</button>
+                                {/* 批次一 (D1): 星标 = 指令默认封装绑定（is_default）——放删除之后 */}
+                                <button
+                                    type="button"
+                                    onClick={(e) => handleToggleDefault(e, b.id)}
+                                    title={b.isDefault ? '取消默认封装 (UNSTAR)' : '设为指令默认封装 (STAR)'}
+                                    aria-pressed={Boolean(b.isDefault)}
+                                    className={b.isDefault
+                                        ? 'text-yellow-400 leading-none'
+                                        : 'opacity-0 group-hover:opacity-100 text-nier-light/50 hover:text-yellow-400 leading-none'}
+                                >
+                                    {b.isDefault ? '★' : '☆'}
+                                </button>
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -497,6 +572,16 @@ export default function Orchestration({ protocols, instructions }) {
                     </div>
                 )}
             </aside>
+
+            {/* 人工验证反馈 1: 星标设默认确认环节（仅设默认弹；取消默认直执行） */}
+            {starConfirmId && (
+                <NieRModal
+                    isOpen={Boolean(starConfirmId)}
+                    message={`确认将「${bindings.find(b => b.id === starConfirmId)?.label || ''}」设为该指令的默认封装绑定？\n\n· 加工页封装发送将使用此绑定的协议外壳\n· 同指令其他绑定的默认标记将被清除（服务端同事务）`}
+                    onConfirm={() => applyStarConfirm(starConfirmId)}
+                    onCancel={() => setStarConfirmId(null)}
+                />
+            )}
         </div>
     );
 }

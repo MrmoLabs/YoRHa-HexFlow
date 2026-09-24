@@ -39,7 +39,7 @@ const toggleButtonClass = (on) => (
         : 'border-nier-light/20 text-nier-light/50 hover:border-nier-light/60 hover:text-nier-light'
 );
 
-export default function TransactionPanel({ instruction, payload }) {
+export default function TransactionPanel({ instruction, payload, wrap = null }) {
     const instructionId = instruction?.id || null;
     const [spec, setSpec] = useState(defaultSpec());
     const [rangesText, setRangesText] = useState('');
@@ -134,6 +134,8 @@ export default function TransactionPanel({ instruction, payload }) {
                 instruction_id: instructionId,
                 // 规格解析：本地已改（脏）→ 内联；干净 → 让后端按 instruction_id 解析
                 response_spec: specDirty ? spec : null,
+                // 批次一 (D4-A): 开关联动 —— 封装开 → 内核载荷 + wrap 由后端套壳
+                ...(wrap ? { wrap } : {}),
                 timeout_ms: toIntOr(settings.timeoutMs, 500),
                 retries: toIntOr(settings.retries, 2),
                 interval_ms: toIntOr(settings.intervalMs, 50),
@@ -166,6 +168,13 @@ export default function TransactionPanel({ instruction, payload }) {
                     {specOpen ? 'SPEC ▾' : 'SPEC ▸'}{specDirty ? ' *' : ''}
                 </button>
             </div>
+
+            {/* 批次一 (D4-A): 封装联动指示 —— wrap 开时事务发送同带协议外壳 */}
+            {wrap && (
+                <div className="text-[9px] font-mono text-nier-light/40 uppercase tracking-widest">
+                    WRAP ● {wrap.protocol_id} · {wrap.slot_id || `SLOT ORDER ${wrap.slot_order ?? 0}`}
+                </div>
+            )}
 
             {/* 事务参数：超时 / 重发 / 间隔 + 广播开关 */}
             <div className="grid grid-cols-3 gap-2">

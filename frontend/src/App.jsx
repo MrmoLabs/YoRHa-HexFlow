@@ -78,7 +78,7 @@ function Layout() {
             case 'instruction':
                 return <Instruction instructions={instructions} setInstructions={setInstructions} onWebUpdate={setInstructions} reloadInstructions={loadInstructions} />;
             case 'processing':
-                return <InstructionProcessor instructions={instructions} setInstructions={setInstructions} reloadInstructions={loadInstructions} />;
+                return <InstructionProcessor instructions={instructions} setInstructions={setInstructions} reloadInstructions={loadInstructions} protocols={protocols} />;
             case 'orchestration':
                 return <Orchestration protocols={protocols} instructions={instructions} />;
             case 'terminal':

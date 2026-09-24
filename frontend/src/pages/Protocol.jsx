@@ -146,7 +146,9 @@ export default function Protocol({ protocols, setProtocols }) {
     // ② 第三参 root = currentProtocol：computeRefsSigma 经 findNode 取目标 type 判槽。
     const displayLanes = useMemo(
         () => injectContainerContent(
-            injectRefsSigma(currentLanes, protocolOffsets.byId, currentProtocol)
+            injectRefsSigma(currentLanes, protocolOffsets.byId, currentProtocol),
+            protocolOffsets.byId,
+            currentProtocol
         ),
         [currentLanes, protocolOffsets, currentProtocol]
     );

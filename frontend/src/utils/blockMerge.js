@@ -1,7 +1,9 @@
 // Pure merge/lane helpers for the Orchestration page.
 // Extracted verbatim from pages/Orchestration.jsx (logic unchanged).
 
-const normalizeInstructionBlocks = (instruction) => {
+// 批次一: 编排页试发改线复用 —— 逐指令编码内核 hex（→ compileWrapped）走的
+// 就是合并注入同一归一化口径（blocks 优先 / fields 建树 / sequence 排序）。
+export const normalizeInstructionBlocks = (instruction) => {
     const blocks = instruction?.blocks;
     if (blocks?.length) return blocks;
 

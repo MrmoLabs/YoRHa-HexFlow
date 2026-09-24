@@ -119,6 +119,14 @@ class ProtocolBinding(Base):
     label = Column(String(128), nullable=False, default="新绑定 (NEW)")
     slot_order = Column(Integer, nullable=False, default=0)  # 插槽序：侧栏列表排序键
 
+    # 批次一 1a（DESIGN_Decisions D1-A）：一行两用 —— 填槽关系（+显式 slot_id）
+    # 与「指令默认封装协议」（is_default，每指令至多一行）。存量库缺列由
+    # database.ensure_binding_columns 启动自愈（create_all 不补列，同批次五先例）；
+    # 两个部分唯一索引（默认唯一 / 显式槽唯一）在 ensure 内 CREATE IF NOT EXISTS。
+    slot_id = Column(String(36), nullable=True)  # 显式目标槽节点 id；NULL = 按 slot_order 稠密位次
+    is_default = Column(Integer, nullable=False, default=0)  # 1 = 该指令的默认封装协议
+    priority = Column(Integer, nullable=False, default=0)  # 多候选择序（大者先，预留）
+
 
 # 7. Transport Settings（P1: 连接持久化 — 单行表，id 恒为 "current"）
 class TransportSetting(Base):

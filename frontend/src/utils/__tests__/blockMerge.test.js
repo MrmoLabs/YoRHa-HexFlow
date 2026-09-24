@@ -379,3 +379,38 @@ describe('getTotalBytes slot 归零（发射层同口径）', () => {
         ])).toBe(2);
     });
 });
+
+// 批次一 (D4-A) 双端共享向量：主向量 FA FA / 02 / 01 02 / ED —— FE merge+encode 与
+// 后端 build_wrapped 钉同一 pretty 字面量。三处同值：本文件 + backend/tests/
+// test_frame_builder.py + test_wrap_api.py，改一必改三。
+describe('共享向量 FA FA 02 01 02 ED（FE merge+encode · 与后端 build_wrapped 同字节）', () => {
+    const vectorProtocol = {
+        id: 'p1', label: '向量协议', type: 'container',
+        children: [
+            { id: 'h', label: 'h', type: 'fixed', byte_length: 2, hex_value: 'FA FA', children: [] },
+            { id: 'l', label: 'l', type: 'length', byte_length: 1, hex_value: '00',
+                parameter_config: { type: 'length', refs: ['s'] }, children: [] },
+            { id: 's', label: 's', type: 'slot', byte_length: 0, children: [] },
+            { id: 't', label: 't', type: 'fixed', byte_length: 1, hex_value: 'ED', children: [] }
+        ]
+    };
+    // FE 侧字段形状：HEX_RAW + parameter_config.hex（编码器直出固定 hex）
+    const vectorInstruction = {
+        id: 'i1', name: '指令',
+        fields: [
+            { id: 'f1', parent_id: null, sequence: 0, name: '载荷', byte_length: 2,
+                op_code: 'HEX_RAW', parameter_config: { hex: '0102' } }
+        ]
+    };
+
+    it('merge + encode 输出与后端 build_wrapped 同字节序列（length refs 改写重算）', () => {
+        const merged = mergeProtocolInstruction(vectorProtocol, vectorInstruction);
+        const source = { blocks: merged };
+        const inputs = InstructionEncoder.getInitialValues(source);
+        const computed = InstructionEncoder.resolveDependencies(source, inputs);
+        const { hexString } = InstructionEncoder.encodeInstruction(source, inputs, computed);
+        // encoder 直出 pretty hex（match(/.{1,2}/g).join(' ') 口径）
+        expect(hexString).toBe('FA FA 02 01 02 ED');
+        expect(hexString.replace(/\s/g, '')).toBe('FAFA020102ED');
+    });
+});

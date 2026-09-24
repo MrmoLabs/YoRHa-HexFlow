@@ -21,6 +21,7 @@ vi.mock('../../api', () => ({
         updateBinding: vi.fn(),
         deleteBinding: vi.fn(),
         exportBinaryFromBlocks: vi.fn(),
+        compileWrapped: vi.fn(),
         dispatchPayload: vi.fn()
     }
 }));
@@ -31,6 +32,7 @@ const mountApis = () => {
     api.updateBinding.mockImplementation((id, payload) => Promise.resolve({ ...payload, id }));
     api.deleteBinding.mockResolvedValue({ status: 'deleted' });
     api.exportBinaryFromBlocks.mockResolvedValue(new Blob(['']));
+    api.compileWrapped.mockResolvedValue({ hex_string: 'AA 05 01', total_length: 3, warnings: [] });
     api.dispatchPayload.mockResolvedValue({ status: 'ok', hex_string: 'AA 05' });
 };
 
@@ -456,9 +458,9 @@ describe('Orchestration Page', () => {
         expect(api.dispatchPayload).not.toHaveBeenCalled();
     });
 
-    // C1 封装试发闭环：合并树前端编译（getInitialValues→resolveDependencies→
-    // encodeInstruction）→ POST /dispatch；失败（含 409 detail）透出。
-    it('C1 封装试发：编译合并树 → dispatchPayload，SENT 回显 / 失败透出', async () => {
+    // C1 封装试发闭环（批次一 D4 改线）：逐指令前端编码内核 → POST /compile/wrapped
+    //（后端唯一封装入口）→ POST /dispatch 发封装帧；失败（含 409 detail）透出。
+    it('C1 封装试发：编码内核 → compileWrapped → dispatchPayload，SENT 回显 / 失败透出', async () => {
         render(
             <Orchestration
                 protocols={[{
@@ -480,12 +482,76 @@ describe('Orchestration Page', () => {
         await awaitDefaultBinding();
 
         fireEvent.click(screen.getByRole('button', { name: /封装试发/ }));
+        // 逐指令编码内核（byte_length 1 无 op → '00'）→ compileWrapped 走后端封装
+        await waitFor(() => expect(api.compileWrapped).toHaveBeenCalledTimes(1));
+        expect(api.compileWrapped).toHaveBeenCalledWith({
+            protocolId: 'proto-1',
+            payloads: ['00'],
+            slotIds: [null],
+            startOrder: 0
+        });
         await waitFor(() => expect(api.dispatchPayload).toHaveBeenCalledTimes(1));
-        expect(api.dispatchPayload).toHaveBeenCalledWith(expect.stringContaining('AA'), '示例指令');
+        expect(api.dispatchPayload).toHaveBeenCalledWith('AA 05 01', '示例指令');
         expect(await screen.findByText(/^SENT:/)).toBeDefined();
 
         api.dispatchPayload.mockRejectedValueOnce(new Error('409: dispatch in flight'));
         fireEvent.click(screen.getByRole('button', { name: /封装试发/ }));
         expect(await screen.findByText(/SEND FAILED: 409/)).toBeDefined();
+    });
+
+    // 批次一 (D1 一行两用): 星标 = 指令默认封装绑定 —— 设默认须点击确认（人工
+    // 验证反馈 1：改变绑定关系语义的操作要有确认环节），取消默认直执行；
+    // 确认后 PUT is_default、服务端同事务清旧默认 → 本地同步清星；三字段出线。
+    it('D1 星标：设默认弹确认（取消不 PUT、确认才 PUT）并本地同指令清旧星，取消星直执行', async () => {
+        api.getBindings.mockResolvedValue([
+            { id: 'srv-1', label: '绑定甲', protocol_id: 'proto-1', instruction_id: 'inst-1',
+                slot_order: 0, slot_id: 's1', is_default: true, priority: 0 },
+            { id: 'srv-2', label: '绑定乙', protocol_id: 'proto-1', instruction_id: 'inst-1',
+                slot_order: 1, slot_id: null, is_default: false, priority: 0 }
+        ]);
+        render(
+            <Orchestration
+                protocols={[{ id: 'proto-1', label: '协议A', children: [] }]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
+        );
+
+        await screen.findByText('绑定乙');
+        const starOf = (label) => screen.getByText(label).parentElement
+            .querySelector('[title*="默认封装"]');
+
+        // 甲已默认 → ★ 常显；乙未默认 → ☆
+        expect(starOf('绑定甲').textContent).toBe('★');
+        expect(starOf('绑定乙').textContent).toBe('☆');
+
+        // 点乙星（设默认）→ 只弹确认框，未 PUT、本地未变
+        fireEvent.click(starOf('绑定乙'));
+        expect(await screen.findByText(/默认封装绑定/)).toBeDefined();
+        expect(api.updateBinding).not.toHaveBeenCalled();
+        expect(starOf('绑定乙').textContent).toBe('☆');
+
+        // 取消 → 关弹窗，仍未 PUT
+        fireEvent.click(screen.getByRole('button', { name: /取消 \(CANCEL\)/ }));
+        await waitFor(() => expect(screen.queryByText(/默认封装绑定/)).toBeNull());
+        expect(api.updateBinding).not.toHaveBeenCalled();
+
+        // 再点星 → 确认才 PUT（三字段透传：is_default true / slot_id null / priority 0）
+        fireEvent.click(starOf('绑定乙'));
+        await screen.findByText(/默认封装绑定/);
+        fireEvent.click(screen.getByRole('button', { name: /确认 \(CONFIRM\)/ }));
+        await waitFor(() => expect(api.updateBinding).toHaveBeenCalledWith('srv-2', expect.objectContaining({
+            is_default: true, slot_id: null, priority: 0
+        })));
+        // 本地同指令清旧星（服务端同事务清，被清行不再回写 → 仅 1 次 PUT）
+        expect(starOf('绑定甲').textContent).toBe('☆');
+        expect(starOf('绑定乙').textContent).toBe('★');
+        expect(api.updateBinding).toHaveBeenCalledTimes(1);
+
+        // 取消星（低风险逆操作）→ 直执行，不弹确认
+        fireEvent.click(starOf('绑定乙'));
+        await waitFor(() => expect(api.updateBinding).toHaveBeenLastCalledWith(
+            'srv-2', expect.objectContaining({ is_default: false })
+        ));
+        expect(screen.queryByText(/默认封装绑定/)).toBeNull();
     });
 });

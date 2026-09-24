@@ -16,6 +16,7 @@ import {
 } from './instructions';
 import { getOperatorTemplates } from './operators';
 import { exportHexFile, exportBinaryFromBlocks } from './export';
+import { compileWrapped } from './compile';
 import { dispatchPayload, getDispatchHistory, clearDispatchHistory } from './dispatch';
 import { getTransportConfig, setTransportConfig, getTransportStatus } from './transport';
 import { getBindings, createBinding, updateBinding, deleteBinding } from './bindings';
@@ -54,6 +55,9 @@ export const api = {
     // Export (binary / hex file download)
     exportHexFile,
     exportBinaryFromBlocks,
+
+    // Compile（批次一 D4-A: 后端唯一封装入口 POST /compile/wrapped）
+    compileWrapped,
 
     // Dispatch / transport (loopback default; TCP/serial via /transport/config)
     dispatchPayload,

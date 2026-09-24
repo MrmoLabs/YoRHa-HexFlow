@@ -22,7 +22,13 @@ from backend.routers.logs import router as logs_router
 async def lifespan(app: FastAPI):
     # Create tables and run idempotent seeds in one place
     # (replaces the deprecated @router.on_event("startup") hooks).
-    from backend.db.database import Base, engine, SessionLocal, ensure_protocol_version_column
+    from backend.db.database import (
+        Base,
+        engine,
+        SessionLocal,
+        ensure_binding_columns,
+        ensure_protocol_version_column,
+    )
     from backend.db.seed import seed_sample_instructions, seed_sample_protocols
     from backend.routers.operator import seed_operator_templates
 
@@ -30,6 +36,8 @@ async def lifespan(app: FastAPI):
     # 批次五: create_all 不给既有表补列 → protocols 缺 version 列先自愈
     # （幂等；新库已带列则 no-op），种子/路由再进场。
     ensure_protocol_version_column(engine)
+    # 批次一 1a: protocol_bindings 三列 + 部分唯一索引自愈（同上口径）。
+    ensure_binding_columns(engine)
     db = SessionLocal()
     try:
         seed_operator_templates(db)
