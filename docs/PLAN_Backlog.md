@@ -33,7 +33,7 @@
 | P3 | B1 序列编排后端（新表 sequences / sequence_steps + 后台 Runner + 轮询状态 + 与手动发送互斥） | ✅（28c68e4，db 同步 9c84911） |
 | P4 | B2 序列编排前端（新菜单页「序列编排」，pageStatus 第 7 项，快捷键 F） | ✅（d33c319） |
 | P5 | D 通讯日志落库 + 导出 + 回放（新表 dispatch_logs，三路写入，CSV/JSON 导出，日志重发） | ✅（aa20589，db 同步 b635eac） |
-| CP1 | Core Pipeline 批次一：1a 绑定三列 DDL + 1b frame_builder + 1c 发送 wrap 接线 + 1d 文档（`DESIGN_CorePipeline.md` §7 首批） | 实现完成（2026-09-24），人工验证反馈 1（星标设默认确认）已并入，待复验 |
+| CP1 | Core Pipeline 批次一：1a 绑定三列 DDL + 1b frame_builder + 1c 发送 wrap 接线 + 1d 文档（`DESIGN_CorePipeline.md` §7 首批） | **已提交 ✅ `31bc367`（代码+文档）/ `da91228`（db 同步），2026-09-24**——反馈 1（星标确认，§8.8）与反馈 2（协议卡面直填，§8.9）均已并入验收 |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -871,7 +871,8 @@
 > 12 条拍板（2026-09-24 全 A）。进度（2026-09-24）：1a–1d 全部实现，红测先行、
 > 自动化验收全绿；**本批含 DDL**（`protocol_bindings` 三列 + 两个部分唯一索引，
 > 启动自愈 `ensure_binding_columns` 创建）→ yorha.db 沿 `8f1b171` 先例
-> **单独同步提交**。待人工验证 → 一批一提交。
+> **单独同步提交**。人工验证两轮通过（反馈 1/2 均并入，见上 blockquote 与 §8.9）
+> → **已提交 ✅ `31bc367` / db `da91228`（2026-09-24）。**
 
 - **1a 数据层（DDL）**：`models.py::ProtocolBinding` 仅新增 `slot_id`（显式
   目标槽）/ `is_default`（该指令默认封装协议）/ `priority`（多候选择序，预留）
