@@ -1115,7 +1115,8 @@
   （零后端改动回归）、`vite build` EXIT=0、yorha-ui 校验器触 9 文件 **0 违规**
   （含同触同清 `NieRDatePicker` 既有 4 处）、`generate-page-status.mjs` EXIT=0、
   schema 与 HEAD 比对 **SCHEMA_IDENTICAL**（28 对象，零 DDL）→ 无 db 提交。
-- 状态：**待人工验证 → 一批一提交。**
+- 状态：**2026-09-29 人工验证通过（四条 + 三轮反馈修复），一单提交 ✅
+  `c4e3480`（排除 yorha.db，零 DDL）。**
 
 ## 9. 保留勿动（非任务，勿清理）
 
