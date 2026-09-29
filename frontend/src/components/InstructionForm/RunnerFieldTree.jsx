@@ -5,7 +5,8 @@ import {
     classifyRunnerField,
     resolveFieldDisplay,
     collectSemanticItems,
-    getFieldEpoch
+    getFieldEpoch,
+    computeFieldInputLimits
 } from '../../config/runnerRenderRules';
 
 // Recursive renderer for the dynamic send form's field tree.
@@ -19,7 +20,9 @@ export default function RunnerFieldTree({
     inputs,
     computedValues,
     onFieldChange, // (fieldId, value) => void
-    onOpenDatePicker // (iso, callback) => void
+    onOpenDatePicker, // (iso, callback) => void
+    selectedFieldId = null,   // 第 4 批 #2：选中字段（字节流高亮联动）
+    onSelectField = null      // (fieldId) => void
 }) {
     return fields.map((field) => {
         const params = field.parameter_config || {};
@@ -28,12 +31,21 @@ export default function RunnerFieldTree({
         const { isCalculated, isTimeCumulative, isEditable, isEnum }
             = classifyRunnerField(field);
 
+        const isSelected = selectedFieldId === field.id;
         const subFields = field.fields || [];
 
         if (subFields.length > 0) {
             return (
                 <div key={field.id} className={`${depth > 0 ? 'ml-6' : ''}`}>
-                    <div className="border-l border-nier-light/10 pl-4 py-2 my-2 bg-nier-light/[0.02]">
+                    <div
+                        className={`border-l pl-4 py-2 my-2 bg-nier-light/[0.02] ${isSelected ? 'border-[#E58D28]' : 'border-nier-light/10'} ${onSelectField ? 'cursor-pointer hover:bg-nier-light/[0.05]' : ''}`}
+                        onClick={onSelectField ? (e) => {
+                            // stopPropagation：选中本组即止，不被外层容器覆盖（嵌套组）
+                            e.stopPropagation();
+                            onSelectField(field.id);
+                        } : undefined}
+                        title={onSelectField ? '点击选中整块 → 字节流高亮对应区间' : undefined}
+                    >
                         <div className="flex items-center gap-2 mb-2 opacity-60">
                             <div className="w-2 h-2 bg-nier-light/30"></div>
                             <span className="text-[10px] font-black uppercase tracking-widest text-nier-light">
@@ -47,6 +59,8 @@ export default function RunnerFieldTree({
                             computedValues={computedValues}
                             onFieldChange={onFieldChange}
                             onOpenDatePicker={onOpenDatePicker}
+                            selectedFieldId={selectedFieldId}
+                            onSelectField={onSelectField}
                         />
                     </div>
                 </div>
@@ -106,11 +120,24 @@ export default function RunnerFieldTree({
 
         // ReadOnly if time (input readOnly; click opens the picker) or static
         const readOnly = !isEditable || isTimeCumulative;
+        // 第 4 批 #4：定长限制（指令管理 byte_len 定死 → 截断/钳制 + 长度徽标）
+        const limits = computeFieldInputLimits(field);
+        // 第 4 批 #2：选中态导轨（amber 定位轨优先于 hover 轨，互斥分支防撞类）
+        const railCls = isSelected
+            ? 'border-[#E58D28]'
+            : `border-transparent ${readOnly && !isTimeCumulative ? '' : 'hover:border-nier-light/10 focus-within:border-nier-light/30'}`;
 
         return (
-            <div key={field.id} className={`${depth > 0 ? 'ml-6' : ''}`}>
-                {/* hover/focus rail only on enterable rows — static read-only rows stay dead */}
-                <div className={`group/field transition-all border-l-2 border-transparent ${readOnly && !isTimeCumulative ? '' : 'hover:border-nier-light/10 focus-within:border-nier-light/30'}`}>
+            <div
+                key={field.id}
+                className={`${depth > 0 ? 'ml-6' : ''}`}
+                onClick={(e) => {
+                    // 叶行点击在 SmartInput onSelect 后即止 —— 不冒泡到组容器，
+                    // 防止嵌套组内选中被外层组 id 覆盖成「整组高亮」
+                    e.stopPropagation();
+                }}
+            >
+                <div className={`group/field transition-all border-l-2 ${railCls}`}>
                     <SmartInput
                         label={field.name || field.label || 'PARAM'}
                         value={displayValue}
@@ -119,6 +146,12 @@ export default function RunnerFieldTree({
                         options={formattedOptions}
                         readOnly={readOnly}
                         onClick={isTimeCumulative ? handleTimeClick : undefined} // Trigger picker
+                        pickerMode={isTimeCumulative} // 第 4 批 #1：TIME 不标 READ_ONLY
+                        onSelect={onSelectField ? () => onSelectField(field.id) : undefined}
+                        maxLength={limits?.maxLength}
+                        min={limits?.min}
+                        max={limits?.max}
+                        byteLen={limits?.byteLen}
                         highlight={isCalculated || isTimeCumulative}
                         suffix={params.unit || (isTimeCumulative ? `${getFieldEpoch(params).getFullYear()}` : '')}
                         placeholder={placeholder}

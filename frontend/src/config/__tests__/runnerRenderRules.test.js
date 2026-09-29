@@ -6,7 +6,8 @@ import {
     formatEnumOptions,
     formatTimeDisplay,
     resolveFieldDisplay,
-    collectSemanticItems
+    collectSemanticItems,
+    computeFieldInputLimits
 } from '../runnerRenderRules';
 
 // C6 加工页参数渲染下沉：渲染规则抽为可测试配置后的回归锁。
@@ -292,5 +293,52 @@ describe('collectSemanticItems（A6 语义参数标签）', () => {
         expect(collectSemanticItems(leaf({ parameter_config: { factor: undefined } }))).toEqual([]);
         expect(collectSemanticItems(leaf({ parameter_config: { foo: 1 } }))).toEqual([]);
         expect(collectSemanticItems(leaf())).toEqual([]);
+    });
+});
+
+describe('computeFieldInputLimits（定长字段输入限制，第 4 批 #4）', () => {
+    it('可编辑 hex 通道：maxLength = 字节数×2 + 数值域 0..2^(8n)-1', () => {
+        expect(computeFieldInputLimits(leaf({ byte_len: 1 })))
+            .toEqual({ byteLen: 1, maxLength: 2, min: 0, max: 255 });
+        expect(computeFieldInputLimits(leaf({ byte_len: 4 })))
+            .toEqual({ byteLen: 4, maxLength: 8, min: 0, max: 4294967295 });
+    });
+
+    it('超大位宽封顶 MAX_SAFE_INTEGER（2^64-1 超出安全整数）', () => {
+        expect(computeFieldInputLimits(leaf({ byte_len: 8 })).max)
+            .toBe(Number.MAX_SAFE_INTEGER);
+    });
+
+    it('INT_SIGNED：有符号域（1B -128..127、4B -2^31..2^31-1）', () => {
+        expect(computeFieldInputLimits(leaf({ op_code: 'INT_SIGNED', byte_len: 1 })))
+            .toEqual({ byteLen: 1, maxLength: 2, min: -128, max: 127 });
+        expect(computeFieldInputLimits(leaf({ op_code: 'INT_SIGNED', byte_len: 4 })))
+            .toEqual({ byteLen: 4, maxLength: 8, min: -2147483648, max: 2147483647 });
+    });
+
+    it('SCALED_DECIMAL：按 factor/offset 反算输入域（factor=2 → 0..127）；factor=0 恒等 0 → 不设域', () => {
+        expect(computeFieldInputLimits(leaf({
+            op_code: 'SCALED_DECIMAL', byte_len: 1, parameter_config: { factor: 2 }
+        }))).toEqual({ byteLen: 1, maxLength: 2, min: 0, max: 127 });
+        expect(computeFieldInputLimits(leaf({
+            op_code: 'SCALED_DECIMAL', byte_len: 1, parameter_config: { factor: 0, offset: 10 }
+        }))).toEqual({ byteLen: 1, maxLength: 2 });
+    });
+
+    it('非 hex 通道（如 type boolean）：有数值域、无 maxLength', () => {
+        expect(computeFieldInputLimits(leaf({
+            byte_len: 1, parameter_config: { type: 'boolean' }
+        }))).toEqual({ byteLen: 1, min: 0, max: 255 });
+    });
+
+    it('不设限：string/decimal/float 类型、枚举、只读/计算/时间字段、无 byte_len', () => {
+        expect(computeFieldInputLimits(leaf({ parameter_config: { type: 'string' } }))).toBeNull();
+        expect(computeFieldInputLimits(leaf({ parameter_config: { type: 'decimal' } }))).toBeNull();
+        expect(computeFieldInputLimits(leaf({ parameter_config: { type: 'float' } }))).toBeNull();
+        expect(computeFieldInputLimits(leaf({ parameter_config: { options: ['A', 'B'] } }))).toBeNull();
+        expect(computeFieldInputLimits(leaf({ op_code: 'FIXED', parameter_config: { hex: '01' } }))).toBeNull();
+        expect(computeFieldInputLimits(leaf({ op_code: 'LENGTH_CALC' }))).toBeNull();
+        expect(computeFieldInputLimits(leaf({ op_code: 'TIME_CUMULATIVE' }))).toBeNull();
+        expect(computeFieldInputLimits(leaf({ byte_len: undefined }))).toBeNull();
     });
 });

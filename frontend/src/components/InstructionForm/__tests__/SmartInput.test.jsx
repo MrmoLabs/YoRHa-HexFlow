@@ -88,3 +88,78 @@ describe('SmartInput 只读/可编辑区分度', () => {
         expect(screen.getByDisplayValue('1').readOnly).toBe(true);
     });
 });
+
+// 指令加工编辑反馈（第 4 批 #1/#4）：TIME 字段取值形态 + 定长输入限制。
+describe('SmartInput 第 4 批：TIME 取值形态 + 定长限制', () => {
+    it('#1 pickerMode：DOM 仍只读，但徽标 [TIME_PICKER]（非 [READ_ONLY]）、实线无斜纹、标签满亮', () => {
+        render(
+            <SmartInput
+                label="运行秒数" value="2026-01-01 00:00:00" readOnly pickerMode
+                type="text" onChange={() => {}}
+            />
+        );
+
+        const input = screen.getByDisplayValue('2026-01-01 00:00:00');
+        expect(input.readOnly).toBe(true); // 键入仍禁止（值走日期选择器）
+        expect(screen.getByText('[TIME_PICKER]')).toBeTruthy();
+        expect(screen.queryByText('[READ_ONLY]')).toBeNull();
+        expect(input.className).not.toContain('border-dashed');
+        expect(input.className).toContain('cursor-pointer');
+        expect(input.style.backgroundImage).toBe(''); // 无锁定斜纹
+        // 标签不降 40% 灰（可交互对象满亮）
+        expect(screen.getByText('运行秒数').className).not.toContain('/40');
+    });
+
+    it('#1 pickerMode：点击行触发 onSelect（字节定位联动），且不触发 onChange', () => {
+        const onSelect = vi.fn();
+        const onChange = vi.fn();
+        render(
+            <SmartInput
+                label="运行秒数" value="2026-01-01 00:00:00" readOnly pickerMode
+                type="text" onChange={onChange} onSelect={onSelect}
+            />
+        );
+
+        fireEvent.click(screen.getByText('[TIME_PICKER]'));
+        expect(onSelect).toHaveBeenCalledTimes(1);
+
+        fireEvent.change(screen.getByDisplayValue('2026-01-01 00:00:00'), { target: { value: '123' } });
+        expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('#4 hex maxLength：超长字符截断（缓冲与回调同步）+ 徽标 n/N BYTES', () => {
+        const onChange = vi.fn();
+        render(<SmartInput label="命令字" value="0" type="hex" maxLength={2} byteLen={1} onChange={onChange} />);
+
+        const input = screen.getByDisplayValue('0');
+        fireEvent.change(input, { target: { value: 'AABB' } });
+        expect(onChange).toHaveBeenCalledWith('AA');
+        expect(input.value).toBe('AA');
+        expect(screen.getByText('1/1 BYTES')).toBeTruthy();
+
+        // 未超限不改动
+        fireEvent.change(input, { target: { value: '0F' } });
+        expect(onChange).toHaveBeenLastCalledWith('0F');
+        expect(screen.getByText('1/1 BYTES')).toBeTruthy();
+    });
+
+    it('#4 number min/max：超界即时钳制（本地缓冲与回调同步）+ 徽标 [nB]', () => {
+        const onChange = vi.fn();
+        render(<SmartInput label="计数" value="5" type="number" min={0} max={255} byteLen={1} onChange={onChange} />);
+
+        const input = screen.getByDisplayValue('5');
+        fireEvent.change(input, { target: { value: '999' } });
+        expect(onChange).toHaveBeenCalledWith(255);
+        expect(input.value).toBe('255');
+        expect(screen.getByText('[1B]')).toBeTruthy();
+
+        fireEvent.change(input, { target: { value: '-3' } });
+        expect(onChange).toHaveBeenLastCalledWith(0);
+    });
+
+    it('#4 不误伤：无 byteLen 的可编辑 hex 徽标仍 [HEX]', () => {
+        render(<SmartInput label="自由位" value="AB" type="hex" onChange={() => {}} />);
+        expect(screen.getByText('[HEX]')).toBeTruthy();
+        expect(screen.queryByText(/BYTES/)).toBeNull();
+    });
+});

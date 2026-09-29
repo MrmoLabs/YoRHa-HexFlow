@@ -1055,6 +1055,68 @@
   （零 DDL）→ 无 db 提交。与 §8.10 第 2 轮合并，2026-09-29 人工验证通过后
   一单提交 ✅ `ce20122`（含 `duplicateNode` 纯函数 + 3 单测连删）。
 
+### 8.12 人工验证反馈：指令加工页编辑四条（TIME 徽标 / 字节高亮 / 右栏分区 / 定长限制）
+
+> 出处：2026-09-29 用户口述四条 + 三问确认（①「现在的编辑形式就行，我说的是
+> 页面对此字段错误地显示为 READ_ONLY」；②定长「字符数 + 数值范围都限」；
+> ③右栏「分区 + 释义 + 选中读数」）。**纯前端批次，零后端/编码改动。**
+
+- 需求与实现：
+  1. **TIME 字段误标 READ_ONLY**：`SmartInput` 增 `pickerMode` —— readOnly +
+     pickerMode 走满亮实线 lane（`pickerClasses` 实线边框、无锁定斜纹、标签 /
+     accent 条恢复满对比、cursor-pointer），徽标 `[TIME_PICKER]`（title 提示
+     点选日期），input 仍 DOM 只读（值只由日期选择器按 base_time 换算写入）；
+     `RunnerFieldTree` 按 `isTimeCumulative` 传入。
+  2. **点击字段 → 字节流高亮**：新 util `utils/byteHighlight.js` 纯函数 5 个
+     （`collectSubtreeIds` 叶/容器子树 id 集、`matchByteRanges` byteMap 过滤、
+     `buildHexSegments` 按区间切段 + selected 打标（零长段丢弃、空 map 整串
+     回落）、`formatByteRanges` 读数文案、`findFieldLabel` 字段名回查）。
+     `InstructionRunner` 消费此前丢弃的 `byteMap`（+ `selectedFieldId` 态，
+     换指令复位），BYTE_STREAM_OUTPUT 改逐字段 span 渲染，选中段反白
+     （`bg-[#dad4bb] text-[#4a4a4a]`）+ title `字段名 @0xNN`；字段行 / 整块
+     容器 onClick → 选中（amber 导轨 `border-[#E58D28]` 与 hover 轨互斥分支），
+     读数条 `SEL :: 字段名 · 0xNN-0xNN · NB`（未选中显点击提示）。
+     **人工验证期反馈修复（同批）**：嵌套组内点叶字段被冒泡升成整组（组容器
+     onClick 在叶 onSelect 之后触发、组 id 覆盖叶 id，读数落外层组）→ 叶行
+     wrapper 与组头 onClick 均 `stopPropagation`（选中即止）：叶精确到自身
+     字节，内组头选中本组子树不被外层组覆盖（组头点击 = 整块高亮口径保留）。
+  3. **右栏直观化**：`SectionTitle` 本地组件（en + 中文 + 用途释义）三分区 ——
+     BYTE STREAM 字节流预览（实时重算 / 点击定位）/ PROTOCOL WRAP 协议封装
+     （预览 · 发送 · 事务同参同字节）/ TRANSMIT 发送与导出（CTRL+ENT、.hex
+     落盘）；TransactionPanel / TransmissionLog 自带 `::` 标题不重复，读数条归
+     BYTE 分区。
+  4. **定长输入限制**：`computeFieldInputLimits`（runnerRenderRules 纯函数）——
+     只读/计算/时间/枚举/string/decimal/float/无 byte_len 不设限；hex 通道
+     `maxLength = byteLen×2`；数值域 0..2^(8n)-1（`1n<<` BigInt 精确、超 2^53
+     封顶 MAX_SAFE_INTEGER）、INT_SIGNED 两补码域、SCALED_DECIMAL 按
+     factor/offset 反算输入域（factor=0 恒 0 不设域、factor<0 不等式反向、
+     退化丢域）。`SmartInput` 接 `maxLength/min/max/byteLen` —— hex 字符截断 +
+     数值即时钳制（本地缓冲与回调同步），徽标「n/N BYTES」（hex，n =
+     ceil(已用字符/2)）/「[nB]」（非 hex 通道）；编码端 `InstructionEncoder`
+     口径不变。
+  - **人工验证期反馈（第二轮，同批）**：① BYTE_STREAM 同字段多字节段内连写
+    （`00000000`）与整帧 `XX XX` 格式不一致 → `buildHexSegments` 段内逐字节
+    空格分隔（回落段同步），高亮仍按整字段段反白；② 验收期测试首开日期选择器
+    暴露 `NieRDatePicker` 既有 hooks 违规 —— `if (!isOpen) return null` 先于
+    `useState`/`useEffect`，isOpen false→true 钩子数 0→2 跳变触发 React 内部
+    错误（`Expected static flag was missing`）→ 早退后置 + 红测锁定
+    （`NieRDatePicker.test.jsx`，首次开选择器的用例覆盖）；同触同清该文件
+    4 处既有校验器违规（`backdrop-blur-[2px]` 改实底 `bg-nier-dark/80`、
+    `p-6`→`p-3`、`px-8`→`px-5`、`shadow-md`/外层 `shadow-[...]` 移除）。
+- 测试（红→绿，三轮）：首轮红 4 文件 **19 红**（13 收集 + `byteHighlight.test.js`
+  6 因模块未建整体红；另 1「不误伤 [HEX]」守护用例按设计即绿）→ 绿 4 文件
+  59/59；二轮（嵌套组误升整组反馈）红 **2**（fixture inst-4 两层嵌套：叶点选
+  落外层组 / 内组头被外层覆盖）→ 绿 11/11；三轮（XX XX 格式 + picker hooks
+  反馈）红 **4**（3 格式断言 + 1 React 内部错误锁定）→ 绿。新增 **23 测**：
+  byteHighlight 6 / computeFieldInputLimits 6 / SmartInput 5 /
+  InstructionProcessor 集成 5（inst-3 心跳指令 INPUT 1B + TIME 4B、inst-4
+  嵌套指令 头组>内组>叶 + 根级叶）/ NieRDatePicker 1。
+- 验收：FE **580/580（42 文件）** EXIT=0（基线 557 + 23）、后端 **296/296** OK
+  （零后端改动回归）、`vite build` EXIT=0、yorha-ui 校验器触 9 文件 **0 违规**
+  （含同触同清 `NieRDatePicker` 既有 4 处）、`generate-page-status.mjs` EXIT=0、
+  schema 与 HEAD 比对 **SCHEMA_IDENTICAL**（28 对象，零 DDL）→ 无 db 提交。
+- 状态：**待人工验证 → 一批一提交。**
+
 ## 9. 保留勿动（非任务，勿清理）
 
 - `backend/core/processor.py` / `graph.py` 未接线（Phase-2 遗留，保留勿删，

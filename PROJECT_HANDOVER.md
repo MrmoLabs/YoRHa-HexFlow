@@ -422,6 +422,37 @@
       触 10 文件 0 违规、PAGE_STATUS EXIT=0、schema SCHEMA_IDENTICAL（零 DDL）。
       ✅ 已随 `ce20122` 提交（与 #21 合并，2026-09-29；`duplicateNode` 连删同批）。
 
+23. **指令加工页编辑四条：TIME 徽标 / 字节高亮 / 右栏分区 / 定长限制**（2026-09-29
+    口述 + 三问确认后实施，全部红→绿，明细见 `docs/PLAN_Backlog.md` §8.12）：
+    - #1 TIME 字段不再误标 READ_ONLY：`SmartInput` 增 `pickerMode` 满亮实线
+      lane + `[TIME_PICKER]` 徽标（点选日期取值形态不变，input 仍 DOM 只读）。
+    - #2 点击字段（含整块容器）→ BYTE_STREAM_OUTPUT 高亮：新 `utils/byteHighlight.js`
+      纯函数 5 个 + `byteMap` 接线（此前在 InstructionRunner 丢弃），分段 span
+      反白 + title `字段名 @0xNN` + 「SEL :: 字段名 · 0xNN-0xNN · NB」读数条，
+      换指令复位。人工验证反馈修复：嵌套组内点叶字段被冒泡升成整组（组容器
+      onClick 覆盖叶 id）→ 叶行/组头 `stopPropagation` 选中即止，叶精确到
+      自身字节、内组头不被外层组覆盖（组头点击 = 整块高亮保留）。
+    - #3 右栏三分区标题 + 中文用途释义（BYTE STREAM 字节流预览 / PROTOCOL WRAP
+      协议封装 / TRANSMIT 发送与导出）+ 读数条；Transaction/Log 自带 :: 标题
+      不重复。
+    - #4 定长输入限制 `computeFieldInputLimits`：hex 截断 byte_len×2 字符 +
+      「n/N BYTES」徽标，数值按 0..2^(8n)-1 即时钳制（INT_SIGNED 两补码域、
+      SCALED_DECIMAL 按 factor/offset 反算、超 2^53 封顶 MAX_SAFE_INTEGER）；
+      编码端口径不变。
+    - 验收期反馈两轮（同批）：① 同字段多字节段内连写 `00000000` →
+      `buildHexSegments` 段内逐字节 `XX XX` 空格分隔（与整帧格式一致，高亮
+      仍按整字段段）；② 测试首开日期选择器暴露 `NieRDatePicker` 既有 hooks
+      违规（`if (!isOpen) return null` 先于 hooks，isOpen 翻转钩子数 0→2 跳变
+      → React 内部错误 static flag）→ 早退后置 + `NieRDatePicker.test.jsx`
+      红测锁定，并同触同清该文件 4 处既有校验器违规（backdrop-blur 改实底、
+      p-6→p-3、px-8→px-5、shadow 移除）。
+    - 1d 文档：pageStatus 加工段 5 处（含 runnerRenderRules 27→33 单测计数）+
+      PAGE_STATUS 重生成 + PLAN §8.12。
+    - 验收：前端 **580/580（42 文件）**（基线 557 + 23，含嵌套/格式/picker
+      三轮反馈回归测）、后端 **296/296**、build EXIT=0、校验器触 9 文件
+      0 违规、PAGE_STATUS EXIT=0、schema SCHEMA_IDENTICAL（28 对象，零 DDL）
+      → 无 db 提交。**待人工验证 → 一批一提交。**
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

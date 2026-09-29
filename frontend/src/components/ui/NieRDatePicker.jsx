@@ -16,8 +16,10 @@ const InputBox = ({ label, value, min, max, onChange, width = "w-16" }) => (
 );
 
 export default function NieRDatePicker({ isOpen, initialValue, onConfirm, onCancel }) {
-    if (!isOpen) return null;
-
+    // Rules of Hooks：useState/useEffect 必须无条件先于任何早退执行。
+    // 原实现 `if (!isOpen) return null` 写在 hooks 之前，isOpen false→true
+    // 翻转时钩子数 0→2 跳变 → React 内部错误（static flag）—— 第 4 批验收期
+    // 由首次打开选择器的测试暴露，红测锁定。
     const [dateParts, setDateParts] = useState({
         year: 2024, month: 1, day: 1,
         hour: 0, minute: 0, second: 0
@@ -28,6 +30,8 @@ export default function NieRDatePicker({ isOpen, initialValue, onConfirm, onCanc
             initDate(initialValue);
         }
     }, [isOpen, initialValue]);
+
+    if (!isOpen) return null;
 
     const initDate = (val) => {
         let d = new Date();
@@ -65,11 +69,12 @@ export default function NieRDatePicker({ isOpen, initialValue, onConfirm, onCanc
         onConfirm(iso);
     };
 
+    // 第 4 批：清既有校验器违规 —— backdrop-blur 去模糊改实底 / p-6、px-8 收紧、shadow 移除
     return (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-nier-dark/40 backdrop-blur-[2px] animate-in fade-in duration-200">
-            <div className="w-[520px] bg-nier-dark border border-nier-light relative shadow-[0_0_30px_rgba(0,0,0,0.3)] text-nier-fg p-1">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-nier-dark/80 animate-in fade-in duration-200">
+            <div className="w-[520px] bg-nier-dark border border-nier-light relative text-nier-fg p-1">
                 {/* Inner Border Frame */}
-                <div className="border border-nier-light/30 p-6 h-full flex flex-col gap-6 relative">
+                <div className="border border-nier-light/30 p-3 h-full flex flex-col gap-6 relative">
 
                     {/* Decorative Corners */}
                     <div className="absolute top-0 left-0 w-1 h-1 bg-nier-light"></div>
@@ -125,13 +130,13 @@ export default function NieRDatePicker({ isOpen, initialValue, onConfirm, onCanc
                     <div className="flex gap-4 justify-center pt-4 border-t border-nier-light/20">
                         <button
                             onClick={onCancel}
-                            className="px-8 py-2 border border-nier-light/50 text-nier-highlight hover:bg-nier-light/10 text-xs font-bold tracking-widest transition-all"
+                            className="px-5 py-2 border border-nier-light/50 text-nier-highlight hover:bg-nier-light/10 text-xs font-bold tracking-widest transition-all"
                         >
                             取消 (CANCEL)
                         </button>
                         <button
                             onClick={handleConfirm}
-                            className="px-8 py-2 bg-nier-light text-nier-dark font-bold hover:bg-nier-highlight hover:text-white hover:scale-105 text-xs tracking-widest transition-all shadow-md"
+                            className="px-5 py-2 bg-nier-light text-nier-dark font-bold hover:bg-nier-highlight hover:text-white hover:scale-105 text-xs tracking-widest transition-all"
                         >
                             确认 (CONFIRM)
                         </button>

@@ -82,9 +82,13 @@
       "支持打开日期选择器并预览发送 payload。",
       "发送经后端 /dispatch 走传输抽象（默认环回，可经 /transport/config 切换 TCP/串口真实传输），日志展示成功、失败与等待状态。",
       "支持将当前 payload 导出为 .hex 文件下载。",
-      "参数渲染规则抽为 config/runnerRenderRules.js（字段分类/选项归一/显示值解析/语义标签，纯函数 + 27 项单测），RunnerFieldTree 只保留布局（C6）。",
+      "参数渲染规则抽为 config/runnerRenderRules.js（字段分类/选项归一/显示值解析/语义标签/定长输入限制，纯函数 + 33 项单测），RunnerFieldTree 只保留布局（C6）。",
       "P2 事务发送面板（TransactionPanel）：应答规格编辑（帧头回显/长度自洽/校验反算/掩码忽略区间/前缀后缀五要素，PUT /response-specs 按指令存取，404 = 未配置常态）+ 超时/重发/间隔参数与广播无应答开关，POST /dispatch/transaction 返回逐次 attempt（状态/RTT/失配原因）与统计。",
-      "批次一 (D4-A) 封装发送：挂载按 GET /bindings?instruction_id= 取 is_default 行解析默认协议外壳，wrap 状态机 ok/none/failed/missing（无默认行/拉取失败/协议不在册均降级裸发 + 状态提示）；「:: Wrap ::」开关默认开 → TRANSMIT 与 TransactionPanel 同带 wrap 由后端唯一封装入口套壳，封装预览 300ms 防抖调 POST /compile/wrapped（与发送同参同字节，回显完整帧与洞位 warnings），可手动关回裸发。"
+      "批次一 (D4-A) 封装发送：挂载按 GET /bindings?instruction_id= 取 is_default 行解析默认协议外壳，wrap 状态机 ok/none/failed/missing（无默认行/拉取失败/协议不在册均降级裸发 + 状态提示）；「:: Wrap ::」开关默认开 → TRANSMIT 与 TransactionPanel 同带 wrap 由后端唯一封装入口套壳，封装预览 300ms 防抖调 POST /compile/wrapped（与发送同参同字节，回显完整帧与洞位 warnings），可手动关回裸发。",
+      "指令加工编辑反馈四条之一：TIME 类字段（运行秒数）改满亮实线取值形态 + [TIME_PICKER] 徽标与 title 提示（仍点选日期、按 base_time 换算秒数，不再误标 [READ_ONLY] 斜纹锁定板，标签/accent 条恢复满对比）。",
+      "指令加工编辑反馈四条之二：点击字段（含整块容器）→ BYTE_STREAM_OUTPUT 按 InstructionEncoder byteMap 逐字段分段反白高亮（span title 回显字段名 @偏移），下方「SEL :: 字段名 · 0xNN-0xNN · NB」读数条同步，未选中显点击提示，换指令自动复位；嵌套组内点叶字段精确到该字段自身字节（叶行/组头 stopPropagation 隔离冒泡，不被外层组 id 覆盖成整组），点组头才选中整块子树；字节段内亦逐字节 XX XX 空格分隔（与整帧格式一致，不连写），高亮仍按整字段段反白。",
+      "指令加工编辑反馈四条之三：右栏三分区标题 + 中文用途释义 —— BYTE STREAM 字节流预览（随输入实时重算 / 点击定位）、PROTOCOL WRAP 协议封装（预览·发送·事务同参同字节）、TRANSMIT 发送与导出（CTRL+ENT 快捷、.hex 落盘）；Transaction / TransmissionLog 自带 :: 标题不重复。",
+      "指令加工编辑反馈四条之四：定长字段输入限制 computeFieldInputLimits（指令管理 byte_len 定死）—— hex 通道截断 byte_len×2 字符 + 「n/N BYTES」长度徽标（非 hex 通道 [nB]），数值按 0..2^(8n)-1 即时钳制（INT_SIGNED 两补码域、SCALED_DECIMAL 按 factor/offset 反算输入域、超 2^53 封顶 MAX_SAFE_INTEGER；编码端口径不变）。"
     ],
     "nextSteps": [
       "展示当前传输模式与连接状态（GET /transport/status），支持在本页切换 loopback/TCP/串口。"

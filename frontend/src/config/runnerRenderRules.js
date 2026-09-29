@@ -195,3 +195,60 @@ export const collectSemanticItems = (field = {}) => {
         return acc;
     }, []);
 };
+
+// 第 4 批 #4：定长字段输入限制 —— 指令管理里 byte_len 定死的字段，加工页
+// 不允许超长/超范围输入。返回 { byteLen, maxLength?, min?, max? } 或 null（不设限）。
+// - 不设限：只读/计算/时间字段（不可键入）、枚举（选项即约束）、
+//   string/text/float/decimal（非整数域）、无有效 byte_len；
+// - hex 通道（params.type 缺省/number/hex —— resolveFieldDisplay 分支 4 同判据）
+//   → maxLength = byteLen×2（十六进制字符数上限）；
+// - 数值域：无符号 0..2^(8n)-1（超 2^53 封顶 MAX_SAFE_INTEGER）、INT_SIGNED
+//   两补码域；SCALED_DECIMAL 按 factor/offset 反算输入域（factor=0 恒 0 →
+//   任意输入合法、不设域；factor<0 不等式反向）。钳制发生在 SmartInput，
+//   编码端 InstructionEncoder 口径不变。
+export const computeFieldInputLimits = (field = {}) => {
+    const { params, isCalculated, isTimeCumulative, isFixed, isEditable, isEnum }
+        = classifyRunnerField(field);
+    if (!isEditable || isCalculated || isFixed || isTimeCumulative || isEnum) return null;
+
+    const ptype = String(params.type || '').toLowerCase();
+    if (['string', 'text', 'float', 'decimal'].includes(ptype)) return null;
+
+    const byteLen = Number(field.byte_len ?? field.byte_length);
+    if (!Number.isFinite(byteLen) || byteLen <= 0) return null;
+
+    // 整数位域（BigInt 精确，超安全整数封顶）
+    const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
+    const bits = BigInt(byteLen * 8);
+    const signed = String(field.original_op_code || field.op_code || '').toUpperCase() === 'INT_SIGNED';
+    let min = 0;
+    let max;
+    if (signed) {
+        const half = 1n << (bits - 1n);
+        max = (half - 1n) > MAX_SAFE ? Number.MAX_SAFE_INTEGER : Number(half - 1n);
+        min = half > MAX_SAFE ? -Number.MAX_SAFE_INTEGER : -Number(half);
+    } else {
+        const full = 1n << bits;
+        max = (full - 1n) > MAX_SAFE ? Number.MAX_SAFE_INTEGER : Number(full - 1n);
+    }
+
+    // SCALED_DECIMAL：编码为 (v+offset)*factor，反算输入域
+    const op = String(field.original_op_code || field.op_code || '').toUpperCase();
+    if (op === 'SCALED_DECIMAL' && ['', 'number'].includes(ptype)) {
+        const num = (v) => (v === undefined || v === null || v === '' ? NaN : Number(String(v).trim()));
+        const off = Number.isFinite(num(params.offset)) ? num(params.offset) : 0;
+        const fac = Number.isFinite(num(params.factor)) ? num(params.factor) : 1;
+        if (fac === 0) {
+            min = null; // 编码恒 0，任意输入合法
+        } else {
+            const lo = fac > 0 ? Math.ceil(min / fac - off) : Math.ceil(max / fac - off);
+            const hi = fac > 0 ? Math.floor(max / fac - off) : Math.floor(min / fac - off);
+            if (lo <= hi) { min = lo; max = hi; } else { min = null; }
+        }
+    }
+
+    const out = { byteLen };
+    if (!ptype || ptype === 'number' || ptype === 'hex') out.maxLength = byteLen * 2;
+    if (min !== null) { out.min = min; out.max = max; }
+    return out;
+};
