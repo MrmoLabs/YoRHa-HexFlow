@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDuplicateInstructionPayload, duplicateBlockInInstruction } from '../duplicateInstruction';
+import { buildDuplicateInstructionPayload } from '../duplicateInstruction';
 
 const makeGen = () => {
     let n = 0;
@@ -94,64 +94,4 @@ describe('buildDuplicateInstructionPayload (P2-1 复制指令)', () => {
     });
 });
 
-describe('duplicateBlockInInstruction (P2-1 复制块)', () => {
-    const instruction = () => ({
-        id: 'inst-1',
-        fields: [
-            { id: 'a', parent_id: null, sequence: 0, name: '甲', op_code: 'HEX_RAW', byte_len: 1, parameter_config: { hex: '01' }, bits: [] },
-            {
-                id: 'b', parent_id: null, sequence: 1, name: '乙', op_code: 'ARRAY_GROUP', byte_len: 0,
-                parameter_config: { max_count: 1, refs: ['a'] }, bits: [],
-            },
-            { id: 'b1', parent_id: 'b', sequence: 0, name: '乙子', op_code: 'HEX_RAW', byte_len: 1, parameter_config: { hex: '02' }, bits: [] },
-            { id: 'c', parent_id: null, sequence: 2, name: '丙', op_code: 'HEX_RAW', byte_len: 1, parameter_config: { hex: '03' }, bits: [] },
-        ],
-    });
 
-    it('inserts the copy directly after the source and renumbers the lane', () => {
-        const inst = instruction();
-        const before = JSON.parse(JSON.stringify(inst));
-        const result = duplicateBlockInInstruction(inst, 'b', makeGen());
-
-        const root = result.fields
-            .filter(f => (f.parent_id ?? null) === null)
-            .sort((x, y) => x.sequence - y.sequence);
-        expect(root.map(f => f.name)).toEqual(['甲', '乙', '乙_1', '丙']);
-        expect(root.map(f => f.sequence)).toEqual([0, 1, 2, 3]);
-
-        expect(result.newBlockId).toBe(root[2].id);
-        expect(JSON.parse(JSON.stringify(inst))).toEqual(before); // pure
-    });
-
-    it('deep-copies the subtree with fresh ids and renamed members', () => {
-        const result = duplicateBlockInInstruction(instruction(), 'b', makeGen());
-        const copyGroup = result.fields.find(f => f.name === '乙_1');
-        const copyChild = result.fields.find(f => f.name === '乙子_1');
-
-        expect(copyGroup).toBeTruthy();
-        expect(copyChild).toBeTruthy();
-        expect(copyGroup.id).not.toBe('b');
-        expect(copyChild.id).not.toBe('b1');
-        expect(copyChild.parent_id).toBe(copyGroup.id); // subtree attached to the COPY
-        expect(result.newIds).toEqual([copyGroup.id, copyChild.id]);
-    });
-
-    it('refs inside the copy keep pointing at the ORIGINAL blocks (documented)', () => {
-        const result = duplicateBlockInInstruction(instruction(), 'b', makeGen());
-        const copyGroup = result.fields.find(f => f.name === '乙_1');
-        expect(copyGroup.parameter_config.refs).toEqual(['a']); // original 甲
-    });
-
-    it('duplicating a child lane works the same way', () => {
-        const result = duplicateBlockInInstruction(instruction(), 'b1', makeGen());
-        const siblings = result.fields.filter(f => f.parent_id === 'b');
-        expect(siblings.map(f => f.name)).toEqual(['乙子', '乙子_1']);
-        const copy = siblings.find(f => f.name === '乙子_1');
-        expect(copy.parent_id).toBe('b');
-    });
-
-    it('returns null for an unknown block id', () => {
-        expect(duplicateBlockInInstruction(instruction(), 'nope', makeGen())).toBeNull();
-        expect(duplicateBlockInInstruction(null, 'b', makeGen())).toBeNull();
-    });
-});

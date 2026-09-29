@@ -8,26 +8,30 @@ export default function ProtocolPropertiesPanel({
     showProtocolLevel, // activeProtocolId && currentProtocol && !selectedId
     currentProtocol,
     selectedBlock,
-    onProtocolMetaChange, // (updatedProtocol) => void  (apply + schedule save) — 批次四: label + description 共用（原 onProtocolLabelChange 改名）
+    onProtocolMetaChange, // (updatedProtocol) => void  (apply + draft update) — 批次四: label + description 共用（原 onProtocolLabelChange 改名）；反馈 #3: 落库走 SAVE
     onEnterContainer, // (block) => void
     onUpdateBlock, // (id, updates) => void
     onDeleteBlock, // (id) => void
-    onDuplicateBlock, // (id) => void | undefined — 批次三 P1-2 复制块（深拷贝插源后）
     pickingMode, // { isActive, fieldKey, anchorId, currentRefs, onUpdateRefs }
     onStartPicking, // (fieldKey, currentRefs, onUpdateRefs) => void
     onStopPicking, // () => void
     validationIssues, // { errors, warnings } — 批次二 P0-4 结构校验（页面级）
-    onLocateBlock // (blockId) => void — 点击清单条目定位（展开祖先 + 选中）
+    onLocateBlock, // (blockId) => void — 点击清单条目定位（展开祖先 + 选中）
+    hasUnsavedChanges, // 反馈 #3 手动保存 —— 草稿脏时显示 SAVE 按钮
+    onSaveProtocol // () => void — 点击 = saveChanges（写穿共享 + 清草稿）
 }) {
     // warnings 展开态（镜像 BlockPropertiesPanel:34 / :261-269 折叠口径）
     const [showWarnings, setShowWarnings] = useState(false);
     return (
-        <aside className="w-80 border-l border-nier-light bg-nier-dark/95 p-4 flex flex-col z-20 shadow-[-5px_0_15px_rgba(0,0,0,0.1)]">
+        <aside className="w-80 shrink-0 overflow-y-auto border-l border-nier-light bg-nier-dark/95 p-4 flex flex-col z-20 shadow-[-5px_0_15px_rgba(0,0,0,0.1)]">
             <h2 className="text-lg border-b-2 border-nier-light mb-6 pb-1 font-bold tracking-wider">属性配置 (PROPERTIES)</h2>
+
+            {/* 人工验证第 3 轮 #3: 顶部 SAVE 撤除——「保存更改」移到面板底部
+                动作区（见 aside 末尾，协议级/块级两视图都可达）。 */}
 
             {/* 批次二 P0-4: 结构校验清单 —— 与指令页 BlockPropertiesPanel:233-281
                 同款（errors 红容器 + 可点击定位、warnings 折叠）。差异：协议页
-                清单**常驻面板顶部**（选中块时不隐藏）—— 防抖保存下用户点定位
+                清单**常驻面板顶部**（选中块时不隐藏）—— 手动保存下用户点定位
                 后恰在块视图里边修边看。 */}
             {validationIssues && (validationIssues.errors.length > 0 || validationIssues.warnings.length > 0) && (
                 <div className={`p-2 space-y-1 border mb-4 ${validationIssues.errors.length > 0 ? 'border-[#D94834] bg-[#D94834]/15' : 'border-[#E58D28] bg-[#E58D28]/10'}`}>
@@ -233,15 +237,6 @@ export default function ProtocolPropertiesPanel({
                     })}
 
                     <div className="pt-4 border-t border-nier-light/20 space-y-2">
-                        {/* 批次三 P1-2: 复制块按钮照抄 BlockPropertiesPanel:502-505 */}
-                        {onDuplicateBlock && (
-                            <button
-                                onClick={() => onDuplicateBlock(selectedBlock.id)}
-                                className="w-full bg-nier-light/10 border border-nier-light/70 text-nier-light hover:bg-nier-light hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors"
-                            >
-                                复制块 (DUPLICATE)
-                            </button>
-                        )}
                         <button
                             onClick={() => onDeleteBlock(selectedBlock.id)}
                             className="w-full border border-red-500/50 text-red-400 hover:bg-red-500 hover:text-white py-2 px-4 uppercase text-xs tracking-widest transition-colors"
@@ -254,6 +249,20 @@ export default function ProtocolPropertiesPanel({
                 <div className="h-full flex flex-col items-center justify-center opacity-30 gap-2">
                     <p className="italic text-center">选择模块以编辑</p>
                     <p className="text-[10px] font-mono">SELECT MODULE TO CONFIGURE</p>
+                </div>
+            )}
+
+            {/* 人工验证第 3 轮 #3: SAVE 移到面板底部动作区——协议级/块级两视图
+                共用（view 条件之后、mt-auto 贴底），镜像指令页 BlockPropertiesPanel
+                的底部动作区口径。 */}
+            {hasUnsavedChanges && (
+                <div className="pt-4 flex flex-col gap-3 border-t border-nier-light/20 mt-auto">
+                    <button
+                        onClick={onSaveProtocol}
+                        className="w-full bg-nier-light/10 border border-nier-light text-nier-light hover:bg-nier-light hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors font-bold"
+                    >
+                        保存更改 (SAVE)
+                    </button>
                 </div>
             )}
         </aside>

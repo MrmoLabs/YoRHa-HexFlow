@@ -261,7 +261,7 @@ describe('Orchestration Page', () => {
         }));
     });
 
-    it('PUTs select changes immediately and debounces label edits (400ms)', async () => {
+    it('反馈 #4 手动保存：label/协议选择只进本地草稿（零防抖零即时 PUT），SAVE 按钮落库后消失', async () => {
         const { container } = render(
             <Orchestration
                 protocols={[
@@ -275,29 +275,48 @@ describe('Orchestration Page', () => {
         await awaitDefaultBinding();
         api.updateBinding.mockClear();
 
-        // 协议选择 → 即时 PUT（label/select 为兄弟节点结构，容器查询定位控件）
-        const protocolSelect = container.querySelectorAll('select')[0];
-        fireEvent.change(protocolSelect, { target: { value: 'proto-2' } });
+        // 协议选择（原即时 PUT）+ label（原 400ms 防抖）→ 都只进草稿（label/select 为兄弟节点结构，容器查询定位控件）
+        fireEvent.change(container.querySelectorAll('select')[0], { target: { value: 'proto-2' } });
+        fireEvent.change(screen.getByDisplayValue('默认绑定 (DEFAULT)'), { target: { value: '改名了' } });
+
+        expect(api.updateBinding).not.toHaveBeenCalled();
+        // 反馈 #6③：脏态 SAVE 可用（底部常驻按钮 + disabled 联动）
+        expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(false);
+
+        // 超过原 400ms 防抖窗口仍零 PUT
+        await new Promise(r => setTimeout(r, 500));
+        expect(api.updateBinding).not.toHaveBeenCalled();
+
+        // 点保存 → 一次 PUT 携带合并快照（label + 最新选择，不被旧值回冲）
+        fireEvent.click(screen.getByRole('button', { name: '保存更改 (SAVE)' }));
         await waitFor(() => expect(api.updateBinding).toHaveBeenCalledTimes(1));
         expect(api.updateBinding).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+            label: '改名了',
             protocol_id: 'proto-2'
         }));
+        // 保存成功 → 草稿毕业，SAVE 常驻但回到禁用态（反馈 #6③）
+        await waitFor(() => expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(true));
+    });
 
-        // label 输入 → 不立即 PUT（防抖），到期后按合并快照落盘
-        const beforeLabel = api.updateBinding.mock.calls.length;
-        const labelInput = screen.getByDisplayValue('默认绑定 (DEFAULT)');
-        fireEvent.change(labelInput, { target: { value: '改名了' } });
-        expect(api.updateBinding.mock.calls.length).toBe(beforeLabel);
-
-        await waitFor(
-            () => expect(api.updateBinding.mock.calls.length).toBeGreaterThan(beforeLabel),
-            { timeout: 2000 }
+    it('反馈 #4 离开拦截：有未保存属性编辑时刷新被拦，干净态不拦', async () => {
+        render(
+            <Orchestration
+                protocols={[{ id: 'proto-1', label: '协议A', children: [] }]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
         );
-        const lastCall = api.updateBinding.mock.calls.at(-1);
-        expect(lastCall[1]).toEqual(expect.objectContaining({
-            label: '改名了',
-            protocol_id: 'proto-2' // 防抖快照携带最新选择（不被旧值回冲）
-        }));
+
+        await awaitDefaultBinding();
+
+        const clean = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(clean);
+        expect(clean.defaultPrevented).toBe(false);
+
+        fireEvent.change(screen.getByDisplayValue('默认绑定 (DEFAULT)'), { target: { value: '改' } });
+
+        const dirty = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(dirty);
+        expect(dirty.defaultPrevented).toBe(true);
     });
 
     it('deletes a binding via DELETE and shrinks the list', async () => {
@@ -335,10 +354,20 @@ describe('Orchestration Page', () => {
         // 加载失败 → 不向后端写任何东西
         expect(api.createBinding).not.toHaveBeenCalled();
 
+        // 反馈 #4：降级模式的属性编辑不标脏（提示条已声明本地不持久化）
+        fireEvent.change(screen.getByDisplayValue('默认绑定 (DEFAULT)'), { target: { value: '再改名' } });
+        expect(screen.getByDisplayValue('再改名')).toBeDefined();
+        expect(api.updateBinding).not.toHaveBeenCalled();
+        // 反馈 #6③：降级模式 SAVE 常驻但禁用（loadFailed 不落库）
+        expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(true);
+
         fireEvent.click(screen.getByRole('button', { name: '+' }));
         expect(screen.getByText('新绑定 (NEW)')).toBeDefined();
         expect(api.createBinding).not.toHaveBeenCalled();
         expect(api.updateBinding).not.toHaveBeenCalled();
+        // 反馈 #6③：降级加行同样不出可点 SAVE（常驻但禁用）
+        expect(screen.getByRole('button', { name: '保存更改 (SAVE)' })).toBeDefined();
+        expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(true);
     });
 
     // B2 组作用域合并：同协议多绑定按 slot_order 升序 → 指令数组依洞序填洞
@@ -403,13 +432,20 @@ describe('Orchestration Page', () => {
         // 洞号 = 同协议绑定按 slot_order 升序的位次（甲在首位 → #0）
         const holeSelect = screen.getByLabelText(/洞位/);
         expect(holeSelect.value).toBe('0');
+        // 反馈 #6③：干净态 SAVE 常驻但禁用
+        expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(true);
 
         api.updateBinding.mockClear();
         fireEvent.change(holeSelect, { target: { value: '1' } });
+        // 反馈 #4：换洞只进草稿（零即时 PUT）；#6③ 脏态 SAVE 由禁用转可用
+        expect(api.updateBinding).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(false);
+        fireEvent.click(screen.getByRole('button', { name: '保存更改 (SAVE)' }));
         await waitFor(() => {
             expect(api.updateBinding).toHaveBeenCalledWith('srv-1', expect.objectContaining({ slot_order: 1 }));
             expect(api.updateBinding).toHaveBeenCalledWith('srv-2', expect.objectContaining({ slot_order: 0 }));
         });
+        await waitFor(() => expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(true));
 
         // 组序翻转 → 乙(载荷2) 填第一洞
         await waitFor(() => {
@@ -553,5 +589,103 @@ describe('Orchestration Page', () => {
             'srv-2', expect.objectContaining({ is_default: false })
         ));
         expect(screen.queryByText(/默认封装绑定/)).toBeNull();
+    });
+
+    // ─── 人工验证第 3 轮 #4/#6③: SAVE 移到底部动作区（常驻 + 计数行） ─────
+    it('R3 #4/#6③：SAVE 位于属性面板底部（绑定名称之后），常驻计数行「N 条未保存」', async () => {
+        render(
+            <Orchestration
+                protocols={[
+                    { id: 'proto-1', label: '协议A', children: [] },
+                    { id: 'proto-2', label: '协议B', children: [] }
+                ]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
+        );
+
+        await awaitDefaultBinding();
+
+        // 干净态：常驻计数行（0 条 muted）+ SAVE 常驻但禁用
+        expect(screen.getByText('0 条未保存')).toBeDefined();
+        expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(true);
+
+        // 改名标脏 → 计数 1、SAVE 可用；SAVE 在绑定名称 input 之后（面板底部）
+        fireEvent.change(screen.getByDisplayValue('默认绑定 (DEFAULT)'), { target: { value: '改名了' } });
+        expect(screen.getByText('1 条未保存')).toBeDefined();
+        const saveBtn = screen.getByRole('button', { name: '保存更改 (SAVE)' });
+        expect(saveBtn.disabled).toBe(false);
+        const nameInput = screen.getByDisplayValue('改名了');
+        // DOM 顺序：SAVE后于字段 → compareDocumentPosition 报 FOLLOWING
+        expect(nameInput.compareDocumentPosition(saveBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    // ─── 人工验证第 3 轮 #6②: 属性面板四分区 + 结构 select 从头部移入 ─────
+    it('R3 #6②：四分区标注（IDENTITY/STRUCTURE/HOLE/ACTIONS），三个 select 全在属性面板且协议外壳在前', async () => {
+        const { container } = render(
+            <Orchestration
+                protocols={[{ id: 'proto-1', label: '协议A', children: [] }]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
+        );
+
+        await awaitDefaultBinding();
+
+        // 四分区工业标签
+        expect(screen.getByText('绑定标识 (IDENTITY)')).toBeDefined();
+        expect(screen.getByText('结构选择 (STRUCTURE)')).toBeDefined();
+        expect(screen.getByText('洞位 (HOLE)')).toBeDefined();
+        expect(screen.getByText('操作 (ACTIONS)')).toBeDefined();
+
+        // 中心头部不再承载结构 select（总长度/EXPORT 仍留头部）；面板内 DOM
+        // 顺序 = 协议外壳 → 指令内核 → 洞位（原 select[0]/getByLabelText 断言不破）
+        expect(container.querySelectorAll('section select')).toHaveLength(0);
+        const selects = container.querySelectorAll('aside select');
+        expect(selects).toHaveLength(3);
+        expect(selects[0].value).toBe('proto-1');
+        expect(selects[2].id).toBe('hole-rank');
+        expect(totalSize()).toContain('Bytes'); // 头部总长度保留
+    });
+
+    // ─── 人工验证第 3 轮 #6①: 侧栏脏行琥珀点 ────────────────────────────
+    it('R3 #6①：侧栏脏行显示琥珀 ●（title=有未保存更改），干净行不显示', async () => {
+        const { container } = render(
+            <Orchestration
+                protocols={[
+                    { id: 'proto-1', label: '协议A', children: [] },
+                    { id: 'proto-2', label: '协议B', children: [] }
+                ]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
+        );
+
+        await awaitDefaultBinding();
+        expect(container.querySelector('[title="有未保存更改"]')).toBeNull();
+
+        // 协议选择只进草稿 → 行标脏 → 侧栏行出现琥珀点
+        fireEvent.change(container.querySelectorAll('select')[0], { target: { value: 'proto-2' } });
+        const dot = container.querySelector('[title="有未保存更改"]');
+        expect(dot).not.toBeNull();
+        expect(dot.textContent).toBe('●');
+    });
+
+    // ─── 人工验证第 3 轮 #5: 分栏宽度（中心区可收缩 + 属性栏不收缩） ─────
+    it('R3 #5：中心 section 带 min-w-0/overflow-hidden（可收缩），属性 aside shrink-0 + overflow-y-auto', async () => {
+        const { container } = render(
+            <Orchestration
+                protocols={[{ id: 'proto-1', label: '协议A', children: [] }]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
+        );
+
+        await awaitDefaultBinding();
+
+        const section = container.querySelector('section');
+        expect(section.className).toContain('overflow-hidden');
+        expect(section.className).toContain('min-w-0');
+
+        const asides = container.querySelectorAll('aside');
+        const panelAside = asides[asides.length - 1];
+        expect(panelAside.className).toContain('shrink-0');
+        expect(panelAside.className).toContain('overflow-y-auto');
     });
 });

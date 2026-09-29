@@ -136,4 +136,51 @@ describe('Block (P1 offset ruler + smart width)', () => {
         });
         expect(unconfigured.container.textContent).toContain('BASE ?');
     });
+
+    // ─── 人工验证第 3 轮 #2: 卡面显示口径（?? 仅限无法确定内容的卡） ─────────
+    it('fixed card: real hex renders as stored value; all-zero default hex also renders its stored value', () => {
+        const real = renderBlock({
+            name: '帧头', type: 'fixed', hex_value: 'DE AD', byte_length: 2,
+            offsetMeta: { offset: 0, size: 2 },
+        });
+        expect(centerOf(real.container).textContent).toBe('DE AD');
+
+        cleanup();
+        const zeroTwo = renderBlock({
+            name: '固定块', type: 'fixed', hex_value: '0000', byte_length: 2,
+            offsetMeta: { offset: 0, size: 2 },
+        });
+        expect(centerOf(zeroTwo.container).textContent).toBe('00 00'); // 未配置固定块 = 显示存储值
+
+        cleanup();
+        const zeroOne = renderBlock({
+            name: '固定块', type: 'fixed', hex_value: '00', byte_length: 1,
+            offsetMeta: { offset: 2, size: 1 },
+        });
+        expect(centerOf(zeroOne.container).textContent).toBe('00');
+
+        cleanup();
+        const mixed = renderBlock({
+            name: '固定块', type: 'fixed', hex_value: '0A 00', byte_length: 2,
+            offsetMeta: { offset: 0, size: 2 },
+        });
+        expect(centerOf(mixed.container).textContent).toBe('0A 00'); // 非全 0 真值照常直填
+    });
+
+    it('fixed card without any hex shows per-byte ?? (still undeterminable), never a fake "00"', () => {
+        const { container } = renderBlock({
+            name: '固定块', type: 'fixed', byte_length: 1,
+            offsetMeta: { offset: 0, size: 1 },
+        });
+        expect(centerOf(container).textContent).toBe('??');
+    });
+
+    it('empty container card shows a blank center (not ??, not "0B"), footer keeps the size', () => {
+        const { container } = renderBlock({
+            name: '新容器', type: 'container', byte_length: 0,
+            offsetMeta: { offset: 0, size: 0, isGroup: true },
+        });
+        expect(centerOf(container).textContent).toBe('');
+        expect(container.textContent).toContain('0B'); // 页脚尺寸口径不变（0B @00）
+    });
 });

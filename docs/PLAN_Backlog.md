@@ -730,6 +730,8 @@
      pc 浅拷零别名；副本立即选中、副本是容器顺手展开（镜像
      handleAddBlock 新容器口径）；输入树零改写。两函数共享
      `cloneTreeWithNewIds` 两阶段发号（先预序建 idMap 再重建）。
+     **后记**：该入口随人工验证第 3 轮 #1 撤 UI（2026-09-24），纯函数 +
+     3 单测按用户拍板连删（见 §8.11 #1），仅 `cloneTreeWithNewIds` 留用。
 - **② 批次三测试/验收**：FE **511/511（38 文件）**（基线 505 + 新 6：
   protocolTree +4 —— 插位/防撞/un-wired refs/零改写 + 协议负载升序·自含
   重映射·null 边界；Protocol +2 —— 侧栏副本 POST 负载·切副本、复制块
@@ -965,6 +967,91 @@
   （确定 checksum 卡 name 追加真值 `校验 <hex>`，悬空仍不出值）。
 - 验收：FE 548/548（40 文件）EXIT=0、`vite build` EXIT=0、yorha-ui 校验器触变更
   文件 0 违规、后端 296/296 OK（本反馈纯前端，后端零改动回归）。
+
+### 8.10 人工验证反馈 2 第 2 轮（四条：卡面 ?? / 指令草稿隔离 / 协议·编排手动保存）
+
+- 背景：人工验证反馈 2 第 2 轮四条口径（2026-09-24 逐条确认后实施）：①未配置的
+  固定块卡面显示 `??` 而非 `00`（含空容器 `0B → ??`，长度含 SLOT 估算**未选**）；
+  ②指令加工页不应看到管理页未保存的新增 → 草稿隔离；③协议定义页去 350ms 防抖
+  自动保存，改「保存更改」手动确认（切协议/离开弹放弃确认，撤销重做保持本地）；
+  ④编排绑定属性编辑（标签/洞位）同样进草稿 + 保存按钮，星标/删除保持即时。
+- 实现（红测先行，全部红 → 绿）：
+  - **#1 卡面 ??**：根因 `constants.OP_CODES` 缺 `STRUCT` 键致协议块全判组卡；
+    补键 + `Block.jsx` `hexLooksUnconfigured`（全 0 视为未配置 → 等量 `??`）+
+    `formatUnknown(length)`，`protocolTree.nodeContent` 同口径；计算层
+    `collectDeterministicBytes` 保留全 0（存储值 = 编码真值，勿动）。
+  - **#2 指令草稿隔离**：`useInstructionData` 加 `draftInstruction` 单槽 +
+    merged `instructions` overlay（dirty 时活动指令覆盖）；编辑/撤销/重做只写草稿，
+    `saveChanges` 成功功能式写穿共享 + 清草稿，加载/增删/复制清草稿；
+    `Instruction.jsx` `promptDeleteBlock` 归 `updateLocalInstruction` 漏斗。
+    dirty⟺draft 不变式（4 处直设点全随草稿写入）。
+  - **#3 协议手动保存**：`draftProtocol` 草稿 + 派生 `hasUnsavedChanges`
+    （`currentProtocol` = 草稿优先，保存前共享态零写入）；`commitTree/undo/redo`
+    只动草稿；防抖链（`scheduleProtocolSave`/`flushPendingSave`/`pendingSaveRef`/
+    `saveTimerRef`）退役；`saveProtocol` 直受草稿（签名相等跳过、validateProtocol
+    闸、409 冲突双动作、detail 透传全保留），成功 = 写穿 + 清草稿 + **清史**
+    （新基线，镜像指令页 P4-1）+ 异步落定按 `activeProtocolIdRef` 防误伤切走场景；
+    切协议/新建/复制/导入过 `guardDirty`「放弃未保存的更改？」（`confirmDialog` +
+    NieRModal，镜像指令页 openConfirm）；横幅重试 = `saveChanges`；`beforeunload`
+    改脏标拦截；SAVE 按钮落 `ProtocolPropertiesPanel`（协议级/块级双视图可达）+
+    顶栏 UNSAVED。切选同 id 不弹（无切换）；删除后自动愈合清陈旧草稿与横幅。
+  - **#4 编排手动保存**：`dirtyIds` 脏行集合（草稿按行驻留，切选中行不丢、无需
+    切行确认）；`handleUpdateBinding`（label/协议/指令）与 `handleSlotOrderChange`
+    （洞位组内重排，标脏变化行）不再 PUT，`handleSaveBindings` 逐行落库 ——
+    `clearDirty` 比对已发载荷 vs 当前行，保存期间又编辑的行不误出队、行已删清
+    脏 id；星标/增删保持即时（即时 PUT 成功同步出队同行）；`persistTimerRef`/
+    `pendingRef` 防抖与卸载冲刷退役，改 `beforeunload` 脏标拦截；降级（loadFailed）
+    模式不标脏；SAVE 按钮同落属性面板。
+- 测试：Protocol.test 防抖钉全量改手动语义 + 新增手动保存核心/切协议确认/离开拦截
+  用例（17 红 → 26 绿）；Orchestration.test label·洞位即时 PUT 钉改写 + 新增离开
+  拦截（4 红 → 18 绿）；useInstructionData.test 草稿隔离 3 例（#2，含保存前共享态
+  零写入断言）；Block.test +3、protocolTree.test +2（#1）。
+- 验收：FE **559/559（40 文件）** EXIT=0（基线 556 + 新 3）、后端 **296/296** OK
+  （本反馈纯前端，零后端改动回归）、`vite build` EXIT=0、yorha-ui 校验器触 5 个
+  UI 文件 **0 违规**、`generate-page-status.mjs` EXIT=0（pageStatus 三段 11 处
+  口径更新）。**零 DDL** → 无 db 提交。待人工验证后一单提交。
+
+### 8.11 人工验证反馈 2 第 3 轮（六条：复制块撤除 / 卡面存储值 / 两页 SAVE 底置 / 编排分栏·交互）
+
+- 背景：人工验证反馈 2 第 3 轮六条（2026-09-24 取证确认三问：复制块两页都移除、
+  空容器中央空白、编排 UX 全套照做）：①两页属性面板「复制块 (DUPLICATE)」入口
+  撤除；②卡面口径反转——`??` 仅限无法确定内容的卡，未配置固定块显存储值
+  （`0000`→`00 00`、`00`→`00`）、空容器中央空白；③协议页 SAVE 移属性面板底部
+  （协议级 + 块级两视图）；④编排 SAVE 同移底部；⑤编排分栏修复（中心区可收缩、
+  右栏不被挤出视口）；⑥编排交互全套（侧栏脏行琥珀 ●、属性面板四分区 + 结构选择
+  下移、底部常驻保存区带计数）。
+- 实现（红测先行，6 文件 13 红 → 111 绿）：
+  - **#1 复制块撤除**：Protocol/Instruction 两页 `onDuplicateBlock` prop +
+    handler + `duplicateBlockInInstruction` util 及其单测 describe 一并删除；
+    `duplicateNode` 纯函数 + 3 单测随后按用户拍板（2026-09-24「连删」）
+    **一并移除** —— `cloneTreeWithNewIds` 保留（协议级复制 / JSON 导入共用），
+    其 `remapRefs=false` 死分支随之清除（两调用方均恒 remap）；protocolTree.js
+    注释同步。侧栏「副本」整条复制与 `buildDuplicate*Payload` 不动。
+  - **#2 卡面存储值口径**：`Block.jsx` 撤 `hexLooksUnconfigured`（未配置固定/HEX
+    块照显存储值）、空容器 `size===0` 返 `''`（页脚仍 `0B @00`）；
+    `protocolTree.nodeContent` 撤全 0→?? 分支（存储值原样 pretty 拼接）。计算层
+    `collectDeterministicBytes` 存储值 = 编码真值原则不变。
+  - **#3/#4 SAVE 底置**：`ProtocolPropertiesPanel` 撤顶部 SAVE，aside 末尾 view
+    条件后新增底部动作区（`pt-4 border-t mt-auto`，协议级/块级共用）；编排页见 #6③。
+  - **#5 分栏**：编排中心 section 补 `min-w-0 overflow-hidden`（根因：CSS flex
+    item `min-width:auto` 仅 overflow:visible 时取内容最小尺寸）；三页属性 aside
+    补 `shrink-0`，协议/编排 aside 补 `overflow-y-auto`。
+  - **#6 编排交互**：①侧栏脏行 label 前琥珀 `●`（`title="有未保存更改"`，干净行
+    不显）；②属性面板四分区标注（绑定标识 IDENTITY / 结构选择 STRUCTURE / 洞位
+    HOLE / 操作 ACTIONS），协议外壳 + 指令内核 select 从头部下移（面板内 DOM 序 =
+    协议外壳 → 指令内核 → 洞位；头部只留 总长度 + EXPORT/试发，AUTO-ASSEMBLY RULE
+    归洞位分区）；③底部常驻保存区：计数行 `● N 条未保存`（0 muted / >0 琥珀）+
+    SAVE 常驻 `disabled={!hasUnsavedChanges || loadFailed}`。
+- 测试：Protocol.test +2、Orchestration.test 4 改写 + 4 新增、Block.test 2 改写、
+  BlockPropertiesPanel.test +1、protocolTree.test 1 改写 + 连删 duplicateNode 3 it、
+  duplicateInstruction.test 删 import + describe（复制块 util 测试随功能移除）。
+- 验收（连删后终态）：FE **557/557（40 文件）** EXIT=0（第 3 轮原 560，连删
+  duplicateNode 3 单测 -3；第 3 轮当时为基线 559 + 净 1）、后端 **296/296** OK
+  （纯前端回归）、`vite build` EXIT=0、yorha-ui
+  校验器触 10 个文件 **0 违规**（清掉 BlockPropertiesPanel HEAD 既有
+  `backdrop-blur-sm` + `pt-8`×2，本轮新增 `pt-8` 全改 `pt-4`）、
+  `generate-page-status.mjs` EXIT=0、schema 与 HEAD 比对 **SCHEMA_IDENTICAL**
+  （零 DDL）→ 无 db 提交。与 §8.10 第 2 轮合并**待人工验证后一单提交**。
 
 ## 9. 保留勿动（非任务，勿清理）
 

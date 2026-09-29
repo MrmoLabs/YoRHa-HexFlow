@@ -283,7 +283,8 @@
     flush）；`duplicateNode` —— 块级深拷贝插源块之后（子树全新 id、根标签
     同层 `_N` 防撞、**refs 保持指原块 = un-wired 副本**、pc 零别名），属性
     面板「复制块 (DUPLICATE)」触发，副本立即选中、容器副本顺手展开。共享
-    `cloneTreeWithNewIds` 两阶段发号。验收：前端 **511/511**（基线 505 +
+    `cloneTreeWithNewIds` 两阶段发号（**后记**：该块级入口后随人工验证第 3 轮
+    #1 撤 UI 并连删，见 22）。验收：前端 **511/511**（基线 505 +
     新 6：protocolTree +4 / Protocol +2）、后端 **218/218**（零后端改动
     回归）、build EXIT=0、校验器触 `Protocol.jsx`/`ProtocolListSidebar.jsx`/
     `ProtocolPropertiesPanel.jsx` 0 违规；ESLint 仍为 HEAD 存量 1 error
@@ -372,6 +373,53 @@
     `docs/PLAN_Backlog.md` §8.8 偏离注记。**已验证并提交 ✅ `31bc367`
     （代码+文档）/ `da91228`（db 同步），2026-09-24；反馈 1（星标确认）与
     反馈 2（协议卡面直填 §8.9）均已并入。**
+
+21. **人工验证反馈 2 第 2 轮：四条口径实施（卡面 ?? / 指令草稿隔离 / 协议·编排
+    手动保存）**（2026-09-24 逐条确认后实施，全部红→绿，**待人工验证后一单
+    提交**，明细见 `docs/PLAN_Backlog.md` §8.10）：
+    - #1 协议卡面未配置固定块 `??` 非 `00`（含空容器 `??`）：根因 `OP_CODES`
+      缺 `STRUCT` 键致组卡恒判 fixed；补键 + `hexLooksUnconfigured`（全 0 →
+      等量 `??`）+ `formatUnknown`；计算层保留全 0（存储值 = 编码真值）。测试
+      Block +3 / protocolTree +2。
+    - #2 指令草稿隔离：`useInstructionData` `draftInstruction` 单槽 + merged
+      overlay，编辑/撤销/重做只写草稿、`saveChanges` 成功写穿共享 —— 指令加工
+      页共享态保存前零写入（hook 测试 +3）。
+    - #3 协议手动保存：防抖链退役，`draftProtocol` 草稿 + 派生脏标；commit/undo/
+      redo 只动草稿；SAVE 按钮（属性面板）+ 顶栏 UNSAVED；切协议/新建/复制/导入
+      弹「放弃未保存的更改？」；横幅重试 = `saveChanges`；`beforeunload` 脏标
+      拦截；保存 = 写穿 + 清草稿 + 清史（镜像指令页）；409 双动作/校验闸/签名
+      跳过保留。Protocol.test 17 红 → 26 绿。
+    - #4 编排手动保存：`dirtyIds` 脏行集合，label/协议/指令/洞位编辑标脏不 PUT、
+      SAVE 逐行落库（比对已发载荷防误清）；星标/增删即时保持；防抖 + 卸载冲刷
+      退役改 `beforeunload`；降级态不标脏。Orchestration.test 4 红 → 18 绿。
+    - 1d 文档：pageStatus 三段 11 处口径 + PAGE_STATUS 重生成 + PLAN §8.10。
+    - 验收：前端 **559/559（40 文件）**（基线 556 + 3）、后端 **296/296**（纯
+      前端回归）、build EXIT=0、校验器触 5 个 UI 文件 0 违规、PAGE_STATUS
+      EXIT=0。**零 DDL** → 无 db 提交。**待办：人工验证 → 一单提交。**
+
+22. **人工验证反馈 2 第 3 轮：六条实施（复制块撤除 / 卡面存储值 / 两页 SAVE
+    底置 / 编排分栏·交互）**（2026-09-24 取证确认后实施，全部红→绿，
+    **与 #21 第 2 轮合并待人工验证后一单提交**，明细见 `docs/PLAN_Backlog.md`
+    §8.11）：
+    - #1 复制块撤除：两页 `onDuplicateBlock`/handler/`duplicateBlockInInstruction`
+      util + 单测全删；`duplicateNode` 纯函数 + 3 单测随后按用户拍板（「连删」）
+      一并移除 —— `cloneTreeWithNewIds` 留用（协议级复制 / JSON 导入共用），
+      `remapRefs=false` 死分支随之清除；侧栏「副本」整条复制保留。
+    - #2 卡面口径：撤「全 0 → ??」回退——未配置固定块显存储值（`0000`→`00 00`）、
+      空容器中央空白（页脚仍 `0B @00`）、`??` 仅限无法确定；计算层存储值 = 编码
+      真值不变。
+    - #3/#4 SAVE 底置：协议页属性面板底部动作区（协议级 + 块级字段之后 mt-auto）；
+      编排页底部动作区（`● N 条未保存` 计数行 + 常驻 SAVE）。
+    - #5 分栏：编排 section 补 `min-w-0 overflow-hidden`（flex `min-width:auto`
+      根因），三页 aside 补 `shrink-0`，协议/编排 aside 补 `overflow-y-auto`。
+    - #6 编排交互：侧栏脏行琥珀 ●（title=有未保存更改）；属性面板四分区
+      IDENTITY/STRUCTURE/HOLE/ACTIONS，协议外壳/指令内核从头部下移；底部计数行 +
+      SAVE 常驻 `disabled`（干净或降级）。
+    - 1d 文档：pageStatus 协议·指令·编排三段 9 处 + PAGE_STATUS 重生成 + PLAN §8.11。
+    - 验收（连删后终态）：前端 **557/557（40 文件）**（第 3 轮原 560，连删
+      duplicateNode 3 单测 -3）、后端 **296/296**、build EXIT=0、校验器
+      触 10 文件 0 违规、PAGE_STATUS EXIT=0、schema SCHEMA_IDENTICAL（零 DDL）。
+      **待办：人工验证 → 与 #21 合并一单提交。**
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

@@ -12,6 +12,10 @@ export const OP_CODES = {
     BITFIELD: 'BITFIELD',
     MAPPING: 'MAPPING',
     ARRAY_GROUP: 'ARRAY_GROUP',
+    // 结构组 op（属性面板/校验以字面 'STRUCT' 使用）。OP_CODES 此前缺此键 →
+    // `undefined === OP_CODES.STRUCT` 对无 op_code 的协议块恒真，全部协议块被
+    // 误判成组卡、hex 分支永不命中——人工验证反馈 #1「固定块不显示实际取值」根因。
+    STRUCT: 'STRUCT',
     LENGTH_CALC: 'LENGTH_CALC',
     CHECKSUM_CRC: 'CHECKSUM_CRC',
     TIME_ACCUMULATOR: 'TIME_ACCUMULATOR',

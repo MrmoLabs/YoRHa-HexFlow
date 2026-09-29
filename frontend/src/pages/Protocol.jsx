@@ -5,7 +5,7 @@ import ProtocolPropertiesPanel from '../components/editor/ProtocolPropertiesPane
 import NieRModal from '../components/ui/NieRModal';
 import { v4 as uuidv4 } from 'uuid';
 import { api } from '../api';
-import { serializeProtocol, findNode, buildProtocolLanes, computeProtocolOffsets, moveNode, removeNode, updateNode, collectContainerIds, findAncestors, injectRefsSigma, injectContainerContent, buildDuplicateProtocolPayload, duplicateNode } from '../utils/protocolTree';
+import { serializeProtocol, findNode, buildProtocolLanes, computeProtocolOffsets, moveNode, removeNode, updateNode, collectContainerIds, findAncestors, injectRefsSigma, injectContainerContent, buildDuplicateProtocolPayload } from '../utils/protocolTree';
 import { validateProtocol } from '../utils/validateProtocol';
 import { analyzeProtocolImport } from '../utils/importExport';
 import { triggerBlobDownload } from '../utils/download';
@@ -16,37 +16,28 @@ export default function Protocol({ protocols, setProtocols }) {
     const [activeProtocolId, setActiveProtocolId] = useState(protocols[0]?.id || null);
     const [statusMsg, setStatusMsg] = useState('');
     // 批次一 P0-3: 保存失败横幅（镜像指令页 P4-2 saveError）——透传后端
-    // detail（400 "refs target not found" 这类英文原文比固定文案可定位），
-    // 脏负载归还 pendingSaveRef 后横幅「重试」与离开拦截都重新武装。
+    // detail（400 "refs target not found" 这类英文原文比固定文案可定位）。
+    // 反馈 #3:失败后草稿仍脏 →「重试」= 重发草稿，离开拦截由脏标武装。
     const [saveError, setSaveError] = useState('');
     // 批次五: version 乐观并发冲突态 —— 与文案分开存：saveError 只管横幅文字，
     // 冲突态决定按钮组（强制覆盖/加载最新 双动作）；非冲突失败仍是「重试」。
     const [saveConflict, setSaveConflict] = useState(false);
     const [selectedId, setSelectedId] = useState(null);
-    const saveTimerRef = useRef(null);
+    // 反馈 #3 手动保存:未保存工作副本（草稿）只在本组件内存 —— 编辑/撤销/
+    // 重做改它，共享 protocols 只由保存成功/加载最新写穿（镜像指令页 #2 草稿隔离）。
+    const [draftProtocol, setDraftProtocol] = useState(null);
+    // 反馈 #3 切协议/新建/复制/导入前的「放弃未保存的更改？」确认弹窗
+    const [confirmDialog, setConfirmDialog] = useState(null);
     const statusTimerRef = useRef(null);
     // 批次四 P3-2: 导入文件选择器（镜像指令页 importInputRef）+ 预览弹窗态
     const importInputRef = useRef(null);
     const [importPreview, setImportPreview] = useState(null); // { report, summary }
     const lastPersistedSignatureRef = useRef('');
-    // Debounced-save bookkeeping: remember the pending payload so protocol
-    // switches / unmount can FLUSH it instead of dropping it. Otherwise the
-    // switch effect rewrites lastPersistedSignatureRef with the IN-MEMORY
-    // (dirty) state, the pending save then sees matching signatures and
-    // silently skips persisting the edits (lost on reload).
-    const pendingSaveRef = useRef(null);
-    const flushPendingSave = () => {
-        if (!pendingSaveRef.current) return;
-        if (saveTimerRef.current) {
-            clearTimeout(saveTimerRef.current);
-            saveTimerRef.current = null;
-        }
-        const pending = pendingSaveRef.current;
-        pendingSaveRef.current = null;
-        // saveProtocol is declared later in the component but this helper only
-        // ever runs from effects after render; failures surface via showStatus.
-        saveProtocol(pending).catch(() => { /* surfaced below in saveProtocol */ });
-    };
+    // 反馈 #3:活动 id 实时镜像 —— 保存回调（异步落定）读它判断草稿/清史
+    // 是否仍归属当前视图，切走后不误伤新协议的草稿与历史。
+    const activeProtocolIdRef = useRef(activeProtocolId);
+    activeProtocolIdRef.current = activeProtocolId;
+    const hasUnsavedChangesRef = useRef(false);
 
     useEffect(() => {
         if (!activeProtocolId && protocols.length > 0) {
@@ -58,22 +49,18 @@ export default function Protocol({ protocols, setProtocols }) {
 
     useEffect(() => {
         return () => {
-            // Persist pending edits instead of dropping them on unmount
-            flushPendingSave();
-            if (saveTimerRef.current) {
-                clearTimeout(saveTimerRef.current);
-            }
+            // 反馈 #3:不自动落库 —— 卸载即弃草稿（与切协议确认一致），只清状态定时器
             if (statusTimerRef.current) {
                 clearTimeout(statusTimerRef.current);
             }
         };
     }, []);
 
-    // P0-3: a debounced save inside the 350ms window must not be lost to a
-    // refresh — block unload while one is pending (refs read at event time).
+    // 反馈 #3:脏态刷新拦截（事件时读 ref —— 手动保存语义下无 pending 负载，
+    // 有未保存草稿即拦；干净态不拦）。
     useEffect(() => {
         const onBeforeUnload = (e) => {
-            if (pendingSaveRef.current || saveTimerRef.current) {
+            if (hasUnsavedChangesRef.current) {
                 e.preventDefault();
                 e.returnValue = '';
             }
@@ -97,23 +84,46 @@ export default function Protocol({ protocols, setProtocols }) {
         }
     }, []);
 
-    const currentProtocol = protocols.find(p => p.id === activeProtocolId) || protocols[0] || null;
+    const sharedProtocol = protocols.find(p => p.id === activeProtocolId) || protocols[0] || null;
+    // 反馈 #3:工作副本 = 草稿优先（未保存内容），否则镜像共享已保存行 ——
+    // 保存前共享态零写入；保存成功经 applyProtocolUpdate 写穿后草稿毕业。
+    const currentProtocol = draftProtocol && sharedProtocol && draftProtocol.id === sharedProtocol.id
+        ? draftProtocol
+        : sharedProtocol;
+    const hasUnsavedChanges = Boolean(
+        draftProtocol && sharedProtocol && draftProtocol.id === sharedProtocol.id
+    );
+    hasUnsavedChangesRef.current = hasUnsavedChanges; // beforeunload 事件时读
 
     // 批次二 P1-5: 撤销/重做（镜像 useInstructionData P4-1 —— 栈上限 50、
     // 新编辑作废 redo 分支）。声明在 switch effect 之前（依赖数组求值需在位）。
-    // 与指令页的差异：协议页是防抖**自动保存** → 撤销也走 commit 链自动落库，
-    // 因此**保存不清史**（否则防抖 350ms 落库瞬间历史即被清空，撤销窗口归零）；
-    // 仅切协议清史（镜像指令页 activeId 效果）。
+    // 反馈 #3 改手动:撤销/重做只动草稿不自动落库；**保存 = 新基线清史**
+    // （镜像指令页 P4-1）+ 切协议清史（activeId 效果）。
     const { push: pushHistory, undo: popUndo, redo: popRedo, clear: clearHistory, canUndo, canRedo } = useHistory(50);
     // A+B：内联展开 + 泳道焦点（对标 useInstructionLanes 的
     // expandedGroupIds/focusedParentId；下钻 pathIds/面包屑退役）
     const [expandedContainerIds, setExpandedContainerIds] = useState([]);
     const [focusedParentId, setFocusedParentId] = useState(null);
 
+    // 反馈 #3:确认弹窗（镜像指令页 openConfirm）+ 带草稿切换守卫 —— 侧栏点选/
+    // 新建/复制/导入都会切走活动协议，草稿脏时先问「放弃未保存的更改？」。
+    const openConfirm = (message, onConfirm) => setConfirmDialog({ message, onConfirm });
+    const guardDirty = (next) => {
+        if (!hasUnsavedChanges) { next(); return; }
+        openConfirm('放弃未保存的更改？', () => {
+            setDraftProtocol(null);
+            next();
+        });
+    };
+
     useEffect(() => {
-        // Flush first: the dirty payload of the protocol we are leaving must be
-        // persisted BEFORE lastPersistedSignatureRef is overwritten below.
-        flushPendingSave();
+        // 反馈 #3:切走先弃草稿（守卫弹窗已确认/协议已删自动愈合）——陈旧草稿
+        // 不得跟随到新协议；失败横幅同理收起（内容已属旧协议）。
+        setDraftProtocol(prev => (
+            currentProtocol && prev && prev.id === currentProtocol.id ? prev : null
+        ));
+        setSaveError('');
+        setSaveConflict(false);
 
         if (!currentProtocol) {
             setExpandedContainerIds([]);
@@ -175,22 +185,21 @@ export default function Protocol({ protocols, setProtocols }) {
         const nextSignature = serializeProtocol(nextProtocol);
 
         if (lastPersistedSignatureRef.current === nextSignature) {
-            // 已是持久化态：清掉指向它的 pending（失败恢复归还的负载若已由
-            // 另一次保存落库，离开拦截不该继续武装）+ 清历史失败横幅。
-            if (pendingSaveRef.current === nextProtocol) pendingSaveRef.current = null;
+            // 已是持久化态（如撤销回基线后再点保存）：清指向本协议的草稿
+            // （切走场景的他协议草稿不动）+ 清历史失败横幅。
+            setDraftProtocol(prev => (prev && prev.id === nextProtocol.id ? null : prev));
             setSaveError('');
             setSaveConflict(false);
             return nextProtocol;
         }
 
-        // 批次二 P0-4: 结构校验唯一咽喉（防抖保存 / 切协议 flush / 横幅重试
+        // 批次二 P0-4: 结构校验唯一咽喉（SAVE 按钮 / 横幅重试 / 强制覆盖
         // 全走这里）——errors 阻断 PUT（后端对 hex 垃圾零校验，fromhex 失败
-        // 静默 → 落库即污染错帧），pending 保留（离开拦截武装，beforeunload
-        // 继续拦），清单经属性面板常驻 + 点击定位；改好后下一次防抖自然放行
-        // （清单同步消失）。warnings 不阻断，保存成功时并入状态栏。
+        // 静默 → 落库即污染错帧），草稿保留（脏标 + beforeunload 继续拦），
+        // 清单经属性面板常驻 + 点击定位；改好后再点保存放行（清单同步消失）。
+        // warnings 不阻断，保存成功时并入状态栏。
         const { errors, warnings } = validateProtocol(nextProtocol);
         if (errors.length > 0) {
-            if (!pendingSaveRef.current) pendingSaveRef.current = nextProtocol;
             showStatus(`保存被阻止：${errors.length} 个结构错误`, 2500);
             return nextProtocol;
         }
@@ -208,10 +217,12 @@ export default function Protocol({ protocols, setProtocols }) {
                 version: forceVersion !== undefined ? forceVersion : nextProtocol.version
             });
             lastPersistedSignatureRef.current = serializeProtocol(saved);
-            applyProtocolUpdate(saved);
-            // 仅当 pending 仍是本次负载才清 —— 防抖窗口内用户继续编辑产生的
-            // 更新 payload 不被误清（pending 恒 = 最新未保存负载）。
-            if (pendingSaveRef.current === nextProtocol) pendingSaveRef.current = null;
+            applyProtocolUpdate(saved); // 草稿毕业写穿（共享行 = 服务端回执）
+            // 仅当草稿仍属本协议才清 —— 异步落定期间切走的场景不误伤新协议。
+            setDraftProtocol(prev => (prev && prev.id === saved.id ? null : prev));
+            if (activeProtocolIdRef.current === saved.id) {
+                clearHistory(); // 反馈 #3:保存 = 新基线（镜像指令页 P4-1）
+            }
             setSaveError('');
             setSaveConflict(false);
             showStatus(warnings.length > 0
@@ -219,12 +230,10 @@ export default function Protocol({ protocols, setProtocols }) {
                 : '协议已保存', 1200);
             return saved;
         } catch (error) {
-            // 批次一 P0-3 失败恢复：PUT 失败不清脏态 —— 负载归还 pending
-            // （flushPendingSave / beforeunload 重新武装），横幅区分
-            // 「服务端拒绝」与「网络/服务错误」并透传 detail（handleResponse
-            // 已把后端 detail 格式化进 error.message），可重试。
+            // 批次一 P0-3 失败恢复：PUT 失败不清草稿（仍脏 → beforeunload 拦、
+            // 「重试」= 重发草稿），横幅区分「服务端拒绝」与「网络/服务错误」
+            // 并透传 detail（handleResponse 已把后端 detail 格式化进 error.message）。
             console.error('Failed to save protocol', error);
-            if (!pendingSaveRef.current) pendingSaveRef.current = nextProtocol;
             const status = error?.response?.status;
             // 批次五: 409 单独归类为版本冲突（三分类: 冲突/服务端拒绝/网络），
             // 冲突态挂双动作按钮（原样重试必再 409 = 死路，故不走「重试」）。
@@ -237,31 +246,23 @@ export default function Protocol({ protocols, setProtocols }) {
             showStatus('协议保存失败', 1500);
             throw error;
         }
-    }, [applyProtocolUpdate, showStatus]);
+    }, [applyProtocolUpdate, showStatus, clearHistory]);
 
-    const scheduleProtocolSave = useCallback((nextProtocol) => {
-        if (saveTimerRef.current) {
-            clearTimeout(saveTimerRef.current);
-        }
-        pendingSaveRef.current = nextProtocol; // dirty payload, flushed on switch/unmount
-
-        showStatus('待保存...');
-        saveTimerRef.current = setTimeout(() => {
-            // 不在触发时清 pending —— 保存 in-flight 期间保留负载（覆盖网络
-            // 窗口的刷新拦截），落定后由 saveProtocol 成功/失败分支处置。
-            saveTimerRef.current = null;
-            saveProtocol(nextProtocol).catch(() => { /* surfaced via saveError banner */ });
-        }, 350);
-    }, [saveProtocol, showStatus]);
+    // 反馈 #3 手动保存:SAVE 按钮唯一落库入口（横幅「重试」同函数）——
+    // 防抖自动保存链（scheduleProtocolSave/flushPendingSave/pendingSaveRef）退役。
+    const saveChanges = async () => {
+        if (!draftProtocol) return; // 干净态无操作
+        await saveProtocol(draftProtocol).catch(() => { /* 横幅已分类 */ });
+    };
 
     // ─── 批次五: version 冲突双动作 ────────────────────────────────────────
-    // 「强制覆盖」= GET 最新 version 后带本地脏负载重发（saveProtocol 的
-    // forceVersion 覆盖本地读取值）；「加载最新」= 放弃本地脏负载、用服务端
-    // 版本替换工作副本（签名/历史重置 → 防抖与离开拦截随之解除）。
+    // 「强制覆盖」= GET 最新 version 后带草稿重发（saveProtocol 的 forceVersion
+    // 覆盖本地读取值）；「加载最新」= 丢弃草稿、用服务端版本替换工作副本
+    // （签名/历史重置 → 脏标与离开拦截随之解除）。
     // 两个入口都先收横幅：按钮即刻不可点（防双击并发重发），失败由各自
     // 分类重新拉起横幅。
     const handleConflictOverwrite = () => {
-        const dirty = pendingSaveRef.current;
+        const dirty = draftProtocol; // 反馈 #3:草稿即待重发负载
         if (!dirty) return;
         setSaveError('');
         setSaveConflict(false);
@@ -282,7 +283,7 @@ export default function Protocol({ protocols, setProtocols }) {
     };
 
     const handleConflictLoadLatest = () => {
-        const targetId = pendingSaveRef.current?.id || currentProtocol?.id;
+        const targetId = draftProtocol?.id || currentProtocol?.id;
         if (!targetId) return;
         setSaveError('');
         setSaveConflict(false);
@@ -290,12 +291,8 @@ export default function Protocol({ protocols, setProtocols }) {
         (async () => {
             try {
                 const latest = await api.getProtocol(targetId);
-                // 放弃本地：清脏负载 + 撤防抖定时器 → 离开拦截自然解除
-                pendingSaveRef.current = null;
-                if (saveTimerRef.current) {
-                    clearTimeout(saveTimerRef.current);
-                    saveTimerRef.current = null;
-                }
+                // 反馈 #3:放弃本地草稿 → 脏标与离开拦截随之解除
+                setDraftProtocol(prev => (prev && prev.id === targetId ? null : prev));
                 lastPersistedSignatureRef.current = serializeProtocol(latest);
                 clearHistory(); // 旧历史基于已失效内容，不可回
                 applyProtocolUpdate(latest);
@@ -309,7 +306,8 @@ export default function Protocol({ protocols, setProtocols }) {
         })();
     };
 
-    const handleAddProtocol = async () => {
+    // 反馈 #3:新建会切走活动协议 —— 草稿脏时先过「放弃未保存的更改？」守卫。
+    const handleAddProtocol = () => guardDirty(async () => {
         const newProto = {
             id: uuidv4(),
             label: '新协议 (NEW)',
@@ -326,14 +324,13 @@ export default function Protocol({ protocols, setProtocols }) {
             console.error('Failed to create protocol', error);
             showStatus(`协议创建失败：${error.message}`, 2500);
         }
-    };
+    });
 
     // 批次三 P1-1: 复制协议 —— 镜像 duplicateInstruction（useInstructionData:316）
     // 的流程：payload 纯函数构造（整树新 id + refs 自含重映射 + label `(副本)`
-    // 防撞）→ POST 直建 → 追加列表并切到副本。无需 dirty 确认（指令页那问
-    // 「放弃未保存？」是因为手动保存语义；协议页防抖自动保存，切协议即 flush
-    // pending，没有「放弃」可言）。
-    const handleDuplicateProtocol = async (id) => {
+    // 防撞）→ POST 直建 → 追加列表并切到副本。反馈 #3 改手动后同指令页：
+    // 草稿脏时先问「放弃未保存的更改？」（复制成功会切到副本）。
+    const handleDuplicateProtocol = (id) => guardDirty(async () => {
         const source = protocols.find(p => p.id === id);
         if (!source) {
             showStatus('复制失败：源协议不存在', 2000);
@@ -350,13 +347,19 @@ export default function Protocol({ protocols, setProtocols }) {
             console.error('Failed to duplicate protocol', error);
             showStatus(`协议复制失败：${error.message}`, 2500);
         }
+    });
+
+    // 反馈 #3:侧栏切换过草稿守卫（同 id 点选 = 无切换，不问）
+    const handleSelectProtocol = (id) => {
+        if (id === activeProtocolId) return;
+        guardDirty(() => setActiveProtocolId(id));
     };
 
     // ===== 批次四 P3-2: 协议 JSON 导出/导入（镜像指令页 importInputRef +
     // 预览确认范式；指令页导出已按反馈移除，协议侧本批保留 —— 备份/迁移
     // 需要）=====
-    // 导出 = 当前工作副本原样下盘（含未落库编辑 —— 导出即所见，切协议即
-    // flush 已有既有链路兜底落库）。文件形态 {schemaVersion, protocols:[…]}
+    // 导出 = 当前工作副本原样下盘（含未落库草稿 —— 导出即所见；草稿落库
+    // 走 SAVE，切走前有确认守卫兜底）。文件形态 {schemaVersion, protocols:[…]}
     // 与 analyzeProtocolImport 的包装入口对称。
     const handleExportProtocol = () => {
         if (!currentProtocol) return;
@@ -471,27 +474,24 @@ export default function Protocol({ protocols, setProtocols }) {
         await performDeleteProtocol(id);
     };
 
-    // ===== 批次二 P1-5: 撤销/重做（自动保存页语义：撤销 = 回旧快照 + 重新
-    // 入防抖保存链 → 350ms 后撤销本身也落库；保存**不清**历史，否则防抖
-    // 落库瞬间撤销窗口即归零） =====
+    // ===== 批次二 P1-5: 撤销/重做（反馈 #3 改手动：回旧快照只动草稿，
+    // 落库走 SAVE；保存 = 新基线清史，撤销窗口从保存点重新计） =====
     const handleUndo = useCallback(() => {
         if (!currentProtocol) return;
         // 当前活快照交 hook 停上 redo 栈，换回最近一个旧快照。
         const prev = popUndo({ id: currentProtocol.id, protocol: currentProtocol });
         if (!prev || prev.id !== currentProtocol.id) return; // 切协议已清史，异协议条目防御性忽略
-        applyProtocolUpdate(prev.protocol);
-        scheduleProtocolSave(prev.protocol);
+        setDraftProtocol(prev.protocol);
         showStatus('已撤销', 800);
-    }, [currentProtocol, popUndo, applyProtocolUpdate, scheduleProtocolSave, showStatus]);
+    }, [currentProtocol, popUndo, showStatus]);
 
     const handleRedo = useCallback(() => {
         if (!currentProtocol) return;
         const next = popRedo({ id: currentProtocol.id, protocol: currentProtocol });
         if (!next || next.id !== currentProtocol.id) return;
-        applyProtocolUpdate(next.protocol);
-        scheduleProtocolSave(next.protocol);
+        setDraftProtocol(next.protocol);
         showStatus('已重做', 800);
-    }, [currentProtocol, popRedo, applyProtocolUpdate, scheduleProtocolSave, showStatus]);
+    }, [currentProtocol, popRedo, showStatus]);
 
     // Ctrl+Z / Ctrl+Shift+Z —— 输入控件聚焦时或删除弹窗打开时不响应（不劫持
     // 正常文本撤销）。镜像 Instruction.jsx:125-138，modalConfig → deleteTarget。
@@ -510,17 +510,16 @@ export default function Protocol({ protocols, setProtocols }) {
         return () => window.removeEventListener('keydown', onHistoryKey);
     }, [handleUndo, handleRedo, deleteTarget]);
 
-    // ===== 树操作（protocolTree.js 纯函数；commit = 历史入栈 + 乐观更新 + 防抖持久化） =====
+    // ===== 树操作（protocolTree.js 纯函数；commit = 历史入栈 + 草稿更新） =====
     // 批次二 P1-5: 每次用户编辑先把「编辑前」全量快照压入 undo 栈（镜像
     // useInstructionData:254 —— 入旧态，undo 才能回到它）；新编辑由 hook
-    // 作废 redo 分支。撤销/重做本身不走此入口（它们已在 hook 内完成栈交换，
-    // 再 push 会自噬），只做 apply + schedule —— 自动保存下撤销也即时落库。
+    // 作废 redo 分支。撤销/重做本身不走此入口（它们已完成栈交换，再 push
+    // 会自噬）。反馈 #3:编辑只进草稿 —— 共享态与落库都等 SAVE。
     const commitTree = (newRoot) => {
         if (currentProtocol) {
             pushHistory({ id: currentProtocol.id, protocol: currentProtocol });
         }
-        applyProtocolUpdate(newRoot);
-        scheduleProtocolSave(newRoot);
+        setDraftProtocol(newRoot);
     };
 
     const handleAddBlock = (type) => {
@@ -547,22 +546,8 @@ export default function Protocol({ protocols, setProtocols }) {
         if (selectedId === id) setSelectedId(null);
     };
 
-    // 批次三 P1-2: 复制块 —— 镜像 Instruction.handleDuplicateBlock:379-385：
-    // 深拷贝插源块之后（子树全新 id、refs 保持指原块 = un-wired 副本），
-    // 副本立即选中可编辑；副本是容器则顺手展开（镜像 handleAddBlock 新容器
-    // 口径，否则副本是个看不见内容的折叠卡）。
-    const handleDuplicateBlock = (id) => {
-        if (!currentProtocol) return;
-        const result = duplicateNode(currentProtocol, id, uuidv4);
-        if (!result) return;
-        commitTree(result.root);
-        const copy = findNode(result.root, result.copyId);
-        if (copy && isNestable(copy.type)) {
-            setExpandedContainerIds(prev => Array.from(new Set([...prev, copy.id])));
-        }
-        setSelectedId(result.copyId);
-        showStatus('块已复制', 1000);
-    };
+    // 人工验证第 3 轮 #1: 复制块 UI 入口撤除（协议页不再深拷贝块；底座
+    // duplicateNode 纯函数 + 3 单测已按用户拍板连删，见 protocolTree.js 批次三注释）。
 
     const handleUpdateBlock = (id, updates) => {
         if (!currentProtocol) return;
@@ -641,7 +626,7 @@ export default function Protocol({ protocols, setProtocols }) {
     const selectedBlock = selectedId ? findNode(currentProtocol, selectedId) : null;
 
     // 批次二 P0-4: 每次渲染随工作副本全树走一遍（O(n) 小树可忽略）——
-    // 清单**实时**反映编辑态：改坏即刻出条目、改好即刻消失，与防抖闸
+    // 清单**实时**反映编辑态：改坏即刻出条目、改好即刻消失，与保存闸
     // （saveProtocol 内同函数）同源不漂移。镜像 Instruction.jsx:79-82。
     const validation = useMemo(
         () => validateProtocol(currentProtocol),
@@ -659,8 +644,7 @@ export default function Protocol({ protocols, setProtocols }) {
     return (
         <div className="flex-1 flex flex-col overflow-hidden">
             {/* 批次一 P0-3: 保存失败横幅（镜像 Instruction.jsx:549-568）——
-                脏态保留、× 只关横幅不清脏态；重试 = flushPendingSave（失败
-                时 pendingSaveRef 已归还失败负载，无 pending 则无操作）。
+                草稿保留、× 只关横幅不清草稿；重试 = 重发草稿（saveChanges）。
                 批次五: 409 版本冲突态换双动作 —— 强制覆盖（GET 最新 version
                 重发）/ 加载最新（放弃本地），不给原样重试（必再 409）。 */}
             {saveError && (
@@ -687,7 +671,7 @@ export default function Protocol({ protocols, setProtocols }) {
                         </>
                     ) : (
                         <button
-                            onClick={flushPendingSave}
+                            onClick={saveChanges}
                             className="border border-[#FFB74D]/60 px-1.5 leading-none hover:bg-[#FFB74D] hover:text-black transition-colors"
                         >
                             重试
@@ -709,7 +693,7 @@ export default function Protocol({ protocols, setProtocols }) {
                 type="file"
                 accept=".json,application/json"
                 className="hidden"
-                onChange={handleImportFileChosen}
+                onChange={(e) => guardDirty(() => handleImportFileChosen(e))}
             />
 
             <div className="flex flex-1 overflow-hidden">
@@ -723,7 +707,7 @@ export default function Protocol({ protocols, setProtocols }) {
                 <ProtocolListSidebar
                     protocols={protocols}
                     activeProtocolId={activeProtocolId}
-                    onSelect={setActiveProtocolId}
+                    onSelect={handleSelectProtocol}
                     onAdd={handleAddProtocol}
                     onDuplicate={handleDuplicateProtocol}
                     onDelete={handleDeleteProtocol}
@@ -754,6 +738,7 @@ export default function Protocol({ protocols, setProtocols }) {
                     <div className="h-10 border-b border-nier-light bg-nier-dark/90 flex items-center justify-between px-4 gap-2 text-xs font-mono opacity-50">
                         <div className="flex items-center gap-2 cursor-pointer hover:text-nier-light" onClick={() => setSelectedId(null)}>
                             <span>PROTOCOL EDITOR // {currentProtocol?.label}</span>
+                            {hasUnsavedChanges && <span className="text-yellow-500 animate-pulse">UNSAVED</span>}
                         </div>
                         <div className="flex gap-2 items-center">
                             <button
@@ -809,17 +794,18 @@ export default function Protocol({ protocols, setProtocols }) {
                     currentProtocol={currentProtocol}
                     selectedBlock={selectedBlock}
                     onProtocolMetaChange={(updatedProto) => {
-                        // 批次二: 协议改名/描述同入口入历史（commitTree = 入栈 + 更新 + 防抖）
+                        // 批次二: 协议改名/描述同入口入历史（commitTree = 入栈 + 草稿更新）
                         commitTree(updatedProto);
                     }}
                     onEnterContainer={handleEnterContainer}
                     onUpdateBlock={handleUpdateBlock}
                     onDeleteBlock={handleDeleteBlock}
-                    onDuplicateBlock={handleDuplicateBlock}
                     pickingMode={pickingMode}
                     onStartPicking={handleStartPicking}
                     onStopPicking={handleStopPicking}
                     validationIssues={validation}
+                    hasUnsavedChanges={hasUnsavedChanges}
+                    onSaveProtocol={saveChanges}
                     onLocateBlock={(id) => {
                         if (!id || !findNode(currentProtocol, id)) return;
                         // 定位 = 只展开目标的容器祖先链（深层块可见，其余折叠态不打扰）+ 选中
@@ -856,6 +842,19 @@ export default function Protocol({ protocols, setProtocols }) {
                     : ''}
                 onConfirm={handleImportConfirm}
                 onCancel={() => setImportPreview(null)}
+            />
+
+            {/* 反馈 #3:切协议/新建/复制/导入前的「放弃未保存的更改？」确认
+                （镜像指令页 openConfirm 范式） */}
+            <NieRModal
+                isOpen={Boolean(confirmDialog)}
+                message={confirmDialog?.message || ''}
+                onConfirm={() => {
+                    const dialog = confirmDialog;
+                    setConfirmDialog(null);
+                    if (dialog?.onConfirm) dialog.onConfirm();
+                }}
+                onCancel={() => setConfirmDialog(null)}
             />
         </div>
     );

@@ -11,7 +11,6 @@ import { useInstructionLanes } from '../hooks/useInstructionLanes';
 import { useSelectionSystem } from '../hooks/useSelectionSystem';
 import { validateInstruction } from '../utils/validateInstruction';
 import { computeByteOffsets } from '../utils/byteOffsets';
-import { duplicateBlockInInstruction } from '../utils/duplicateInstruction';
 import { moveField } from '../utils/moveField';
 import { analyzeImport } from '../utils/importExport';
 import InstructionTable from '../components/editor/InstructionTable';
@@ -275,46 +274,45 @@ export default function Instruction({ instructions: initialInstructions, setInst
 
     const promptDeleteBlock = (id) => {
         openConfirm("删除所选积木？", () => {
-            setInstructions(prev => {
-                const active = prev.find(i => i.id === activeInstructionId);
-                if (!active) return prev;
+            // 反馈 #2 草稿隔离：与新增/编辑同漏斗 —— 工作副本改动只进 hook 内
+            // 草稿（updateLocalInstruction），不再经共享 setInstructions 直写。
+            const active = currentInstruction;
+            if (!active) return;
 
-                // Cascade: collect the block AND every descendant. Fields form a
-                // flat parent_id tree — deleting only the group itself would leave
-                // its children pointing at a dead parent, i.e. invisible orphans.
-                const removed = new Set([id]);
-                let grew = true;
-                while (grew) {
-                    grew = false;
-                    active.fields.forEach(f => {
-                        if (f.parent_id && removed.has(f.parent_id) && !removed.has(f.id)) {
-                            removed.add(f.id);
-                            grew = true;
-                        }
-                    });
-                }
+            // Cascade: collect the block AND every descendant. Fields form a
+            // flat parent_id tree — deleting only the group itself would leave
+            // its children pointing at a dead parent, i.e. invisible orphans.
+            const removed = new Set([id]);
+            let grew = true;
+            while (grew) {
+                grew = false;
+                active.fields.forEach(f => {
+                    if (f.parent_id && removed.has(f.parent_id) && !removed.has(f.id)) {
+                        removed.add(f.id);
+                        grew = true;
+                    }
+                });
+            }
 
-                // Purge dangling references (checksum/length refs & dynamic repeat)
-                // so surviving blocks don't keep pointing at deleted fields.
-                const scrubbed = active.fields
-                    .filter(b => !removed.has(b.id))
-                    .map(b => {
-                        const refs = b.parameter_config?.refs;
-                        const refsGone = Array.isArray(refs) && refs.some(r => removed.has(r));
-                        const repeatGone = b.repeat_ref_id && removed.has(b.repeat_ref_id);
-                        if (!refsGone && !repeatGone) return b;
-                        const parameter_config = { ...b.parameter_config };
-                        if (refsGone) parameter_config.refs = refs.filter(r => !removed.has(r));
-                        return {
-                            ...b,
-                            parameter_config,
-                            repeat_ref_id: repeatGone ? null : b.repeat_ref_id
-                        };
-                    });
+            // Purge dangling references (checksum/length refs & dynamic repeat)
+            // so surviving blocks don't keep pointing at deleted fields.
+            const scrubbed = active.fields
+                .filter(b => !removed.has(b.id))
+                .map(b => {
+                    const refs = b.parameter_config?.refs;
+                    const refsGone = Array.isArray(refs) && refs.some(r => removed.has(r));
+                    const repeatGone = b.repeat_ref_id && removed.has(b.repeat_ref_id);
+                    if (!refsGone && !repeatGone) return b;
+                    const parameter_config = { ...b.parameter_config };
+                    if (refsGone) parameter_config.refs = refs.filter(r => !removed.has(r));
+                    return {
+                        ...b,
+                        parameter_config,
+                        repeat_ref_id: repeatGone ? null : b.repeat_ref_id
+                    };
+                });
 
-                return prev.map(i => i.id === active.id ? { ...i, fields: scrubbed } : i);
-            });
-            setHasUnsavedChanges(true);
+            updateLocalInstruction({ ...active, fields: scrubbed });
             if (selectedId === id) setSelectedId(null);
         });
     }
@@ -373,16 +371,8 @@ export default function Instruction({ instructions: initialInstructions, setInst
         // But to minimize friction, I will NOT auto-save here, just mark unsaved.
     }
 
-    // P2-1 复制块: deep-copy the selected block (plus subtree) right after
-    // itself; refs inside the copy keep pointing at the originals (documented),
-    // the copy gets `_N` names and is selected for immediate editing.
-    const handleDuplicateBlock = (id) => {
-        if (!currentInstruction) return;
-        const result = duplicateBlockInInstruction(currentInstruction, id);
-        if (!result) return;
-        updateLocalInstruction({ ...currentInstruction, fields: result.fields });
-        setSelectedId(result.newBlockId);
-    };
+    // 人工验证第 3 轮 #1: 复制块 UI 入口撤除（指令页不再深拷贝块；
+    // duplicateBlockInInstruction util 已随本轮删除）。
 
     const handleCanvasClick = (e) => {
         if (pickingMode.isActive) return;
@@ -615,7 +605,6 @@ export default function Instruction({ instructions: initialInstructions, setInst
                 onSaveInstruction={() => saveChanges(openConfirm)}
                 onDeleteInstruction={(e, id) => deleteInstruction(id, openConfirm)}
                 onDeleteBlock={promptDeleteBlock}
-                onDuplicateBlock={handleDuplicateBlock}
                 onSaveBlock={handleSaveBlock}
                 openConfirm={openConfirm}
                 onOpenDatePicker={(val, cb) => setDatePickerState({ isOpen: true, value: val, onConfirmCallback: cb })}

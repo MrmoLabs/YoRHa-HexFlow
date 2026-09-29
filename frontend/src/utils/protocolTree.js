@@ -187,16 +187,14 @@ export const findAncestors = (root, id) => {
     return chain.reverse(); // 回溯入栈是内层先入 → 反转为外→内（可读性/稳定序）
 };
 
-// ─── 批次三 P1-1/P1-2：复制（协议级 / 块级，镜像 duplicateInstruction.js
-// 的双语义分野）──────────────────────────────────────────────────────
-// - 协议级 = 整树重生 id + refs **全量重映射到副本**（自含：源 refs 按同树
-//   契约全可解，镜像 cloneFieldsForNewInstruction 的 remap + 丢弃不可解口径，
-//   防 POST/PUT 落库 400 "refs target not found"）；
-// - 块级 = 子树重生 id 插源块之后 + refs **保持指向原块**（镜像
-//   duplicateBlockInInstruction:80-82 documented「un-wired copy —— re-target
-//   explicitly」：同树原块恒在不悬空，语义不被自动改写）。
+// ─── 批次三 P1-1：复制（协议级唯一入口）────────────────────────────────────
+// 协议级 = 整树重生 id + refs **全量重映射到副本**（自含：源 refs 按同树
+// 契约全可解，镜像 cloneFieldsForNewInstruction 的 remap + 丢弃不可解口径，
+// 防 POST/PUT 落库 400 "refs target not found"）。
+// （批次三 P1-2 的块级 duplicateNode —— un-wired copy 口径 —— 已随人工验证
+// 第 3 轮 #1「复制块」撤除按用户拍板连删，单测同步移除。）
 // 两阶段发号：先预序全树建 idMap，再重建节点（引用一致性靠 Map 一次解决）。
-const cloneTreeWithNewIds = (node, genId, remapRefs) => {
+const cloneTreeWithNewIds = (node, genId) => {
     const idMap = new Map();
     const assign = (n) => {
         if (!idMap.has(n.id)) idMap.set(n.id, genId());
@@ -208,11 +206,12 @@ const cloneTreeWithNewIds = (node, genId, remapRefs) => {
         if (Array.isArray(n.children)) copy.children = n.children.map(build);
         const pc = n.parameter_config;
         if (pc && Array.isArray(pc.refs)) {
-            // 无论哪种语义都浅拷一份 pc + 新 refs 数组，副本与源零别名
-            // （副本改引用不得回写源块）。
-            copy.parameter_config = remapRefs
-                ? { ...pc, refs: pc.refs.filter(r => idMap.has(r)).map(r => idMap.get(r)) }
-                : { ...pc, refs: [...pc.refs] };
+            // refs 重映射到副本新 id（同树不可解条目丢弃）+ 浅拷 pc 新数组，
+            // 副本与源零别名（副本改引用不得回写源块）。
+            copy.parameter_config = {
+                ...pc,
+                refs: pc.refs.filter(r => idMap.has(r)).map(r => idMap.get(r))
+            };
         }
         return copy;
     };
@@ -231,7 +230,7 @@ export const buildDuplicateProtocolPayload = (source, existingProtocols = [], ge
         while (labels.has(`${source.label} (副本${n})`)) n += 1;
         label = `${source.label} (副本${n})`;
     }
-    const { clone } = cloneTreeWithNewIds(source, genId, true);
+    const { clone } = cloneTreeWithNewIds(source, genId);
     return {
         id: clone.id,
         label,
@@ -277,7 +276,7 @@ const sanitizeImportedNode = (node) => {
 
 export const buildImportedProtocolPayload = (source, existingProtocols = [], genId = uuidv4) => {
     const labels = new Set(existingProtocols.map(p => String(p.label || '').trim()));
-    const { clone } = cloneTreeWithNewIds(source, genId, true);
+    const { clone } = cloneTreeWithNewIds(source, genId);
     let label = String(source.label ?? '').trim() || '导入协议';
     if (labels.has(label)) {
         let candidate = `${label} (导入)`;
@@ -297,43 +296,8 @@ export const buildImportedProtocolPayload = (source, existingProtocols = [], gen
     };
 };
 
-// 块级复制：深拷贝插源块之后，返回 { root, copyId }（源不存在 → null）。
-// 根标签同层撞名 `_N` 递升（协议页仅 warning，顺手避掉 W0；descendants
-// 各随拷贝容器另起一层、原层内本就唯一 → 不改名）。副本是容器时由页面层
-// 决定展开。输入树零改写（splice 新数组 + 路径重建复用未动节点）。
-export const duplicateNode = (root, id, genId = uuidv4) => {
-    if (!root || !id) return null;
-    let newRoot = null;
-    let copyId = null;
-    const walk = (nodes, parentNode) => {
-        // 叶节点可能无 children 字段（seed/夹具形态）→ 默认空数组守卫
-        const list = nodes || [];
-        for (let i = 0; i < list.length; i++) {
-            const node = list[i];
-            if (node.id === id) {
-                const { clone } = cloneTreeWithNewIds(node, genId, false);
-                // 同层已占标签（含源块自身 → 副本必改名，镜像指令页 uniqueName）
-                const taken = new Set(nodes.map(x => x.label || '').filter(Boolean));
-                if (clone.label && taken.has(clone.label)) {
-                    let k = 1;
-                    while (taken.has(`${clone.label}_${k}`)) k += 1;
-                    clone.label = `${clone.label}_${k}`;
-                }
-                const next = [...nodes];
-                next.splice(i + 1, 0, clone);
-                newRoot = parentNode
-                    ? updateNode(root, parentNode.id, { children: next })
-                    : { ...root, children: next };
-                copyId = clone.id;
-                return true;
-            }
-            if (walk(node.children, node)) return true;
-        }
-        return false;
-    };
-    walk(root.children, null);
-    return newRoot ? { root: newRoot, copyId } : null;
-};
+// 块级复制 duplicateNode 已随人工验证第 3 轮 #1 连删（UI 入口撤除后纯函数 +
+// 3 单测一并移除；协议级复制走 buildDuplicateProtocolPayload）。
 
 // ─── 一期（A4/A5）+ ②：refs → 设计期 Σ 回显 ──────────────────────────────
 // Σ = computeByteOffsets byId 尺寸之和（容器已按 Σ 子入表）；任一 ref 悬空/
@@ -489,6 +453,9 @@ const nodeContent = (node, byId, root) => {
         return formatUnknown(node.byte_length);
     }
     const hexVal = String(node.hex_value || node.parameter_config?.hex || '').replace(/\s/g, '');
+    // 卡面 = 存储值原样拼接（含全 0 默认占位——存储值即编码真值，与 Block
+    // 卡面同步；人工验证第 3 轮 #2 撤「全 0 → ??」回退）；?? 只留无 hex /
+    // 非法 hex 的卡。计算层 collectDeterministicBytes 不受显示口径影响。
     if (hexVal && /^[\dA-Fa-f]+$/.test(hexVal)) {
         return (hexVal.match(/.{1,2}/g) || []).join(' ').toUpperCase();
     }

@@ -9,7 +9,6 @@ import {
     updateNode,
     collectContainerIds,
     findAncestors,
-    duplicateNode,
     buildDuplicateProtocolPayload
 } from '../protocolTree';
 // 命名空间二段导入：injectRefsSigma/computeRefsSigma 系一期新增导出（红测期不拖垮同文件其余断言）
@@ -205,10 +204,10 @@ describe('removeNode / updateNode / collectContainerIds', () => {
     });
 });
 
-// ─── 批次三（P1-1/P1-2）：协议级 / 块级复制 ───────────────────────────────
-// 双语义分野（镜像 duplicateInstruction.js）：协议级 refs 自含重映射 +
-// 丢悬空（防 POST 400）；块级 refs 保持指原块（un-wired，文档化口径）。
-describe('duplicateNode / buildDuplicateProtocolPayload（复制双语义）', () => {
+// ─── 批次三（P1-1）：协议级复制 ────────────────────────────────────────────
+// refs 自含重映射 + 丢悬空（防 POST 400，镜像 duplicateInstruction.js 口径）。
+// 块级 duplicateNode（un-wired copy）已随人工验证第 3 轮 #1 连删。
+describe('buildDuplicateProtocolPayload（协议级复制）', () => {
     const counter = (prefix) => {
         let n = 0;
         return () => `${prefix}-${++n}`;
@@ -216,59 +215,6 @@ describe('duplicateNode / buildDuplicateProtocolPayload（复制双语义）', (
     const len = (id, refs, label) => ({
         id, label: label || id, type: 'length', byte_length: 2, hex_value: '00',
         parameter_config: { type: 'length', refs }
-    });
-
-    it('duplicateNode：子树全新 id、插源块之后、根标签同层 _N 防撞、输入树零改写', () => {
-        const t = proto([
-            leaf('a', { label: '甲' }),
-            cont('g', [leaf('b', { label: '乙' })], '组'),
-            len('L', ['a'], 'L')
-        ]);
-        const gen = counter('n');
-        const result = duplicateNode(t, 'g', gen);
-
-        expect(result).not.toBeNull();
-        // 顶层插源后：a, g, COPY, L
-        expect(result.root.children.map(x => x.id)).toEqual(['a', 'g', result.copyId, 'L']);
-        expect(result.copyId).toMatch(/^n-/);
-        expect(result.copyId).not.toBe('g');
-        // 根标签同层撞名（源占 '组'）→ '组_1'；副本子层另起、后代标签不动
-        const copy = result.root.children[2];
-        expect(copy.label).toBe('组_1');
-        expect(copy.children).toHaveLength(1);
-        expect(copy.children[0].id).toMatch(/^n-/);
-        expect(copy.children[0].id).not.toBe('b');
-        expect(copy.children[0].label).toBe('乙');
-        // 输入树零改写（id 序列 / 源标签均原样）
-        expect(t.children.map(x => x.id)).toEqual(['a', 'g', 'L']);
-        expect(findNode(t, 'g').label).toBe('组');
-    });
-
-    it('duplicateNode：refs 保持指向原块（un-wired，含子树内条目）、pc 零别名', () => {
-        const t = proto([
-            leaf('a', { label: '甲' }),
-            len('L', ['a'], 'L'),
-            cont('g', [leaf('b', { label: '乙' }), len('L2', ['b'], 'L2')], '组')
-        ]);
-        // 复制 L：refs ['a'] 的目标不在拷贝子树内 → 若误走 remap-filter 会被丢成 []
-        const r1 = duplicateNode(t, 'L', counter('m'));
-        const copyL = r1.root.children.find(x => x.id === r1.copyId);
-        expect(copyL.label).toBe('L_1');
-        expect(copyL.parameter_config.refs).toEqual(['a']); // 仍指原块
-        expect(copyL.parameter_config).not.toBe(findNode(t, 'L').parameter_config); // 零别名
-        // 复制 g：子树内 L2 的 refs 同样指**原树**的 b（而非副本 b）
-        const r2 = duplicateNode(t, 'g', counter('k'));
-        const copyG = r2.root.children.find(x => x.id === r2.copyId);
-        const copyL2 = copyG.children.find(x => x.type === 'length');
-        expect(copyL2.parameter_config.refs).toEqual(['b']);
-        expect(copyG.children.map(x => x.id)).not.toContain('b');
-    });
-
-    it('duplicateNode：源不存在 / 根自身 id → null（根复制走协议级入口）', () => {
-        const t = proto([leaf('a')]);
-        expect(duplicateNode(t, 'ghost', counter('x'))).toBeNull();
-        expect(duplicateNode(t, 'root', counter('x'))).toBeNull();
-        expect(duplicateNode(null, 'a', counter('x'))).toBeNull();
     });
 
     it('buildDuplicateProtocolPayload：label (副本) 升序防撞 + 整树新 id + refs 自含重映射', () => {
@@ -533,5 +479,33 @@ describe('injectContainerContent（容器中央值 = 嵌套内容拼接）', () 
         const lanes = protocolTree.injectContainerContent(buildProtocolLanes(p, ['g', 'inner']));
         expect(lanes[0].items.find(i => i.id === 'g').parameter_config.computedValue).toBe('CC');
         expect(lanes[1].items.find(i => i.id === 'inner').parameter_config.computedValue).toBe('CC');
+    });
+});
+
+describe('人工验证第 3 轮 #2 — 容器拼接：?? 仅限无法确定内容的卡，未配置 fixed 子块显存储值', () => {
+    it('fixed 子块 hex_value 全 0（0000/00）→ 显示存储值；非全 0 真值照常拼接', () => {
+        const p = proto([
+            cont('c', [
+                leaf('z1', { hex_value: '0000', byte_length: 2 }),
+                leaf('z2', { hex_value: '00', byte_length: 1 }),
+                leaf('a', { hex_value: 'AA55', byte_length: 2 }),
+            ]),
+        ]);
+        const lanes = protocolTree.injectContainerContent(buildProtocolLanes(p, ['c']));
+        expect(lanes[0].items.find(i => i.id === 'c').parameter_config.computedValue)
+            .toBe('00 00 00 AA 55');
+    });
+
+    it('计算层不受显示口径影响：Σ/checksum 仍将全 0 字面计为编码真值字节', () => {
+        // fixed '0000'(2B) + fixed 'AA55'(2B) 的容器被 length 引用 → Σ = 4B；
+        // 编码器确实会发出 00 00（存储值即真值），计算不因卡面显示口径而缩水。
+        const z = leaf('z', { hex_value: '0000', byte_length: 2 });
+        const a = leaf('a', { hex_value: 'AA55', byte_length: 2 });
+        const p = proto([
+            cont('c', [z, a]),
+            { id: 'L', label: 'L', type: 'length', byte_length: 1, hex_value: '00', parameter_config: { type: 'length', refs: ['c'] } },
+        ]);
+        const lanes = protocolTree.injectRefsSigma(buildProtocolLanes(p, ['c']), computeProtocolOffsets(p).byId, p);
+        expect(lanes[0].items.find(i => i.id === 'L').parameter_config.computedValue).toBe('4B');
     });
 });

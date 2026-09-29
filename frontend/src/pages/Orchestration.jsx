@@ -9,9 +9,11 @@ import { toFrameBlocks } from '../utils/toFrameBlocks';
 import { triggerBlobDownload } from '../utils/download';
 
 // E4 编排绑定持久化：绑定列表接后端 /bindings CRUD（新表 protocol_bindings）。
-// 行为口径：挂载 GET 对账 → 空表种默认绑定（服务端也 POST 一份）→ 加/删即时
-// 写、协议/指令选择即时 PUT、label 输入 400ms 防抖合并（卸载冲刷）；加载失败
-// 降级为纯本地编辑（提示条，不写后端）。props 到位后回填缺失 id 并补写。
+// 行为口径（反馈 #4 改手动）：挂载 GET 对账 → 空表种默认绑定（服务端也 POST
+// 一份）→ 加/删/星标即时写；属性编辑（label/协议/指令/洞位）只进本地草稿并
+// 标脏，「保存更改 (SAVE)」逐行 PUT（原 400ms 防抖 + 卸载冲刷退役，改
+// beforeunload 拦截）；加载失败降级纯本地编辑（提示条，不写后端）。props
+// 到位后回填缺失 id 并补写。
 
 // 本地态 ⇄ API 载荷（snake_case 出线，字段与 backend/schemas/binding_api.py 对齐）
 const toServer = (binding) => ({
@@ -55,13 +57,33 @@ export default function Orchestration({ protocols, instructions }) {
     const [loadFailed, setLoadFailed] = useState(false);
     const [syncMsg, setSyncMsg] = useState('');
 
-    // 持久化节拍：label 打字合并 400ms 防抖；pending 载荷用于卸载冲刷
-    const persistTimerRef = useRef(null);
-    const pendingRef = useRef(null);
+    // 反馈 #4 手动保存：脏行 id 集合（属性编辑草稿）—— SAVE 逐行落库；
+    // 星标/增删等即时写成功也会出队同行（PUT 即落库）。
+    const [dirtyIds, setDirtyIds] = useState(() => new Set());
+    const hasUnsavedChanges = dirtyIds.size > 0;
+    const dirtyRef = useRef(false);
+    dirtyRef.current = hasUnsavedChanges;
+    // 行内容实时镜像：PUT 成功回调比对「已发载荷 vs 当前行」，保存期间又编辑
+    // 的行不误出队（留脏待再存）；行已删则清脏 id。
+    const bindingsRef = useRef(bindings);
+    bindingsRef.current = bindings;
+
+    const clearDirty = (id, sentPayload) => {
+        const row = bindingsRef.current.find(b => b.id === id);
+        const unchanged = row && JSON.stringify(toServer(row)) === JSON.stringify(sentPayload);
+        if (!row || unchanged) {
+            setDirtyIds(prev => {
+                if (!prev.has(id)) return prev;
+                const next = new Set(prev);
+                next.delete(id);
+                return next;
+            });
+        }
+    };
 
     const putBinding = (payload) =>
         api.updateBinding(payload.id, payload)
-            .then(() => { pendingRef.current = null; })
+            .then(() => clearDirty(payload.id, payload))
             .catch((err) => setSyncMsg(syncErrorText('更新失败', err)));
 
     // 1) 挂载拉取服务端绑定；失败降级本地编辑并提示
@@ -127,13 +149,18 @@ export default function Orchestration({ protocols, instructions }) {
         }
     }, [loaded, loadFailed, instructions, protocols, bindings]);
 
-    // 卸载冲刷：仍有未落盘的防抖写 → 立即补一笔（路由切走/F5 场景）
-    useEffect(() => () => {
-        if (persistTimerRef.current) {
-            clearTimeout(persistTimerRef.current);
-            const payload = pendingRef.current;
-            if (payload) api.updateBinding(payload.id, payload).catch(() => {});
-        }
+    // 反馈 #4：未保存属性编辑的刷新拦截（事件时读 ref）。卸载不再自动冲刷 ——
+    // 手动保存语义，脏行草稿跨选中驻留本地（切换绑定行不丢），刷新即弃（由
+    // 本拦截兜底提示）。
+    useEffect(() => {
+        const onBeforeUnload = (e) => {
+            if (dirtyRef.current) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => window.removeEventListener('beforeunload', onBeforeUnload);
     }, []);
 
     const currentBinding = bindings.find(b => b.id === activeBindingId) || bindings[0];
@@ -242,9 +269,14 @@ export default function Orchestration({ protocols, instructions }) {
         const byId = new Map(reordered.map(b => [b.id, b]));
         setBindings(prev => prev.map(b => byId.get(b.id) || b));
         if (loadFailed) return;
-        reordered.forEach((b) => {
-            const before = bindings.find(x => x.id === b.id);
-            if ((before?.slotOrder ?? 0) !== b.slotOrder) putBinding(toServer(b));
+        // 反馈 #4：换洞 = 组内多行草稿 —— 标脏不即时 PUT，SAVE 逐行落库
+        setDirtyIds((prev) => {
+            const next = new Set(prev);
+            reordered.forEach((b) => {
+                const before = bindings.find(x => x.id === b.id);
+                if ((before?.slotOrder ?? 0) !== b.slotOrder) next.add(b.id);
+            });
+            return next;
         });
     };
 
@@ -286,26 +318,22 @@ export default function Orchestration({ protocols, instructions }) {
         }
     };
 
+    // 反馈 #4 手动保存：属性编辑（label/协议/指令）只进本地并标脏 —— 去 400ms
+    // 防抖与即时 PUT，「保存更改 (SAVE)」handleSaveBindings 统一落库。
+    // 草稿按行驻留：切换选中绑定不丢（无需切行确认）。
     const handleUpdateBinding = (id, updates) => {
-        const next = bindings.map(b => b.id === id ? { ...b, ...updates } : b);
-        setBindings(next);
-        const merged = next.find(b => b.id === id);
-        if (!merged || loadFailed) return;
+        setBindings(prev => prev.map(b => b.id === id ? { ...b, ...updates } : b));
+        if (loadFailed) return; // 降级模式：本地编辑不持久化（提示条已说明）
+        setDirtyIds(prev => new Set(prev).add(id));
+    };
 
-        const payload = toServer(merged);
-        pendingRef.current = payload;
-        if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
-        if (Object.prototype.hasOwnProperty.call(updates, 'label')) {
-            // label 打字：400ms 尾随防抖，多次击键合并为最终快照
-            persistTimerRef.current = setTimeout(() => {
-                persistTimerRef.current = null;
-                putBinding(payload);
-            }, 400);
-        } else {
-            // 协议/指令选择：立即落盘（同时清掉更早的 label 待写，避免旧快照回冲）
-            persistTimerRef.current = null;
-            putBinding(payload);
-        }
+    // 反馈 #4：SAVE 按钮落库 —— 逐行 PUT 当前脏行（幂等），成功行出队
+    // （putBinding 回调比对载荷防误清），失败留队 + 顶部错误提示可重试。
+    const handleSaveBindings = () => {
+        if (!dirtyIds.size || loadFailed) return;
+        bindings
+            .filter(b => dirtyIds.has(b.id))
+            .forEach((b) => putBinding(toServer(b)));
     };
 
     // B2 组作用域合并：组 = 同 protocolId 的绑定按 slot_order（洞号）升序 →
@@ -397,7 +425,14 @@ export default function Orchestration({ protocols, instructions }) {
                             onClick={() => setActiveBindingId(b.id)}
                             className={`p-3 border-b border-nier-light/10 cursor-pointer hover:bg-white/5 flex justify-between group ${b.id === activeBindingId ? 'bg-nier-light/10 text-white font-bold' : 'text-nier-light/70'}`}
                         >
-                            <div className="truncate text-xs">{b.label}</div>
+                            <div className="truncate text-xs">
+                                {/* 人工验证 #6①: 脏行琥珀点（title 供定位/无障碍）；放 label
+                                    文本节点之前——RTL getByText 只取直接文本节点，脏行 label 仍可查 */}
+                                {dirtyIds.has(b.id) && (
+                                    <span title="有未保存更改" className="text-[#E58D28] mr-1">●</span>
+                                )}
+                                {b.label}
+                            </div>
                             <div className="flex items-center gap-1 shrink-0">
                                 <button onClick={(e) => handleDeleteBinding(e, b.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-400">×</button>
                                 {/* 批次一 (D1): 星标 = 指令默认封装绑定（is_default）——放删除之后 */}
@@ -422,35 +457,15 @@ export default function Orchestration({ protocols, instructions }) {
             </aside>
 
             {/* Main Area */}
-            <section className="flex-1 flex flex-col bg-[url('/grid.png')] relative">
-                {/* Configuration Header */}
+            {/* 人工验证第 3 轮 #5: 中心区可收缩——flex item 的 min-width:auto
+                仅在 overflow:visible 时取内容最小尺寸，补 overflow-hidden +
+                min-w-0 后分栏不再把右栏挤出视口（对齐协议/指令页 section）。 */}
+            <section className="flex-1 min-w-0 overflow-hidden flex flex-col bg-[url('/grid.png')] relative">
+                {/* Configuration Header — #6②: 结构选择（协议外壳/指令内核）
+                    下沉到右侧属性面板「结构选择」分区；头部只留 总长度 + 导出/试发。 */}
                 <div className="h-16 border-b border-nier-light/50 bg-nier-dark/90 flex items-center px-4 gap-8 z-20">
                     {currentBinding && (
                         <>
-                            <div className="flex flex-col gap-1 w-64">
-                                <label className="text-[10px] opacity-70 uppercase tracking-widest">协议外壳 (Protocol Shell)</label>
-                                <select
-                                    value={currentBinding.protocolId}
-                                    onChange={(e) => handleUpdateBinding(currentBinding.id, { protocolId: e.target.value })}
-                                    className="bg-transparent border-b border-nier-light/50 text-sm focus:outline-none focus:border-nier-light py-1 font-mono"
-                                >
-                                    {protocols.map(p => <option key={p.id} value={p.id} className="bg-nier-dark text-white">{p.label}</option>)}
-                                </select>
-                            </div>
-
-                            <div className="text-xl opacity-50 font-thin">+</div>
-
-                            <div className="flex flex-col gap-1 w-64">
-                                <label className="text-[10px] opacity-70 uppercase tracking-widest">指令内核 (Instruction Kernel)</label>
-                                <select
-                                    value={currentBinding.instructionId}
-                                    onChange={(e) => handleUpdateBinding(currentBinding.id, { instructionId: e.target.value })}
-                                    className="bg-transparent border-b border-nier-light/50 text-sm focus:outline-none focus:border-nier-light py-1 font-mono"
-                                >
-                                    {instructions.map(i => <option key={i.id} value={i.id} className="bg-nier-dark text-white">{i.label || i.name}</option>)}
-                                </select>
-                            </div>
-
                             <div className="ml-auto flex flex-col items-end">
                                 <label className="text-[10px] opacity-70 uppercase tracking-widest">总长度 (Total Size)</label>
                                 <div className="text-xl font-bold font-mono">{totalBytes} <span className="text-sm font-normal opacity-50">Bytes</span></div>
@@ -521,56 +536,108 @@ export default function Orchestration({ protocols, instructions }) {
             </section>
 
             {/* Right Panel (Details - Binding Info) */}
-            <aside className="w-80 border-l border-nier-light bg-nier-dark/95 p-4 flex flex-col z-20 shadow-[-5px_0_15px_rgba(0,0,0,0.1)]">
+            {/* 人工验证 #5: 属性栏 shrink-0 不被中心区挤压；overflow-y-auto 保证
+                面板加高（四分区 + 底部动作区）后 SAVE 仍可滚动可达。 */}
+            <aside className="w-80 shrink-0 overflow-y-auto border-l border-nier-light bg-nier-dark/95 p-4 flex flex-col z-20 shadow-[-5px_0_15px_rgba(0,0,0,0.1)]">
                 <h2 className="text-lg border-b-2 border-nier-light mb-6 pb-1 font-bold tracking-wider">绑定属性 (BINDING)</h2>
+
                 {currentBinding && (
                     <div className="space-y-6 text-sm">
-                        <div className="flex flex-col gap-1">
-                            <label className="text-xs opacity-70 uppercase tracking-widest">绑定名称 (Label)</label>
-                            <input
-                                type="text"
-                                value={currentBinding.label}
-                                onChange={(e) => handleUpdateBinding(currentBinding.id, { label: e.target.value })}
-                                className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono tracking-wide"
-                            />
+                        {/* 分区 1/4 绑定标识 —— label 输入草稿 */}
+                        <div>
+                            <div className="text-[9px] opacity-50 border-b border-white/10 pb-1 mb-2">绑定标识 (IDENTITY)</div>
+                            <div className="flex flex-col gap-1">
+                                <label className="text-xs opacity-70 uppercase tracking-widest">绑定名称 (Label)</label>
+                                <input
+                                    type="text"
+                                    value={currentBinding.label}
+                                    onChange={(e) => handleUpdateBinding(currentBinding.id, { label: e.target.value })}
+                                    className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono tracking-wide"
+                                />
+                            </div>
                         </div>
 
-                        {/* B3 洞位下拉：value = 组内稠密位次（holeRank）；改洞 →
-                            handleSlotOrderChange 组内重编号 0..n-1 仅回写变化行 */}
-                        <div className="flex flex-col gap-1">
-                            <label htmlFor="hole-rank" className="text-xs opacity-70 uppercase tracking-widest">
-                                洞位 (HOLE) · #{holeRank} / {Math.max(groupBindings.length - 1, 0)}
-                            </label>
-                            <select
-                                id="hole-rank"
-                                value={holeRank}
-                                onChange={(e) => handleSlotOrderChange(Number(e.target.value))}
-                                className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono"
-                            >
-                                {groupBindings.map((b, i) => (
-                                    <option key={b.id} value={i} className="bg-nier-dark text-white">
-                                        {i}{b.id === currentBinding.id ? ` · 本绑定` : ` · ${b.label}`}
-                                    </option>
-                                ))}
-                            </select>
-                            {holeWarning && (
-                                <div data-testid="hole-warning" className="text-[10px] font-mono text-yellow-400 tracking-widest">
-                                    ⚠ {holeWarning}
-                                </div>
-                            )}
+                        {/* 分区 2/4 结构选择 —— 协议外壳/指令内核从头部下沉（#6②）；
+                            DOM 序 = 协议外壳 → 指令内核（select[0] 断言锚点不破） */}
+                        <div>
+                            <div className="text-[9px] opacity-50 border-b border-white/10 pb-1 mb-2">结构选择 (STRUCTURE)</div>
+                            <div className="flex flex-col gap-1">
+                                <label className="text-[10px] opacity-70 uppercase tracking-widest">协议外壳 (Protocol Shell)</label>
+                                <select
+                                    value={currentBinding.protocolId}
+                                    onChange={(e) => handleUpdateBinding(currentBinding.id, { protocolId: e.target.value })}
+                                    className="bg-transparent border-b border-nier-light/50 text-sm focus:outline-none focus:border-nier-light py-1 font-mono"
+                                >
+                                    {protocols.map(p => <option key={p.id} value={p.id} className="bg-nier-dark text-white">{p.label}</option>)}
+                                </select>
+                            </div>
+                            <div className="flex flex-col gap-1 mt-4">
+                                <label className="text-[10px] opacity-70 uppercase tracking-widest">指令内核 (Instruction Kernel)</label>
+                                <select
+                                    value={currentBinding.instructionId}
+                                    onChange={(e) => handleUpdateBinding(currentBinding.id, { instructionId: e.target.value })}
+                                    className="bg-transparent border-b border-nier-light/50 text-sm focus:outline-none focus:border-nier-light py-1 font-mono"
+                                >
+                                    {instructions.map(i => <option key={i.id} value={i.id} className="bg-nier-dark text-white">{i.label || i.name}</option>)}
+                                </select>
+                            </div>
                         </div>
 
-                        <div className="p-4 border border-dashed border-nier-light/30 bg-nier-light/5 text-xs leading-5">
-                            <h3 className="font-bold mb-2">AUTO-ASSEMBLY RULE</h3>
-                            <p className="opacity-70">
-                                同协议的 {groupBindings.length} 条绑定按洞号（slot_order 升序）依次填入协议的 {holeCount} 个 SLOT。
-                            </p>
-                            <p className="mt-2 opacity-70">
-                                绑定多于洞时溢出部分追加末尾；洞多于绑定时空洞保留（发射期归零）。
-                            </p>
+                        {/* 分区 3/4 洞位 —— B3 洞位下拉（holeRank 标脏）+ 装配规则说明 */}
+                        <div>
+                            <div className="text-[9px] opacity-50 border-b border-white/10 pb-1 mb-2">洞位 (HOLE)</div>
+                            <div className="flex flex-col gap-1">
+                                <label htmlFor="hole-rank" className="text-xs opacity-70 uppercase tracking-widest">
+                                    洞位 (HOLE) · #{holeRank} / {Math.max(groupBindings.length - 1, 0)}
+                                </label>
+                                <select
+                                    id="hole-rank"
+                                    value={holeRank}
+                                    onChange={(e) => handleSlotOrderChange(Number(e.target.value))}
+                                    className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono"
+                                >
+                                    {groupBindings.map((b, i) => (
+                                        <option key={b.id} value={i} className="bg-nier-dark text-white">
+                                            {i}{b.id === currentBinding.id ? ` · 本绑定` : ` · ${b.label}`}
+                                        </option>
+                                    ))}
+                                </select>
+                                {holeWarning && (
+                                    <div data-testid="hole-warning" className="text-[10px] font-mono text-yellow-400 tracking-widest">
+                                        ⚠ {holeWarning}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="mt-4 p-4 border border-dashed border-nier-light/30 bg-nier-light/5 text-xs leading-5">
+                                <h3 className="font-bold mb-2">AUTO-ASSEMBLY RULE</h3>
+                                <p className="opacity-70">
+                                    同协议的 {groupBindings.length} 条绑定按洞号（slot_order 升序）依次填入协议的 {holeCount} 个 SLOT。
+                                </p>
+                                <p className="mt-2 opacity-70">
+                                    绑定多于洞时溢出部分追加末尾；洞多于绑定时空洞保留（发射期归零）。
+                                </p>
+                            </div>
                         </div>
                     </div>
                 )}
+
+                {/* 分区 4/4 操作 —— #4/#6③: 底部常驻保存区（计数行 + 脏时可用
+                    SAVE；mt-auto 贴面板底，镜像指令页动作区）。 */}
+                <div className="pt-4 border-t border-nier-light/20 mt-auto space-y-3">
+                    <div className="text-[9px] opacity-50 border-b border-white/10 pb-1 mb-2">操作 (ACTIONS)</div>
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono tracking-widest">
+                        <span aria-hidden="true" className={dirtyIds.size > 0 ? 'text-[#E58D28]' : 'opacity-40'}>●</span>
+                        <span className={dirtyIds.size > 0 ? 'text-[#E58D28] font-bold' : 'opacity-40'}>{dirtyIds.size} 条未保存</span>
+                    </div>
+                    <button
+                        onClick={handleSaveBindings}
+                        disabled={!hasUnsavedChanges || loadFailed}
+                        className="w-full bg-nier-light/10 border border-nier-light text-nier-light hover:bg-nier-light hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                        保存更改 (SAVE)
+                    </button>
+                </div>
             </aside>
 
             {/* 人工验证反馈 1: 星标设默认确认环节（仅设默认弹；取消默认直执行） */}

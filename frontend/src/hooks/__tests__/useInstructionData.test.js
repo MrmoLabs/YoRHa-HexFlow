@@ -283,4 +283,75 @@ describe('useInstructionData', () => {
             );
         });
     });
+
+    // ─── 人工验证反馈 #2：管理页工作副本（草稿）不出门 ─────────────────────
+    // 共享 instructions 态是加工页/编排页读的真源 —— 草稿编辑只允许存在于
+    // hook 内（overlay），saveChanges 成功才写穿共享态。
+    describe('草稿隔离（反馈 #2）', () => {
+        it('updateLocalInstruction 只写 hook 内草稿：共享 setInstructions 不被调用，管理页视图仍见草稿', () => {
+            const setExternal = vi.fn();
+            const { result } = renderHook(() => useInstructionData({
+                instructions: mockInstructions,
+                setInstructions: setExternal,
+                disableInitialLoad: true,
+            }));
+
+            act(() => { result.current.setActiveInstructionId('inst-1'); });
+            act(() => { result.current.updateLocalInstruction({ ...mockInstructions[0], name: '草稿名' }); });
+
+            // 加工页读的共享态零写入 → 未保存编辑不外泄
+            expect(setExternal).not.toHaveBeenCalled();
+            // 管理页自身仍能看到草稿 + 脏标
+            expect(result.current.currentInstruction.name).toBe('草稿名');
+            expect(result.current.hasUnsavedChanges).toBe(true);
+        });
+
+        it('saveChanges 成功 → 写穿共享态（functional）并清草稿/脏标', async () => {
+            const setExternal = vi.fn();
+            api.updateInstruction.mockResolvedValue({});
+            const { result } = renderHook(() => useInstructionData({
+                instructions: mockInstructions,
+                setInstructions: setExternal,
+                disableInitialLoad: true,
+            }));
+
+            act(() => { result.current.setActiveInstructionId('inst-1'); });
+            act(() => { result.current.updateLocalInstruction({ ...mockInstructions[0], name: '已保存名' }); });
+            // 草稿期共享态零写入（当前实现恰在此泄漏一次 —— 这里钉死区分）
+            expect(setExternal).not.toHaveBeenCalled();
+            await act(async () => { await result.current.saveChanges(); });
+
+            expect(api.updateInstruction).toHaveBeenCalledTimes(1);
+            expect(setExternal).toHaveBeenCalledTimes(1);
+            const updater = setExternal.mock.calls[0][0];
+            expect(typeof updater).toBe('function');
+            expect(updater(mockInstructions).find(i => i.id === 'inst-1').name).toBe('已保存名');
+            expect(result.current.hasUnsavedChanges).toBe(false);
+        });
+
+        it('脏态时外部共享态推进不覆盖草稿；放弃脏标后回落外部基准', () => {
+            const { result, rerender } = renderHook(
+                ({ list }) => useInstructionData({
+                    instructions: list,
+                    setInstructions: vi.fn(),
+                    disableInitialLoad: true,
+                }),
+                { initialProps: { list: mockInstructions } }
+            );
+
+            act(() => { result.current.setActiveInstructionId('inst-1'); });
+            act(() => { result.current.updateLocalInstruction({ ...mockInstructions[0], name: '草稿中' }); });
+
+            // 模拟加工页/WebUpdate 推进共享态（服务端版本）
+            const serverList = [{ ...mockInstructions[0], name: '服务端版' }, mockInstructions[1]];
+            rerender({ list: serverList });
+
+            expect(result.current.currentInstruction.name).toBe('草稿中');
+            expect(result.current.instructions.find(i => i.id === 'inst-1').name).toBe('草稿中');
+
+            // 放弃脏标 → 草稿丢弃，回落外部基准
+            act(() => { result.current.setHasUnsavedChanges(false); });
+            expect(result.current.currentInstruction.name).toBe('服务端版');
+        });
+    });
 });

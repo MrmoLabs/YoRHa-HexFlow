@@ -66,6 +66,9 @@ export function useInstructionData(options = {}) {
     const [isOperatorTemplatesLoading, setIsOperatorTemplatesLoading] = useState(false);
     const [statusMsg, setStatusMsg] = useState('');
     const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+    // 反馈 #2 草稿隔离：活动指令的未保存工作副本只存在于 hook 内 —— 不写
+    // 共享 instructions（加工页/编排页读共享态，只见已保存数据）。
+    const [draftInstruction, setDraftInstruction] = useState(null);
     const [operatorTemplates, setOperatorTemplates] = useState({});
     const [operatorTemplatesError, setOperatorTemplatesError] = useState('');
     // P4-1: undo/redo stacks for the working copy (cap 50) — destructured as
@@ -80,7 +83,14 @@ export function useInstructionData(options = {}) {
     const statusTimerRef = useRef(null);
     const instructionRequestIdRef = useRef(0);
     const operatorTemplatesRequestIdRef = useRef(0);
-    const instructions = externalInstructions ?? internalInstructions;
+    const baseInstructions = externalInstructions ?? internalInstructions;
+    // 反馈 #2：脏态时活动指令用 hook 内草稿 overlay 呈现（管理页所见即草稿），
+    // 共享基准保持已保存版本；干净态直接镜像。useMemo 保引用稳定（下方 effect/
+    // ref 依赖 instructions）。
+    const instructions = useMemo(() => {
+        if (!hasUnsavedChanges || !draftInstruction) return baseInstructions;
+        return baseInstructions.map(i => (i.id === draftInstruction.id ? draftInstruction : i));
+    }, [baseInstructions, hasUnsavedChanges, draftInstruction]);
 
     const setInstructionsState = useCallback((nextValue) => {
         if (setExternalInstructions) {
@@ -109,11 +119,8 @@ export function useInstructionData(options = {}) {
     useEffect(() => {
         instructionsRef.current = instructions;
     }, [instructions]);
-
-    useEffect(() => {
-        if (!externalInstructions) return;
-        instructionsRef.current = externalInstructions;
-    }, [externalInstructions]);
+    // 反馈 #2：原「外部变更直写裸 external」效果已删 —— 它会绕过草稿 overlay，
+    // 让 pushHistory/删除漏斗读到陈旧共享版本；ref 统一跟随 overlay 后的值。
 
     useEffect(() => {
         isMountedRef.current = true;
@@ -199,6 +206,8 @@ export function useInstructionData(options = {}) {
             if (!isMountedRef.current || requestId !== instructionRequestIdRef.current) return;
             setInstructionsState(instData);
             reconcileActiveInstruction(instData);
+            setHasUnsavedChanges(false); // 反馈 #2：重载 = 服务器接管，草稿/脏标
+            setDraftInstruction(null); //           一并复位（挂载期为 no-op）
             if (!setExternalInstructions && onWebUpdate) onWebUpdate(instData);
         } catch (err) {
             console.error('Failed to load instructions', err);
@@ -230,6 +239,7 @@ export function useInstructionData(options = {}) {
             setInstructionsState(data);
             reconcileActiveInstruction(data);
             setHasUnsavedChanges(false);
+            setDraftInstruction(null); // 反馈 #2：服务器版本接管，丢弃本地草稿
             clearHistory(); // P4-1: reload = new baseline
             setSaveError(''); // P4-2: server state supersedes a failed PUT
             if (!setExternalInstructions && onWebUpdate) onWebUpdate(data);
@@ -253,9 +263,11 @@ export function useInstructionData(options = {}) {
         if (prevInst && JSON.stringify(prevInst) !== JSON.stringify(updatedInst)) {
             pushHistory({ id: prevInst.id, inst: prevInst });
         }
-        setInstructionsState(prev => prev.map(i => i.id === updatedInst.id ? updatedInst : i));
+        // 反馈 #2：工作副本只进 hook 内草稿（overlay），不再写共享态 ——
+        // 加工页/编排页读的共享列表只由 load*/saveChanges/CRUD 成功路径写。
+        setDraftInstruction(updatedInst);
         setHasUnsavedChanges(true);
-    }, [setInstructionsState, pushHistory]);
+    }, [pushHistory]);
 
     // P4-1: undo/redo apply the stored snapshot for the ACTIVE instruction and
     // keep dirty semantics (the restored copy still needs saving).
@@ -264,18 +276,20 @@ export function useInstructionData(options = {}) {
         if (!current) return;
         const prev = popUndo({ id: current.id, inst: current });
         if (!prev || prev.id !== current.id) return;
-        setInstructionsState(list => list.map(i => i.id === prev.id ? prev.inst : i));
+        // 反馈 #2：撤销只回写 hook 内草稿（保存前历史仍是本地语义）。
+        setDraftInstruction(prev.inst);
         setHasUnsavedChanges(true);
-    }, [popUndo, setInstructionsState]);
+    }, [popUndo]);
 
     const redo = useCallback(() => {
         const current = instructionsRef.current.find(i => i.id === activeInstructionIdRef.current);
         if (!current) return;
         const next = popRedo({ id: current.id, inst: current });
         if (!next || next.id !== current.id) return;
-        setInstructionsState(list => list.map(i => i.id === next.id ? next.inst : i));
+        // 反馈 #2：重做同撤销，只回写 hook 内草稿。
+        setDraftInstruction(next.inst);
         setHasUnsavedChanges(true);
-    }, [popRedo, setInstructionsState]);
+    }, [popRedo]);
 
     // CRUD ACTIONS
     const addInstruction = async (openConfirmCallback) => {
@@ -293,6 +307,7 @@ export function useInstructionData(options = {}) {
                 setInstructionsState(prev => [...prev, created]);
                 setActiveInstructionId(created.id);
                 setHasUnsavedChanges(false);
+                setDraftInstruction(null); // 反馈 #2：切到新指令 = 丢弃旧草稿
                 showStatus('已新增指令', 1000);
             } catch (e) {
                 if (e.response && e.response.status === 400) {
@@ -327,6 +342,7 @@ export function useInstructionData(options = {}) {
                 setInstructionsState(prev => [...prev, created]);
                 setActiveInstructionId(created.id);
                 setHasUnsavedChanges(false);
+                setDraftInstruction(null); // 反馈 #2：切到副本 = 丢弃旧草稿
                 showStatus('已复制指令', 1000);
             } catch (e) {
                 if (e.response && e.response.status === 400) {
@@ -353,6 +369,7 @@ export function useInstructionData(options = {}) {
                 setInstructionsState(rem);
                 reconcileActiveInstruction(rem, activeInstructionIdRef.current === id ? null : activeInstructionIdRef.current);
                 setHasUnsavedChanges(false);
+                setDraftInstruction(null); // 反馈 #2：删除后无活动草稿
                 showStatus('已删除指令', 1000);
             } catch (e) {
                 showStatus(`删除失败：${e?.response?.data?.detail || e?.message || '未知错误'}`);
@@ -394,6 +411,11 @@ export function useInstructionData(options = {}) {
             showStatus('保存中...');
             await api.updateInstruction(currentInstruction.id, payload);
             showStatus('已保存', 1000);
+            // 反馈 #2：保存成功 = 草稿毕业 —— 写穿共享态（加工页随即可见已保存
+            // 版本），再清本地草稿与脏标。
+            const saved = currentInstruction;
+            setInstructionsState(prev => prev.map(i => i.id === saved.id ? saved : i));
+            setDraftInstruction(null);
             setHasUnsavedChanges(false);
             clearHistory(); // P4-1: save = new baseline
             setSaveError(''); // P4-2: success clears any previous failure banner

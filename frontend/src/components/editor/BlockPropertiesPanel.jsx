@@ -16,7 +16,6 @@ export default function BlockPropertiesPanel({
     onSaveInstruction, // () => void
     onDeleteInstruction, // (e, id) => void
     onDeleteBlock, // (id) => void
-    onDuplicateBlock, // (id) => void — P2-1 复制块（深拷贝插入源块之后）
     onSaveBlock, // (updatedBlock) => Promise<void> (Handles Auto-Save)
     openConfirm, // (msg, action) => void
     onOpenDatePicker, // (key, val) => void
@@ -225,7 +224,7 @@ export default function BlockPropertiesPanel({
     const blockLimitRefs = tempBlockConfig ? getBlockLimitRefs(tempBlockConfig) : [];
 
     return (
-        <aside className="w-80 border-l border-nier-light bg-nier-dark/95 backdrop-blur-sm p-4 flex flex-col z-20 shadow-[-5px_0_15px_rgba(0,0,0,0.5)] overflow-y-auto">
+        <aside className="w-80 shrink-0 border-l border-nier-light bg-nier-dark/95 p-4 flex flex-col z-20 shadow-[-5px_0_15px_rgba(0,0,0,0.5)] overflow-y-auto">
             <h2 className="text-lg border-b-2 border-nier-light mb-6 pb-1 font-bold tracking-wider">属性配置 (PROPERTIES)</h2>
 
             {currentInstruction && !selectedBlock && (
@@ -315,7 +314,7 @@ export default function BlockPropertiesPanel({
                     </div>
 
                     {/* Instruction Actions */}
-                    <div className="pt-8 flex flex-col gap-3 border-t border-nier-light/20">
+                    <div className="pt-4 flex flex-col gap-3 border-t border-nier-light/20">
                         {hasUnsavedChanges && (
                             <button onClick={onSaveInstruction} className="w-full bg-nier-light/10 border border-nier-light text-nier-light hover:bg-nier-light hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors font-bold">
                                 保存更改 (SAVE)
@@ -495,15 +494,10 @@ export default function BlockPropertiesPanel({
                         </div>
                     )}
 
-                    <div className="pt-8 border-t border-nier-light/20 flex flex-col gap-3">
+                    <div className="pt-4 border-t border-nier-light/20 flex flex-col gap-3">
                         <button onClick={handleApply} className="w-full bg-nier-light/20 border border-nier-light text-nier-light hover:bg-nier-light hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors font-bold">
                             应用配置 (APPLY)
                         </button>
-                        {onDuplicateBlock && (
-                            <button onClick={() => onDuplicateBlock(selectedBlock.id)} className="w-full bg-nier-light/10 border border-nier-light/70 text-nier-light hover:bg-nier-light hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors">
-                                复制块 (DUPLICATE)
-                            </button>
-                        )}
                         <button onClick={() => onDeleteBlock(selectedBlock.id)} className="w-full border border-red-500/50 text-red-500 hover:bg-red-500 hover:text-white py-2 px-4 uppercase text-xs tracking-widest transition-colors">
                             删除 (DELETE)
                         </button>

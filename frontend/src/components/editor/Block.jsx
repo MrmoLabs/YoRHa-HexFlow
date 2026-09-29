@@ -10,6 +10,8 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
     const displayLabel = name || label || 'BLOCK';
     const length = byte_len || byte_length || 1;
     const effectiveHex = hex_value || parameter_config?.hex;
+    // 人工验证第 3 轮 #2: 未配置固定块（含全 0 默认占位）也显示存储值
+    // （`0000`→`00 00`）—— ?? 仅限无法确定内容的卡；编码字节契约不变。
 
     const {
         attributes,
@@ -23,6 +25,8 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
     // P1 optim: a group shows its COMPUTED total (Σ children, sourced from
     // byteOffsets via offsetMeta) instead of a hard-coded "??" — "??" stays
     // only for a genuinely unknown size (some child byte_len missing).
+    // 依赖 op_code 显式相等：OP_CODES.STRUCT 曾缺键导致 undefined===undefined
+    // 对协议块（无 op_code）恒真——全部被误判成组卡（反馈 #1 根因，常量已补键）。
     const isGroupCard = op_code === OP_CODES.ARRAY_GROUP || op_code === OP_CODES.STRUCT || offsetMeta?.isGroup === true;
 
     // TIME_ACCUMULATOR：基准时间必须第一时间可见（BASE 小字，中央值下方）。
@@ -155,11 +159,13 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
 
         // Special Case: Nested Group — 中央值 = 嵌套内容逐块拼接（已知出 hex、
         // 未知出等量 ??）；内容未注入但尺寸已知 → 按尺寸出等量 ??（页脚仍
-        // 显示 `4B @00` 尺寸口径）；尺寸未知 → "??"。
+        // 显示 `4B @00` 尺寸口径）；空容器（size 0）中央 = 空白——不显 ?? 也
+        // 不显 `0B`（人工验证第 3 轮 #2）；尺寸未知 → "??"。
         if (isGroupCard) {
             if (offsetMeta && typeof offsetMeta.size === 'number') {
-                const size = offsetMeta.size;
-                return size > 0 ? formatUnknown(size) : '0B';
+                if (offsetMeta.size === 0) return ''; // 空容器中央 = 空白
+                // 未注入真值 → 按尺寸出等量 ??（长度不是取值）。
+                return formatUnknown(offsetMeta.size);
             }
             return "??"; // User Request: Show ?? when undeterminable
         }
@@ -168,6 +174,8 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
         // FIX: Also check OP_CODE because 'type' might not be 'hex' for raw blocks
         // A+B: 协议 fixed 块的 hex_value 也上卡（原条件 type==='hex' 协议永不
         // 命中 → 属性面板改 hex 卡片零反馈）；无 hex_value 时保持默认占位。
+        // 人工验证第 3 轮 #2: 未配置固定块照显存储值（0000→00 00、00→00），
+        // 撤「全 0 = 未配置 → ??」回退；?? 只留无 hex / 非法 hex 的卡。
         if ((type === 'hex' || type === 'fixed' || op_code === 'HEX_RAW') && effectiveHex) {
             // Format "AA55" to "AA 55"
             return effectiveHex.replace(/\s/g, '').match(/.{1,2}/g)?.join(' ').toUpperCase() || effectiveHex;
@@ -178,9 +186,9 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
         // 替代误导性 00 占位。
         if (type === 'length' || type === 'checksum') return formatUnknown(length);
 
-        // 3. Default: "00 " repeated for unknown/unset
-        const safeLen = Math.max(1, Math.floor(length));
-        return Array(safeLen).fill('00').join(' ');
+        // 3. Default: 未配置/不确定 → 按字节数出等量 ??（反馈 #1：不再用
+        // 误导性 "00" 填充冒充取值）。
+        return formatUnknown(length);
     }, [type, effectiveHex, length, parameter_config?.computedValue, op_code, isGroupCard, offsetMeta?.size]);
 
     return (
