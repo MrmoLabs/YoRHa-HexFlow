@@ -1009,7 +1009,8 @@
 - 验收：FE **559/559（40 文件）** EXIT=0（基线 556 + 新 3）、后端 **296/296** OK
   （本反馈纯前端，零后端改动回归）、`vite build` EXIT=0、yorha-ui 校验器触 5 个
   UI 文件 **0 违规**、`generate-page-status.mjs` EXIT=0（pageStatus 三段 11 处
-  口径更新）。**零 DDL** → 无 db 提交。待人工验证后一单提交。
+  口径更新）。**零 DDL** → 无 db 提交。2026-09-29 人工验证通过，与 §8.11 合并
+  一单提交 ✅ `ce20122`。
 
 ### 8.11 人工验证反馈 2 第 3 轮（六条：复制块撤除 / 卡面存储值 / 两页 SAVE 底置 / 编排分栏·交互）
 
@@ -1051,7 +1052,8 @@
   校验器触 10 个文件 **0 违规**（清掉 BlockPropertiesPanel HEAD 既有
   `backdrop-blur-sm` + `pt-8`×2，本轮新增 `pt-8` 全改 `pt-4`）、
   `generate-page-status.mjs` EXIT=0、schema 与 HEAD 比对 **SCHEMA_IDENTICAL**
-  （零 DDL）→ 无 db 提交。与 §8.10 第 2 轮合并**待人工验证后一单提交**。
+  （零 DDL）→ 无 db 提交。与 §8.10 第 2 轮合并，2026-09-29 人工验证通过后
+  一单提交 ✅ `ce20122`（含 `duplicateNode` 纯函数 + 3 单测连删）。
 
 ## 9. 保留勿动（非任务，勿清理）
 
