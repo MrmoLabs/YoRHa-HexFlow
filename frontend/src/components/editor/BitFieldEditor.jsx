@@ -1,10 +1,17 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { buildBitGrid, rangeToSegment, defaultSegmentName, packBits } from '../../utils/bitGrid';
 
 /**
  * BITFIELD 位域布局编辑器
  * 编辑字段级别的 bits 数组：[{ id, sequence, bit_name, start_bit, bit_len, default_val }]
  * 存储约定：start_bit 以“整字段的位偏移”计算，bit 0 为最低有效位 (LSB)。
+ *
+ * 批 2：上方加位网格（byte×8，bit0 在右 = LSB 口径）——
+ *  - 点击式设段：点起始格上膛 → 点终止格提交 { start_bit, bit_len }
+ *  - 点已有位段的格子 = 选中该段（与下方表格行双向联动）
+ *  - 重叠位红标、溢出位段照常渲染（容量告警另由 requiredBytes 表达）
+ * 打包预览走 bitGrid.packBits（与编码器同口径，见其镜像测试）。
  */
 const emptyBit = (sequence) => ({
     id: uuidv4(),
@@ -37,12 +44,11 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
     const list = Array.isArray(bits) ? bits : [];
     const conflicts = findOverlaps(list);
 
-    const maxEnd = list.reduce((acc, b) => {
-        const start = Number(b.start_bit) || 0;
-        const len = Math.max(1, Number(b.bit_len) || 1);
-        return Math.max(acc, start + len);
-    }, 0);
-    const requiredBytes = Math.ceil(maxEnd / 8);
+    // 批 2：位网格 + 点击式设段（上膛起点）+ 选中段（与表格行联动）
+    const [armedBit, setArmedBit] = useState(null);
+    const [selectedIndex, setSelectedIndex] = useState(null);
+    const grid = buildBitGrid(list, byteLen);
+    const conflictSet = new Set(grid.conflictBits);
 
     const update = (index, patch) => {
         const next = list.map((b, i) => (i === index ? { ...b, ...patch } : b));
@@ -51,6 +57,7 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
 
     const remove = (index) => {
         onUpdateBits(list.filter((_, i) => i !== index));
+        if (selectedIndex === index) setSelectedIndex(null);
     };
 
     const add = () => {
@@ -58,13 +65,24 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
         onUpdateBits([...list, emptyBit(list.length)]);
     };
 
-    const totalDefault = list.reduce((acc, b) => {
-        const start = Number(b.start_bit) || 0;
-        const len = Math.max(1, Number(b.bit_len) || 1);
-        const maxVal = len >= 32 ? 0xFFFFFFFF : (1 << len) - 1;
-        const val = Math.max(0, Math.min(maxVal, Number(b.default_val) || 0));
-        return acc + (val * Math.pow(2, start));
-    }, 0);
+    // 格子点击：占用格 = 选中该段（并清上膛）；空格 = 上膛/提交位段
+    const handleCellClick = (cell) => {
+        if (cell.owner >= 0) {
+            setSelectedIndex(cell.owner);
+            setArmedBit(null);
+            return;
+        }
+        if (armedBit === null) {
+            setArmedBit(cell.bitIndex);
+            return;
+        }
+        const range = rangeToSegment(armedBit, cell.bitIndex);
+        setArmedBit(null);
+        if (!range) return;
+        onUpdateBits([...list, { ...emptyBit(list.length), ...range, bit_name: defaultSegmentName(range.start_bit) }]);
+    };
+
+    const totalDefault = packBits(list, grid.requiredBytes || 1);
 
     return (
         <div className="flex flex-col gap-2 border border-dashed border-nier-light/50 p-2 space-y-2">
@@ -76,6 +94,42 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
                 >
                     + ADD BIT
                 </button>
+            </div>
+
+            {/* 批 2：位网格（bit0 在最右 = LSB 口径）。点空格上膛 → 再点一格提交位段；
+                点占用格 = 选中该段（表格行同步高亮）。 */}
+            <div className="border border-nier-light/20 p-1 flex flex-col gap-1" data-bit-grid={armedBit !== null ? 'armed' : 'idle'}>
+                <div className="flex items-center justify-between text-[8px] opacity-60 uppercase tracking-widest">
+                    <span>位图 (BIT MAP) · 右端为 bit0</span>
+                    <span className={armedBit !== null ? 'text-nier-light' : 'opacity-50'}>
+                        {armedBit !== null ? `起点 bit${armedBit} → 选终点` : '点两格设段 / 点色块选段'}
+                    </span>
+                </div>
+                {grid.bytes.map((row, r) => (
+                    <div key={r} className="flex items-center gap-1" data-byte-row={r}>
+                        <span className="text-[8px] opacity-40 font-mono w-6 text-right">B{r}</span>
+                        {row.map(cell => {
+                            const armed = armedBit !== null && Math.min(armedBit, cell.bitIndex) <= cell.bitIndex && cell.bitIndex <= Math.max(armedBit, cell.bitIndex);
+                            const sel = cell.owner >= 0 && cell.owner === selectedIndex;
+                            return (
+                                <div
+                                    key={cell.bitIndex}
+                                    data-bit-cell={cell.bitIndex}
+                                    data-owner={cell.owner >= 0 ? cell.owner : null}
+                                    data-conflict={cell.conflict ? 'true' : null}
+                                    data-bit-arm={armed ? 'true' : null}
+                                    onClick={() => handleCellClick(cell)}
+                                    title={cell.owner >= 0
+                                        ? `${cell.name} · bit${cell.bitIndex}`
+                                        : `空闲 bit${cell.bitIndex} · 点击设段`}
+                                    className={`flex-1 h-4 border cursor-pointer transition-colors ${cell.owner >= 0 ? '' : 'bg-nier-light/5 hover:bg-nier-light/20'} ${cell.conflict ? 'border-red-500 bg-red-500/30' : 'border-nier-light/30'} ${armed ? 'border-dashed border-nier-light/60' : ''} ${sel ? 'ring-1 ring-nier-light' : ''}`}
+                                    style={cell.owner >= 0 ? { backgroundColor: cell.conflict ? undefined : `${cell.color}55` } : undefined}
+                                />
+                            );
+                        })}
+                        <span className="text-[8px] opacity-40 font-mono w-6">B{r}</span>
+                    </div>
+                ))}
             </div>
 
             <div className="grid grid-cols-[1fr_44px_36px_48px_16px] gap-1 text-[8px] opacity-50 uppercase tracking-widest px-0.5">
@@ -94,7 +148,10 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
                     return (
                         <div
                             key={b.id || idx}
-                            className={`grid grid-cols-[1fr_44px_36px_48px_16px] gap-1 items-center ${hasConflict ? 'bg-red-500/20 border border-red-500/60 px-0.5' : ''}`}
+                            data-bit-row={idx}
+                            data-selected={selectedIndex === idx ? 'true' : 'false'}
+                            onClick={() => setSelectedIndex(idx)}
+                            className={`grid grid-cols-[1fr_44px_36px_48px_16px] gap-1 items-center cursor-pointer ${hasConflict ? 'bg-red-500/20 border border-red-500/60 px-0.5' : ''} ${selectedIndex === idx ? 'border-l-2 border-nier-light pl-1' : ''}`}
                             title={hasConflict ? '位范围重叠 (BIT OVERLAP)' : undefined}
                         >
                             <input
@@ -148,19 +205,19 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
                 )}
             </div>
 
-            {/* LIVE PREVIEW */}
+            {/* LIVE PREVIEW（批 2：打包值改由 bitGrid.packBits 出，与编码器同口径） */}
             <div className="border-t border-white/10 pt-1.5 space-y-0.5 text-[9px] font-mono">
                 <div className="flex justify-between">
                     <span className="opacity-50">默认打包值 (HEX)</span>
                     <span className="text-yellow-500">
-                        0x{totalDefault.toString(16).toUpperCase().padStart(Math.max(2, requiredBytes * 2), '0')}
+                        0x{totalDefault}
                     </span>
                 </div>
                 <div className="flex justify-between">
                     <span className="opacity-50">所需字节 (REQ)</span>
-                    <span className={requiredBytes > (byteLen || 0) ? 'text-red-400' : 'text-nier-light'}>
-                        {requiredBytes} / {byteLen || 0}
-                        {requiredBytes > (byteLen || 0) ? ' ⚠ TOO SMALL' : ''}
+                    <span className={grid.overflow ? 'text-red-400' : 'text-nier-light'}>
+                        {grid.requiredBytes} / {byteLen || 0}
+                        {grid.overflow ? ' ⚠ TOO SMALL' : ''}
                     </span>
                 </div>
                 {conflicts.size > 0 && (
