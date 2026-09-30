@@ -163,3 +163,40 @@ describe('SmartInput 第 4 批：TIME 取值形态 + 定长限制', () => {
         expect(screen.queryByText(/BYTES/)).toBeNull();
     });
 });
+
+// 批 1：字段级十进制录入（加工页 decimal 通道）。
+describe('SmartInput 批 1：十进制通道', () => {
+    it('decimal 通道：输入按十进制解析发数值（不回退 hex 解析）+ 徽标 [DEC]', () => {
+        const onChange = vi.fn();
+        render(<SmartInput label="速度" value="255" type="decimal" onChange={onChange} />);
+
+        const input = screen.getByDisplayValue('255');
+        fireEvent.change(input, { target: { value: '10' } });
+        expect(onChange).toHaveBeenCalledWith(10); // 10 是十进制 10（hex 通道下才是 16）
+        expect(screen.getByText('[DECIMAL]')).toBeTruthy();
+    });
+
+    it('decimal 通道 + byteLen：min/max 钳制 + 徽标按值折算字节 [nB]', () => {
+        const onChange = vi.fn();
+        render(<SmartInput label="速度" value="5" type="decimal" min={0} max={255} byteLen={1} onChange={onChange} />);
+
+        const input = screen.getByDisplayValue('5');
+        fireEvent.change(input, { target: { value: '300' } });
+        expect(onChange).toHaveBeenCalledWith(255);
+        expect(input.value).toBe('255');
+        expect(screen.getByText('[1B]')).toBeTruthy();
+
+        // 0 值 → 0 位 → 徽标仍为字段字节上限（[nB] 语义是上限提示，非已用量）
+        fireEvent.change(input, { target: { value: '0' } });
+        expect(onChange).toHaveBeenLastCalledWith(0);
+    });
+
+    it('decimal 通道：负数域（INT_SIGNED）不被误钳成 0', () => {
+        const onChange = vi.fn();
+        render(<SmartInput label="温度" value="0" type="decimal" min={-128} max={127} byteLen={1} onChange={onChange} />);
+
+        const input = screen.getByDisplayValue('0');
+        fireEvent.change(input, { target: { value: '-40' } });
+        expect(onChange).toHaveBeenLastCalledWith(-40);
+    });
+});

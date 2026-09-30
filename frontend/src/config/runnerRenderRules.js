@@ -31,6 +31,24 @@ export const packBitfieldDefault = (bits, byteLen) => {
     return packed.toString(16).toUpperCase().padStart(target, '0').slice(-target);
 };
 
+// 批 1：字段级录入进制。定义侧 BlockPropertiesPanel 参数区顶部固定行写
+// parameter_config.input_base（'hex' 缺省 / 'dec'）——加工页据此把定长整数字段
+// 从 hex 通道切到十进制通道。只换 UI 解析/回显层：值存储恒数值，
+// InstructionEncoder / 后端口径不变。非法值一律回退 hex（存量零影响）。
+export const isDecimalEntry = (params = {}) =>
+    String(params.input_base || '').toLowerCase() === 'dec';
+
+// 十进制通道的显示值：数值原值（不补零）。BITFIELD 无输入态回退的是
+// packBitfieldDefault 的 hex 串 → 按 hex 解析回打包整数，与 hex 通道同值。
+const toDecimalValue = (v) => {
+    if (v === undefined || v === null || v === '') return undefined;
+    if (typeof v === 'number') return v;
+    const s = String(v).trim();
+    if (/^[0-9A-Fa-f]+$/.test(s)) return parseInt(s, 16);
+    const n = Number(s);
+    return Number.isFinite(n) ? n : undefined;
+};
+
 // Field classification: which render lane a leaf field lands in.
 // NOTE: Fixed detection also falls back to preserved original_op_code
 // (normalizeRunnerInstruction may rewrite op_code to 'FIXED'/'INPUT').
@@ -158,13 +176,21 @@ export const resolveFieldDisplay = (field, { inputs = {}, computedValues = {} } 
         if (field.byte_len && field.byte_len > 0) {
             const currentVal = rawValue ?? 0;
             if (!params.type || params.type === 'number' || params.type === 'hex') {
-                inputType = 'hex';
-                if (typeof currentVal === 'number') {
-                    displayValue = currentVal.toString(16).toUpperCase().padStart(field.byte_len * 2, '0');
+                // 批 1：字段级录入进制（定义侧 parameter_config.input_base）。
+                // dec = 十进制录入/回显（不补零）；值存储恒数值 → encoder 无感。
+                if (isDecimalEntry(params)) {
+                    inputType = 'decimal';
+                    displayValue = toDecimalValue(rawValue);
+                    placeholder = '0';
                 } else {
-                    displayValue = String(currentVal || '').toUpperCase();
+                    inputType = 'hex';
+                    if (typeof currentVal === 'number') {
+                        displayValue = currentVal.toString(16).toUpperCase().padStart(field.byte_len * 2, '0');
+                    } else {
+                        displayValue = String(currentVal || '').toUpperCase();
+                    }
+                    placeholder = '0'.repeat(field.byte_len * 2);
                 }
-                placeholder = '0'.repeat(field.byte_len * 2);
             } else {
                 displayValue = rawValue;
             }
@@ -248,7 +274,9 @@ export const computeFieldInputLimits = (field = {}) => {
     }
 
     const out = { byteLen };
-    if (!ptype || ptype === 'number' || ptype === 'hex') out.maxLength = byteLen * 2;
-    if (min !== null) { out.min = min; out.max = max; }
+        // 批 1：十进制通道不回吐 hex 字符数上限（maxLength 只被 SmartInput 的 hex
+        // 分支消费），数值域照用 —— 与 resolveFieldDisplay 同判据（isDecimalEntry）。
+        if (!isDecimalEntry(params) && (!ptype || ptype === 'number' || ptype === 'hex')) out.maxLength = byteLen * 2;
+        if (min !== null) { out.min = min; out.max = max; }
     return out;
 };

@@ -205,6 +205,53 @@ describe('resolveFieldDisplay（显示值解析）', () => {
         });
     });
 
+    // 批 1：字段级录入进制（parameter_config.input_base='dec'）——
+    // 定长整数字段从 hex 通道切到十进制通道，显示十进制原值（不补零），
+    // 值存储恒数值 → InstructionEncoder / 后端口径不变。
+    it('input_base=dec：定长整数字段走十进制通道（十进制原值，不补零）', () => {
+        const field = leaf({ byte_len: 2, parameter_config: { type: 'number', input_base: 'dec' } });
+        expect(resolveFieldDisplay(field, { inputs: { f1: 255 } }))
+            .toMatchObject({ displayValue: 255, inputType: 'decimal' });
+        // 无输入态：原值 undefined（不塞 0），placeholder 用 0 便于对齐习惯
+        expect(resolveFieldDisplay(field, {}))
+            .toMatchObject({ displayValue: undefined, inputType: 'decimal', placeholder: '0' });
+    });
+
+    it('input_base=dec：仅影响 hex 语义 type；string/text/decimal/float 通道原样透传', () => {
+        const dec = (t) => leaf({ byte_len: 1, parameter_config: { type: t, input_base: 'dec' } });
+        expect(resolveFieldDisplay(dec('string'), { inputs: { f1: 'A' } }))
+            .toMatchObject({ displayValue: 'A', inputType: 'string' });
+        expect(resolveFieldDisplay(dec('text'), { inputs: { f1: 'B' } }))
+            .toMatchObject({ displayValue: 'B', inputType: 'text' });
+        expect(resolveFieldDisplay(dec('decimal'), { inputs: { f1: 10 } }))
+            .toMatchObject({ displayValue: 10, inputType: 'decimal' });
+        expect(resolveFieldDisplay(dec('float'), { inputs: { f1: 1.5 } }))
+            .toMatchObject({ displayValue: 1.5, inputType: 'float' });
+    });
+
+    it('input_base=dec：BITFIELD 同步走十进制通道（默认值仍是打包整数，非 hex 串）', () => {
+        const r = resolveFieldDisplay(leaf({
+            op_code: 'BITFIELD',
+            byte_len: 1,
+            parameter_config: { input_base: 'dec' },
+            bits: [{ start_bit: 0, bit_len: 4, default_val: 5 }, { start_bit: 4, bit_len: 4, default_val: 10 }]
+        }), {});
+        // 打包默认 0xA5 = 165 → 十进制原值
+        expect(r).toMatchObject({ displayValue: 165, inputType: 'decimal' });
+    });
+
+    it('input_base 大小写不敏感；缺省/真非法值 → 保持 hex 通道（存量零影响）', () => {
+        // 手改 JSON 写成 'DEC' 不应被静默降级成 hex
+        expect(resolveFieldDisplay(leaf({ byte_len: 2, parameter_config: { input_base: 'DEC' } }), { inputs: { f1: 16 } }))
+            .toMatchObject({ displayValue: 16, inputType: 'decimal' });
+        // 缺省
+        expect(resolveFieldDisplay(leaf({ byte_len: 2, parameter_config: {} }), { inputs: { f1: 16 } }))
+            .toMatchObject({ displayValue: '0010', inputType: 'hex' });
+        // 真非法值（未来进制 / 脏数据）→ 回退 hex（'bin' 已升为真实通道，见优化批）
+        expect(resolveFieldDisplay(leaf({ byte_len: 2, parameter_config: { input_base: 'oct' } }), { inputs: { f1: 16 } }))
+            .toMatchObject({ displayValue: '0010', inputType: 'hex' });
+    });
+
     it('非 hex 语义 type（decimal/text）不转 hex，透传原值', () => {
         const r = resolveFieldDisplay(
             leaf({ byte_len: 2, parameter_config: { type: 'decimal' } }),
@@ -329,6 +376,28 @@ describe('computeFieldInputLimits（定长字段输入限制，第 4 批 #4）',
         expect(computeFieldInputLimits(leaf({
             byte_len: 1, parameter_config: { type: 'boolean' }
         }))).toEqual({ byteLen: 1, min: 0, max: 255 });
+    });
+
+    // 批 1：十进制通道下不得回吐 hex 字符数上限（maxLength 仅 hex 通道消费），
+    // 数值域照用 —— 与 resolveFieldDisplay 的 input_base 分支同判据。
+    it('input_base=dec：有数值域、无 maxLength（hex 字符上限对十进制无效）', () => {
+        expect(computeFieldInputLimits(leaf({ byte_len: 1, parameter_config: { input_base: 'dec' } })))
+            .toEqual({ byteLen: 1, min: 0, max: 255 });
+        expect(computeFieldInputLimits(leaf({ byte_len: 4, parameter_config: { input_base: 'dec' } })))
+            .toEqual({ byteLen: 4, min: 0, max: 4294967295 });
+        // 有符号域照用
+        expect(computeFieldInputLimits(leaf({ op_code: 'INT_SIGNED', byte_len: 1, parameter_config: { input_base: 'dec' } })))
+            .toEqual({ byteLen: 1, min: -128, max: 127 });
+        // SCALED_DECIMAL 反算域照用
+        expect(computeFieldInputLimits(leaf({ op_code: 'SCALED_DECIMAL', byte_len: 1, parameter_config: { factor: 2, input_base: 'dec' } })))
+            .toEqual({ byteLen: 1, min: 0, max: 127 });
+    });
+
+    it('input_base 大小写不敏感；缺省/非法值 → 维持既有 maxLength（存量零影响）', () => {
+        expect(computeFieldInputLimits(leaf({ byte_len: 1, parameter_config: { input_base: 'DEC' } })))
+            .toEqual({ byteLen: 1, min: 0, max: 255 });
+        expect(computeFieldInputLimits(leaf({ byte_len: 1, parameter_config: { input_base: 'oct' } })))
+            .toEqual({ byteLen: 1, maxLength: 2, min: 0, max: 255 });
     });
 
     it('不设限：string/decimal/float 类型、枚举、只读/计算/时间字段、无 byte_len', () => {

@@ -48,6 +48,17 @@ const INSTRUCTIONS = [
                 parameter_config: { base_time: '2026-01-01T00:00:00' } }
         ]
     },
+    // 批 1：字段级十进制录入 —— d1 走 dec 通道（2 字节，值域 0..65535），
+    // d2 缺省保持 hex 通道（存量对照组）
+    {
+        id: 'inst-5', name: '十进制指令',
+        fields: [
+            { id: 'd1', parent_id: null, sequence: 0, name: '速度',
+                op_code: 'INPUT', byte_length: 2, parameter_config: { input_base: 'dec' } },
+            { id: 'd2', parent_id: null, sequence: 1, name: '模式',
+                op_code: 'INPUT', byte_length: 1, parameter_config: {} }
+        ]
+    },
     // 第 4 批 #2 修复回归：两层嵌套（头组 > 内组 > 叶）+ 根级叶
     // 字节序：段头 AA [0,1) · 段尾 00 [1,2) · 尾字节 00 [2,3)
     {
@@ -306,5 +317,64 @@ describe('指令加工编辑反馈（第 4 批）', () => {
 
         const selected = document.querySelectorAll('[data-byte-segment][data-selected]');
         expect(selected.length).toBe(2);
+    });
+});
+
+// 批 1：字段级十进制录入（定义侧 parameter_config.input_base='dec'）。
+describe('批 1：字段级十进制录入', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        api.getResponseSpec.mockRejectedValue(
+            Object.assign(new Error('nf'), { response: { status: 404 } })
+        );
+        api.getOperatorTemplates.mockResolvedValue([]);
+        api.getBindings.mockResolvedValue([]);
+        api.dispatchPayload.mockResolvedValue({ id: 1, status: 'SENT', byte_count: 2 });
+        api.compileWrapped.mockResolvedValue({ hex_string: '00 00', total_length: 2, warnings: [] });
+        api.sendTransaction.mockResolvedValue(OK_RECORD);
+    });
+
+    it('input_base=dec 字段走十进制通道：显示十进制原值、无 hex 补零、徽标 [1B]', async () => {
+        renderPage();
+        fireEvent.click(await sidebar().findByText('十进制指令'));
+        await screen.findByText('BYTE_STREAM_OUTPUT');
+
+        // 2 字节 dec 字段：无输入态显示 placeholder「0」，不显示 0000 这类 hex 占位
+        const speed = screen.getByPlaceholderText('0');
+        expect(screen.queryByPlaceholderText('0000')).toBeNull();
+        expect(screen.getByText('[2B]')).toBeTruthy(); // 非 hex 通道徽标 = 字节上限
+
+        // 缺省字段仍走 hex 通道（存量对照组）
+        expect(screen.getByPlaceholderText('00')).toBeTruthy();
+        expect(screen.getByText('1/1 BYTES')).toBeTruthy(); // hex 通道 = 已用/上限
+    });
+
+    it('十进制录入 → BYTE_STREAM_OUTPUT 字节正确（值存储恒数值，编码口径不变）', async () => {
+        renderPage();
+        fireEvent.click(await sidebar().findByText('十进制指令'));
+        await screen.findByText('BYTE_STREAM_OUTPUT');
+
+        // 录入 258 = 0x0102 → 字节流 01 02（hex 通道下「258」是非法字符会被清空）
+        fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '258' } });
+
+        await waitFor(() => {
+            const segs = [...document.querySelectorAll('[data-byte-segment]')].map(s => s.textContent);
+            expect(segs.join(' ')).toBe('01 02 00');
+        });
+    });
+
+    it('十进制通道数值域钳制：2 字节上限 65535（超出即时钳制，字节流随之更新）', async () => {
+        renderPage();
+        fireEvent.click(await sidebar().findByText('十进制指令'));
+        await screen.findByText('BYTE_STREAM_OUTPUT');
+
+        const speed = screen.getByPlaceholderText('0');
+        fireEvent.change(speed, { target: { value: '99999' } });
+        expect(speed.value).toBe('65535');
+
+        await waitFor(() => {
+            const segs = [...document.querySelectorAll('[data-byte-segment]')].map(s => s.textContent);
+            expect(segs.join(' ')).toBe('FF FF 00');
+        });
     });
 });

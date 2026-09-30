@@ -59,6 +59,70 @@ describe('BlockPropertiesPanel validation issues (P0-2)', () => {
     });
 });
 
+// 批 1：字段级「录入进制」配置 —— 存 parameter_config.input_base，
+// 加工页据此切十进制通道（值存储恒数值，编码端口径不变）。
+describe('BlockPropertiesPanel 录入进制配置 (批 1)', () => {
+    // 带一个算子模板参数，作为「参数区顶部固定行」的顺序基准
+    const withBlock = (parameter_config) => render(
+        <BlockPropertiesPanel
+            {...baseProps}
+            operatorTemplates={{ INPUT: { param_template: { start_val: { type: 'number' } } } }}
+            selectedBlock={{
+                id: 'f1', name: '速度', op_code: 'INPUT', byte_len: 1,
+                parameter_config
+            }}
+            currentInstruction={{ id: 'i1', name: 'T', code: 'T1', device_code: 'D1', fields: [] }}
+        />
+    );
+
+    it('参数区顶部固定行：「录入进制 (INPUT BASE)」HEX/DEC 切换，排在模板参数之前', () => {
+        withBlock({});
+        expect(screen.getByText(/录入进制/)).toBeDefined();
+
+        const html = document.body.innerHTML;
+        // 「配置参数 (CONFIG)」标题之下、模板参数（start_val）之上
+        expect(html.indexOf('录入进制')).toBeGreaterThan(html.indexOf('配置参数 (CONFIG)'));
+        expect(html.indexOf('录入进制')).toBeLessThan(html.indexOf('start_val'));
+    });
+
+    it('缺省显示 HEX 为当前态；切到 DEC 写回 parameter_config.input_base', () => {
+        withBlock({});
+        fireEvent.click(screen.getByRole('button', { name: 'DEC' }));
+
+        // 写入经 handleTempParamUpdate → onTempChange 推送（面板用 temp 缓冲 + APPLY 落库）
+        const pushed = baseProps.onTempChange.mock.calls.at(-1)[0];
+        expect(pushed.parameter_config.input_base).toBe('dec');
+    });
+
+    it('存量字段（已存 dec）回显为 DEC 态；切回 HEX 写 hex', () => {
+        withBlock({ input_base: 'dec' });
+        const decBtn = screen.getByRole('button', { name: 'DEC' });
+        expect(decBtn.className).toContain('bg-nier-light');
+
+        fireEvent.click(screen.getByRole('button', { name: 'HEX' }));
+        const pushed = baseProps.onTempChange.mock.calls.at(-1)[0];
+        expect(pushed.parameter_config.input_base).toBe('hex');
+    });
+
+    it('不可编辑语义的块（HEX_RAW 固定值 / BITFIELD 打包值）不显示该配置', () => {
+        withBlock({});
+        expect(screen.getByText(/录入进制/)).toBeDefined();
+
+        render(
+            <BlockPropertiesPanel
+                {...baseProps}
+                selectedBlock={{
+                    id: 'f2', name: '固定', op_code: 'HEX_RAW', byte_len: 1,
+                    parameter_config: { hex: 'AA' }
+                }}
+                currentInstruction={{ id: 'i1', name: 'T', code: 'T1', device_code: 'D1', fields: [] }}
+            />
+        );
+        // HEX_RAW 面板无录入进制行（固定值不走录入通道）
+        expect(screen.getAllByText(/录入进制/)).toHaveLength(1);
+    });
+});
+
 describe('BlockPropertiesPanel encoder-limit banner (P0-1)', () => {
     it('shows no B6 banner for a LITTLE-endian block (B6 withdrawn, E1-2)', () => {
         const block = {

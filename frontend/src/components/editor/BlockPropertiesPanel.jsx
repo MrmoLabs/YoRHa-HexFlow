@@ -103,6 +103,16 @@ export default function BlockPropertiesPanel({
         setTempBlockConfig(prev => ({ ...prev, ...updates }));
     };
 
+    // 批 1：录入进制读态（缺省 hex；非法值同样回退 hex —— 与 runnerRenderRules
+    // isDecimalEntry 判据镜像）
+    const rawInputBase = String(tempBlockConfig?.parameter_config?.input_base || '').toLowerCase();
+    const inputBase = rawInputBase === 'dec' ? 'DEC' : 'HEX';
+    const INPUT_BASES = { HEX: 'hex', DEC: 'dec' };
+    const INPUT_BASE_TITLES = {
+        HEX: '十六进制录入（默认）',
+        DEC: '十进制录入'
+    };
+
     const handleTempParamUpdate = (key, val) => {
         setTempBlockConfig(prev => {
             const parameter_config = { ...prev.parameter_config, [key]: val };
@@ -376,6 +386,32 @@ export default function BlockPropertiesPanel({
                     {/* Dynamic Params */}
                     <div className="p-3 border border-white/10 bg-white/5 space-y-3">
                         <div className="text-[9px] opacity-50 border-b border-white/10 pb-1 mb-2">配置参数 (CONFIG)</div>
+                        {/* 批 1：录入进制（字段级）—— 存 parameter_config.input_base。
+                            加工页据此把定长整数字段切到十进制通道；纯 UI 层，编码端口径不变。
+                            HEX_RAW（固定值）/BITFIELD（打包值）不适用 → 不渲染。 */}
+                        {selectedBlock.op_code !== 'HEX_RAW' && selectedBlock.op_code !== 'BITFIELD' && (
+                            <div className="flex flex-col gap-1">
+                                <label
+                                    className="text-[10px] opacity-70 uppercase tracking-widest"
+                                    title="INPUT_BASE // 加工页录入与回显进制；值存储恒为数值，编码端按定长字节输出十六进制"
+                                >
+                                    录入进制 (INPUT BASE)
+                                </label>
+                                <div className="flex text-[10px] gap-1 border border-nier-light/30 p-0.5 bg-black w-fit">
+                                    {['HEX', 'DEC'].map(m => (
+                                        <button
+                                            key={m}
+                                            type="button"
+                                            title={INPUT_BASE_TITLES[m]}
+                                            onClick={() => handleTempParamUpdate('input_base', INPUT_BASES[m])}
+                                            className={`px-2 py-0.5 transition-all font-bold ${inputBase === m ? 'bg-nier-light text-black' : 'text-nier-light hover:bg-nier-light/20'}`}
+                                        >
+                                            {m}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
                         {selectedBlock.op_code !== 'HEX_RAW' && selectedBlock.op_code !== 'BITFIELD' && (
                             <ParamConfigForm
                                 blockState={tempBlockConfig}
