@@ -1179,7 +1179,9 @@
   `yorha.db` 按规不提交）。**回归硬指标**：存量 wrap 共享向量
   （`FA FA 02 01 02 ED`）与无 wrap 裸发路径逐字节不变（`test_wrap_api` 既有
   用例 + 新增裸发断言）。
-- 状态：**待人工验证 → 一批一提交（四批可拆四单或合并一单，由用户定）。**
+- 状态：**✅ 真机验证通过（2026-09-30 浏览器逐条全绿零 bug，用户授权 agent
+  验证）→ 按四单提交：批1 `23ad28e` / 批2 `327ac8c` / 批3 `f8dcf64` /
+  批4 `e6a31a4`。**
 
 ### 8.14 调研后优化（优化批：BIN 三态进制 + 前缀识别 / 位段值表 / 有符号位段 / 位号标尺）
 
@@ -1240,7 +1242,8 @@
   `generate-page-status.mjs` EXIT=0、schema **SCHEMA_IDENTICAL**（28 对象，
   零 DDL）→ 无 db 提交。存量 wrap 向量（`FA FA 02 01 02 ED`）与裸发路径
   byte-equal 不变。
-- 状态：**待人工验证 → 作为第 5 单（与批 1-4 分开）提交。**
+- 状态：**✅ 真机验证通过（2026-09-30，优化 1-4 逐条全绿）→ 第 5 单已提交
+  `3668d37`（与批 1-4 分开）。**
 
 ### 8.15 验证反馈：校验标色（属性面板提醒 → 画布卡片颜色）
 
@@ -1275,7 +1278,8 @@
   OK（本批纯 FE，零后端改动）、`vite build` EXIT=0、yorha-ui 校验器触 4 文件
   0 违规、`generate-page-status.mjs` EXIT=0、schema **SCHEMA_IDENTICAL**
   （28 对象，零 DDL）→ 无 db 提交。
-- 状态：**待人工验证 → 作为第 6 单（独立于批 1-4 与优化批）提交。**
+- 状态：**✅ 真机验证通过（2026-09-30，红/琥珀/让位/pl-3 逐条全绿）→ 第 6 单
+  已提交 `3ff0f69`（独立于批 1-4 与优化批）。**
 
 ### 8.16 业务场景全集排期（G1–G7 新缺口 → N1–N5 批次）
 
@@ -1311,8 +1315,9 @@
   断言 `SEED_TEMPLATES` 结构与 FLOAT bits 默认口径（锁 SEED 不回摆）。
 - 验收：§0 统一口径（FE/BE 全量 EXIT=0、`vite build`、校验器 0 违规、
   pageStatus 生成、schema 零 DDL、既有编码向量 byte-equal 不变）。
-- 状态：**红→绿完成（FE 700/700 · BE 322/322，2026-09-30）→ 待人工验证，
-  随 3 文档一并作为第 7 单提交。**
+- 状态：**红→绿完成（FE 700/700 · BE 322/322，2026-09-30）→ 真机验证通过
+  （FLOAT64/OP_UNKNOWN 提醒逐条全绿）→ 已随 3 文档一并作为第 7 单提交
+  `7d50484`。**
 
 **N2 字符串批（G2——入口 + 定长 + 字符集三件套）**
 - a 入口：SEED_TEMPLATES 新增 `STRING`（BASE 分类，`param_template:
@@ -1363,7 +1368,8 @@
   BE **332/332** OK EXIT=0（基线 322 + 10）、`vite build` EXIT=0、yorha-ui
   校验器触 4 文件 0 违规、`generate-page-status.mjs` EXIT=0（指令页 availableNow
   +N2 条目）、schema **SCHEMA_IDENTICAL**（28 对象零 DDL）。
-- 状态：**全量绿 → 待人工验证，作为第 8 单提交**（`validateInstruction.js`
+- 状态：**✅ 真机验证通过（2026-09-30，STRING 全链含 `STRING_NON_ASCII` chip
+  逐条全绿）→ 第 8 单已提交 `848e248`**（`validateInstruction.js`
   按 hunk 与 N1 分离：N1 的 KNOWN_OPS/W4/W5 随第 7 单、N2 的 W6 随第 8 单；
   `Instruction.jsx`/`Block.jsx`/`orchestrator.py` 与六单同文件分 hunk）。
 
@@ -1437,13 +1443,15 @@ CHECKSUM_CRC 3 / ARRAY_GROUP 2 / TIME_ACCUMULATOR·INT_SIGNED·AUTO_COUNTER 各 
 无存量 type=string 字段、presence 零行**；白名单取 KNOWN_OPS 全集不锁死任何
 历史数据 → 策略（保存侧拒绝 vs 警告）可随时拍板插队）、组帧族（已立 §8.14）。
 
-- 状态：**排期已落档；N1/N2 实现完成、全量验收绿（2026-09-30）**——N1 红→绿
-  2 轮（FE 700/700 + BE 322/322），N2 红→绿 2 轮（FE **728/728**（49 文件，
-  基线 700 + 28）/ BE **332/332**（基线 322 + 10））、build EXIT=0、校验器触达
-  0 违规、pageStatus EXIT=0、schema SCHEMA_IDENTICAL（28 对象零 DDL）→
-  **文档 + N1 随第 7 单、N2 随第 8 单提交（六单之后）**；N3 细化设计已落档
-  （见 N3 段），待六单提交后开工（第 9 单）；BE 白名单摸底完成（挂账行），
-  策略待拍板。**
+- 状态：**排期已落档；六单 + N1/N2 全部实现、真机验证通过并分单提交
+  （2026-09-30）**——批1-4 = `23ad28e`/`327ac8c`/`f8dcf64`/`e6a31a4`、
+  第 5 单优化批 = `3668d37`、第 6 单标色 = `3ff0f69`；N1 红→绿 2 轮（FE
+  700/700 + BE 322/322）+ 3 文档 = 第 7 单 `7d50484`；N2 红→绿 2 轮（FE
+  **728/728**（49 文件，基线 700 + 28）/ BE **332/332**（基线 322 + 10））=
+  第 8 单 `848e248`。终态复验：build EXIT=0、校验器触达 0 违规、pageStatus
+  EXIT=0、schema SCHEMA_IDENTICAL（28 对象零 DDL）→
+  **N3 细化设计已落档（见 N3 段），已可开工（第 9 单）**；BE 白名单摸底完成
+  （挂账行），策略待拍板。**
 
 ## 9. 保留勿动（非任务，勿清理）
 
