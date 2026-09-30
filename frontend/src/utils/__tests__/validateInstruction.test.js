@@ -246,3 +246,45 @@ describe('validateInstruction N1 护栏（G5 未知算子 / G7 float64）', () =
         expect(warnings.some((x) => x.code === 'OP_UNKNOWN')).toBe(false);
     });
 });
+
+// N2 字符串批（PLAN §8.16 · G2 字符集）：静态文本含 >0xFF 且非 utf8 → 脏字节提醒。
+describe('validateInstruction N2 文本字段（G2 字符集）', () => {
+    it('W: STRING 静态值含 >0xFF 且未启 utf8 → STRING_NON_ASCII', () => {
+        const { errors, warnings } = validateInstruction(inst([
+            blk({ op_code: 'STRING', byte_len: 4, parameter_config: { type: 'string', value: '中A' } }),
+        ]));
+        expect(errors).toEqual([]);
+        const w = warnings.find((x) => x.code === 'STRING_NON_ASCII');
+        expect(w).toBeTruthy();
+        expect(w.blockId).toBe('f1');
+        expect(w.message).toMatch(/utf8/);
+    });
+
+    it('W: encoding=utf8 不报（UTF-8 是正解）', () => {
+        const { warnings } = validateInstruction(inst([
+            blk({ op_code: 'STRING', byte_len: 4, parameter_config: { type: 'string', encoding: 'utf8', value: '中' } }),
+        ]));
+        expect(warnings.some((x) => x.code === 'STRING_NON_ASCII')).toBe(false);
+    });
+
+    it('W: ≤0xFF 字符（纯 ASCII / Latin-1）不报', () => {
+        const { warnings } = validateInstruction(inst([
+            blk({ op_code: 'STRING', byte_len: 8, parameter_config: { type: 'string', value: 'Hello_42é' } }),
+        ]));
+        expect(warnings.some((x) => x.code === 'STRING_NON_ASCII')).toBe(false);
+    });
+
+    it('W: 存量 INPUT + type=string 按 default 同口径检查', () => {
+        const { warnings } = validateInstruction(inst([
+            blk({ op_code: 'INPUT', byte_len: 4, parameter_config: { type: 'string', default: '中文' } }),
+        ]));
+        expect(warnings.some((x) => x.code === 'STRING_NON_ASCII')).toBe(true);
+    });
+
+    it('STRING 属已知算子全集（OP_UNKNOWN 不误报）', () => {
+        const { warnings } = validateInstruction(inst([
+            blk({ op_code: 'STRING', byte_len: 8, parameter_config: {} }),
+        ]));
+        expect(warnings.some((x) => x.code === 'OP_UNKNOWN')).toBe(false);
+    });
+});

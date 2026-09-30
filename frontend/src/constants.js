@@ -19,7 +19,10 @@ export const OP_CODES = {
     LENGTH_CALC: 'LENGTH_CALC',
     CHECKSUM_CRC: 'CHECKSUM_CRC',
     TIME_ACCUMULATOR: 'TIME_ACCUMULATOR',
-    AUTO_COUNTER: 'AUTO_COUNTER'
+    AUTO_COUNTER: 'AUTO_COUNTER',
+    // N2 (G2): 定长文本字段（ascii/utf8 × pad/截断）——G2「字符串三连」的正经
+    // 入口。KNOWN_OPS 经 Object.values(OP_CODES) 自动收录（N1 护栏跟随）。
+    STRING: 'STRING'
 };
 
 export const CATEGORIES = {
@@ -33,6 +36,7 @@ export const CATEGORIES = {
 
 export const OP_PRIORITY = [
     OP_CODES.HEX_RAW,
+    OP_CODES.STRING,
     OP_CODES.INT_UNSIGNED,
     OP_CODES.INT_SIGNED,
     OP_CODES.FLOAT_IEEE,

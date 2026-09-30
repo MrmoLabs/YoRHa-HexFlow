@@ -27,7 +27,10 @@
       "协议级属性：属性面板协议级视图新增「协议描述」textarea（schema 既有字段零 DDL，落库走既有 description 载荷 + serializeProtocol 签名 → 手动保存链覆盖；onProtocolLabelChange 改名 onProtocolMetaChange，label/description 共用草稿 commit 入口）（批次四 P3-1）。",
       "checksum 算法配置：卡面「校验算法」下拉（SUM8 / XOR8 / CRC16-MODBUS，缺省 CRC16-MODBUS）存 parameter_config.algorithm（前端编码器 PASS2 同源直读）；编排导出 toFrameBlocks 出口把 refs（按数组序展开叶子 id、容器 ref 展开子树文档序、悬空丢弃）+ 算法枚举翻译进 config.params，后端 LengthHandler/ChecksumHandler 新增 refs 集合模式 —— 打通 R2 死 config:{} 恒 00 断点（无 refs 键的旧 range 模式原样保留）；validateProtocol 新增 W4 算法枚举外 warning（批次四 P3-3，toFrameBlocks / 后端 test_logic_refs_config 锁形）。",
       "卡面取值口径：能确定的值直接显示、不确定按字节数出等量 ??（formula.formatUnknown，1B→??、4B→?? ?? ?? ??）—— length 挂可解析 refs 出 `${sigma}B`、checksum refs 全可确定按算法出设计期真值（缺省 CRC_16_MODBUS 同编码器，嵌套容器裹槽同拒）、其余出等量 ??；容器卡中央值 = 嵌套内容逐块拼接（字面 hex 子块出 pretty、未知子块按 byte_length 出等量 ??，如 AA 55 ?? ??，空容器中央 = 空白（第 3 轮 #2：不显 ?? 也不显 0B，页脚仍 `0B @00` 尺寸）；未配置固定块照显存储值（`0000`→`00 00`、`00`→`00`，撤第 2 轮「全 0 → ??」回退，`??` 仅限无法确定内容的卡）；protocolTree.injectContainerContent 链式接入 displayLanes，纯派生不落库；卡面取值口径改造，protocolTree/Block 单测锁形）。",
-      "version 乐观并发：读取响应带 version（新建恒 1、每次成功写 +1），保存携带本地最后见到的值、服务端不符 409 拒收陈旧写（先于 refs 校验）；保存失败横幅三分类（版本冲突 / 服务端拒绝 / 网络·服务错误），冲突态给「强制覆盖」（按 id 拉最新 version 后带本地负载重发）与「加载最新」（放弃本地、服务端版本替换工作副本并清历史）双动作，非冲突仍走「重试」；不带 version 的直调写跳过比对直接覆盖（旧客户端兼容）；存量库缺列由启动自愈补列回填（批次五）。"
+      "version 乐观并发：读取响应带 version（新建恒 1、每次成功写 +1），保存携带本地最后见到的值、服务端不符 409 拒收陈旧写（先于 refs 校验）；保存失败横幅三分类（版本冲突 / 服务端拒绝 / 网络·服务错误），冲突态给「强制覆盖」（按 id 拉最新 version 后带本地负载重发）与「加载最新」（放弃本地、服务端版本替换工作副本并清历史）双动作，非冲突仍走「重试」；不带 version 的直调写跳过比对直接覆盖（旧客户端兼容）；存量库缺列由启动自愈补列回填（批次五）。",
+      "位域块（bitfield）结构化位定义：调色板新增「位域 BIT」卡（1 字节叶子块），属性面板复用指令侧位编辑器（位图 + 点击式设段 + 打包预览）；位段存块级 bits 数组（后端 ProtocolNodeSchema 显式透传，走 children JSON 列零 DDL），toFrameBlocks 出口搬进 config.params.bits，后端 Orchestrator 发射期单点打包（handlers/bitfield.py，静态默认值语义、发送期不可改值）；保存前 validateProtocol 拦位域重叠/超容量（镜像后端 _validate_bits 400），卡面显示打包后的真实字节；存量 fixed/长度/校验/槽块逐字不变、无 wrap 裸发路径不回归（批 4）。",
+      "位段元数据（优化批）：位域块位段支持有符号（signed，两补码）与值表（value_table，[{value,label}]，DBC VAL_ 同形）—— 协议侧随 children JSON 列往返（BitFieldSchema 显式透传，刷新不丢，零 DDL），协议 JSON 导入白名单保留元数据并清洗脏值表（非数组丢弃、非法项过滤、无 meta 不注入键）；打包口径不变（负 default 走两补码位模式，与指令侧 packBits 同批向量锁定），落库校验仍只拦重叠/超容量。",
+      "校验标色（验证反馈批次）：属性面板的 ⛔/⚠ 清单同步点亮画布对应卡 —— 非选中态卡片边框按级别变色（结构错误红 #D94834 / 提醒琥珀 #E58D28，与面板同色系），header 右侧出 ⛔/⚠ 角标、悬停看全量消息（与清单同文）；同卡错误优先，选中态保 3px 亮边只留角标，清单随编辑实时重算；不带清单的页（蓝图/编排）零变化。"
     ],
     "nextSteps": [
       "跨容器拖拽落点 moveNode 已实现并经 protocolTree 单测锁形（含环守卫）；人工跨泳道拖拽目视验证待补。",
@@ -49,6 +52,12 @@
       "模块模板支持加载态、错误态和重试。",
       "指令字段已通过统一 payload 规范化后再写回后端。",
       "新增 BITFIELD 位域算子：独立位布局编辑器，bits 明细持久化到 bit_fields 表。",
+      "位域布局可视化（批 2）：位图（byte×8、bit0 在右 = LSB 口径）替代纯数字表格做主视图 —— 空闲格点两下即生成位段、点色块选中该段并与表格行双向联动、重叠位红标、溢出位段照常渲染；表格保留精确数值编辑，位名/位宽/默认值/打包预览沿用。",
+      "字段级录入进制（批 1）：属性面板「配置参数 (CONFIG)」区顶部固定行「录入进制 (INPUT BASE) HEX | DEC」存 parameter_config.input_base（缺省 hex，大小写不敏感、非法值回退）；加工页据此把定长整数字段切十进制通道（十进制原值显示、数值域钳制、[nB] 徽标），HEX_RAW/BITFIELD 打包值不适用该行；值存储恒为数值，编码端口径不变。",
+      "录入进制扩为三态 HEX|DEC|BIN（优化批）：BIN = 二进制位模式录入（加工页按位宽定宽回显、n/N BITS 徽标）；录入宽容 0x/0b 进制前缀（0x 前缀在 hex 通道剥离归一纯 hex、0x/0b 在 dec 通道按前缀进制解析，前缀只是输入糖不挤占定长截断）。",
+      "位段元数据（优化批）：位图表格新增「值表 (VAL_TABLE)」列（单行文本 0=关,1:开，':' 兼容、中文逗号容忍）与 U/S 有符号开关（S 行默认值放开两补码域负值）；位图格 title、默认值 title、值表列回显名称解码；网格顶部新增位号标尺 7..0 列头（LSb0 口径，绝对位号 = 行号×8 + 列位号，免得自己数位）。元数据 signed/value_table 零 DDL 存 parameter_config.bit_meta（读取按位段 id 合并回 bits、保存/导入按 bits 重建拆分，单源幂等）。",
+      "校验标色（验证反馈批次）：属性面板的 ⛔/⚠ 提醒清单同步点亮画布对应字段卡 —— 非选中态边框按级别变色（结构错误红 #D94834 / 提醒琥珀 #E58D28），header 右侧出 ⛔/⚠ 角标、悬停看全量消息；同卡错误优先，选中态保 3px 亮边只留角标，清单随编辑实时重算。",
+      "文本字段算子（N2 · G2）：调色板 BASE 组新增「文本字段 STRING」—— 定长文本录入与出帧（encoding 下拉 ascii|utf8、pad_char 填充字节 hex、byte_len 定长 pad/截断，新建默认 8B / ascii / 0x00），属性面板 value 走文本输入；编码按 code point 出单字节（>0xFF 静态值校验提醒 STRING_NON_ASCII 建议切 utf8，utf8 出 UTF-8 流、孤立代理项 → U+FFFD），LENGTH_CALC 尺寸按定长字节算、卡面显原文、加工页初始值 = 静态 value 可继续键入；后端 encode_string 同口径双端 byte-equal（test_encode_string 向量表锚定），存量 INPUT + type=string 同吃定长与 ASCII 出帧。",
       "保存前结构校验：位域重叠/超容量、引用悬空、标签重复、公式循环依赖、校验块覆盖区为空会阻断保存，问题清单可点击定位到块。",
       "B2–B8 编码器未实现语义已在配置面显式标注（⚠角标/横幅与保存提醒，仅记录不生效）。",
       "字节偏移标尺与指令总长：每块 footer 显示 @偏移（组显示 @00..、动态未知显示 ··），顶栏 LEN 总长并标注 FIXED/VAR（定长直示 nB，变长可算 ~nB，未知下限 nB+），组卡片中央值 = 嵌套内容逐块拼接（字面 hex 子块出 pretty、未知子块按字节数出等量 ??，如 AA 55 ?? ??，页脚/标尺仍显 Σ 尺寸），拖拽/增删后实时重算。",
@@ -86,6 +95,10 @@
       "P2 事务发送面板（TransactionPanel）：应答规格编辑（帧头回显/长度自洽/校验反算/掩码忽略区间/前缀后缀五要素，PUT /response-specs 按指令存取，404 = 未配置常态）+ 超时/重发/间隔参数与广播无应答开关，POST /dispatch/transaction 返回逐次 attempt（状态/RTT/失配原因）与统计。",
       "批次一 (D4-A) 封装发送：挂载按 GET /bindings?instruction_id= 取 is_default 行解析默认协议外壳，wrap 状态机 ok/none/failed/missing（无默认行/拉取失败/协议不在册均降级裸发 + 状态提示）；「:: Wrap ::」开关默认开 → TRANSMIT 与 TransactionPanel 同带 wrap 由后端唯一封装入口套壳，封装预览 300ms 防抖调 POST /compile/wrapped（与发送同参同字节，回显完整帧与洞位 warnings），可手动关回裸发。",
       "指令加工编辑反馈四条之一：TIME 类字段（运行秒数）改满亮实线取值形态 + [TIME_PICKER] 徽标与 title 提示（仍点选日期、按 base_time 换算秒数，不再误标 [READ_ONLY] 斜纹锁定板，标签/accent 条恢复满对比）。",
+      "十进制录入（批 1）：定义侧把字段配成 input_base=dec 后，加工页该字段走十进制通道（十进制原值、无 hex 补零、超界按字段字节数数值域即时钳制、徽标 [nB] 标字节上限）；hex 通道字段不受影响（n/N BYTES 徽标与截断照旧）。",
+      "BITFIELD 子位录入（批 3）：位域字段在整包输入下方展开子位行（位名 + 十进制输入 + [b3..b0] 位域注记），两者并存双向同步 —— 改子位只重写本段位（间隙位与其它段原样保留），改整包则子位反向重算，无输入态子位回显 default_val；回写仍是同一个字段整数，编码器零改动。",
+      "BIN 通道与进制前缀（优化批）：input_base=bin 的定长整数字段走二进制通道（位模式定宽回显、超位宽按字符截断、徽标 n/N BITS 标位上限，无数值域——位模式语义，负数/数值域交给 dec 通道）；录入宽容前缀：hex 通道剥 0x/0X 归一纯 hex（前缀不挤占 byte_len×2 截断、'0x' 进行中保留缓冲不发半截值），dec 通道 0xFF/0b10100000 按前缀进制解析后照常数值域钳制，bin 通道 0b 输入糖。",
+      "子位值表与有符号（优化批）：值表位段在子位行渲染成下拉选名称（label+值 双显，当前值不在表内追加原值选项、不留空），选择仍回传打包整数（只动本段）；signed 位段子位行按两补码域显示负值并钳制（如 8 位 −128..127，0xD8 显 −40），回写负值转位模式、邻段与间隙位保留。",
       "指令加工编辑反馈四条之二：点击字段（含整块容器）→ BYTE_STREAM_OUTPUT 按 InstructionEncoder byteMap 逐字段分段反白高亮（span title 回显字段名 @偏移），下方「SEL :: 字段名 · 0xNN-0xNN · NB」读数条同步，未选中显点击提示，换指令自动复位；嵌套组内点叶字段精确到该字段自身字节（叶行/组头 stopPropagation 隔离冒泡，不被外层组 id 覆盖成整组），点组头才选中整块子树；字节段内亦逐字节 XX XX 空格分隔（与整帧格式一致，不连写），高亮仍按整字段段反白。",
       "指令加工编辑反馈四条之三：右栏三分区标题 + 中文用途释义 —— BYTE STREAM 字节流预览（随输入实时重算 / 点击定位）、PROTOCOL WRAP 协议封装（预览·发送·事务同参同字节）、TRANSMIT 发送与导出（CTRL+ENT 快捷、.hex 落盘）；Transaction / TransmissionLog 自带 :: 标题不重复。",
       "指令加工编辑反馈四条之四：定长字段输入限制 computeFieldInputLimits（指令管理 byte_len 定死）—— hex 通道截断 byte_len×2 字符 + 「n/N BYTES」长度徽标（非 hex 通道 [nB]），数值按 0..2^(8n)-1 即时钳制（INT_SIGNED 两补码域、SCALED_DECIMAL 按 factor/offset 反算输入域、超 2^53 封顶 MAX_SAFE_INTEGER；编码端口径不变）。"

@@ -262,6 +262,17 @@ export default function Instruction({ instructions: initialInstructions, setInst
             }
         }
 
+        // N2 (G2): 文本字段 —— 8B 默认；pc.type='string' 是编码/显示/校验链的
+        // 触发键（param_template 的 keyword 值不会复制进 pc，必须特判设置）；
+        // encoding 数组（面板下拉源）创建时归一为标量 'ascii'（A1 数组污染先例）。
+        if (opCode === 'STRING') {
+            newBlock.byte_len = 8;
+            newBlock.parameter_config.type = 'string';
+            if (Array.isArray(newBlock.parameter_config.encoding)) {
+                newBlock.parameter_config.encoding = 'ascii';
+            }
+        }
+
         // A brand-new group should be immediately visible & focusable, otherwise
         // the user would be adding children into a collapsed lane they can't see.
         if (opCode === 'ARRAY_GROUP') {

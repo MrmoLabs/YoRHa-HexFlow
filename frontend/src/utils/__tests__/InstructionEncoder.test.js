@@ -390,10 +390,11 @@ describe('E1-4 FLOAT_IEEE float32（B2 已解 · 双端 byte-equal 锚点）', (
         expect(hexOf(bytes)).toBe('40A00000'); // Float32Array(5) 大端
     });
 
-    it('矛盾 type=string 走 string 分支（契约外现状不变）', () => {
+    it('矛盾 type=string 走 string 分支（N2 起定长 pad 到 byte_len——行为变化锁定）', () => {
         const bytes = InstructionEncoder.getFieldBytes(
             fld({ type: 'string' }), { x: 1.5 }, {}, []);
-        expect(hexOf(bytes)).toBe('312E35'); // '1.5' 字符码
+        // N2 (G2): string 分支统一定长 —— '1.5'(3B) 被 pad 00 到 byte_len=4。
+        expect(hexOf(bytes)).toBe('312E3500');
     });
 
     it('FLOAT_IEEE × LITTLE 联动：3F800000 → 0000803F（E1-2 wrapper）', () => {
@@ -677,5 +678,89 @@ describe('R1 协议节点编码（children 树合并帧 · 一期封装试发前
             }],
         };
         expect(strip(InstructionEncoder.encodeInstruction({ blocks: [parent] }, {}, {}))).toBe('BB');
+    });
+});
+
+describe('N2 定长字符串 STRING（G2 · 双端 byte-equal 锚点）', () => {
+    const hexOf = (bytes) => bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
+    const fld = (op, byte_len, cfg = {}) => ({
+        id: 'x', name: 'X', op_code: op, byte_len, sequence: 0,
+        parameter_config: { ...cfg },
+    });
+
+    // 与 backend/tests/test_encode_string.py::VECTORS 逐行同步（改一必改二）。
+    // [value, byte_len, encoding, pad_char, expectedHex]
+    const VECTORS = [
+        ['AB', 4, undefined, undefined, '41420000'],
+        ['AB', 4, 'ascii', '00', '41420000'],
+        ['AB', 4, 'ascii', '20', '41422020'],
+        ['ABCD', 2, 'ascii', '00', '4142'],
+        ['中', 3, 'utf8', '00', 'E4B8AD'],
+        ['中', 2, 'utf8', '00', 'E4B8'],
+        ['中', 2, 'ascii', '00', '2D00'],
+        ['\u{1F600}', 2, 'ascii', '00', '0000'],
+        ['', 4, 'ascii', '00', '00000000'],
+        [0, 4, 'ascii', '00', '00000000'],
+        [25, 4, 'ascii', '00', '32350000'],
+        ['AB', 4, 'ascii', 'zz', '41420000'],
+        ['\ud800', 3, 'utf8', '00', 'EFBFBD'],
+    ];
+
+    VECTORS.forEach(([value, byteLen, encoding, padChar, expected], i) => {
+        it(`vector#${i} v=${JSON.stringify(value)} @${byteLen}B enc=${encoding || 'ascii'} pad=${padChar ?? '00'} → ${expected}`, () => {
+            const cfg = { type: 'string' };
+            if (encoding !== undefined) cfg.encoding = encoding;
+            if (padChar !== undefined) cfg.pad_char = padChar;
+            const bytes = InstructionEncoder.getFieldBytes(
+                fld('STRING', byteLen, cfg), { x: value }, {}, []);
+            expect(hexOf(bytes)).toBe(expected);
+        });
+    });
+
+    it('op=STRING 但 pc.type 缺失（导入数据）也走字符串分支', () => {
+        const bytes = InstructionEncoder.getFieldBytes(
+            fld('STRING', 3, { value: 'AB' }), {}, {}, []);
+        expect(hexOf(bytes)).toBe('414200');
+    });
+
+    it('byte_len 缺失 → 不施加定长（变长原样，契约外 W1 提醒）', () => {
+        const bytes = InstructionEncoder.getFieldBytes(
+            fld('STRING', undefined, { type: 'string', value: 'AB' }), {}, {}, []);
+        expect(hexOf(bytes)).toBe('4142');
+        expect(bytes.length).toBe(2);
+    });
+
+    it('存量 INPUT + type=string 同吃定长（行为变化锁定）', () => {
+        const bytes = InstructionEncoder.getFieldBytes(
+            fld('INPUT', 2, { type: 'string' }), { x: 'A' }, {}, []);
+        expect(hexOf(bytes)).toBe('4100');
+    });
+
+    it('getInitialValues：STRING 初始录入值 = 静态 value（无值 → 空串）', () => {
+        const withValue = InstructionEncoder.getInitialValues({
+            fields: [fld('STRING', 4, { type: 'string', value: 'HELLO' })],
+        });
+        expect(withValue.x).toBe('HELLO');
+        const without = InstructionEncoder.getInitialValues({
+            fields: [fld('STRING', 4, { type: 'string' })],
+        });
+        expect(without.x).toBe('');
+    });
+
+    it('LENGTH_CALC 引用 STRING：fieldSizes 按 byte_len 定长（不按字符数）', () => {
+        const instr = {
+            fields: [
+                {
+                    id: 's', name: 'S', op_code: 'STRING', byte_len: 2, sequence: 0,
+                    parameter_config: { type: 'string', value: 'A' },
+                },
+                {
+                    id: 'l', name: 'L', op_code: 'LENGTH_CALC', byte_len: 1, sequence: 1,
+                    parameter_config: { formula: '[S]' },
+                },
+            ],
+        };
+        const computed = InstructionEncoder.resolveDependencies(instr, {});
+        expect(computed.l).toBe(2); // 定长 2B（'A' 只 1 字符——旧口径会算 1）
     });
 });

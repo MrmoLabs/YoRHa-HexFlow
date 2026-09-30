@@ -152,6 +152,21 @@ export function validateInstruction(instruction) {
             });
         }
 
+        // --- W6 (N2·G2): 文本字段静态值含 >0xFF 字符且 encoding≠utf8 → ascii
+        // 模式按 code point &0xFF 截断出脏字节（乱码），utf8 模式才是正解。 ---
+        if ((String(f.op_code) === 'STRING' || String(params.type) === 'string')
+            && String(params.encoding ?? 'ascii').toLowerCase() !== 'utf8') {
+            const text = [params.value, params.default]
+                .filter((v) => typeof v === 'string').join('');
+            if (/[^\u0000-\u00FF]/.test(text)) {
+                warnings.push({
+                    blockId: f.id,
+                    code: 'STRING_NON_ASCII',
+                    message: `「${label || f.id}」文本字段含非 ASCII 字符（>0xFF）且未启用 utf8 编码：编码期将截断出乱码字节——请切换 encoding=utf8 或改用纯 ASCII 文本`,
+                });
+            }
+        }
+
         // --- E1: HEX_RAW value must match byte_len exactly ---
         if (f.op_code === 'HEX_RAW') {
             const hex = normalizeHex(params.hex);

@@ -15,6 +15,10 @@ router = APIRouter(
 SEED_TEMPLATES = [
     # BASE
     {"op_code": "HEX_RAW", "name": "原始Hex", "category": "BASE", "description": "固定十六进制值", "param_template": {"hex": "input"}},
+    # N2 (G2): 定长文本字段 —— value 走 keyword 文本输入、encoding 走数组下拉、
+    # pad_char 推断为 string 文本（hex 字面）；pc.type='string' 由 Instruction.jsx
+    # 创建特判设置（keyword 值不复制进 pc），编码/显示/校验链都认它。
+    {"op_code": "STRING", "name": "文本字段", "category": "BASE", "description": "定长文本（ascii/utf8，按字节 pad/截断）", "param_template": {"value": "string", "encoding": ["ascii", "utf8"], "pad_char": "00"}},
     
     # NUMERIC
     {"op_code": "INT_UNSIGNED", "name": "无符号整数", "category": "NUMERIC", "description": "标准整数", "param_template": {"bits": [8,16,32,64]}},

@@ -234,3 +234,37 @@ describe('Block 验证标色（issue prop）', () => {
         expect(cardOf(container).style.borderColor).toBe('');
     });
 });
+
+describe('Block 文本字段卡面（N2 · G2）', () => {
+    it('STRING 卡：中央显原文 value（不再 ?? 占位）', () => {
+        const { container } = renderBlock({
+            name: '文本', op_code: 'STRING', byte_len: 2,
+            parameter_config: { type: 'string', value: 'AB' },
+        });
+        expect(centerOf(container).textContent).toBe('AB');
+    });
+
+    it('存量 INPUT + type=string：中央显 default 原文', () => {
+        const { container } = renderBlock({
+            name: '页脚', op_code: 'INPUT', byte_len: 2,
+            parameter_config: { type: 'string', default: 'HI' },
+        });
+        expect(centerOf(container).textContent).toBe('HI');
+    });
+
+    it('STRING 无静态值 → 按字节出 ?? 占位（现状锁定）', () => {
+        const { container } = renderBlock({
+            name: '文本', op_code: 'STRING', byte_len: 2,
+            parameter_config: { type: 'string' },
+        });
+        expect(centerOf(container).textContent).toBe('?? ??');
+    });
+
+    it('STRING 空串 value → 中央空白（用户清空 = 值为空）', () => {
+        const { container } = renderBlock({
+            name: '文本', op_code: 'STRING', byte_len: 4,
+            parameter_config: { type: 'string', value: '' },
+        });
+        expect(centerOf(container).textContent).toBe('');
+    });
+});

@@ -29,7 +29,7 @@ from pydantic import BaseModel
 
 import math
 
-from backend.core.orchestrator import Orchestrator, encode_int_signed, encode_bcd, encode_scaled, encode_float_ieee, encode_time_accumulator, encode_auto_counter, _floor_numeric
+from backend.core.orchestrator import Orchestrator, encode_int_signed, encode_bcd, encode_scaled, encode_float_ieee, encode_time_accumulator, encode_auto_counter, encode_string, _floor_numeric
 from backend.db.database import DB_PATH, SessionLocal, engine
 from backend.db.models import (
     BitField,
@@ -189,6 +189,15 @@ def fields_to_blocks(fields, now=None):
                     cfg.get("value"), cfg.get("start_val"),
                     cfg.get("step"), cfg.get("max"), byte_len,
                 )
+        elif (op == "STRING" or (op == "INPUT" and str(cfg.get("type") or "").lower() == "string")) and byte_len > 0 and not kids:
+            # N2 (G2): 文本字段定长编码（ascii/utf8 × pad/截断）——新算子 STRING
+            # 与存量 INPUT+type=string 同口径，与前端 getFieldBytes string 分支
+            # byte-equal（test_encode_string 向量表锚定）。byte_len>0 分支闸与前端
+            # 「缺失/0 → 变长原样」对齐（缺失场景两端各自现状锚，W1 已提醒）；
+            # 数值 op + type=string 矛盾配置不进本分支（E1 各支 zeros 契约外不变）。
+            hex_value = encode_string(
+                cfg.get("value"), byte_len, cfg.get("encoding"), cfg.get("pad_char")
+            )
         return {
             "id": str(f.get("id") or f.get("name") or "field"),
             "type": btype,

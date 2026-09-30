@@ -166,6 +166,13 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
             return parameter_config.computedValue;
         }
 
+        // N2 (G2): 文本字段 —— 卡面显原文（value/default），空串显空白；无静态
+        // 值或带 hex 的回落既有分支（?? 占位与协议 hex 现状不迁移）。
+        if ((op_code === 'STRING' || parameter_config?.type === 'string') && !effectiveHex) {
+            const text = parameter_config?.value ?? parameter_config?.default;
+            if (text !== undefined && text !== null) return String(text);
+        }
+
         // Special Case: Nested Group — 中央值 = 嵌套内容逐块拼接（已知出 hex、
         // 未知出等量 ??）；内容未注入但尺寸已知 → 按尺寸出等量 ??（页脚仍
         // 显示 `4B @00` 尺寸口径）；空容器（size 0）中央 = 空白——不显 ?? 也
@@ -205,7 +212,7 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
         // 3. Default: 未配置/不确定 → 按字节数出等量 ??（反馈 #1：不再用
         // 误导性 "00" 填充冒充取值）。
         return formatUnknown(length);
-    }, [type, effectiveHex, length, parameter_config?.computedValue, op_code, isGroupCard, offsetMeta?.size, bits]);
+    }, [type, effectiveHex, length, parameter_config?.computedValue, op_code, isGroupCard, offsetMeta?.size, bits, parameter_config?.value, parameter_config?.default]);
 
     return (
         <div

@@ -313,3 +313,62 @@ def encode_auto_counter(value, start_val, step, max_val, byte_len: int) -> str:
     if mx is not None and mx > 0:
         n = ((n % mx) + mx) % mx
     return f"{abs(math.floor(n)) & ((1 << (8 * byte_len)) - 1):0{2 * byte_len}X}"
+
+
+# N2 (G2): utf8 编码前的孤立代理项识别 —— high 无后随 low / low 无前随 high
+# → U+FFFD（TextEncoder 的 WHATWG 替换规则）；成对代理项保留 → 合码点 4 字节。
+_LONE_SURROGATE_RE = re.compile(
+    "[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]"
+)
+
+
+def encode_string(value, byte_len, encoding=None, pad_char=None) -> str:
+    """N2 (G2): 定长文本编码 — ascii/utf8 × pad/截断，定宽 hex。
+
+    与前端 getFieldBytes 的 string 分支 byte-equal（test_encode_string 向量表
+    锚定，改一必改二）：
+    - 取值口径对齐 JS `String(value || '')`：falsy（None/''/0/False/NaN）→ ''，
+      True → 'true'（JS String(true)）、±inf → 'Infinity'/'-Infinity'；
+    - ascii 按 code point &0xFF（Python str 迭代 = 码点，与前端 for...of
+      code-point 迭代 byte-equal，代理对单字节口径）；
+    - utf8 走 UTF-8 字节流，孤立代理项 → U+FFFD（对齐 TextEncoder）；
+    - byte_len>0 → pad/截断定长（floor 归一），否则变长原样（to_block 分支闸
+      byte_len>0，本函数级口径与前端「byte_len 缺失/0 → 变长」对齐）；
+    - pad_char 按 2 位以内 hex 严格解析（非法/空/None → 0x00），与前端同一规则。
+    """
+    if value is None or value == 0:
+        s = ""
+    elif isinstance(value, bool):  # 仅剩 True：JS String(true) = 'true'
+        s = "true"
+    elif isinstance(value, float) and value != value:  # NaN → JS falsy → ''
+        s = ""
+    elif isinstance(value, float) and math.isinf(value):
+        s = "Infinity" if value > 0 else "-Infinity"
+    else:
+        s = str(value)
+
+    enc = str(encoding or "ascii").lower()
+    if enc == "utf8":
+        # 孤立代理项 → U+FFFD（对齐 TextEncoder 的 WHATWG 替换规则；成对代理项
+        # 保留 → 合码点 4 字节）。注意 errors='replace' 在**编码**侧产出的是
+        # b'?'（0x3F）而非 U+FFFD，必须先手工替换。
+        s_utf8 = _LONE_SURROGATE_RE.sub("�", s)
+        data = list(s_utf8.encode("utf-8"))
+    else:
+        data = [ord(ch) & 0xFF for ch in s]
+
+    try:
+        target = int(byte_len)
+    except (TypeError, ValueError):
+        target = 0
+    if target > 0:
+        pad_raw = "" if pad_char is None else str(pad_char)
+        if 0 < len(pad_raw) <= 2 and all(c in "0123456789abcdefABCDEF" for c in pad_raw):
+            pad_b = int(pad_raw, 16)
+        else:
+            pad_b = 0
+        if len(data) > target:
+            data = data[:target]
+        while len(data) < target:
+            data.append(pad_b)
+    return "".join(f"{b:02X}" for b in data)

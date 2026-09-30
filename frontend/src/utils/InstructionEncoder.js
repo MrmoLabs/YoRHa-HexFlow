@@ -38,10 +38,14 @@ export const InstructionEncoder = {
             const params = field.parameter_config || {};
             const op = String(field.op_code || '').toUpperCase();
             const type = String(params.type || '').toLowerCase();
-            const isInput = op === 'INPUT' || params.variable;
+            const isInput = op === 'INPUT' || params.variable || op === 'STRING';
 
             if (isInput) {
-                if (params.default !== undefined) {
+                if (op === 'STRING') {
+                    // N2 (G2): 文本字段初始录入值 = 静态 value（与编码兜底同源）——
+                    // 加工页回显与实发字节一致，可继续键入修改；无值 → 空串。
+                    initialInputs[field.id] = params.value ?? params.default ?? '';
+                } else if (params.default !== undefined) {
                     initialInputs[field.id] = params.default;
                 } else if (params.options) {
                     // Enum Default: First option's value
@@ -215,12 +219,30 @@ export const InstructionEncoder = {
             value = n;
         }
 
-        // 1. Strings
-        if (params.type === 'string') {
+        // 1. Strings —— N2 (G2): op=STRING 或存量 type=string 同走定长文本编码。
+        // byte_len>0（floor 归一）→ 定长 pad/截断，pad_char 按 2 位以内 hex 严格
+        // 解析（非法/缺省 0x00）；byte_len 缺失/0 → 变长原样（契约外，W1 提醒，
+        // 与 BE to_block 的 byte_len>0 分支闸对齐）。ascii 按 code point &0xFF
+        // （`for...of` 迭代码点，与 Python ord() byte-equal；>0xFF 脏值由校验
+        // W STRING_NON_ASCII 提醒改 utf8）；utf8 走 TextEncoder（孤立代理项 →
+        // U+FFFD）。与 backend orchestrator.encode_string byte-equal（双向量表锚定）。
+        if (op === 'STRING' || params.type === 'string') {
             const str = String(value || '');
-            const bytes = [];
-            for (let i = 0; i < str.length; i++) {
-                bytes.push(str.charCodeAt(i));
+            let bytes = [];
+            if (String(params.encoding ?? 'ascii').toLowerCase() === 'utf8') {
+                bytes = Array.from(new TextEncoder().encode(str));
+            } else {
+                for (const ch of str) bytes.push(ch.codePointAt(0) & 0xFF);
+            }
+            const rawLen = Number(field.byte_len ?? field.byte_length);
+            if (Number.isFinite(rawLen) && rawLen > 0) {
+                const target = Math.floor(rawLen);
+                const padRaw = params.pad_char === undefined || params.pad_char === null
+                    ? '' : String(params.pad_char);
+                const padByte = (padRaw.length > 0 && padRaw.length <= 2 && /^[0-9A-Fa-f]+$/.test(padRaw))
+                    ? parseInt(padRaw, 16) : 0;
+                if (bytes.length > target) bytes = bytes.slice(0, target);
+                else while (bytes.length < target) bytes.push(padByte);
             }
             return bytes;
         }
@@ -412,9 +434,17 @@ export const InstructionEncoder = {
             // 死 config 缺口），与 computeByteOffsets 的 byte_len ?? byte_length 同尺。
             let size = field.byte_len || field.byte_length || 1;
 
-            if (params.type === 'string') {
-                const val = inputs[field.id] || params.value || '';
-                size = val.length;
+            if (field.op_code === 'STRING' || params.type === 'string') {
+                // N2 (G2): 定长文本的长度 = 实际发射字节数（byte_len），不再按
+                // 字符数——'A'@2B 输入短于定长时 LENGTH_CALC 旧口径会少算 1B。
+                // byte_len 缺失/0 → 保持变长字符数口径（契约外，W1 提醒）。
+                const rawLen = Number(field.byte_len ?? field.byte_length);
+                if (Number.isFinite(rawLen) && rawLen > 0) {
+                    size = Math.floor(rawLen);
+                } else {
+                    const val = inputs[field.id] || params.value || '';
+                    size = val.length;
+                }
             } else if (field.op_code === 'HEX_RAW') {
                 const val = inputs[field.id] || params.hex || '';
                 if (typeof val === 'string') size = Math.ceil(val.replace(/\s/g, '').length / 2);

@@ -26,3 +26,17 @@ class TestOperatorTemplates(unittest.TestCase):
         for op in ("HEX_RAW", "INT_UNSIGNED", "INT_SIGNED", "BCD_CODE",
                    "BITFIELD", "MAPPING", "ARRAY_GROUP", "LENGTH_CALC", "CHECKSUM_CRC"):
             self.assertIn(op, codes)
+
+    def test_string_template_present(self):
+        """N2 (G2): STRING 文本字段模板在席（BASE 分类 + value/encoding/pad_char 参数入口）。"""
+        t = next((x for x in SEED_TEMPLATES if x["op_code"] == "STRING"), None)
+        self.assertIsNotNone(t, "N2 (G2) 缺 STRING 模板：文本字段无创建入口")
+        self.assertEqual(t["category"], "BASE")
+        pt = t["param_template"]
+        self.assertEqual(pt["value"], "string")
+        self.assertEqual(pt["encoding"], ["ascii", "utf8"])
+        self.assertEqual(pt["pad_char"], "00")
+
+
+if __name__ == "__main__":
+    unittest.main()
