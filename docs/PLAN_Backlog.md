@@ -1441,11 +1441,25 @@
   → 存量数据 presence 静态链恒落 unknown（??/VAR/低界+）；要静态 0B 门需
   ref 字段带 `pc.value`（运行期 inputs 仍可翻转，fail-open → 命中）。
 
-**N4 帧字节转义批（G3——立题，开工前需层位设计）**
-- 现状：`orchestrator.py` `ESCAPING LOGIC (Placeholder)` 空占位；编码链无转义点。
-- 前置设计题（开工前拍板）：转义层位（应用层字段后转义 vs 传输层组帧前转义）、
-  转义表可配置（0x7D 型字头 / 0x10 型前缀 / STX-ETX 框）、双端范围、
-  与 wrap（`FA FA…ED`）及暂缓组帧族（varint/COBS）的边界。
+**N4 帧字节转义批（G3——✅ 已落地，层位已拍板）**
+- 现状（改造前）：`orchestrator.py` `ESCAPING LOGIC (Placeholder)` 空占位；编码链无转义点。
+- **层位定案（2026-09-30 拍板：传输层 · 内核转义后套壳）**：出线前按转义表转义
+  **内核 payload**，再交 `build_wrapped` 套协议外壳 —— 外壳字节（`FA FA…ED`）不进转义
+  范围。由此确立「**内核域按逻辑字节、壳域按线上字节**」：内核自身的
+  length/checksum/画布偏移在 FE 编码期算完、不受转义影响；壳内 length/checksum 由
+  build_wrapped 对注入后的转义字节重算。
+- 配置落点：传输配置 `escape = {enabled, pairs: [[原字节, 替换序列]]}`（骑 JSON，**零
+  DDL**）。旧库存量配置缺段 → validate 自动补齐默认关闭段（restore 不得静默失败）；
+  `pairs` 是列表 → `_deep_merge` 整体替换（FE 删行才生效）。
+- 转义表**单趟映射**（命中 from → 输出 to 序列，未命中原样，替换产物不回扫）一个表
+  覆盖三型：0x7D 型字头（`7D→7D5D`）、0x10 型前缀（`11→1011`）、非前缀多字节替换
+  （`0D→0D0A`）；STX-ETX 框归 wrap 外壳族（不属转义），varint/COBS 仍 §8.14 暂缓。
+- 双端范围：转义算法 SSOT = `backend/core/escape.py`；FE `utils/escapeTable.js` 仅做
+  配置归一 / 行级提醒 / 样例预览 —— **画布、`/compile/*` 预览、`/export/binary` 恒为
+  逻辑帧，线上字节以发送历史 raw 事件为准**。
+- 接线三路：`dispatch_frame` / `dispatch_transaction`（内核先转义再套壳，关闭态逐字节
+  不变）、`sequence_runner.execute`（转义先于 `record["sent"]` → 记录与存档即线上字节）；
+  `replay` 存档帧即线上字节 → **不二次转义**（钉死）。
 
 **N5 填充 / 对齐批（G4——立题）**
 - 现状：只能 HEX_RAW 手工算 pad；候选模型：字段级 `align`（到 N 字节边界）
@@ -1459,17 +1473,19 @@ CHECKSUM_CRC 3 / ARRAY_GROUP 2 / TIME_ACCUMULATOR·INT_SIGNED·AUTO_COUNTER 各 
 无存量 type=string 字段、presence 零行**；白名单取 KNOWN_OPS 全集不锁死任何
 历史数据 → 策略（保存侧拒绝 vs 警告）可随时拍板插队）、组帧族（已立 §8.14）。
 
-- 状态：**排期已落档；六单 + N1/N2/N3 全部实现、真机验证通过并分单提交
+- 状态：**排期已落档；六单 + N1/N2/N3/N4 全部实现、真机验证通过并分单提交
   （2026-09-30）**——批1-4 = `23ad28e`/`327ac8c`/`f8dcf64`/`e6a31a4`、
   第 5 单优化批 = `3668d37`、第 6 单标色 = `3ff0f69`；N1 红→绿 2 轮（FE
   700/700 + BE 322/322）+ 3 文档 = 第 7 单 `7d50484`；N2 红→绿 2 轮（FE
   **728/728**（49 文件，基线 700 + 28）/ BE **332/332**（基线 322 + 10））=
   第 8 单 `848e248`；N3 红→绿 1 轮（FE **812/812**（55 文件，基线 728 + 84）
   / BE **342/342**（基线 332 + 10），7 新测试文件）+ 真机验证通过 = 第 9 单
-  `8e9612f`。终态复验：build EXIT=0、校验器触达 0 违规、pageStatus
-  EXIT=0、schema SCHEMA_IDENTICAL（28 对象零 DDL）→
-  **N4 转义层位设计、N5 对齐模型待拍板**；BE 白名单摸底完成
-  （挂账行），策略待拍板。**
+  `8e9612f`；N4 红→绿 1 轮（FE **823/823**（56 文件，基线 812 + 11）/
+  BE **367/367**（基线 342 + 25），BE `test_escape.py` 25 例（含双端共享
+  向量 7 组）+ FE `escapeTable.test.js` 7 例 + `Terminal.test.jsx` 4 例）+
+  真机验证通过 = 第 10 单 `b7f9fa7`。终态复验：build EXIT=0、校验器触达 0 违规、
+  pageStatus EXIT=0、schema SCHEMA_IDENTICAL（28 对象零 DDL）→
+  **N5 对齐模型待拍板**；BE 白名单摸底完成（挂账行），策略待拍板。**
 
 ## 9. 保留勿动（非任务，勿清理）
 
