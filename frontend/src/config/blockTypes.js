@@ -29,6 +29,13 @@ export const BLOCK_PROPERTY_FIELDS = {
         label: '结构引用 (Refs)',
         inputType: 'refs'
     },
+    // 批 4: 结构化位域 —— 键是数组（不是点路径），面板按 inputType='bits'
+    // 走专用分支复用 BitFieldEditor（与 refs 同款分流约定）。
+    bits: {
+        key: 'bits',
+        label: '位域布局 (Bits)',
+        inputType: 'bits'
+    },
     // 批次四: checksum 算法配置 —— 存点 parameter_config.algorithm（镜像
     // 指令页 B1 aliasChecksumAlgo 的前端编码器存点，PASS2 同源直读），
     // 出口由 toFrameBlocks 翻成后端 config.params.algorithm（sum/xor/
@@ -65,6 +72,16 @@ export const BLOCK_TYPES = [
         nestable: false,
         palette: { title: '添加固定块 (Fixed)', mainLabel: '固定', subLabel: 'FIX', dashed: false },
         fields: ['length', 'hex']
+    },
+    {
+        // 批 4: 位域块 —— 结构化 bits[] 定义，编码期（后端 Orchestrator
+        // 发射期）按 default_val 打包成定宽大端字节。静态语义：发送期不改值。
+        type: 'bitfield',
+        defaultLabel: '位域块',
+        defaultByteLength: 1,
+        nestable: false,
+        palette: { title: '添加位域 (Bitfield)', mainLabel: '位域', subLabel: 'BIT', dashed: false },
+        fields: ['length', 'bits']
     },
     {
         type: 'length',
@@ -115,6 +132,9 @@ export const createBlock = (type, makeId) => {
         hex_value: '00',
         children: def.nestable ? [] : undefined,
         config: {},
+        // 批 4: 位域块预置 bits 空数组（面板位编辑器直接绑定；后端 schema
+        // 缺省亦为 []，双端一致）。
+        ...(type === 'bitfield' ? { bits: [] } : {}),
         // A1: length/checksum 卡初始化 parameter_config —— type 使编码器
         // PASS1（:419 对称闸）/ PASS2（:453 checksum 兜底）命中，refs 为拾取
         // 槽（UI 写入）、algorithm 为算法槽（批次四下拉写入）。

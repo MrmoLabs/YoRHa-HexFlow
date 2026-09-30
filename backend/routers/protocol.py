@@ -52,6 +52,59 @@ def _validate_refs(children) -> None:
             # 发送期由前端 blockMerge 填槽改写为注入块 id 后按真值 Σ。
 
 
+def _validate_bits(children) -> None:
+    """批 4: bitfield 块入库强校验（镜像 routers.instruction._validate_bitfields 口径）。
+
+    协议 children 此前零类型校验（type 是自由 str），坏位域会一路存到编译期
+    才炸（甚至静默出 0 字节）。这里在落库前拦两类：位域重叠 / 超出块容量。
+    走 children JSON 列 → 零 DDL。
+    """
+    def walk(items):
+        for item in items or []:
+            if str(getattr(item, "type", "")) == "bitfield":
+                _validate_node_bits(item)
+            walk(getattr(item, "children", None))
+
+    walk(children)
+
+
+def _validate_node_bits(node) -> None:
+    bits = list(getattr(node, "bits", None) or [])
+    if not bits:
+        return
+    label = getattr(node, "label", None) or "UNNAMED"
+
+    def start_of(b):
+        try:
+            return int(getattr(b, "start_bit", 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def len_of(b):
+        try:
+            return max(1, int(getattr(b, "bit_len", 1) or 1))
+        except (TypeError, ValueError):
+            return 1
+
+    prev_end = -1
+    for b in sorted(bits, key=start_of):
+        start = start_of(b)
+        if start < prev_end:
+            raise HTTPException(
+                status_code=400,
+                detail=f"「{label}」位域重叠（{getattr(b, 'bit_name', '?')} 起始 {start} < 上一块结束 {prev_end}）",
+            )
+        prev_end = max(prev_end, start + len_of(b))
+
+    byte_len = getattr(node, "byte_length", 0) or 0
+    highest = max((start_of(b) + len_of(b)) for b in bits)
+    if byte_len > 0 and highest > byte_len * 8:
+        raise HTTPException(
+            status_code=400,
+            detail=f"「{label}」位域超出容量（{byte_len}B = {byte_len * 8} bits，最高位 {highest}）",
+        )
+
+
 @router.get("/", response_model=List[ProtocolResponse])
 def get_protocols(db: Session = Depends(get_db)):
     return db.query(ProtocolTemplate).order_by(ProtocolTemplate.label.asc()).all()
@@ -68,6 +121,7 @@ def get_protocol(protocol_id: str, db: Session = Depends(get_db)):
 @router.post("/", response_model=ProtocolResponse)
 def create_protocol(payload: ProtocolCreate, db: Session = Depends(get_db)):
     _validate_refs(payload.children)
+    _validate_bits(payload.children)
     protocol_id = payload.id or str(uuid.uuid4())
 
     protocol = ProtocolTemplate(
@@ -102,6 +156,7 @@ def update_protocol(protocol_id: str, payload: ProtocolUpdate, db: Session = Dep
         )
 
     _validate_refs(payload.children)
+    _validate_bits(payload.children)
     protocol.label = payload.label
     protocol.type = payload.type
     protocol.description = payload.description

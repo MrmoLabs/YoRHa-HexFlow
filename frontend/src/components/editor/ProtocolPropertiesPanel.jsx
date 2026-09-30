@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { getBlockFields, isNestable } from '../../config/blockTypes';
+import BitFieldEditor from './BitFieldEditor';
 import { findNode } from '../../utils/protocolTree';
 
 // Right-hand properties panel for the Protocol editor page.
@@ -190,6 +191,21 @@ export default function ProtocolPropertiesPanel({
                                             })}
                                         </div>
                                     )}
+                                </div>
+                            );
+                        }
+                        // 批 4: bits 分支 —— 复用指令侧 BitFieldEditor（位图 + 点击式
+                        // 设段 + 打包预览）。位段存块级 bits 数组（children JSON 列，
+                        // 零 DDL），编码期由后端发射期打包。
+                        if (field.inputType === 'bits') {
+                            return (
+                                <div key={field.id} className="flex flex-col gap-1">
+                                    <label className="text-xs opacity-70 uppercase tracking-widest">{field.label}</label>
+                                    <BitFieldEditor
+                                        bits={Array.isArray(selectedBlock.bits) ? selectedBlock.bits : []}
+                                        byteLen={Number(selectedBlock.byte_length) || 0}
+                                        onUpdateBits={(nextBits) => onUpdateBlock(selectedBlock.id, { bits: nextBits })}
+                                    />
                                 </div>
                             );
                         }

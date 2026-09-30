@@ -183,6 +183,34 @@ def _build_logic_config(node, ntype: str, by_id: dict):
     return merged
 
 
+def _build_bitfield_config(node):
+    """批 4: bitfield 块的位段透传 —— 打包发生在 Orchestrator 发射期
+    （backend/handlers/bitfield.py），此处只把结构化位域搬进 config.params.bits，
+    与前端 toFrameBlocks 的 bitfield 分支同形。脏数据（非 dict 项 / 非法
+    start|len）在此剔除，不进编码。
+    """
+    segments = []
+    for b in node.get("bits") or []:
+        if not isinstance(b, dict):
+            continue
+        start = _js_number(b.get("start_bit"))
+        length = _js_number(b.get("bit_len"))
+        if not math.isfinite(start) or not math.isfinite(length) or length < 1 or start < 0:
+            continue
+        default_val = _js_number(b.get("default_val"))
+        segments.append({
+            "bit_name": str(b.get("bit_name") or ""),
+            "start_bit": int(start),
+            "bit_len": int(length),
+            "default_val": int(default_val) if math.isfinite(default_val) else 0,
+        })
+
+    base = node.get("config")
+    merged = dict(base) if isinstance(base, dict) else {}
+    merged["params"] = {"bits": segments}
+    return merged
+
+
 def _to_blocks(nodes, by_id: dict) -> List[Block]:
     """镜像 toFrameBlocks mapNode：协议 dict 树 → 后端 Block 森林。
 
@@ -217,6 +245,8 @@ def _to_blocks(nodes, by_id: dict) -> List[Block]:
         is_logic = ntype in ("length", "checksum")
         if is_logic:
             config = _build_logic_config(node, ntype, by_id)
+        elif ntype == "bitfield":
+            config = _build_bitfield_config(node)
         else:
             config = _js_config(node.get("config"))
         out.append(Block(

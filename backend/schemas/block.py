@@ -10,6 +10,9 @@ class BlockType(str, Enum):
     TIMESTAMP = "timestamp" # New Phase 3
     CONTAINER = "container" # New Phase 3
     SLOT = "slot"
+    # 批 4: 协议结构化位域 —— 位段静态默认值在发射期打包
+    # （backend/handlers/bitfield.py，零 DDL：位段存 children JSON）。
+    BITFIELD = "bitfield"
 
 class BlockConfig(BaseModel):
     # Logic Link

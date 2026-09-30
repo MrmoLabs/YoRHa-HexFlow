@@ -8,6 +8,7 @@ from backend.schemas.template import Layer
 from backend.core.graph import GraphEngine
 from backend.handlers.length import LengthHandler
 from backend.handlers.checksum import ChecksumHandler
+from backend.handlers.bitfield import BitfieldHandler
 # from backend.handlers.escape import EscapeHandler (To be implemented)
 
 
@@ -39,7 +40,9 @@ class Orchestrator:
         self.root_blocks = root_blocks
         self.handlers = {
             "length": LengthHandler(),
-            "checksum": ChecksumHandler()
+            "checksum": ChecksumHandler(),
+            # 批 4: bitfield —— 位段静态默认值打包（协议结构化位域）
+            "bitfield": BitfieldHandler(),
         }
         # Flat stream for final global addressing
         self.flattened_stream: List[Block] = []
@@ -61,7 +64,7 @@ class Orchestrator:
         flat_tuples: List[Tuple[str, Block]] = [("global", b) for b in self.flattened_stream]
 
         for block in self.flattened_stream:
-            if block.type in [BlockType.LENGTH, BlockType.CHECKSUM]:
+            if block.type in [BlockType.LENGTH, BlockType.CHECKSUM] or str(block.type) == "bitfield":
                 handler_key = block.type
                 if isinstance(block.type, BlockType):
                     handler_key = block.type.value

@@ -13,6 +13,8 @@ import {
 } from '../protocolTree';
 // 命名空间二段导入：injectRefsSigma/computeRefsSigma 系一期新增导出（红测期不拖垮同文件其余断言）
 import * as protocolTree from '../protocolTree';
+// 批 4 用：位域块在导入路径的白名单归一
+const { buildImportedProtocolPayload } = protocolTree;
 
 // 构造器：children 树的最小持久化形状（A+B 批协议页内联展开的纯函数层）
 const leaf = (id, extra = {}) => ({ id, label: id, type: 'fixed', byte_length: 1, hex_value: '00', ...extra });
@@ -207,6 +209,57 @@ describe('removeNode / updateNode / collectContainerIds', () => {
 // ─── 批次三（P1-1）：协议级复制 ────────────────────────────────────────────
 // refs 自含重映射 + 丢悬空（防 POST 400，镜像 duplicateInstruction.js 口径）。
 // 块级 duplicateNode（un-wired copy）已随人工验证第 3 轮 #1 连删。
+describe('批 4：协议位域块在复制/导入路径不丢位段', () => {
+    const counter = (prefix) => {
+        let n = 0;
+        return () => `${prefix}-${++n}`;
+    };
+    const bitNode = () => ({
+        id: 'bf', label: '控制', type: 'bitfield', byte_length: 1, hex_value: null,
+        bits: [
+            { id: 'b1', bit_name: 'MODE', start_bit: 0, bit_len: 2, default_val: 1 },
+            { id: 'b2', bit_name: 'EN', start_bit: 2, bit_len: 1, default_val: 1 }
+        ]
+    });
+
+    it('复制：位段随整树克隆保留（id 重发不波及位段语义）', () => {
+        const source = { id: 'root', label: 'P', type: 'container', children: [bitNode()] };
+        const payload = buildDuplicateProtocolPayload(source, [], counter('p'));
+        const bf = payload.children[0];
+        expect(bf.type).toBe('bitfield');
+        expect(bf.bits).toHaveLength(2);
+        expect(bf.bits[0]).toMatchObject({ bit_name: 'MODE', start_bit: 0, bit_len: 2, default_val: 1 });
+    });
+
+    it('导入：白名单重建保留并归一位段（脏位段剔除，缺省值补 0）', () => {
+        const source = {
+            id: 'root', label: 'P', type: 'container',
+            children: [{
+                ...bitNode(),
+                bits: [
+                    { bit_name: 'OK', start_bit: 0, bit_len: 4, default_val: 3 },
+                    { bit_name: 'BAD', start_bit: 'x', bit_len: 4 },
+                    { bit_name: 'BAD2', start_bit: 4, bit_len: 0 },
+                    'junk'
+                ]
+            }]
+        };
+        const payload = buildImportedProtocolPayload(source, [], counter('q'));
+        expect(payload.children[0].bits).toEqual([
+            { bit_name: 'OK', start_bit: 0, bit_len: 4, default_val: 3 }
+        ]);
+    });
+
+    it('导入：非位域块不带 bits 键（不凭空注入空数组污染存量协议）', () => {
+        const source = {
+            id: 'root', label: 'P', type: 'container',
+            children: [{ id: 'f', label: '固', type: 'fixed', byte_length: 1, hex_value: 'AA' }]
+        };
+        const payload = buildImportedProtocolPayload(source, [], counter('q'));
+        expect('bits' in payload.children[0]).toBe(false);
+    });
+});
+
 describe('buildDuplicateProtocolPayload（协议级复制）', () => {
     const counter = (prefix) => {
         let n = 0;

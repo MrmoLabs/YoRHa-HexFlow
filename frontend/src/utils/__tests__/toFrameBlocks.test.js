@@ -7,6 +7,51 @@ import { toFrameBlocks } from '../toFrameBlocks';
 
 const leaf = (id, extra = {}) => ({ id, label: id, byte_length: 1, hex_value: '00', ...extra });
 
+// 批 4：bitfield 块位段透传（后端 Orchestrator 发射期打包用）
+describe('toFrameBlocks（批 4: bitfield 位段透传）', () => {
+    it('位段搬进 config.params.bits（类型/位偏移/位宽/默认值），type=bitfield', () => {
+        const [b] = toFrameBlocks([leaf('bf', {
+            type: 'bitfield',
+            bits: [
+                { id: '1', bit_name: 'MODE', start_bit: 0, bit_len: 2, default_val: 1 },
+                { id: '2', bit_name: 'EN', start_bit: 2, bit_len: 1, default_val: 1 }
+            ]
+        })]);
+        expect(b.type).toBe('bitfield');
+        expect(b.config.params.bits).toEqual([
+            { bit_name: 'MODE', start_bit: 0, bit_len: 2, default_val: 1 },
+            { bit_name: 'EN', start_bit: 2, bit_len: 1, default_val: 1 }
+        ]);
+    });
+
+    it('非法位段在出口剔除（非整数 / 位宽 <1 / 负起点），不把脏数据送后端', () => {
+        const [b] = toFrameBlocks([leaf('bf', {
+            type: 'bitfield',
+            bits: [
+                { bit_name: 'OK', start_bit: 0, bit_len: 4, default_val: 3 },
+                { bit_name: 'BAD', start_bit: NaN, bit_len: 4, default_val: 0 },
+                { bit_name: 'BAD2', start_bit: 4, bit_len: 0, default_val: 0 },
+                { bit_name: 'BAD3', start_bit: -1, bit_len: 2, default_val: 0 }
+            ]
+        })]);
+        expect(b.config.params.bits).toEqual([{ bit_name: 'OK', start_bit: 0, bit_len: 4, default_val: 3 }]);
+    });
+
+    it('无位段的 bitfield → params.bits 空数组（后端 00 填充），非 fixed 回落', () => {
+        const [b] = toFrameBlocks([leaf('bf', { type: 'bitfield', bits: [] })]);
+        expect(b.type).toBe('bitfield');
+        expect(b.config.params.bits).toEqual([]);
+    });
+
+    it('存量 fixed 块出口逐字不变（不因批 4 改形）', () => {
+        const [b] = toFrameBlocks([leaf('a', { type: 'fixed', hex_value: 'FA FA', byte_length: 2 })]);
+        expect(b).toEqual({
+            id: 'a', type: 'fixed', label: 'a', byte_length: 2, hex_value: 'FA FA',
+            config: null, children: [], is_container: false, is_enabled: true
+        });
+    });
+});
+
 describe('toFrameBlocks（批次四: logic 块 config.params 翻译）', () => {
     it('length: refs 叶子直传；无 refs 键的存量行 config 直通不变', () => {
         const blocks = toFrameBlocks([

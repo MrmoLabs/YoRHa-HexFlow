@@ -14,6 +14,56 @@ const cont = (id, children = [], label) => ({
 const proto = (children) => ({ id: 'root', label: 'P', type: 'container', children });
 const codes = (list) => list.map(x => x.code);
 
+// 批 4：bitfield 位域块（协议结构化位域）—— 前端闸与后端 _validate_bits 镜像
+const bf = (id, bits, extra = {}) => ({
+    id, label: id, type: 'bitfield', byte_length: 1, bits, ...extra
+});
+
+describe('validateProtocol 位域块（批 4）', () => {
+    it('位域重叠 → error BIT_OVERLAP（镜像后端 400）', () => {
+        const r = validateProtocol(proto([bf('b', [
+            { id: '1', bit_name: 'A', start_bit: 0, bit_len: 4, default_val: 0 },
+            { id: '2', bit_name: 'B', start_bit: 2, bit_len: 4, default_val: 0 }
+        ])]));
+        expect(codes(r.errors)).toEqual(['BIT_OVERLAP']);
+        expect(r.errors[0].blockId).toBe('b');
+        expect(r.errors[0].message).toContain('重叠');
+    });
+
+    it('超出块容量 → error BIT_OVERFLOW（最高位 > byte_length×8）', () => {
+        const r = validateProtocol(proto([bf('b', [{ id: '1', bit_name: 'W', start_bit: 0, bit_len: 9, default_val: 0 }])]));
+        expect(codes(r.errors)).toEqual(['BIT_OVERFLOW']);
+        expect(r.errors[0].message).toContain('超出容量');
+    });
+
+    it('相邻 / 恰好占满 / 无位段 → 0 错 0 警', () => {
+        expect(validateProtocol(proto([bf('b', [
+            { id: '1', bit_name: 'A', start_bit: 0, bit_len: 4, default_val: 1 },
+            { id: '2', bit_name: 'B', start_bit: 4, bit_len: 4, default_val: 1 }
+        ])]))).toEqual({ errors: [], warnings: [] });
+        expect(validateProtocol(proto([bf('b', [
+            { id: '1', bit_name: 'A', start_bit: 0, bit_len: 8, default_val: 0 }
+        ])]))).toEqual({ errors: [], warnings: [] });
+        expect(validateProtocol(proto([bf('b', [])]))).toEqual({ errors: [], warnings: [] });
+    });
+
+    it('多字节位域块按块长校验（2B 装 9 位合法、装 17 位报错）', () => {
+        const nine = [{ id: '1', bit_name: 'W', start_bit: 0, bit_len: 9, default_val: 0 }];
+        expect(validateProtocol(proto([bf('b', nine, { byte_length: 2 })]))).toEqual({ errors: [], warnings: [] });
+        const seventeen = [{ id: '1', bit_name: 'W', start_bit: 0, bit_len: 17, default_val: 0 }];
+        expect(codes(validateProtocol(proto([bf('b', seventeen, { byte_length: 2 })])).errors))
+            .toEqual(['BIT_OVERFLOW']);
+    });
+
+    it('位域块不参与 fixed 的 hex 长度闸（hex_value 为空/残留都不报）', () => {
+        // bitfield 的取值来自位段打包，不是 hex_value → 不应触发 HEX_LENGTH
+        const r = validateProtocol(proto([bf('b', [{ id: '1', bit_name: 'A', start_bit: 0, bit_len: 2, default_val: 1 }], {
+            byte_length: 1, hex_value: 'FF'
+        })]));
+        expect(r.errors).toEqual([]);
+    });
+});
+
 describe('validateProtocol（协议工作副本结构校验）', () => {
     it('空协议 / null → 双空不抛', () => {
         expect(validateProtocol(proto([]))).toEqual({ errors: [], warnings: [] });

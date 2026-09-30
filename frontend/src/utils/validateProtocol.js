@@ -109,6 +109,37 @@ export function validateProtocol(protocol) {
             }
         }
 
+        // --- 批 4: bitfield 位域闸（镜像后端 routers.protocol._validate_bits）---
+        // 位段是结构化真值，坏位域会一路存到编译期才炸 → 前端先拦给中文可定位文案。
+        // 位域块不参与上面的 hex 家族检查（取值来自位段打包，非 hex_value）。
+        if (node.type === 'bitfield') {
+            const bits = Array.isArray(node.bits) ? node.bits : [];
+            const segs = bits
+                .filter(b => b && typeof b === 'object')
+                .map(b => ({
+                    name: b.bit_name || '?',
+                    start: Number(b.start_bit),
+                    len: Math.max(1, Number(b.bit_len) || 1)
+                }))
+                .filter(s => Number.isFinite(s.start) && s.start >= 0);
+            const sorted = [...segs].sort((a, b) => a.start - b.start);
+            let prevEnd = -1;
+            let overlap = null;
+            let highest = 0;
+            for (const s of sorted) {
+                if (s.start < prevEnd && !overlap) overlap = s;
+                prevEnd = Math.max(prevEnd, s.start + s.len);
+                highest = Math.max(highest, s.start + s.len);
+            }
+            if (overlap) {
+                errors.push({ blockId: node.id, code: 'BIT_OVERLAP', message: `「${label}」位域重叠（${overlap.name} 起始 ${overlap.start} < 上一块结束 ${overlap.start}）` });
+            }
+            const capacity = (Number(node.byte_length) || 0) * 8;
+            if (capacity > 0 && highest > capacity) {
+                errors.push({ blockId: node.id, code: 'BIT_OVERFLOW', message: `「${label}」位域超出容量（${node.byte_length}B = ${capacity} bits，最高位 ${highest}）` });
+            }
+        }
+
         // --- W3: checksum 未挂引用（无 config 算法路径下编码期按 0 输出） ---
         if (node.type === 'checksum' && (!Array.isArray(pc.refs) || pc.refs.length === 0)) {
             warnings.push({ blockId: node.id, code: 'CHECKSUM_NO_REFS', message: `「${label}」校验块未挂引用，编码期按 0 输出（SELECT FIELDS 挂引用后按算法求和）` });

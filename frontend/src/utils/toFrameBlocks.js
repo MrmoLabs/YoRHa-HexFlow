@@ -12,6 +12,25 @@
 // 此处显式给出）。
 const BACKEND_ALGO = { SUM_8: 'sum', XOR_8: 'xor', CRC_16_MODBUS: 'crc16_modbus' };
 
+// 批 4: bitfield 块的位段透传 —— 打包在后端 Orchestrator 发射期
+// （backend/handlers/bitfield.py），此处只做形状归一 + 脏位段剔除
+// （NaN/非整数起点、位宽 <1、负起点一律不进编码），与后端
+// _build_bitfield_config 的过滤规则同形。
+const normalizeBitSegments = (node) => (Array.isArray(node.bits) ? node.bits : [])
+    .filter(b => b && typeof b === 'object')
+    .map(b => ({
+        bit_name: String(b.bit_name || ''),
+        start_bit: Math.trunc(Number(b.start_bit)),
+        bit_len: Math.trunc(Number(b.bit_len)),
+        default_val: Math.trunc(Number(b.default_val) || 0)
+    }))
+    .filter(b => Number.isFinite(b.start_bit) && Number.isFinite(b.bit_len) && b.bit_len >= 1 && b.start_bit >= 0);
+
+const buildBitfieldConfig = (node) => ({
+    ...(node.config && typeof node.config === 'object' ? node.config : {}),
+    params: { bits: normalizeBitSegments(node) }
+});
+
 // 批次四 (R2 打通): length/checksum 此前以死 config={} 直通 —— 后端
 // LengthHandler/ChecksumHandler 的 range（target_start_id/target_end_id）
 // 永不启动 → 恒输出 00。此处把前端 SSOT parameter_config 翻译进
@@ -75,13 +94,16 @@ export const toFrameBlocks = (nodes) => {
             : (Number.isFinite(node.byte_len) ? node.byte_len : 0);
 
         const isLogic = type === 'length' || type === 'checksum';
+        const isBitfield = type === 'bitfield';
         return {
             id: String(node.id),
             type: String(type),
             label: String(node.label || node.name || node.id),
             byte_length: byteLength,
             hex_value: node.hex_value || node.parameter_config?.hex || null,
-            config: isLogic ? buildLogicConfig(node, type, byId) : (node.config || null),
+            config: isLogic
+                ? buildLogicConfig(node, type, byId)
+                : (isBitfield ? buildBitfieldConfig(node) : (node.config || null)),
             children,
             is_container: Boolean(node.is_container) || children.length > 0,
             is_enabled: node.is_enabled !== false

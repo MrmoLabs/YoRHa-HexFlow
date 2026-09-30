@@ -250,6 +250,18 @@ export const buildDuplicateProtocolPayload = (source, existingProtocols = [], ge
 //   crc16 —— 入库前统一到 ChecksumAlgo 三值）。
 // 节点缺 id 已由 analyzeProtocolImport 前置拦截（克隆发号按 id 建 Map，
 // 无 id 会整树共用一个新 id）。
+// 批 4: 位域块位段白名单归一（导入路径）—— 非对象项 / 非法位偏移或位宽剔除，
+// 缺省 default_val 补 0；口径与 toFrameBlocks.normalizeBitSegments 一致。
+const sanitizeBits = (bits) => (Array.isArray(bits) ? bits : [])
+    .filter(b => b && typeof b === 'object')
+    .map(b => ({
+        bit_name: String(b.bit_name ?? ''),
+        start_bit: Math.trunc(Number(b.start_bit)),
+        bit_len: Math.trunc(Number(b.bit_len)),
+        default_val: Math.trunc(Number(b.default_val) || 0)
+    }))
+    .filter(b => Number.isFinite(b.start_bit) && Number.isFinite(b.bit_len) && b.bit_len >= 1 && b.start_bit >= 0);
+
 const sanitizeImportedNode = (node) => {
     const kids = (node.children || []).map(sanitizeImportedNode);
     let pc = node.parameter_config && typeof node.parameter_config === 'object'
@@ -262,13 +274,16 @@ const sanitizeImportedNode = (node) => {
         pc.algorithm = mapChecksumAlgo(pc.algorithm);
     }
     const bl = Number(node.byte_length);
+    const nodeType = String(node.type || (kids.length ? 'container' : 'fixed'));
     return {
         id: node.id,
         label: String(node.label ?? ''),
-        type: String(node.type || (kids.length ? 'container' : 'fixed')),
+        type: nodeType,
         byte_length: Number.isFinite(bl) ? Math.max(0, Math.floor(bl)) : 0,
         hex_value: typeof node.hex_value === 'string' ? node.hex_value : null,
         config: node.config && typeof node.config === 'object' ? node.config : {},
+        // 批 4: 位域位段仅对 bitfield 块透传（存量块不凭空注入空数组）
+        ...(nodeType === 'bitfield' ? { bits: sanitizeBits(node.bits) } : {}),
         ...(pc ? { parameter_config: pc } : {}),
         children: kids
     };

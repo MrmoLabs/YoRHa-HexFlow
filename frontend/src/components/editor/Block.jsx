@@ -4,8 +4,9 @@ import { CSS } from '@dnd-kit/utilities';
 import { OP_CODES } from '../../constants';
 import { formatOffset } from '../../utils/byteOffsets';
 import { formatUnknown } from '../../utils/formula';
+import { packBits } from '../../utils/bitGrid';
 
-export default function Block({ id, label, name, byte_length, byte_len, type, op_code, hex_value, parameter_config, children, isSelected, isPickMode, isPickRef, isGroupActive, offsetMeta, onClick }) {
+export default function Block({ id, label, name, byte_length, byte_len, type, op_code, hex_value, parameter_config, bits, children, isSelected, isPickMode, isPickRef, isGroupActive, offsetMeta, onClick }) {
     // Normalize Props (Backend v4 vs v3)
     const displayLabel = name || label || 'BLOCK';
     const length = byte_len || byte_length || 1;
@@ -75,6 +76,7 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
     // 单行放不下会折行，宽度须容纳（与 footer/label 同属取较大值口径）。
     const baseNeed = isTimeAccum ? Math.ceil(baseLineText.length * 4.8) + 8 : 0;
     const contentMin = Math.max(footerNeed, labelPx, baseNeed) + 20; // card padding + safety margin
+
 
     const style = {
         transform: CSS.Transform.toString(transform),
@@ -186,10 +188,17 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
         // 替代误导性 00 占位。
         if (type === 'length' || type === 'checksum') return formatUnknown(length);
 
+        // 2.6 批 4: 位域块 —— 卡面显示位段打包后的真实字节（与编码期同口径，
+        // packBits 镜像后端 handlers/bitfield.py），而不是 hex_value。
+        if (type === 'bitfield') {
+            const packed = packBits(bits, length);
+            return packed.match(/.{1,2}/g)?.join(' ') || packed;
+        }
+
         // 3. Default: 未配置/不确定 → 按字节数出等量 ??（反馈 #1：不再用
         // 误导性 "00" 填充冒充取值）。
         return formatUnknown(length);
-    }, [type, effectiveHex, length, parameter_config?.computedValue, op_code, isGroupCard, offsetMeta?.size]);
+    }, [type, effectiveHex, length, parameter_config?.computedValue, op_code, isGroupCard, offsetMeta?.size, bits]);
 
     return (
         <div
@@ -215,8 +224,8 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
                 content floor 的 labelPx 把卡片宽度撑到容纳标签。 */}
             <div className="text-[10px] tracking-widest uppercase border-b border-current pb-1 mb-1 flex justify-between gap-1">
                 <span className="whitespace-nowrap" title={displayLabel}>{displayLabel}</span>
-                {/* Visual indicator for Group — isGroupMark 与宽度地板同源
-                    （协议容器经 offsetMeta.isGroup 点亮，指令组走 op_code） */}
+                {/* Visual indicator for Group :: — isGroupMark 与宽度地板同源
+                    （协议容器经 offsetMeta.isGroup 点亮，指令组由 op_code）*/}
                 {isGroupMark && <span className="opacity-50 shrink-0">::</span>}
             </div>
 
