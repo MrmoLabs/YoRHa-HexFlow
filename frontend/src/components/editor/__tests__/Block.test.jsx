@@ -184,3 +184,53 @@ describe('Block (P1 offset ruler + smart width)', () => {
         expect(container.textContent).toContain('0B'); // 页脚尺寸口径不变（0B @00）
     });
 });
+
+// ─── 验证反馈批次：属性面板提醒 → 卡片标色（边框变色 + header 角标） ─────
+// 颜色断言兼容 hex / rgb 两种序列化（jsdom cssstyle 版本差异）。
+const normColor = (v) => (v || '').replace(/\s/g, '').toLowerCase();
+
+describe('Block 验证标色（issue prop）', () => {
+    it('error 级：非选中卡内联边框红 + header 角标 ⛔（title 带消息）', () => {
+        const { container } = renderBlock({
+            name: '位域', type: 'bitfield', byte_length: 1,
+            issue: { level: 'error', messages: ['「位域」位域重叠（MODE 起始 0 < 上一块结束 2）'] },
+        });
+        expect(['#d94834', 'rgb(217,72,52)']).toContain(normColor(cardOf(container).style.borderColor));
+
+        const chip = container.querySelector('[data-issue-chip]');
+        expect(chip).toBeTruthy();
+        expect(chip.getAttribute('data-issue-chip')).toBe('error');
+        expect(chip.textContent).toBe('⛔');
+        expect(chip.getAttribute('title')).toContain('位域重叠');
+    });
+
+    it('warning 级：边框琥珀 + 角标 ⚠', () => {
+        const { container } = renderBlock({
+            name: '载荷', type: 'fixed', byte_length: 1,
+            issue: { level: 'warning', messages: ['「载荷」HEX 值为空'] },
+        });
+        expect(['#e58d28', 'rgb(229,141,40)']).toContain(normColor(cardOf(container).style.borderColor));
+        const chip = container.querySelector('[data-issue-chip]');
+        expect(chip.getAttribute('data-issue-chip')).toBe('warning');
+        expect(chip.textContent).toBe('⚠');
+    });
+
+    it('选中态保 3px 亮边（内联色让位），角标不丢', () => {
+        const { container } = renderBlock({
+            name: '位域', type: 'bitfield', byte_length: 1,
+            isSelected: true,
+            issue: { level: 'error', messages: ['坏'] },
+        });
+        expect(cardOf(container).style.borderColor).toBe(''); // 亮边由 border-nier-light 类承担
+        expect(cardOf(container).className).toContain('border-[3px]');
+        expect(container.querySelector('[data-issue-chip]')).toBeTruthy();
+    });
+
+    it('无 issue → 无角标、无内联边框色（现状不变）', () => {
+        const { container } = renderBlock({
+            name: '帧头', type: 'fixed', byte_length: 1, hex_value: 'FA',
+        });
+        expect(container.querySelector('[data-issue-chip]')).toBeNull();
+        expect(cardOf(container).style.borderColor).toBe('');
+    });
+});

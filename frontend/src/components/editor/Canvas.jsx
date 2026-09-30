@@ -16,6 +16,7 @@ import {
     horizontalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import Block from './Block';
+import { buildIssueMap } from '../../utils/issueBadges';
 import { useCanvasConnections } from '../../hooks/useCanvasConnections';
 import { computeFinalPlacement } from '../../utils/computePlacement';
 import { computeInsertionSide } from '../../utils/computeInsertionSide';
@@ -56,7 +57,8 @@ export default function Canvas({
     onNavigateGroup, // Toggle Expand/Collapse
     focusedParentId = null,
     onSetFocusedLane,
-    isModalOpen = false
+    isModalOpen = false,
+    validationIssues = null // 验证反馈批次: {errors, warnings}（带 blockId）→ 卡片标色
 }) {
 
     const [activeDragId, setActiveDragId] = useState(null);
@@ -64,6 +66,10 @@ export default function Canvas({
     // P4-3: amber insertion-line hint — { side, left, top, height } in content
     // coordinates, or null (lane backgrounds keep the focus highlight only).
     const [dropHint, setDropHint] = useState(null);
+
+    // 验证反馈批次：校验清单 → Map<blockId, {level, messages}>（错误优先、
+    // 消息聚合）。不传（蓝图/编排页）→ 空 Map，卡片现状零变化。
+    const issueMap = React.useMemo(() => buildIssueMap(validationIssues), [validationIssues]);
 
     // Refs
     const canvasRef = useRef(null);
@@ -351,6 +357,7 @@ export default function Canvas({
                                 <Block
                                     key={item.id}
                                     {...item}
+                                    issue={issueMap.get(item.id) || null}
                                     isSelected={selectedId === item.id}
                                     isPickMode={pickingMode?.isActive}
                                     isPickRef={pickingMode?.currentRefs?.includes(item.id)}
@@ -370,7 +377,7 @@ export default function Canvas({
                 </div>
 
                 {childLanes.length > 0 && (
-                    <div className="flex flex-row items-start pl-8 border-l border-nier-light/10 ml-4 gap-8">
+                    <div className="flex flex-row items-start pl-3 border-l border-nier-light/10 ml-4 gap-8">
                         {childLanes.map(child => (
                             <RenderLaneNode key={child.parentId} lane={child} />
                         ))}
@@ -456,7 +463,7 @@ export default function Canvas({
                 {/* Scrollable Content Wrapper */}
                 <div
                     ref={contentRef}
-                    className="min-w-[max(fit-content,calc(100%_+_160px))] min-h-[max(fit-content,calc(100%_+_160px))] p-10 relative flex flex-col items-start"
+                    className="min-w-[max(fit-content,calc(100%_+_160px))] min-h-[max(fit-content,calc(100%_+_160px))] p-3 relative flex flex-col items-start"
                 >
                     {/* SVG OVERLAY — P4-3: 整层在拖拽期间隐藏（stale 连线会
                         误导落点），drop 后随 lanes 变化自然重算 */}

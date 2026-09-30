@@ -785,6 +785,7 @@ export default function Protocol({ protocols, setProtocols }) {
                         pickingMode={pickingMode}
                         onPickBlock={handlePickBlock}
                         onCancelPick={handleStopPicking}
+                        validationIssues={validation}
                     />
                 </section>
 

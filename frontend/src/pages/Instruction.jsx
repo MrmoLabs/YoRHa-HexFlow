@@ -593,6 +593,7 @@ export default function Instruction({ instructions: initialInstructions, setInst
                     isModalOpen={modalConfig.isOpen}
                     expandedGroupIds={expandedGroupIds}
                     onNavigateGroup={handleNavigateGroup}
+                    validationIssues={validationIssues}
                 />
                 )}
             </section>

@@ -6,7 +6,7 @@ import { formatOffset } from '../../utils/byteOffsets';
 import { formatUnknown } from '../../utils/formula';
 import { packBits } from '../../utils/bitGrid';
 
-export default function Block({ id, label, name, byte_length, byte_len, type, op_code, hex_value, parameter_config, bits, children, isSelected, isPickMode, isPickRef, isGroupActive, offsetMeta, onClick }) {
+export default function Block({ id, label, name, byte_length, byte_len, type, op_code, hex_value, parameter_config, bits, children, isSelected, isPickMode, isPickRef, isGroupActive, offsetMeta, issue = null, onClick }) {
     // Normalize Props (Backend v4 vs v3)
     const displayLabel = name || label || 'BLOCK';
     const length = byte_len || byte_length || 1;
@@ -75,8 +75,14 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
     // BASE 行地板：TIME 卡的 `BASE 2026-09-23 14:00`（8px mono ≈ 4.8px/char）
     // 单行放不下会折行，宽度须容纳（与 footer/label 同属取较大值口径）。
     const baseNeed = isTimeAccum ? Math.ceil(baseLineText.length * 4.8) + 8 : 0;
-    const contentMin = Math.max(footerNeed, labelPx, baseNeed) + 20; // card padding + safety margin
+    // 验证标色角标（⛔/⚠ 芯片）约占 26px，与标签/页脚同吃宽度地板
+    const issueNeed = issue ? 26 : 0;
+    const contentMin = Math.max(footerNeed, labelPx, baseNeed, issueNeed) + 20; // card padding + safety margin
 
+    // 验证反馈批次：校验标色 —— 错误红 / 提醒琥珀（与属性面板同色系）。
+    // 内联 borderColor 优先于主题类；选中态（3px 亮边）与拾取态让位，角标不受影响。
+    const issueColor = issue?.level === 'error' ? '#D94834'
+        : issue?.level === 'warning' ? '#E58D28' : null;
 
     const style = {
         transform: CSS.Transform.toString(transform),
@@ -87,6 +93,7 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
             ? `${transition}, width 200ms ease, background-color 200ms ease, border-color 200ms ease`
             : transition,
         width: `${Math.max(60, extentBytes * 40, contentMin)}px`, // Smart width: byte extent + content floor
+        ...(issueColor && !isSelected && !isPickMode ? { borderColor: issueColor } : {}),
     };
 
     // Style Mapping: Based on Information Density
@@ -224,9 +231,23 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
                 content floor 的 labelPx 把卡片宽度撑到容纳标签。 */}
             <div className="text-[10px] tracking-widest uppercase border-b border-current pb-1 mb-1 flex justify-between gap-1">
                 <span className="whitespace-nowrap" title={displayLabel}>{displayLabel}</span>
-                {/* Visual indicator for Group :: — isGroupMark 与宽度地板同源
-                    （协议容器经 offsetMeta.isGroup 点亮，指令组由 op_code）*/}
-                {isGroupMark && <span className="opacity-50 shrink-0">::</span>}
+                <span className="flex items-center gap-1 shrink-0">
+                    {/* Visual indicator for Group — isGroupMark 与宽度地板同源
+                        （协议容器经 offsetMeta.isGroup 点亮，指令组走 op_code） */}
+                    {isGroupMark && <span className="opacity-50 shrink-0">::</span>}
+                    {/* 验证反馈批次：校验标色角标 —— title 悬停显全量消息（与面板清单同文） */}
+                    {issue && (
+                        <span
+                            data-issue-chip={issue.level}
+                            title={issue.messages.join('\n')}
+                            className={`text-[9px] leading-none px-1 font-bold shrink-0 ${issue.level === 'error'
+                                ? 'bg-[#D94834] text-black'
+                                : 'bg-[#E58D28] text-black'}`}
+                        >
+                            {issue.level === 'error' ? '⛔' : '⚠'}
+                        </span>
+                    )}
+                </span>
             </div>
 
             {/* Byte Indicator centered */}
