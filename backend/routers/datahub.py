@@ -264,6 +264,12 @@ def fields_to_blocks(fields, now=None):
             "endianness": str(f.get("endianness") or "BIG").upper(),
             # E1-5 (B7): resolved repeat 展开次数（组容器；orchestrator flatten 用）。
             "repeat_count": repeat_n,
+            # N5 (G4): 字段级对齐/填充 —— 原样透传（orchestrator 发射期按
+            # core/pad 归一 fail-open，与前端 padSpec 同口径）。presence 未命中
+            # 的早退分支不透传（未命中连 pad 都不发，emitNode 同口径）。
+            "align": cfg.get("align"),
+            "pad_to": cfg.get("pad_to"),
+            "pad_byte": cfg.get("pad_byte"),
         }
 
     return [to_block(f) for f in by_parent.get(None, [])]

@@ -1,4 +1,5 @@
 // P1: byte-offset ruler for the instruction editor (see PLAN_InstructionManagement.md §3).
+import { alignPadLen, padSpec, padToPadLen } from './padSpec';
 // Pure function — walks fields by parent_id/sequence and computes each block's
 // start offset plus the instruction's total byte length.
 //
@@ -162,36 +163,109 @@ export function computeByteOffsets(instruction) {
     let cursor = 0;   // null once an unknown-size block has been passed
     let hasUnknown = false;
     let dynamicRepeat = false; // DYNAMIC repeat / repeat_ref_id → count varies per run
+    let total = 0;   // N5 (G4): 线上总长 = 游标驱动（含 pad），未知根回退内容尺寸
 
-    const walk = (list) => {
+    // N5 (G4): FIXED 副本数（与 resolveSize 的组口径同源；NONE → 1）。
+    const fixedRepsOf = (f) => {
+        if (String(f.repeat_type || '').toUpperCase() !== 'FIXED') return 1;
+        const c = f.repeat_count;
+        return (typeof c === 'number' && Number.isFinite(c)) ? Math.max(0, Math.floor(c)) : 1;
+    };
+
+    const walk = (list, isTop) => {
+        let prevId = null; // 同列表上一兄弟：align 前置 pad 的归属者
         list.forEach((f) => {
             const kids = kidsOf.get(f.id) || [];
             const size = resolveSize(f);
             const isGroup = kids.length > 0 || isGroupOp(f);
-            byId.set(f.id, { offset: cursor, size, isGroup });
+            const rootStart = isTop ? cursor : null;
+            // N5 (G4): presence 静态未命中 → 与发射同口径不补 pad（0 字节）。
+            const missed = ancestorMissed(f) || presenceStaticState(f, fieldsById) === 'miss';
+            const spec = padSpec(f.parameter_config);
+            const firstVisit = !byId.has(f.id); // 重复副本只留副本 #1 的位置记录
+            // 组 repeat 0 → 不发字节也不补 pad（emitNode n<=0 早退同口径）。
+            const reps = (kids.length > 0 && size !== null && cursor !== null)
+                ? fixedRepsOf(f) : 1;
+            const emits = !missed && (kids.length === 0 || reps > 0);
+
+            // N5 (G4) align 前置 pad：内容起点补到 N 边界；pad 归入前一兄弟的
+            // span（同列表首项 / 重复副本同 id → 不另归属，组 span 走游标算术
+            // 覆盖）。size 未知时不补（游标口径与既有 ?? 链一致）。
+            if (emits && size !== null && cursor !== null && spec.align) {
+                const p = alignPadLen(cursor, spec.align);
+                if (p > 0) {
+                    if (prevId !== null && prevId !== f.id) {
+                        const prev = byId.get(prevId);
+                        if (prev) prev.pad = (prev.pad || 0) + p;
+                    }
+                    cursor += p;
+                }
+            }
+            const contentStart = cursor;
+            if (firstVisit) byId.set(f.id, { offset: contentStart, size, isGroup });
+            prevId = f.id;
             if (hasDynamicRepeat(f)) dynamicRepeat = true;
+
             if (kids.length > 0) {
-                const start = cursor;
-                walk(kids); // children of copy #1 advance the cursor by Σ×1
-                // E1-5: land the cursor on the group's true end (Σ×N) — the
-                // children walk only covers the first copy.
-                if (cursor !== null && start !== null && size !== null) cursor = start + size;
+                if (reps <= 0) {
+                    // repeat 0：仅记录副本 #1 位置，游标不动（不发字节）。
+                    const saved = cursor;
+                    walk(kids, false);
+                    cursor = saved;
+                } else {
+                    // 逐副本模拟：pad 按各副本的绝对偏移算（非 Σ×reps 常数）；
+                    // 游标未知时只走一遍（副本 #1 记录，与既有口径一致）。
+                    for (let c = 0; c < reps; c++) {
+                        walk(kids, false);
+                        if (cursor === null) break;
+                    }
+                }
             } else if (size !== null && cursor !== null) {
                 cursor += size;
             }
+
+            // N5 (G4) pad_to 后置 pad：内容末尾（组 = 末副本后）补到 N 边界。
+            let ownPad = 0;
+            if (emits && size !== null && cursor !== null && spec.padTo) {
+                const p = padToPadLen(cursor, spec.padTo);
+                if (p > 0) { cursor += p; ownPad = p; }
+            }
+
+            if (isGroup) {
+                // 组 span 的 pad = 游标算术（各副本子字段 pad + 自身 pad_to）；
+                // 子字段的 pad 留在子记录上供所在行布局，不上卷（避免与游标
+                // 重复计数）。
+                if (firstVisit && reps > 0 && contentStart !== null
+                    && cursor !== null && size !== null) {
+                    const extra = (cursor - contentStart) - size;
+                    if (extra > 0) {
+                        const rec = byId.get(f.id);
+                        if (rec) rec.pad = (rec.pad || 0) + extra;
+                    }
+                }
+            } else if (ownPad > 0 && firstVisit) {
+                const rec = byId.get(f.id);
+                if (rec) rec.pad = (rec.pad || 0) + ownPad;
+            }
+
             if (size === null) {
                 hasUnknown = true;
                 cursor = null;
             }
+
+            // N5 (G4) 顶层根累计线上总长：游标驱动（含 pad）；游标未知回退
+            // 内容尺寸 —— 与既有 Σ resolveSize 的下界口径一致。
+            if (isTop) {
+                if (rootStart !== null && cursor !== null) {
+                    total += cursor - rootStart;
+                } else {
+                    const s = resolveSize(f);
+                    if (s !== null) total += s;
+                }
+            }
         });
     };
-    walk(kidsOf.get(null) || []);
-
-    let total = 0;
-    (kidsOf.get(null) || []).forEach((f) => {
-        const s = resolveSize(f);
-        if (s !== null) total += s;
-    });
+    walk(kidsOf.get(null) || [], true);
 
     // Fixed vs variable: a frame is FIXED only when every byte is statically
     // known. DYNAMIC repeat (count dictated by another field), value-driven

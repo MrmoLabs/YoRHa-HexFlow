@@ -66,6 +66,25 @@ describe('byteHighlight（字段 ↔ 字节流定位，第 4 批 #2）', () => {
         expect(withZero.map(s => s.text)).toEqual(['00 AA', 'BB CC DD EE FF']);
     });
 
+    // N5 (G4 · 对齐/填充)：byteMap 只记内容字节 → align 前置 / pad_to 后置的
+    // 填充字节不在任何区间内 —— 渲染串必须仍覆盖 hexPreview 全字节（否则
+    // BYTE_STREAM 与 LEN 口径矛盾、发出去的填充字节在预览里消失）。
+    // 无主段 fieldId=null：不参与 matchByteRanges 高亮，只补齐字节。
+    it('buildHexSegments：区间之间的填充字节以无主段补齐（渲染 = hexPreview 全字节）', () => {
+        const map = [
+            { start: 0, end: 1, fieldId: 'a' },
+            { start: 4, end: 6, fieldId: 't' }
+        ];
+        const pretty = '00 FF FF FF AA BB 0E 0E'; // 内容 [0,1)+[4,6)，pad [1,4)+[6,8)
+        const segs = buildHexSegments(pretty, map, null);
+        expect(segs.map(s => s.text)).toEqual(['00', 'FF FF FF', 'AA BB', '0E 0E']);
+        expect(segs.map(s => s.fieldId)).toEqual(['a', null, 't', null]);
+        expect(segs.map(s => [s.start, s.end])).toEqual([[0, 1], [1, 4], [4, 6], [6, 8]]);
+        expect(segs.every(s => !s.selected)).toBe(true);
+        // 首尾与中缝都补齐：拼接后 = 原串全字节（与 LEN: N BYTES 同口径）
+        expect(segs.map(s => s.text).join(' ')).toBe(pretty);
+    });
+
     it('buildHexSegments：无选中全不标记；空 preview → []；byteMap 空 → 整串单段回落', () => {
         expect(buildHexSegments(PRETTY, BYTE_MAP(), null).every(s => !s.selected)).toBe(true);
         expect(buildHexSegments('', BYTE_MAP(), null)).toEqual([]);

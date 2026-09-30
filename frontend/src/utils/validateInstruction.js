@@ -9,6 +9,7 @@
 // When in doubt, make it a warning.
 
 import { getBlockLimitRefs, ENCODER_LIMITS } from './encoderLimits';
+import { padSpec } from './padSpec';
 import { OP_CODES } from '../constants';
 
 // N1 护栏批（PLAN §8.16 · G5）：编码器已知算子全集 = OP_CODES 14 项 +
@@ -165,6 +166,28 @@ export function validateInstruction(instruction) {
                     message: `「${label || f.id}」文本字段含非 ASCII 字符（>0xFF）且未启用 utf8 编码：编码期将截断出乱码字节——请切换 encoding=utf8 或改用纯 ASCII 文本`,
                 });
             }
+        }
+
+        // --- W8/W9 (N5·G4): align/pad_to 非法 → 编码期 fail-open 忽略（不阻断
+        // 出帧）→ 提醒修正。判定与 utils/padSpec.js padSpec 同口径：present 且
+        // 归一后为 0 才提醒（空串视为未配置）；pad_byte 非法静默回落 0x00
+        // （N2 pad_char 先例，不提醒）。任何 pad 配置都不产生 error。
+        const padNorm = padSpec(params);
+        if (params.align !== undefined && params.align !== null
+            && String(params.align).trim() !== '' && padNorm.align === 0) {
+            warnings.push({
+                blockId: f.id,
+                code: 'ALIGN_INVALID',
+                message: `「${label || f.id}」对齐值无效（align=${params.align}）：编码期将忽略不补位——请填 1..4096 的整数字节数`,
+            });
+        }
+        if (params.pad_to !== undefined && params.pad_to !== null
+            && String(params.pad_to).trim() !== '' && padNorm.padTo === 0) {
+            warnings.push({
+                blockId: f.id,
+                code: 'PAD_TO_INVALID',
+                message: `「${label || f.id}」补位值无效（pad_to=${params.pad_to}）：编码期将忽略不补位——请填 1..4096 的整数字节数`,
+            });
         }
 
         // --- W7 (N3·G1): presence 条件存在 —— E 自引用 / W 悬空 / W 不完整 ---

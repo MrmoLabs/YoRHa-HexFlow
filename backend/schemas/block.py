@@ -52,6 +52,14 @@ class Block(BaseModel):
     # datahub.to_block; the orchestrator flattens children N times.
     repeat_count: int = 1
 
+    # N5 (G4): 字段级对齐/填充 —— parameter_config 的 align / pad_to / pad_byte
+    # 原样透传（Any 不做类型强制：bool/非法值由 core/pad 归一 fail-open，与前端
+    # utils/padSpec.js 同口径）。指令链经 datahub.to_block 填充；协议链缺省 None
+    # → 零影响。align = 内容起点补到 N 边界，pad_to = 内容末尾补到 N 边界。
+    align: Any = None
+    pad_to: Any = None
+    pad_byte: Any = None
+
 class FrameRequest(BaseModel):
     blocks: List[Block]
 

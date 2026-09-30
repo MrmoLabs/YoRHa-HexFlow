@@ -9,6 +9,14 @@ from backend.core.graph import GraphEngine
 from backend.handlers.length import LengthHandler
 from backend.handlers.checksum import ChecksumHandler
 from backend.handlers.bitfield import BitfieldHandler
+from backend.core.pad import (
+    align_pad_len,
+    normalize_align,
+    normalize_pad_byte,
+    normalize_pad_to,
+    pad_hex,
+    pad_to_pad_len,
+)
 # from backend.handlers.escape import EscapeHandler (To be implemented)
 
 
@@ -30,6 +38,23 @@ def _reverse_hex_pairs(hex_str: str) -> str:
     if " " in hex_str:
         return " ".join(reversed_pairs)
     return "".join(reversed_pairs)
+
+
+class _PadMark:
+    """N5 (G4): 容器级 align/pad_to 标记。
+
+    容器不进发射流，其 pad 只能以标记形式挂在子树首（align）/尾（pad_to）；
+    展开期（_flatten_recursive）插入、发射期按绝对游标解析补位长度。handler
+    视野把它过滤掉 —— 长度/校验按内容口径（不含对齐填充），与前端 PASS0
+    fieldSizes / _encodeFieldBytes 同口径。
+    """
+
+    __slots__ = ("kind", "n", "byte")
+
+    def __init__(self, kind: str, n: int, byte: int):
+        self.kind = kind   # "align" | "pad_to"
+        self.n = n         # 边界 N（已归一 1..PAD_MAX）
+        self.byte = byte   # 填充字节值 0..255
 
 
 class Orchestrator:
@@ -61,9 +86,14 @@ class Orchestrator:
         # 3. Range-dependent logic (length / checksum) runs on the flattened
         #    stream, because these blocks reference start/end IDs of siblings
         #    and descendants. Children's hex values are already final here.
-        flat_tuples: List[Tuple[str, Block]] = [("global", b) for b in self.flattened_stream]
+        # N5 (G4): 容器级 pad 标记不进 handler 视野 —— 长度/校验按内容口径
+        # （不含对齐填充），与前端 PASS0 fieldSizes / _encodeFieldBytes 同口径。
+        emit_blocks: List[Block] = [
+            b for b in self.flattened_stream if isinstance(b, Block)
+        ]
+        flat_tuples: List[Tuple[str, Block]] = [("global", b) for b in emit_blocks]
 
-        for block in self.flattened_stream:
+        for block in emit_blocks:
             if block.type in [BlockType.LENGTH, BlockType.CHECKSUM] or str(block.type) == "bitfield":
                 handler_key = block.type
                 if isinstance(block.type, BlockType):
@@ -74,9 +104,29 @@ class Orchestrator:
                     block.hex_value = handler.calculate(block, flat_tuples)
 
         # 4. Emit final hex (slots are placeholders and emit nothing).
+        #    N5 (G4): 发射期维护绝对游标 —— 叶的 align 前置 pad / pad_to 后置
+        #    pad 与容器标记都按游标解析；pad 在 LITTLE 反转之外（只反转字段内容），
+        #    且被 emit_blocks 过滤后不改 handler 眼里的内容字节。
         final_hex = []
+        cursor = 0
         for b in self.flattened_stream:
+            if not isinstance(b, Block):
+                # 容器级 pad 标记：kind=align → 补到 N 边界；pad_to → 同式。
+                n = (align_pad_len(cursor, b.n) if b.kind == "align"
+                     else pad_to_pad_len(cursor, b.n))
+                if n > 0:
+                    final_hex.append(pad_hex(n, b.byte))
+                    cursor += n
+                continue
             if b.is_enabled and b.type != BlockType.SLOT:
+                align = normalize_align(b.align)
+                pad_to = normalize_pad_to(b.pad_to)
+                pad_byte = normalize_pad_byte(b.pad_byte)
+                if align:
+                    n = align_pad_len(cursor, align)
+                    if n > 0:
+                        final_hex.append(pad_hex(n, pad_byte))
+                        cursor += n
                 val = b.hex_value or ("00" * b.byte_length)
                 # E1-2 (B6): LITTLE-endian blocks reverse their whole byte
                 # sequence at emission. Length/checksum handlers already ran
@@ -87,6 +137,12 @@ class Orchestrator:
                     val = _reverse_hex_pairs(val)
                 # ESCAPING LOGIC (Placeholder): val = self.escape_handler.process(val)
                 final_hex.append(val)
+                cursor += len(re.sub(r"\s+", "", val)) // 2
+                if pad_to:
+                    n = pad_to_pad_len(cursor, pad_to)
+                    if n > 0:
+                        final_hex.append(pad_hex(n, pad_byte))
+                        cursor += n
 
         return " ".join(final_hex)
 
@@ -105,9 +161,20 @@ class Orchestrator:
             # E1-5 (B7): repeat 展开 —— 容器子树整体重复 N 次（repeat_count 已在
             # datahub.to_block 按 NONE/FIXED/DYNAMIC resolve）。与前端
             # _encodeFieldBytes 组分支 + _repeatCount byte-equal。
-            for _ in range(max(0, block.repeat_count)):
+            reps = max(0, block.repeat_count)
+            # N5 (G4): 容器级 align 首副本前 / pad_to 末副本后补位 —— 容器不进
+            # 发射流，pad 以标记形式挂子树首/尾，发射期按绝对游标解析。repeat 0
+            # → 不发字节也不补（前端 emitNode n<=0 早退同口径）。
+            align = normalize_align(block.align)
+            pad_to = normalize_pad_to(block.pad_to)
+            pad_byte = normalize_pad_byte(block.pad_byte)
+            if reps > 0 and align:
+                self.flattened_stream.append(_PadMark("align", align, pad_byte))
+            for _ in range(reps):
                 for child in block.children:
                     self._flatten_recursive(child)
+            if reps > 0 and pad_to:
+                self.flattened_stream.append(_PadMark("pad_to", pad_to, pad_byte))
         else:
             self.flattened_stream.append(block)
 

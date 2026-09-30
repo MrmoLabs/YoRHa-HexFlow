@@ -1,4 +1,5 @@
 import { evaluateFormula, formatToHex, formatFloatToHex, calculateChecksum, ChecksumAlgo } from './formula';
+import { alignPadLen, padHex, padSpec, padToPadLen } from './padSpec';
 
 /**
  * Core Logic for the Instruction Processing Engine.
@@ -660,18 +661,44 @@ export const InstructionEncoder = {
                 // Group: own repeat multiplies how many full child copies follow.
                 const n = this._repeatCount(field, inputs, computedValues, allFields) * copies;
                 if (n <= 0) return;
+                // N5 (G4): 组 align 首副本前补一次、pad_to 末副本后补一次
+                // （子字段的 pad 由各自 emitNode 按绝对游标逐副本算）。
+                const gspec = padSpec(field.parameter_config);
+                const gAlign = alignPadLen(currentByteIndex, gspec.align);
+                if (gAlign > 0) {
+                    hexParts.push(padHex(gAlign, gspec.padByte));
+                    currentByteIndex += gAlign;
+                }
                 for (let c = 0; c < n; c++) {
                     kids.forEach(k => emitNode(k, 1));
+                }
+                const gPadTo = padToPadLen(currentByteIndex, gspec.padTo);
+                if (gPadTo > 0) {
+                    hexParts.push(padHex(gPadTo, gspec.padByte));
+                    currentByteIndex += gPadTo;
                 }
                 return;
             }
             const bytes = this.getFieldBytes(field, inputs, computedValues, allFields, now);
             const hexStr = bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
             const byteLen = bytes.length;
+            // N5 (G4): 叶 align 前置 / pad_to 后置 —— pad 进发射流与游标，
+            // 不进 byteMap 区间（byteMap 只记内容，同 PASS0 长度/校验内容口径）。
+            const lspec = padSpec(field.parameter_config);
             for (let c = 0; c < copies; c++) {
+                const lAlign = alignPadLen(currentByteIndex, lspec.align);
+                if (lAlign > 0) {
+                    hexParts.push(padHex(lAlign, lspec.padByte));
+                    currentByteIndex += lAlign;
+                }
                 hexParts.push(hexStr);
                 byteMap.push({ start: currentByteIndex, end: currentByteIndex + byteLen, fieldId: field.id });
                 currentByteIndex += byteLen;
+                const lPadTo = padToPadLen(currentByteIndex, lspec.padTo);
+                if (lPadTo > 0) {
+                    hexParts.push(padHex(lPadTo, lspec.padByte));
+                    currentByteIndex += lPadTo;
+                }
             }
         };
 

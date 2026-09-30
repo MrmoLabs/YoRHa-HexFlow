@@ -5,6 +5,7 @@ import { OP_CODES } from '../../constants';
 import { formatOffset } from '../../utils/byteOffsets';
 import { formatUnknown } from '../../utils/formula';
 import { packBits } from '../../utils/bitGrid';
+import { padSpec } from '../../utils/padSpec';
 
 export default function Block({ id, label, name, byte_length, byte_len, type, op_code, hex_value, parameter_config, bits, children, isSelected, isPickMode, isPickRef, isGroupActive, offsetMeta, issue = null, onClick }) {
     // Normalize Props (Backend v4 vs v3)
@@ -54,9 +55,13 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
     // P1 smart width: byte-extent driven (group = Σ children via offsetMeta,
     // leaf = byte_len) with a content-aware floor so the footer
     // (`2B @00` / `??B @02..` + OPEN) never gets clipped by the next card.
-    const extentBytes = isGroupCard
+    // N5 (G4): pad（归属本卡的填充字节 = 自身 pad_to + 下一字段 align 前置 pad
+    // + 组内子字段 pad）计入宽度 → 卡片跨度与偏移尺 @ 芯片逐格对齐，卡间空隙
+    // 即填充字节；无 pad 配置时 padBytes=0，宽度语义逐字节不变。
+    const padBytes = offsetMeta && typeof offsetMeta.pad === 'number' ? offsetMeta.pad : 0;
+    const extentBytes = (isGroupCard
         ? (offsetMeta && typeof offsetMeta.size === 'number' ? offsetMeta.size : 0)
-        : length;
+        : length) + padBytes;
     const footerText = [footerBytes, offsetStr].filter(Boolean).join(' ');
     // Label floor: 名称必须单行完整显示（不截断、不换行）→ 卡片宽度必须容纳
     // 标签。10px + tracking-widest ≈ CJK 11.5px / latin 8px 每字符（含估算安全
@@ -83,7 +88,22 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
     const presenceCfg = parameter_config?.presence;
     const presenceChip = !!(presenceCfg && typeof presenceCfg === 'object' && !Array.isArray(presenceCfg));
     const presenceNeed = presenceChip ? 26 : 0;
-    const contentMin = Math.max(footerNeed, labelPx, baseNeed, issueNeed, presenceNeed) + 20; // card padding + safety margin
+    // N5 (G4): 对齐/填充角标 —— Block 自读 parameter_config.align / pad_to
+    // （归一复用 utils/padSpec，与编码 fail-open 同口径：非法不点亮），一枚
+    // 角标显示 A{N} / P{N} / A4·P8；title 说明补位语义。画布上「卡片间空隙」
+    // 即填充字节（宽度 = 内容 + 归属 pad，与偏移尺 @ 芯片逐格对齐）。
+    const padCfg = padSpec(parameter_config);
+    const padChip = padCfg.align > 0 || padCfg.padTo > 0;
+    const padText = [
+        padCfg.align > 0 ? `A${padCfg.align}` : null,
+        padCfg.padTo > 0 ? `P${padCfg.padTo}` : null,
+    ].filter(Boolean).join('·');
+    const padTitle = [
+        padCfg.align > 0 ? `对齐：内容起点补位到 ${padCfg.align} 字节边界` : null,
+        padCfg.padTo > 0 ? `填充：内容末尾补位到 ${padCfg.padTo} 字节边界` : null,
+    ].filter(Boolean).join('；');
+    const padNeed = padChip ? Math.ceil(padText.length * 5.4) + 8 : 0;
+    const contentMin = Math.max(footerNeed, labelPx, baseNeed, issueNeed, presenceNeed, padNeed) + 20; // card padding + safety margin
 
     // 验证反馈批次：校验标色 —— 错误红 / 提醒琥珀（与属性面板同色系）。
     // 内联 borderColor 优先于主题类；选中态（3px 亮边）与拾取态让位，角标不受影响。
@@ -257,6 +277,17 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
                             className="text-[9px] leading-none px-1 border border-nier-light/70 text-nier-light font-bold shrink-0"
                         >
                             IF
+                        </span>
+                    )}
+                    {/* N5 (G4): 对齐/填充角标 —— A{align} / P{pad_to}（非法值与
+                        编码 fail-open 同口径不点亮）；卡片间空隙即填充字节 */}
+                    {padChip && (
+                        <span
+                            data-pad-chip
+                            title={padTitle}
+                            className="text-[9px] leading-none px-1 border border-nier-light/70 text-nier-light font-bold shrink-0"
+                        >
+                            {padText}
                         </span>
                     )}
                     {/* 验证反馈批次：校验标色角标 —— title 悬停显全量消息（与面板清单同文） */}

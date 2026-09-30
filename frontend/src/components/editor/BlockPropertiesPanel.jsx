@@ -4,6 +4,7 @@ import BitFieldEditor from './BitFieldEditor';
 import { v4 as uuidv4 } from 'uuid';
 import { mapChecksumAlgo } from '../../utils/normalizeInstruction';
 import { getBlockLimitRefs, ENCODER_LIMITS } from '../../utils/encoderLimits';
+import { padSpec } from '../../utils/padSpec';
 
 const controlledValue = (value, fallback = '') => (value ?? fallback);
 
@@ -168,6 +169,41 @@ export default function BlockPropertiesPanel({
             onUpdateRefs: null
         });
     };
+
+    // ── N5 (G4): 对齐 / 填充 (ALIGN · PAD_TO) —— 三输入 + 清除 ───────────────
+    // 键原样存串（编码期 padSpec 归一，非法 fail-open + 校验 ALIGN_INVALID /
+    // PAD_TO_INVALID 提醒）；两支卡片（叶子/组）都可编辑。
+    const padRaw = tempBlockConfig?.parameter_config || {};
+    const padView = padSpec(padRaw);
+    const padKeyed = ['align', 'pad_to', 'pad_byte'].some(
+        (k) => padRaw[k] !== undefined && padRaw[k] !== null && String(padRaw[k]).trim() !== ''
+    );
+    const applyPad = (mutate) => {
+        setTempBlockConfig(prev => {
+            if (!prev) return null;
+            const pc = { ...prev.parameter_config };
+            mutate(pc);
+            return { ...prev, parameter_config: pc };
+        });
+    };
+    const clearPad = () => applyPad(pc => {
+        delete pc.align;
+        delete pc.pad_to;
+        delete pc.pad_byte;
+    });
+    const padPart = (raw, n, okText) => {
+        if (n) return okText(n);
+        if (raw === undefined || raw === null || String(raw).trim() === '') return null;
+        return `${raw}（无效→忽略）`;
+    };
+    const padSummary = !padKeyed
+        ? '未配置 → 不补位（线上字节 = 内容字节）'
+        : [
+            padPart(padRaw.align, padView.align, (n) => `起始偏移对齐 ${n} 字节边界`),
+            padPart(padRaw.pad_to, padView.padTo, (n) => `内容末尾补到 ${n} 字节边界`),
+            (padRaw.pad_byte !== undefined && padRaw.pad_byte !== null && String(padRaw.pad_byte).trim() !== '')
+                ? `填充字节 ${String(padRaw.pad_byte).trim().toUpperCase()}` : null,
+        ].filter(Boolean).join(' · ');
 
     // ── N3 (G1): 条件存在 (PRESENCE) —— 单 ref 拾取 + expect + 清除 ────────
     const presenceCfg = tempBlockConfig?.parameter_config?.presence;
@@ -586,6 +622,60 @@ export default function BlockPropertiesPanel({
                             )}
                         </div>
                     )}
+
+                    {/* N5 (G4): 对齐 / 填充 (ALIGN · PAD_TO) —— 独立区：align /
+                        pad_to / pad_byte 三输入 + 清除；APPLY 往返落块配置。
+                        归一/非法判定由 padSpec + 校验提醒承担（fail-open 不阻断）。 */}
+                    <div className="p-3 border border-dashed border-nier-light/50 space-y-3" data-testid="align-section">
+                        <div className="text-[9px] opacity-100 font-bold text-nier-light flex items-center gap-2">
+                            对齐 / 填充 (ALIGN · PAD_TO)
+                        </div>
+                        <div className="text-[9px] opacity-60 leading-relaxed" data-testid="align-summary">
+                            {padSummary}
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                            <label className="text-[9px] opacity-70 space-y-1">
+                                <div>起始对齐 (align)</div>
+                                <input
+                                    data-testid="align-input"
+                                    type="text"
+                                    value={controlledValue(padRaw.align)}
+                                    placeholder="8"
+                                    onChange={(e) => applyPad(pc => { pc.align = e.target.value; })}
+                                    className="w-full bg-transparent border border-nier-light/50 px-1 py-1 text-[10px] font-mono text-nier-light focus:border-nier-accent focus:outline-none"
+                                />
+                            </label>
+                            <label className="text-[9px] opacity-70 space-y-1">
+                                <div>结束补位 (pad_to)</div>
+                                <input
+                                    data-testid="padto-input"
+                                    type="text"
+                                    value={controlledValue(padRaw.pad_to)}
+                                    placeholder="8"
+                                    onChange={(e) => applyPad(pc => { pc.pad_to = e.target.value; })}
+                                    className="w-full bg-transparent border border-nier-light/50 px-1 py-1 text-[10px] font-mono text-nier-light focus:border-nier-accent focus:outline-none"
+                                />
+                            </label>
+                            <label className="text-[9px] opacity-70 space-y-1">
+                                <div>填充字节 (pad_byte)</div>
+                                <input
+                                    data-testid="padbyte-input"
+                                    type="text"
+                                    value={controlledValue(padRaw.pad_byte)}
+                                    placeholder="00"
+                                    onChange={(e) => applyPad(pc => { pc.pad_byte = e.target.value; })}
+                                    className="w-full bg-transparent border border-nier-light/50 px-1 py-1 text-[10px] font-mono text-nier-light focus:border-nier-accent focus:outline-none"
+                                />
+                            </label>
+                        </div>
+                        <button
+                            data-testid="align-clear"
+                            onClick={clearPad}
+                            className="w-full border border-nier-light/40 text-[9px] py-1 uppercase tracking-widest opacity-70 hover:opacity-100 transition-opacity"
+                        >
+                            清除对齐/填充 (CLEAR)
+                        </button>
+                    </div>
 
                     {/* N3 (G1): 条件存在 (PRESENCE) —— 尾部独立区：ref 拾取 +
                         expect 文本 + 清除（编码 fail-open，两支卡片都可编辑） */}
