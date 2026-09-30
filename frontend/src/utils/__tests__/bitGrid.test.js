@@ -4,6 +4,9 @@ import {
     rangeToSegment,
     defaultSegmentName,
     packBits,
+    unpackBits,
+    writeBitSegment,
+    clampBitValue,
     BIT_GRID_COLORS
 } from '../bitGrid';
 import { packBitfieldDefault } from '../../config/runnerRenderRules';
@@ -104,5 +107,67 @@ describe('defaultSegmentName / packBits', () => {
         for (const [bits, byteLen] of vectors) {
             expect(packBits(bits, byteLen)).toBe(packBitfieldDefault(bits, byteLen));
         }
+    });
+});
+
+// 批 3：加工侧按子位录入。单一真源 = 字段整数输入值；子位行是派生视图，
+// 改子位只重写本段位（间隙位/其余段原样保留），回写仍是同一个整数。
+describe('unpackBits / writeBitSegment / clampBitValue（子位拆包与回写）', () => {
+    const BITS = [
+        { id: 'a', bit_name: 'MODE', start_bit: 0, bit_len: 2, default_val: 1 },
+        { id: 'b', bit_name: 'EN', start_bit: 2, bit_len: 1, default_val: 1 }
+    ];
+
+    it('unpackBits：有输入时按位拆；无输入时回退 default_val', () => {
+        expect(unpackBits(0x0F, BITS).map(s => [s.name, s.value, s.max]))
+            .toEqual([['MODE', 3, 3], ['EN', 1, 1]]);
+        expect(unpackBits(undefined, BITS).map(s => s.value)).toEqual([1, 1]);
+    });
+
+    it('unpackBits：只认合法位段；非法位段不出行（不静默塞 0 位行）', () => {
+        const rows = unpackBits(0, [
+            { id: 'x', bit_name: 'X', start_bit: NaN, bit_len: 0 },
+            { id: 'y', bit_name: 'Y', start_bit: 3, bit_len: 5, default_val: 7 }
+        ]);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ name: 'Y', value: 0, max: 31, start: 3, len: 5 });
+    });
+
+    it('writeBitSegment：只重写本段，其余位与无主位（间隙）原样保留', () => {
+        // MODE(bit0..1) 改成 1：0x0F → 0x0D（高 5 位 0b01111 中的位 3..7 保留）
+        expect(writeBitSegment(0x0F, BITS[0], 1, BITS)).toBe(0x0D);
+        // EN(bit2) 改成 0：0x0F → 0x0B
+        expect(writeBitSegment(0x0F, BITS[1], 0, BITS)).toBe(0x0B);
+    });
+
+    it('writeBitSegment：无输入态以 default_val 打包值为底（其余段不被清零）', () => {
+        // 未录入时底值 = MODE=1|EN=1 = 0x05；改 EN=0 → 0x01
+        expect(writeBitSegment(undefined, BITS[1], 0, BITS)).toBe(0x01);
+        // 改 MODE=3 → 0x07
+        expect(writeBitSegment(undefined, BITS[0], 3, BITS)).toBe(0x07);
+    });
+
+    it('writeBitSegment：越界值先钳制到本段域再回写（不溢出到邻段）', () => {
+        expect(writeBitSegment(0x00, BITS[0], 9, BITS)).toBe(0x03); // 2 位段上限 3
+        expect(writeBitSegment(0x00, BITS[0], -2, BITS)).toBe(0x00);
+    });
+
+    it('clampBitValue：非数 → 0；越界钳制', () => {
+        expect(clampBitValue(5, 2)).toBe(3);
+        expect(clampBitValue(-1, 2)).toBe(0);
+        expect(clampBitValue('x', 2)).toBe(0);
+        expect(clampBitValue(7, 3)).toBe(7);
+    });
+
+    it('跨 32 位段不丢高位（不用 JS 32 位位运算截断）', () => {
+        const wide = [
+            { id: 'lo', bit_name: 'LO', start_bit: 0, bit_len: 8, default_val: 0x11 },
+            { id: 'hi', bit_name: 'HI', start_bit: 32, bit_len: 8, default_val: 0x22 }
+        ];
+        // 5 字节字段：HI 在 bit32..bit39（整值仍在安全整数内）
+        const base = 0x2200000011;
+        expect(unpackBits(base, wide).map(s => s.value)).toEqual([0x11, 0x22]);
+        expect(writeBitSegment(base, wide[0], 0xAB, wide)).toBe(0x22000000AB);
+        expect(writeBitSegment(base, wide[1], 0x33, wide)).toBe(0x3300000011);
     });
 });

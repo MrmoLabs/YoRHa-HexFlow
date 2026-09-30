@@ -48,6 +48,19 @@ const INSTRUCTIONS = [
                 parameter_config: { base_time: '2026-01-01T00:00:00' } }
         ]
     },
+    // 批 3：BITFIELD 子位录入 —— b1 位域 MODE(bit0..1, 默认1) / EN(bit2, 默认1)
+    // → 默认打包 0x05；无主位 bit3..7 留空（间隙位保留的验证靶子）
+    {
+        id: 'inst-6', name: '位域指令',
+        fields: [
+            { id: 'b1', parent_id: null, sequence: 0, name: '控制位',
+                op_code: 'BITFIELD', byte_length: 1, parameter_config: {},
+                bits: [
+                    { id: 'ba', sequence: 0, bit_name: 'MODE', start_bit: 0, bit_len: 2, default_val: 1 },
+                    { id: 'bb', sequence: 1, bit_name: 'EN', start_bit: 2, bit_len: 1, default_val: 1 }
+                ] }
+        ]
+    },
     // 批 1：字段级十进制录入 —— d1 走 dec 通道（2 字节，值域 0..65535），
     // d2 缺省保持 hex 通道（存量对照组）
     {
@@ -376,5 +389,68 @@ describe('批 1：字段级十进制录入', () => {
             const segs = [...document.querySelectorAll('[data-byte-segment]')].map(s => s.textContent);
             expect(segs.join(' ')).toBe('FF FF 00');
         });
+    });
+});
+
+// 批 3：加工侧 BITFIELD 按子位录入（与整包 hex 输入并存，单一真源=字段整数）。
+describe('批 3：BITFIELD 按子位录入', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        api.getResponseSpec.mockRejectedValue(
+            Object.assign(new Error('nf'), { response: { status: 404 } })
+        );
+        api.getOperatorTemplates.mockResolvedValue([]);
+        api.getBindings.mockResolvedValue([]);
+        api.dispatchPayload.mockResolvedValue({ id: 1, status: 'SENT', byte_count: 1 });
+        api.compileWrapped.mockResolvedValue({ hex_string: '05', total_length: 1, warnings: [] });
+        api.sendTransaction.mockResolvedValue(OK_RECORD);
+    });
+
+    const segRow = (name) => screen.getByText(name).closest('[data-bit-seg]');
+
+    it('子位行与整包输入并存：整包显示打包默认值 05，子位回显 MODE=1 / EN=1', async () => {
+        renderPage();
+        fireEvent.click(await sidebar().findByText('位域指令'));
+        await screen.findByText('BYTE_STREAM_OUTPUT');
+
+        expect(screen.getByDisplayValue('05')).toBeTruthy(); // 整包 hex 输入仍在
+        expect(segRow('MODE').querySelector('input').value).toBe('1');
+        expect(segRow('EN').querySelector('input').value).toBe('1');
+    });
+
+    it('改子位 → 整包值与字节流同步（MODE=2 → 0x06）', async () => {
+        renderPage();
+        fireEvent.click(await sidebar().findByText('位域指令'));
+        await screen.findByText('BYTE_STREAM_OUTPUT');
+
+        fireEvent.change(segRow('MODE').querySelector('input'), { target: { value: '2' } });
+
+        await waitFor(() => expect(screen.getByDisplayValue('06')).toBeTruthy());
+        await waitFor(() => {
+            expect([...document.querySelectorAll('[data-byte-segment]')].map(s => s.textContent).join(' ')).toBe('06');
+        });
+    });
+
+    it('整包改值 → 子位反向重算（0F → MODE=3 / EN=1）', async () => {
+        renderPage();
+        fireEvent.click(await sidebar().findByText('位域指令'));
+        await screen.findByText('BYTE_STREAM_OUTPUT');
+
+        fireEvent.change(screen.getByDisplayValue('05'), { target: { value: '0F' } });
+
+        await waitFor(() => expect(segRow('MODE').querySelector('input').value).toBe('3'));
+        expect(segRow('EN').querySelector('input').value).toBe('1');
+    });
+
+    it('子位回写保留无主位（间隙 bit3..7）：整包 0F 后改 MODE=1 → 0D', async () => {
+        renderPage();
+        fireEvent.click(await sidebar().findByText('位域指令'));
+        await screen.findByText('BYTE_STREAM_OUTPUT');
+
+        fireEvent.change(screen.getByDisplayValue('05'), { target: { value: '0F' } });
+        await waitFor(() => expect(segRow('MODE').querySelector('input').value).toBe('3'));
+
+        fireEvent.change(segRow('MODE').querySelector('input'), { target: { value: '1' } });
+        await waitFor(() => expect(screen.getByDisplayValue('0D')).toBeTruthy());
     });
 });

@@ -1,5 +1,6 @@
 import React from 'react';
 import { SmartInput } from './SmartInput';
+import BitSegmentInputs from './BitSegmentInputs';
 import { ENCODER_LIMITS } from '../../utils/encoderLimits';
 import {
     classifyRunnerField,
@@ -156,6 +157,15 @@ export default function RunnerFieldTree({
                         suffix={params.unit || (isTimeCumulative ? `${getFieldEpoch(params).getFullYear()}` : '')}
                         placeholder={placeholder}
                     />
+                    {/* 批 3：BITFIELD 子位录入（与上方整包输入并存；单一真源 = 字段整数） */}
+                    {isEditable && field.op_code === 'BITFIELD' && Array.isArray(field.bits) && field.bits.length > 0 && (
+                        <BitSegmentInputs
+                            bits={field.bits}
+                            value={inputs[field.id]}
+                            onChange={(packed) => onFieldChange(field.id, packed)}
+                            onSelectField={onSelectField ? () => onSelectField(field.id) : undefined}
+                        />
+                    )}
                     {semanticItems.length > 0 && (
                         <div className="text-[9px] font-mono text-nier-light/60 ml-40 -mt-0.5 mb-1 uppercase tracking-tighter">
                             {semanticItems.map((it, i) => (

@@ -121,3 +121,63 @@ export const packBits = (bits, byteLen = 1) => {
     const target = Math.max(1, byteLen || 1) * 2;
     return packed.toString(16).toUpperCase().padStart(target, '0').slice(-target);
 };
+
+// ───────────────────────── 批 3：加工侧子位录入（拆包 / 回写） ─────────────────────────
+// 单一真源 = 字段整数输入值；子位行是派生视图。改子位只重写本段位，
+// 间隙位（无主位）与其它段原样保留 → onFieldChange 仍只发一个整数，
+// InstructionEncoder 的 BITFIELD 分支零改动。
+// 拆包/回写一律走「除模/乘幂」算术而非 JS 32 位位运算：>32 位段不被截断。
+
+const toInt = (v) => (Number.isFinite(v) ? Math.floor(v) : null);
+
+// 本段取值：floor(v / 2^start) % 2^len（start/len 非法 → null）
+const segmentValue = (packed, start, len) => {
+    if (packed === null) return null;
+    return Math.floor(packed / Math.pow(2, start)) % Math.pow(2, len);
+};
+
+/** 子位值钳制到本段域；非数 → 0（0..2^n-1）。 */
+export const clampBitValue = (v, len) => {
+    const width = Math.max(1, len || 1);
+    const n = toInt(Number(v));
+    if (n === null) return 0;
+    const max = Math.pow(2, width) - 1;
+    return Math.max(0, Math.min(max, n));
+};
+
+/**
+ * 拆包子位行。packed 为 undefined/null → 逐段回退 default_val（与
+ * resolveFieldDisplay 的 packBitfieldDefault 同源口径）。
+ * 返回 [{ id, name, start, len, value, defaultVal }]，仅含合法位段。
+ */
+export const unpackBits = (packed, bits) => normalizeBits(bits).map(b => {
+    const fromValue = segmentValue(toInt(packed), b.start, b.len);
+    const fallback = clampBitValue(b.defaultVal, b.len);
+    return {
+        id: b.id,
+        name: b.name,
+        start: b.start,
+        len: b.len,
+        defaultVal: fallback,
+        value: fromValue === null ? fallback : fromValue
+    };
+});
+
+/**
+ * 回写单个位段：底值 = packed（未录入时取**全部**位段 default_val 的打包值），
+ * 先扣掉本段旧值再并入新值 → 其余位/间隙位逐位保持。
+ * allBits = 该字段的完整 bits（无输入态的底值靠它，未传则退化为仅本段）。
+ */
+export const writeBitSegment = (packed, segment, newValue, allBits) => {
+    const seg = normalizeBits([segment])[0];
+    const base = toInt(packed);
+    if (!seg) return base ?? 0;
+    const value = clampBitValue(newValue, seg.len);
+    const place = Math.pow(2, seg.start);
+    const source = base === null
+        ? parseInt(packBits(Array.isArray(allBits) && allBits.length > 0 ? allBits : [segment],
+            Math.ceil((seg.start + seg.len) / 8)), 16) >>> 0
+        : base;
+    const cleared = source - (segmentValue(source, seg.start, seg.len) || 0) * place;
+    return cleared + value * place;
+};
