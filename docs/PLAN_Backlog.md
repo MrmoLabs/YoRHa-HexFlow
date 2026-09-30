@@ -1461,9 +1461,48 @@
   不变）、`sequence_runner.execute`（转义先于 `record["sent"]` → 记录与存档即线上字节）；
   `replay` 存档帧即线上字节 → **不二次转义**（钉死）。
 
-**N5 填充 / 对齐批（G4——立题）**
-- 现状：只能 HEX_RAW 手工算 pad；候选模型：字段级 `align`（到 N 字节边界）
-  或组尾自动 pad；与 byte_len=0 语义、lanes 尺寸、后端发射的交互需设计。
+**N5 填充 / 对齐批（G4——✅ 已落地，对齐模型已拍板）**
+- 现状（改造前）：只能 HEX_RAW 手工算 pad。
+- **模型定案（2026-09-30 拍板：字段级 `align` + `pad_to`，两键骑 `parameter_config`
+  零 DDL）**：`align=N` → 该字段**内容起点**绝对偏移补到 ≡0 (mod N)；`pad_to=N` →
+  **内容末尾**补到 ≡0 (mod N)；`pad_byte` ≤2 位 hex 严格解析否则 0x00（N2 `pad_char`
+  先例）。归一 1..4096（Number/floor；bool/非数/越界 → 0 即关闭）**fail-open** 不阻断
+  出帧；非法 `align`/`pad_to` → `ALIGN_INVALID`/`PAD_TO_INVALID` 双码 W 提醒（零 error
+  不锁保存），`pad_byte` 非法静默回落不提醒。
+- **双口径（可翻案点）**：pad 进发射流 / 偏移尺 / `total` / 卡片宽度；**不进** PASS0
+  长度公式、checksum 参与区、`byteMap` 区间、页脚 LEN —— 内容口径与既有链路零改动
+  （指令链 `config=None` → 0x00 现状零改动，协议链不产三键 inert）。
+- 归属与逐副本：`byteOffsets.byId` `offset`=内容起点、`size`=内容字节、`pad` 键**仅
+  >0 条件写入**（10 处既有全形状 `toEqual` 断言零触碰）；align 前置 pad 归**前一
+  兄弟** span（同列表首项 / 重复副本同 id 不另归属），组 span 走游标算术（含各副本
+  子字段 pad + 自身 pad_to，不上卷避免与游标重复计数）；组 align 首副本前补一次、
+  `pad_to` 末副本后补一次，叶按绝对游标**逐副本**算（非 Σ×reps 常数）；presence 未
+  命中 / repeat=0 → 字段与 pad 都不发；LITTLE 反转只涉字段内容。
+- 实现面：BE `backend/core/pad.py`（归一/补位 SSOT）+ `Block` 三键 Any 透传 +
+  `datahub.to_block`（presence 未命中早退分支不带三键）+ `orchestrator` 发射期绝对
+  游标（叶前置/后置补位，容器 `_PadMark` 挂子树首/尾 —— 展开期插入、发射期解析，
+  经 `emit_blocks` 过滤出 handler 视野）；FE `utils/padSpec.js` + `InstructionEncoder.
+  emitNode` 叶/组两路注入 + `byteOffsets` 逐副本游标模拟 + `validateInstruction` 双码
+  提醒 + 面板「对齐 / 填充」区 + 卡面 `data-pad-chip`（A4·P8，宽度 = 内容 + 归属
+  pad）；顺手修 `byteHighlight.buildHexSegments` —— byteMap 只记内容曾让填充字节在
+  BYTE_STREAM 丢字节（与 LEN 矛盾）→ 无主段（fieldId=null 不参与高亮）补齐。
+- 验收（2026-09-30）：红→绿 2 轮（FE 6 新测试文件 + `byteHighlight` gap 补测初红
+  43 例、BE `test_encode_align.py` 初红 4 用例，零误伤旧测）；全量 FE **866/866
+  （62 文件）** EXIT=0（基线 823 + 43）、BE **371/371** OK EXIT=0（基线 367 + 4）、
+  `vite build` EXIT=0、yorha-ui 校验器触 10 文件 0 违规、`generate-page-status.mjs`
+  EXIT=0、schema **SCHEMA_IDENTICAL**（28 对象，三键纯 JSON 骑乘零 DDL 实证）。
+- 状态：**✅ 真机验证通过（2026-09-30）→ 第 11 单已提交 `d8f0d65`**。真机结论
+  （指令 CMD - 632，vite:5173 + uvicorn:8000 重启载新码）：面板「对齐 / 填充」区
+  渲染 / 三输入 APPLY → 画布 `A4·P8` 角标（title 对齐/填充双语义）、文本字段偏移
+  `@01→@04`、后续字段 `@09→@10`、LEN `~9B→~16B`、卡宽 162/494/74px（内容 +
+  归属 pad，0B 卡 60px 地板）；保存 + **整页刷新往返** 4/8/FF 回填、chip/偏移/LEN
+  保持（parameter_config 落库零 DDL）；加工页 LEN 16 BYTES + BYTE_STREAM 全 16
+  字节含 pad（`00 FF FF FF 41 4C 50 48 41 00 00 00 FF FF FF FF`，align/pad_to 用
+  FF、字段内 pad_char 00 并存）；**FE=BE byte-equal**
+  `00FFFFFF414C504841000000FFFFFFFF` 逐位相等；`/dispatch` 裸发 SENT LOOPBACK
+  16B echo=payload byte-equal；CLEAR → chip 消失、`@01/@09`·`~9B` 还原；
+  `align=9999` → fail-open（无 chip、偏移不动、摘要「无效→忽略」、卡 ⚠
+  `ALIGN_INVALID` 提醒，不锁不报错）；复位 4/8/FF 留证（同 pad_char/presence 先例）。
 
 **挂账**（不排期，见 `BUSINESS_SCENARIOS.md` 挂账清单）：epoch 模板、加扰、
 切换 op、BE op 白名单拒绝策略（**已摸底 2026-09-30**：只读查 `instruction_fields`
@@ -1473,7 +1512,7 @@ CHECKSUM_CRC 3 / ARRAY_GROUP 2 / TIME_ACCUMULATOR·INT_SIGNED·AUTO_COUNTER 各 
 无存量 type=string 字段、presence 零行**；白名单取 KNOWN_OPS 全集不锁死任何
 历史数据 → 策略（保存侧拒绝 vs 警告）可随时拍板插队）、组帧族（已立 §8.14）。
 
-- 状态：**排期已落档；六单 + N1/N2/N3/N4 全部实现、真机验证通过并分单提交
+- 状态：**排期已落档；六单 + N1/N2/N3/N4/N5 全部实现、真机验证通过并分单提交
   （2026-09-30）**——批1-4 = `23ad28e`/`327ac8c`/`f8dcf64`/`e6a31a4`、
   第 5 单优化批 = `3668d37`、第 6 单标色 = `3ff0f69`；N1 红→绿 2 轮（FE
   700/700 + BE 322/322）+ 3 文档 = 第 7 单 `7d50484`；N2 红→绿 2 轮（FE
@@ -1483,9 +1522,12 @@ CHECKSUM_CRC 3 / ARRAY_GROUP 2 / TIME_ACCUMULATOR·INT_SIGNED·AUTO_COUNTER 各 
   `8e9612f`；N4 红→绿 1 轮（FE **823/823**（56 文件，基线 812 + 11）/
   BE **367/367**（基线 342 + 25），BE `test_escape.py` 25 例（含双端共享
   向量 7 组）+ FE `escapeTable.test.js` 7 例 + `Terminal.test.jsx` 4 例）+
-  真机验证通过 = 第 10 单 `b7f9fa7`。终态复验：build EXIT=0、校验器触达 0 违规、
+  真机验证通过 = 第 10 单 `b7f9fa7`；N5 红→绿 2 轮（FE **866/866**（62 文件，
+  基线 823 + 43）/ BE **371/371**（基线 367 + 4），FE 6 新测试文件 +
+  `byteHighlight` gap 补测、BE `test_encode_align.py` 16 双端共享向量）+
+  真机验证通过 = 第 11 单 `d8f0d65`。终态复验：build EXIT=0、校验器触达 0 违规、
   pageStatus EXIT=0、schema SCHEMA_IDENTICAL（28 对象零 DDL）→
-  **N5 对齐模型待拍板**；BE 白名单摸底完成（挂账行），策略待拍板。**
+  **N5 对齐模型已拍板落地（G4 结）**；BE 白名单摸底完成（挂账行），策略待拍板。**
 
 ## 9. 保留勿动（非任务，勿清理）
 

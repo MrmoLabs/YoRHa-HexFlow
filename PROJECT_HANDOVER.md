@@ -529,7 +529,7 @@
     字节位布局 / 运行加工 + 护栏）对照出 7 个此前未记录的缺口 —— **G1 条件
     分支/变体族**（真业务阻断，方案 B：组级 `presence`，N3 重头）、**G2 字符串
     三连**（无入口 / 不定长 / 非 ASCII 脏字节，N2）、**G3 帧字节转义**（后端
-    仅空 placeholder，N4 已解）、**G4 填充对齐**（N5 立题）、**G5 未知 op 静默
+    仅空 placeholder，N4 已解）、**G4 填充对齐**（N5 已解）、**G5 未知 op 静默
     错码**（N1 FE 提醒先行，BE 白名单挂账）、**G6 STRUCT 无创建入口**（N1 定性
     存量兼容）、**G7 float64 陷阱**（N1 校验摘陷阱）。已立暂缓（§8.14 四项）与
     已知范围外（E1-4 float64）不重复排。**N1 与六单零文件重叠可并行开发；N3
@@ -555,10 +555,22 @@
     01` / 关闭态 3B byte-equal / 整页刷新往返零 ERR / 套壳 `FA FA ED 00 01 7D →
     FA FA ED 00 01 7D 5D` 外壳字面不转 / 现场复位）→ 第 10 单已提交 `b7f9fa7`
     （环境插曲：uvicorn StatReload 卡死跑旧代码，重启后端排除，非代码缺陷）。
-    **六单 + N1/N2/N3/N4 全部落库**
+    N5 填充/对齐批（拍板「**字段级 `align` + `pad_to` 骑 `parameter_config` 零
+    DDL**」，pad 进发射流/偏移尺/LEN/卡宽、不进长度公式/checksum/byteMap 内容
+    口径）红→绿 2 轮（全量 FE **866/866（62 文件）** · BE **371/371**、build 0、
+    pageStatus 0、校验器 10 文件 0 违规、SCHEMA_IDENTICAL 28；BE
+    `test_encode_align.py` 16 双端共享向量 + FE 6 新测试文件 + `byteHighlight`
+    gap 补测（BYTE_STREAM 无主段补齐，渲染 = hexPreview 全字节）；面板 ALIGN 区 +
+    A4·P8 角标 + 卡宽含 pad + `orchestrator` 发射期游标/容器 `_PadMark`）→ 真机
+    验证通过（APPLY → `@01→@04`/`@09→@10`、LEN `~9B→~16B`、卡宽 162·494·74px /
+    整页刷新往返 4·8·FF 回填 / FE=BE `00FFFFFF414C504841000000FFFFFFFF` byte-equal
+    / 裸发 16B echo=payload / CLEAR 还原 / `align=9999` fail-open 提醒不锁）→
+    第 11 单已提交 `d8f0d65`。
+    **六单 + N1/N2/N3/N4/N5 全部落库**
     （批1-4 `23ad28e`/`327ac8c`/`f8dcf64`/`e6a31a4`、第 5 单 `3668d37`、
     第 6 单 `3ff0f69`、第 7 单 `7d50484`、第 8 单 `848e248`、第 9 单
-    `8e9612f`、第 10 单 `b7f9fa7`）→ **N5 对齐模型待拍板**。
+    `8e9612f`、第 10 单 `b7f9fa7`、第 11 单 `d8f0d65`）→ **G1–G7 全集：6 项已结，
+    余 G5 的 BE 白名单保存策略待拍板**。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

@@ -69,7 +69,8 @@
       "保存失败恢复：PUT 失败不清脏态，顶栏横幅区分「服务端拒绝」与「网络/服务错误」并提供重试与关闭，RESET 可放弃；结构校验失败仍走独立弹窗（两者文案分流）。",
       "拖拽落点：悬停目标卡片时在其左/右缘显示 2px 琥珀插入线，拖拽期间 refs 连线整体隐藏并在落定后自动重算，Esc 取消会回滚预览并清理指示线。",
       "页面↔hook 契约显式化（C7）：选项校验抽为 hooks/instructionDataOptions.js（非法选项降级+警告）、hook 全量 JSDoc、页面解构键 ⊆ hook 返回键的静态契约测试。",
-      "卡面取值口径：能确定的值直接显示、不确定按字节数出等量 ??（formula.formatUnknown）—— LENGTH_CALC 结果十进制 `${result}B` 直出（公式含未知/无公式同样出等量 ??）、CHECKSUM 空 refs 出等量 ??、TIME_ACCUMULATOR 中央值下方新增 BASE 基准时间小字（如 BASE 2026-09-23 14:00，未配置 → BASE ?；无基准注入等量 ?? 占位、有基准保留 hex 差值口径）；未配置固定/hex 块照显存储值（`0000`→`00 00`、`00`→`00`，`??` 仅限无法确定内容的卡——第 3 轮 #2，与协议页同口径）（卡面取值口径改造，useInstructionLanes/Block 单测锁形）。"
+      "卡面取值口径：能确定的值直接显示、不确定按字节数出等量 ??（formula.formatUnknown）—— LENGTH_CALC 结果十进制 `${result}B` 直出（公式含未知/无公式同样出等量 ??）、CHECKSUM 空 refs 出等量 ??、TIME_ACCUMULATOR 中央值下方新增 BASE 基准时间小字（如 BASE 2026-09-23 14:00，未配置 → BASE ?；无基准注入等量 ?? 占位、有基准保留 hex 差值口径）；未配置固定/hex 块照显存储值（`0000`→`00 00`、`00`→`00`，`??` 仅限无法确定内容的卡——第 3 轮 #2，与协议页同口径）（卡面取值口径改造，useInstructionLanes/Block 单测锁形）。",
+      "对齐/填充（N5 · G4）：属性面板新增「对齐 / 填充 (ALIGN · PAD_TO)」独立区 —— align（内容起点补到 N 字节边界）/ pad_to（内容末尾补到 N 字节边界）/ pad_byte 填充字节 三输入 + 清除 + 口径摘要（未配置 → 不补位），叶子/组两支卡片均可编辑；两键骑 parameter_config 零 DDL，归一 1..4096（bool/非数/越界 → 0 即关闭）fail-open —— 非法 align/pad_to 出 ALIGN_INVALID/PAD_TO_INVALID 提醒（零 error 不锁保存）、pad_byte 非法静默回落 0x00；卡面 A4·P8 角标（title 说明补位语义）、卡片宽度 = 内容 + 归属 pad → 卡间空隙即填充字节且与偏移尺 @ 芯片逐格对齐，顶栏 LEN 与偏移尺按线上字节含 pad（页脚 LEN / PASS0 长度公式 / checksum 参与区 / byteMap 仍为内容口径不变）；presence 未命中与 repeat=0 不补，组 align 首副本前 / pad_to 末副本后补一次、叶逐副本按绝对游标算，LITTLE 反转不涉 pad；双端 byte-equal（test_encode_align 16 条共享向量 + 真机 FE=BE / 裸发 echo 实测）。"
     ],
     "nextSteps": [
       "补更细的字段引用测试（块移动与保存失败恢复已覆盖）。",
@@ -101,7 +102,8 @@
       "子位值表与有符号（优化批）：值表位段在子位行渲染成下拉选名称（label+值 双显，当前值不在表内追加原值选项、不留空），选择仍回传打包整数（只动本段）；signed 位段子位行按两补码域显示负值并钳制（如 8 位 −128..127，0xD8 显 −40），回写负值转位模式、邻段与间隙位保留。",
       "指令加工编辑反馈四条之二：点击字段（含整块容器）→ BYTE_STREAM_OUTPUT 按 InstructionEncoder byteMap 逐字段分段反白高亮（span title 回显字段名 @偏移），下方「SEL :: 字段名 · 0xNN-0xNN · NB」读数条同步，未选中显点击提示，换指令自动复位；嵌套组内点叶字段精确到该字段自身字节（叶行/组头 stopPropagation 隔离冒泡，不被外层组 id 覆盖成整组），点组头才选中整块子树；字节段内亦逐字节 XX XX 空格分隔（与整帧格式一致，不连写），高亮仍按整字段段反白。",
       "指令加工编辑反馈四条之三：右栏三分区标题 + 中文用途释义 —— BYTE STREAM 字节流预览（随输入实时重算 / 点击定位）、PROTOCOL WRAP 协议封装（预览·发送·事务同参同字节）、TRANSMIT 发送与导出（CTRL+ENT 快捷、.hex 落盘）；Transaction / TransmissionLog 自带 :: 标题不重复。",
-      "指令加工编辑反馈四条之四：定长字段输入限制 computeFieldInputLimits（指令管理 byte_len 定死）—— hex 通道截断 byte_len×2 字符 + 「n/N BYTES」长度徽标（非 hex 通道 [nB]），数值按 0..2^(8n)-1 即时钳制（INT_SIGNED 两补码域、SCALED_DECIMAL 按 factor/offset 反算输入域、超 2^53 封顶 MAX_SAFE_INTEGER；编码端口径不变）。"
+      "指令加工编辑反馈四条之四：定长字段输入限制 computeFieldInputLimits（指令管理 byte_len 定死）—— hex 通道截断 byte_len×2 字符 + 「n/N BYTES」长度徽标（非 hex 通道 [nB]），数值按 0..2^(8n)-1 即时钳制（INT_SIGNED 两补码域、SCALED_DECIMAL 按 factor/offset 反算输入域、超 2^53 封顶 MAX_SAFE_INTEGER；编码端口径不变）。",
+      "BYTE_STREAM 全字节口径（N5 · 对齐/填充）：字段 byteMap 只记内容字节 —— align/pad_to 填充字节不在任何字段区间内，分段器以无主段（fieldId null，不参与点击高亮）补齐中缝与首尾，渲染串恒 = hexPreview 全字节、与 LEN: N BYTES 同口径（否则预览会吞掉线上真实发出的填充字节）。"
     ],
     "nextSteps": [
       "展示当前传输模式与连接状态（GET /transport/status），支持在本页切换 loopback/TCP/串口。"
