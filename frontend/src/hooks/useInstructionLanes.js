@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { evaluateFormula, formatToHex, formatUnknown, calculateChecksum } from '../utils/formula';
 import { mapChecksumAlgo } from '../utils/normalizeInstruction';
-import { computeByteOffsets } from '../utils/byteOffsets';
+import { computeByteOffsets, presenceStaticState } from '../utils/byteOffsets';
 
 export function useInstructionLanes(currentInstruction, activeInstructionId) {
     // expandedGroupIds: Array of IDs that are currently expanded.
@@ -111,7 +111,12 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
         const offsets = computeByteOffsets({ fields: allFields });
         const nameToValueMap = {};
         allFields.forEach(f => {
-            if (f.op_code === 'ARRAY_GROUP') {
+            // N3 (G1): presence 门控叶的公式参与尺寸随静态判定（未命中 0B、
+            // 静态判不了 ??、无门/不完整 fail-open → meta.size == byte_len 同值）。
+            const gated = f.parameter_config?.presence
+                && typeof f.parameter_config.presence === 'object'
+                && !Array.isArray(f.parameter_config.presence);
+            if (f.op_code === 'ARRAY_GROUP' || gated) {
                 const meta = offsets.byId.get(f.id);
                 nameToValueMap[f.name || f.label] = (meta && typeof meta.size === 'number') ? meta.size : "??";
             } else {
@@ -237,7 +242,10 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
                 if (f.op_code === 'ARRAY_GROUP') {
                     const meta = offsets.byId.get(f.id);
                     const known = meta && typeof meta.size === 'number';
-                    const content = fieldContent(f);
+                    // N3 (G1): 静态判未命中的组不产内容（子树 0 字节）—— 中央落
+                    // 0B/空容器口径，页脚 0B；命中/无门组照常出嵌套内容。
+                    const missed = presenceStaticState(f, fieldById) === 'miss';
+                    const content = missed ? null : fieldContent(f);
                     return {
                         ...f,
                         byte_len: 0,

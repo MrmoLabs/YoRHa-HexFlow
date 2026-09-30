@@ -167,6 +167,28 @@ export function validateInstruction(instruction) {
             }
         }
 
+        // --- W7 (N3·G1): presence 条件存在 —— E 自引用 / W 悬空 / W 不完整 ---
+        // fail-open 语义（配置不完整/悬空时编码按命中处理，不吞字节）→ 只提醒
+        // 不阻断；自引用是明确配置错误（判定链对自身无意义形态）→ error。
+        const pres = params.presence;
+        if (pres !== undefined && pres !== null) {
+            const isObj = typeof pres === 'object' && !Array.isArray(pres);
+            const hasRef = isObj && pres.ref_id !== undefined && pres.ref_id !== null && String(pres.ref_id) !== '';
+            const hasExpect = isObj && pres.expect !== undefined && pres.expect !== null && String(pres.expect) !== '';
+            if (!isObj || !hasRef || !hasExpect) {
+                warnings.push({
+                    blockId: f.id,
+                    code: 'PRESENCE_INCOMPLETE',
+                    message: `「${label || f.id}」条件存在（presence）配置不完整（${!isObj ? '非对象' : !hasRef ? '缺 ref_id' : '缺 expect'}）：编码将按命中处理（fail-open）——请补全或清除`,
+                });
+            }
+            if (hasRef && String(pres.ref_id) === String(f.id)) {
+                errors.push({ blockId: f.id, code: 'PRESENCE_SELF', message: `「${label || f.id}」条件存在引用了自身（presence 自引用）` });
+            } else if (hasRef && !byId.has(pres.ref_id)) {
+                warnings.push({ blockId: f.id, code: 'PRESENCE_REF_MISSING', message: `「${label || f.id}」条件存在引用了不存在的字段 (${pres.ref_id})：编码将按命中处理（fail-open）——请核对引用` });
+            }
+        }
+
         // --- E1: HEX_RAW value must match byte_len exactly ---
         if (f.op_code === 'HEX_RAW') {
             const hex = normalizeHex(params.hex);
@@ -238,6 +260,28 @@ export function validateInstruction(instruction) {
             warnings.push({ blockId: f.id, code: 'SEQ_DUPLICATE', message: `「${label || f.id}」同层序号重复 (${f.sequence})` });
         } else {
             seenSeq.set(seqKey, true);
+        }
+    });
+
+    // --- W8 (N3·G1): 同 ref 同 expect 的多支并存（条件完全相同 → 建议合并） ---
+    const seenPresence = new Map(); // `${ref}#${expect}` → 首见字段标签
+    fields.forEach((f) => {
+        const pres = f.parameter_config?.presence;
+        if (!pres || typeof pres !== 'object' || Array.isArray(pres)) return;
+        const ref = pres.ref_id;
+        const exp = pres.expect;
+        if (ref === undefined || ref === null || String(ref) === '') return;
+        if (exp === undefined || exp === null || String(exp) === '') return;
+        const key = `${ref}#${String(exp)}`;
+        const first = seenPresence.get(key);
+        if (first !== undefined) {
+            warnings.push({
+                blockId: f.id,
+                code: 'PRESENCE_OVERLAP',
+                message: `「${fieldLabel(f) || f.id}」与「${first}」条件相同（[${ref}] == ${exp} 多支并存）：完全相同的分支建议合并或删除`,
+            });
+        } else {
+            seenPresence.set(key, fieldLabel(f) || f.id);
         }
     });
 

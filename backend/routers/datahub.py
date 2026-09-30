@@ -62,6 +62,39 @@ def sanitize_filename(name, fallback="instruction"):
     return safe or fallback
 
 
+def _presence_hit(f, by_id):
+    """N3 (G1): presence 条件存在判定 —— True=命中（发射）、False=未命中（0 字节）。
+
+    静态值链仅 parameter_config.value（DYNAMIC repeat 静态 resolve 同链；inputs/
+    computed 覆盖为 FE-only 运行期行为），str() 归一比较（数值 1 命中 "1"，与
+    前端 String() byte-equal；bool/浮整值等非契约类型各自现状锚）。
+    fail-open → True：presence 非 dict / 缺 ref_id / 缺 expect（None/""）/
+    ref 悬空 / ref 无静态值 —— 半成品配置不吞字节，防数据丢失优于严格过滤
+    （前端 InstructionEncoder._presenceHit 同口径，改一必改二）。
+    """
+    cfg = f.get("parameter_config")
+    pres = cfg.get("presence") if isinstance(cfg, dict) else None
+    if not isinstance(pres, dict):
+        return True
+    ref_id = pres.get("ref_id")
+    expect = pres.get("expect")
+    if ref_id is None or str(ref_id) == "":
+        return True
+    if expect is None or str(expect) == "":
+        return True
+    try:
+        ref = by_id.get(ref_id)
+    except TypeError:
+        return True  # 不可哈希 ref_id（自由 JSON 契约外）→ fail-open
+    if ref is None:
+        return True  # 悬空 ref → fail-open 恒发射
+    ref_cfg = ref.get("parameter_config")
+    ref_val = ref_cfg.get("value") if isinstance(ref_cfg, dict) else None
+    if ref_val is None:
+        return True  # 无静态值（运行输入才有）→ fail-open
+    return str(ref_val) == str(expect)
+
+
 def fields_to_blocks(fields, now=None):
     """扁平指令字段列表 → 后端帧块森林（dict 树）。
 
@@ -110,6 +143,25 @@ def fields_to_blocks(fields, now=None):
     by_id = {f["id"]: f for f in pool.values() if f.get("id") is not None}
 
     def to_block(f):
+        # N3 (G1): presence 判定先于子树递归与 repeat 展开 —— 未命中 →
+        # byte_length=0 + children=[]（子树不进 flatten），type=fixed 绕开
+        # length/checksum handler；orchestrator 发射对 0 字节自动省（`or "00"*0`
+        # → ""，join 剥空白）→ orchestrator 零触碰。与前端 emitNode 入口判定
+        # byte-equal（改一必改二）。
+        if not _presence_hit(f, by_id):
+            return {
+                "id": str(f.get("id") or f.get("name") or "field"),
+                "type": "fixed",
+                "label": str(f.get("name") or "field"),
+                "byte_length": 0,
+                "hex_value": None,
+                "config": None,
+                "children": [],
+                "is_container": False,
+                "is_enabled": True,
+                "endianness": str(f.get("endianness") or "BIG").upper(),
+                "repeat_count": 1,
+            }
         kids = [to_block(c) for c in by_parent.get(f.get("id"), [])]
         byte_len = int(f.get("byte_len") or 0)
         op = str(f.get("op_code") or "").upper()

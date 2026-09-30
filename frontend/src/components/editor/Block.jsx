@@ -77,7 +77,13 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
     const baseNeed = isTimeAccum ? Math.ceil(baseLineText.length * 4.8) + 8 : 0;
     // 验证标色角标（⛔/⚠ 芯片）约占 26px，与标签/页脚同吃宽度地板
     const issueNeed = issue ? 26 : 0;
-    const contentMin = Math.max(footerNeed, labelPx, baseNeed, issueNeed) + 20; // card padding + safety margin
+    // N3 (G1): 条件存在 IF 角标 —— presence 配置即点亮（Block 自读
+    // parameter_config.presence，零 prop 传递；非法非对象/数组与编码
+    // fail-open 同口径不点亮）。宽度地板与 issue chip 同口径（26px）。
+    const presenceCfg = parameter_config?.presence;
+    const presenceChip = !!(presenceCfg && typeof presenceCfg === 'object' && !Array.isArray(presenceCfg));
+    const presenceNeed = presenceChip ? 26 : 0;
+    const contentMin = Math.max(footerNeed, labelPx, baseNeed, issueNeed, presenceNeed) + 20; // card padding + safety margin
 
     // 验证反馈批次：校验标色 —— 错误红 / 提醒琥珀（与属性面板同色系）。
     // 内联 borderColor 优先于主题类；选中态（3px 亮边）与拾取态让位，角标不受影响。
@@ -242,6 +248,17 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
                     {/* Visual indicator for Group — isGroupMark 与宽度地板同源
                         （协议容器经 offsetMeta.isGroup 点亮，指令组走 op_code） */}
                     {isGroupMark && <span className="opacity-50 shrink-0">::</span>}
+                    {/* N3 (G1): 条件存在 —— presence 角标（title 显判定式，
+                        缺省位 `?` 对应 fail-open 的不完整配置，与面板/校验同语义） */}
+                    {presenceChip && (
+                        <span
+                            data-presence-chip
+                            title={`条件字段：[${presenceCfg.ref_id ?? '?'}] == ${presenceCfg.expect ?? '?'}`}
+                            className="text-[9px] leading-none px-1 border border-nier-light/70 text-nier-light font-bold shrink-0"
+                        >
+                            IF
+                        </span>
+                    )}
                     {/* 验证反馈批次：校验标色角标 —— title 悬停显全量消息（与面板清单同文） */}
                     {issue && (
                         <span

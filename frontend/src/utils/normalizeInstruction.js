@@ -46,6 +46,24 @@ export const normalizeFieldPayload = (field, fallbackSequence = 0) => {
     if (bitMeta) parameter_config.bit_meta = bitMeta;
     else delete parameter_config.bit_meta;
 
+    // N3 (G1): presence 白名单清洗 —— 仅接受对象，保留 {ref_id（归一字符串）,
+    // expect} 两键（残键如拾取中间态剔除）；非对象（字符串/数组/null/数值）
+    // 删键。不完整配置原样保留（fail-open 编码 + W PRESENCE_INCOMPLETE 提醒
+    // 核对）；无 presence 的存量负载零变化（删不存在的键 = 幂等无操作）。
+    if (parameter_config.presence !== undefined) {
+        const pres = parameter_config.presence;
+        if (pres && typeof pres === 'object' && !Array.isArray(pres)) {
+            const clean = {};
+            if (pres.ref_id !== undefined && pres.ref_id !== null && String(pres.ref_id) !== '') {
+                clean.ref_id = String(pres.ref_id);
+            }
+            if (pres.expect !== undefined && pres.expect !== null) clean.expect = pres.expect;
+            parameter_config.presence = clean;
+        } else {
+            delete parameter_config.presence;
+        }
+    }
+
     return {
         id: field.id,
         parent_id: field.parent_id || null,

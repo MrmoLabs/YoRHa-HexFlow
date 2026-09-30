@@ -108,6 +108,9 @@ export const InstructionEncoder = {
      * `now`（epoch ms）仅 TIME_ACCUMULATOR 消费，其余路径忽略。
      */
     _encodeFieldBytes: function (field, inputs, computedValues, allFields, now) {
+        // N3 (G1): presence 未命中 → 0 字节（组整棵子树；叶被 checksum refs
+        // 引用时以 0 字节进校验）。
+        if (!this._presenceHit(field, inputs, computedValues, allFields)) return [];
         const params = field.parameter_config || {};
         // R1: byte_len（指令扁平字段）|| byte_length（协议节点/合并块），皆缺或
         // 0 → 1 —— E1-3 既有 `byte_len || 1` 归一保持（指令字段无 byte_length
@@ -372,14 +375,7 @@ export const InstructionEncoder = {
             return Math.max(0, Math.floor(c));
         }
         if (rt === 'DYNAMIC') {
-            const refId = field.repeat_ref_id;
-            let v;
-            if (computedValues && computedValues[refId] !== undefined) v = computedValues[refId];
-            else if (inputs && inputs[refId] !== undefined) v = inputs[refId];
-            else {
-                const refField = (allFields || []).find(f => f.id === refId);
-                v = refField && refField.parameter_config ? refField.parameter_config.value : undefined;
-            }
+            const v = this._refValue(field.repeat_ref_id, inputs, computedValues, allFields);
             let n = 0;
             if (typeof v === 'number') {
                 const fl = Math.floor(v);
@@ -391,6 +387,39 @@ export const InstructionEncoder = {
             return Math.max(0, n);
         }
         return 1;
+    },
+
+    /**
+     * N3 (G1): 值链取值 —— computedValues > inputs > 静态 parameter_config.value。
+     * _repeatCount(DYNAMIC) 与 presence 判定共用（抽公共 helper，改一必改二；
+     * BE 静态链仅最后一段 pc.value，inputs/computed 覆盖为 FE-only 运行期行为）。
+     */
+    _refValue: function (refId, inputs, computedValues, allFields) {
+        if (computedValues && computedValues[refId] !== undefined) return computedValues[refId];
+        if (inputs && inputs[refId] !== undefined) return inputs[refId];
+        const refField = (allFields || []).find(f => f.id === refId);
+        return refField && refField.parameter_config ? refField.parameter_config.value : undefined;
+    },
+
+    /**
+     * N3 (G1): presence 条件存在判定 —— true=命中（照发）、false=未命中（0 字节）。
+     * - 比较 String(refVal) === String(expect) 归一（数值 1 命中 '1'，不 trim）；
+     * - fail-open → true：presence 非对象 / 缺 ref_id / 缺 expect（undefined/
+     *   null/''）/ 值链不可解析（ref 悬空或无静态值且运行输入也没有）——
+     *   半成品配置不吞字节，防数据丢失优于严格过滤（W PRESENCE_INCOMPLETE /
+     *   PRESENCE_REF_MISSING 提醒核对）。
+     * - 层级：presence 先于 repeat 展开（emitNode 入口），组未命中整棵子树
+     *   0 字节；命中组内子字段各自独立判（父命中不豁免子）。
+     * 与 backend datahub._presence_hit byte-equal（改一必改二）。
+     */
+    _presenceHit: function (field, inputs, computedValues, allFields) {
+        const pres = field.parameter_config ? field.parameter_config.presence : undefined;
+        if (!pres || typeof pres !== 'object' || Array.isArray(pres)) return true;
+        if (pres.ref_id === undefined || pres.ref_id === null || pres.ref_id === '') return true;
+        if (pres.expect === undefined || pres.expect === null || pres.expect === '') return true;
+        const refVal = this._refValue(pres.ref_id, inputs, computedValues, allFields);
+        if (refVal === undefined || refVal === null) return true; // fail-open：不可解析
+        return String(refVal) === String(pres.expect);
     },
 
     parseHexBytes: function (hexStr) {
@@ -426,6 +455,12 @@ export const InstructionEncoder = {
             // 已知 0；slot 占位归零（对齐 LengthHandler:29 / ChecksumHandler:27
             // 排除 slot 的发射口径，编码期 fieldSizes 即 0）。
             if (field.fields?.length > 0 || field.children?.length > 0) return;
+            // N3 (G1): presence 未命中 → 尺寸 0（slot=0 先例；判定先于 repeat，
+            // 命中组内子字段在各自解析中独立判 —— 父命中不豁免子）。
+            if (!this._presenceHit(field, inputs, computedValues, allFieldsMap)) {
+                fieldSizes[field.id] = 0;
+                return;
+            }
             if (field.type === 'container') { fieldSizes[field.id] = 0; return; }
             if (field.type === 'slot') { fieldSizes[field.id] = 0; return; }
 
@@ -455,6 +490,13 @@ export const InstructionEncoder = {
         // 0.2 Group Sizes (Recursive Function)
         const getOrCalcSize = (item) => {
             if (fieldSizes[item.id] !== undefined) return fieldSizes[item.id];
+
+            // N3 (G1): presence 未命中的组 → 尺寸 0（整棵子树不计，判定先于
+            // repeat 展开）；命中组内子字段在 0.1/嵌套 getOrCalcSize 独立判。
+            if (!this._presenceHit(item, inputs, computedValues, allFieldsMap)) {
+                fieldSizes[item.id] = 0;
+                return 0;
+            }
 
             // R1: children 树组与 fields 组同权（0.1 只跳过非空组，落此必非空）。
             const kids = (item.fields?.length > 0) ? item.fields : item.children;
@@ -610,6 +652,9 @@ export const InstructionEncoder = {
 
         const emitNode = (field, copies) => {
             if (copies <= 0) return;
+            // N3 (G1): presence 判定先于 repeat 展开（组未命中连 ×N 都不展开，
+            // 整棵子树 0 字节；命中组内子字段在各自 emitNode 独立判）。
+            if (!this._presenceHit(field, inputs, computedValues, allFields)) return;
             const kids = childrenOf(field);
             if (kids) {
                 // Group: own repeat multiplies how many full child copies follow.

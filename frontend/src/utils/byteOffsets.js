@@ -14,11 +14,23 @@
 // (exact=false → UI renders the "+" suffix).
 //
 // Fixed vs variable: `variable=true` when the frame contains DYNAMIC repeat
-// (repeat_ref_id), value-driven sizes (computedValue fallback), or any unknown
-// size — the UI then labels the header VAR (with "~" while still computable);
-// otherwise it labels FIXED. Sizes always mirror the encoder's real output
-// (E1-5: FIXED repeats expand N copies — a DYNAMIC repeat's count only exists
-// at run time, so its group degrades to an unknown size instead of lying).
+// (repeat_ref_id), value-driven sizes (computedValue fallback), any unknown
+// size, or a complete presence gate — the UI then labels the header VAR (with
+// "~" while still computable); otherwise it labels FIXED. Sizes always mirror
+// the encoder's real output (E1-5: FIXED repeats expand N copies — a DYNAMIC
+// repeat's count only exists at run time, so its group degrades to an unknown
+// size instead of lying).
+//
+// Presence gating (N3 / G1): a field with parameter_config.presence may be
+// omitted at run time. The static preview judges it by pc.value (the static
+// chain of DYNAMIC repeat's resolve): miss → 0B and the gate fires BEFORE the
+// repeat expansion (a missed FIXED×3 group is 0, not Σ×3; a DYNAMIC one is 0,
+// not "??"); ref present but without a static value → unknown ("??", sizes
+// always mirror the encoder, which decides at run time); incomplete config or
+// a dangling ref → fail-open (the encoder always emits → no gate, normal
+// size). A missed group zeroes its whole subtree (its children emit nothing),
+// and any complete gate makes the frame VAR (emission follows the run-time
+// value of the ref field).
 
 const bySequence = (a, b) => (a.sequence ?? 0) - (b.sequence ?? 0);
 
@@ -37,6 +49,28 @@ const hexByteCount = (cv) => {
     return clean.length % 2 === 0 ? clean.length / 2 : null;
 };
 
+/**
+ * N3 (G1): 设计期 presence 静态判定（computeByteOffsets 与 useInstructionLanes 共用）。
+ * 返回：
+ *   null      —— 无门：未配置 / 配置不完整（fail-open）/ ref 悬空（编码恒发射）；
+ *   'hit'/'miss' —— 按静态值链 pc.value 判出（DYNAMIC repeat 静态 resolve 同链，
+ *                   String 归一比较）；
+ *   'unknown' —— ref 在场但无静态值（运行输入才决定 → 尺寸落 ??）。
+ * @param {object} field 字段/组
+ * @param {Map} fieldsById id → field 查表（缺失即悬空）
+ */
+export function presenceStaticState(field, fieldsById) {
+    const pres = field?.parameter_config?.presence;
+    if (!pres || typeof pres !== 'object' || Array.isArray(pres)) return null;
+    if (pres.ref_id === undefined || pres.ref_id === null || pres.ref_id === '') return null;
+    if (pres.expect === undefined || pres.expect === null || pres.expect === '') return null;
+    const ref = fieldsById?.get ? fieldsById.get(pres.ref_id) : null;
+    if (!ref) return null; // 悬空 ref → 编码 fail-open 恒发射 → 无门
+    const refVal = ref.parameter_config ? ref.parameter_config.value : undefined;
+    if (refVal === undefined || refVal === null) return 'unknown'; // 运行输入才有
+    return String(refVal) === String(pres.expect) ? 'hit' : 'miss';
+}
+
 export function computeByteOffsets(instruction) {
     const fields = Array.isArray(instruction?.fields) ? instruction.fields : [];
 
@@ -52,12 +86,38 @@ export function computeByteOffsets(instruction) {
     });
     kidsOf.forEach((list) => list.sort(bySequence));
 
+    // N3 (G1): presence 查表 + 父链（组未命中 → 整棵子树 0）。
+    const fieldsById = new Map(fields.map((f) => [f.id, f]));
+    const parentOf = new Map();
+    fields.forEach((f) => {
+        if (f.parent_id != null && fieldsById.has(f.parent_id)) parentOf.set(f.id, fieldsById.get(f.parent_id));
+    });
+
     // Size resolution (memoized; cache-seed guards against parent cycles).
     const sizeCache = new Map();
     let dynamicSized = false; // any leaf sized from value-driven computedValue
+    let presenceGated = false; // any complete presence gate → emission follows run-time ref value
+    const ancestorMissed = (f) => {
+        let p = parentOf.get(f.id);
+        let guard = 0;
+        while (p && guard++ < 1000) {
+            if (presenceStaticState(p, fieldsById) === 'miss') { presenceGated = true; return true; }
+            p = parentOf.get(p.id);
+        }
+        return false;
+    };
     const resolveSize = (f) => {
         if (sizeCache.has(f.id)) return sizeCache.get(f.id);
         sizeCache.set(f.id, null);
+        // N3 (G1): 祖先 presence 静态未命中 → 子树 0（组未命中整棵子树不发射）。
+        if (ancestorMissed(f)) { sizeCache.set(f.id, 0); return 0; }
+        // N3 (G1): 自身 presence 静态预判 —— 未命中 → 0（判定先于 repeat：组连
+        // ×N 都不展开，DYNAMIC 也不落 ??）；静态判不了 → null（??）；
+        // 命中/无门 → 走原尺寸链。
+        const pState = presenceStaticState(f, fieldsById);
+        if (pState !== null) presenceGated = true; // 完整门 → 发射随运行值变 → VAR
+        if (pState === 'miss') { sizeCache.set(f.id, 0); return 0; }
+        if (pState === 'unknown') { sizeCache.set(f.id, null); return null; }
         const kids = kidsOf.get(f.id) || [];
         let size;
         if (kids.length > 0 || isGroupOp(f)) {
@@ -135,10 +195,12 @@ export function computeByteOffsets(instruction) {
 
     // Fixed vs variable: a frame is FIXED only when every byte is statically
     // known. DYNAMIC repeat (count dictated by another field), value-driven
-    // sizes (computedValue), or any unknown size make it VAR. Note the value
-    // shown is always the encoder-aligned one (E1-5: FIXED repeats expand ×N;
-    // a DYNAMIC count only exists at run time and degrades to unknown).
-    const variable = hasUnknown || dynamicSized || dynamicRepeat;
+    // sizes (computedValue), any unknown size, or a complete presence gate
+    // (emission decided by the ref field's run-time value) make it VAR. Note
+    // the value shown is always the encoder-aligned one (E1-5: FIXED repeats
+    // expand ×N; a DYNAMIC count only exists at run time and degrades to
+    // unknown).
+    const variable = hasUnknown || dynamicSized || dynamicRepeat || presenceGated;
 
     return { byId, total, exact: !hasUnknown, variable };
 }

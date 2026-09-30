@@ -169,6 +169,61 @@ export default function BlockPropertiesPanel({
         });
     };
 
+    // ── N3 (G1): 条件存在 (PRESENCE) —— 单 ref 拾取 + expect + 清除 ────────
+    const presenceCfg = tempBlockConfig?.parameter_config?.presence;
+    const presencePicking = pickingMode?.isActive && pickingMode?.fieldKey === 'presence_ref';
+
+    // presence 合并写入：cur 被 mutate 后，ref 与 expect 双空 → 摘键
+    // （半成品配置保留：fail-open 编码 + W PRESENCE_INCOMPLETE 提醒核对）。
+    const applyPresence = (mutate) => {
+        setTempBlockConfig(prev => {
+            if (!prev) return null;
+            const pc = { ...prev.parameter_config };
+            const cur = (pc.presence && typeof pc.presence === 'object' && !Array.isArray(pc.presence))
+                ? { ...pc.presence } : {};
+            mutate(cur);
+            const noRef = cur.ref_id === undefined || cur.ref_id === null || String(cur.ref_id) === '';
+            const noExpect = cur.expect === undefined || cur.expect === null || String(cur.expect) === '';
+            if (noRef && noExpect) delete pc.presence;
+            else pc.presence = cur;
+            return { ...prev, parameter_config: pc };
+        });
+    };
+
+    const handleTempPresenceUpdate = (updates) => applyPresence(cur => Object.assign(cur, updates));
+
+    const handleStartPresencePicking = () => {
+        const curRef = presenceCfg && typeof presenceCfg === 'object' ? presenceCfg.ref_id : null;
+        setPickingMode({
+            isActive: true,
+            fieldKey: 'presence_ref',
+            currentRefs: curRef ? [curRef] : [],
+            onUpdateRefs: (newRefs) => {
+                // 单值语义：追加列表的最后一项成为唯一 ref（空 = 摘除）——
+                // handlePickBlock 的 toggle 追加语义在此归一为单 ref。
+                const chosen = Array.isArray(newRefs) && newRefs.length > 0
+                    ? newRefs[newRefs.length - 1] : null;
+                applyPresence(cur => {
+                    if (chosen) cur.ref_id = chosen;
+                    else delete cur.ref_id;
+                });
+                // 单 ref 不变量：currentRefs 收敛为 [chosen]（防第二块残留）
+                setPickingMode(prev => (prev && prev.fieldKey === 'presence_ref'
+                    ? { ...prev, currentRefs: chosen ? [chosen] : [] } : prev));
+            }
+        });
+    };
+
+    const handleClearPresence = () => {
+        setTempBlockConfig(prev => {
+            if (!prev) return null;
+            const pc = { ...prev.parameter_config };
+            delete pc.presence;
+            return { ...prev, parameter_config: pc };
+        });
+        if (presencePicking) handleStopPicking();
+    };
+
     const handleApply = () => {
         if (!tempBlockConfig) return;
         const opTemplate = operatorTemplates[tempBlockConfig.op_code];
@@ -531,6 +586,51 @@ export default function BlockPropertiesPanel({
                             )}
                         </div>
                     )}
+
+                    {/* N3 (G1): 条件存在 (PRESENCE) —— 尾部独立区：ref 拾取 +
+                        expect 文本 + 清除（编码 fail-open，两支卡片都可编辑） */}
+                    <div className="p-3 border border-dashed border-nier-light/50 space-y-3" data-testid="presence-section">
+                        <div className="text-[9px] opacity-100 font-bold text-nier-light flex items-center gap-2">
+                            条件存在 (PRESENCE)
+                        </div>
+                        <div className="text-[9px] opacity-60 leading-relaxed" data-testid="presence-summary">
+                            {(presenceCfg && typeof presenceCfg === 'object' && !Array.isArray(presenceCfg) && presenceCfg.ref_id)
+                                ? <>仅当 <span className="font-mono">[{String(presenceCfg.ref_id)}]</span> == <span className="font-mono">{presenceCfg.expect !== undefined && presenceCfg.expect !== null ? String(presenceCfg.expect) : '?'}</span> 时发射本块（含子树）</>
+                                : '未配置 → 始终发射（fail-open：不完整配置同样发射）'}
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px]">条件字段 (REF)</label>
+                            <button
+                                type="button"
+                                data-testid="presence-pick"
+                                onClick={presencePicking ? handleStopPicking : handleStartPresencePicking}
+                                className={`text-[9px] py-1 px-2 border transition-colors ${presencePicking
+                                    ? 'bg-[#E58D28] text-black border-[#E58D28]'
+                                    : 'border-nier-light/50 text-nier-light hover:bg-nier-light hover:text-black'}`}
+                            >
+                                {presencePicking ? '停止拾取 (STOP)' : '拾取条件字段 (PICK)'}
+                            </button>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[9px]">期望值 (EXPECT)</label>
+                            <input
+                                type="text"
+                                data-testid="presence-expect"
+                                value={presenceCfg && presenceCfg.expect !== undefined && presenceCfg.expect !== null ? String(presenceCfg.expect) : ''}
+                                onChange={e => handleTempPresenceUpdate({ expect: e.target.value })}
+                                placeholder="命中时发射（如 1 / A）"
+                                className="bg-transparent border-b border-white/30 text-xs"
+                            />
+                        </div>
+                        <button
+                            type="button"
+                            data-testid="presence-clear"
+                            onClick={handleClearPresence}
+                            className="w-full border border-red-500/40 text-red-500/90 hover:bg-red-500 hover:text-black py-1 text-[9px] uppercase tracking-widest transition-colors"
+                        >
+                            清除条件 (CLEAR)
+                        </button>
+                    </div>
 
                     <div className="pt-4 border-t border-nier-light/20 flex flex-col gap-3">
                         <button onClick={handleApply} className="w-full bg-nier-light/20 border border-nier-light text-nier-light hover:bg-nier-light hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors font-bold">
