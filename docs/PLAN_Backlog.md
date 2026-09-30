@@ -1424,6 +1424,22 @@
      字符串归一、fail-open、presence+repeat 先后序、未命中字段被 checksum
      refs 引用（0 字节进校验）、BE byte-equal 静态向量、校验 4 码、IF chip、
      面板配置往返；三验收场景（可选字段 / TLV count+分支 / 按值路由）。
+- **验收（2026-09-30）**：红→绿 1 轮（7 个新增测试层文件 = FE 6 + BE 1，
+  初红 FE 48 例 / BE 10 用例，零误伤旧测）；全量 FE **812/812（55 文件）**
+  EXIT=0（基线 728 + 84）、BE **342/342** OK EXIT=0（基线 332 + 10）、
+  `vite build` EXIT=0、yorha-ui 校验器触 13 文件 0 违规、
+  `generate-page-status.mjs` EXIT=0、schema **SCHEMA_IDENTICAL**（28 对象，
+  presence 纯 JSON 骑乘零 DDL 实证）。
+- 状态：**✅ 真机验证通过（2026-09-30）→ 第 9 单已提交 `8e9612f`**。
+  真机结论：面板 PRESENCE 区渲染 / 拾取单 ref 归一 / expect 联动 / APPLY → IF
+  角标（title 判定式）/ CLEAR 摘键复原 / 保存 JSON 落库 + **整页刷新重开往返
+  一致**；静态三态实测 —— 命中 `1B`（`~10B VAR`）、未命中 `0B`（`~9B VAR`，
+  门完整 → VAR 且字节数可算）、ref 无静态值 → `??B` + 下游偏移 `··` + LEN
+  低界 `27B+`（unknown 态）；fail-open 半成品 → 角标 `[?] == expect` + ⚠
+  PRESENCE_INCOMPLETE 提醒且不吞字节。**数据面提醒**：存量 34 字段**零
+  `pc.value`**（HEX_RAW 只写 `pc.hex`，STRING 的 value 输入是唯一 UI 入口）
+  → 存量数据 presence 静态链恒落 unknown（??/VAR/低界+）；要静态 0B 门需
+  ref 字段带 `pc.value`（运行期 inputs 仍可翻转，fail-open → 命中）。
 
 **N4 帧字节转义批（G3——立题，开工前需层位设计）**
 - 现状：`orchestrator.py` `ESCAPING LOGIC (Placeholder)` 空占位；编码链无转义点。
@@ -1443,14 +1459,16 @@ CHECKSUM_CRC 3 / ARRAY_GROUP 2 / TIME_ACCUMULATOR·INT_SIGNED·AUTO_COUNTER 各 
 无存量 type=string 字段、presence 零行**；白名单取 KNOWN_OPS 全集不锁死任何
 历史数据 → 策略（保存侧拒绝 vs 警告）可随时拍板插队）、组帧族（已立 §8.14）。
 
-- 状态：**排期已落档；六单 + N1/N2 全部实现、真机验证通过并分单提交
+- 状态：**排期已落档；六单 + N1/N2/N3 全部实现、真机验证通过并分单提交
   （2026-09-30）**——批1-4 = `23ad28e`/`327ac8c`/`f8dcf64`/`e6a31a4`、
   第 5 单优化批 = `3668d37`、第 6 单标色 = `3ff0f69`；N1 红→绿 2 轮（FE
   700/700 + BE 322/322）+ 3 文档 = 第 7 单 `7d50484`；N2 红→绿 2 轮（FE
   **728/728**（49 文件，基线 700 + 28）/ BE **332/332**（基线 322 + 10））=
-  第 8 单 `848e248`。终态复验：build EXIT=0、校验器触达 0 违规、pageStatus
+  第 8 单 `848e248`；N3 红→绿 1 轮（FE **812/812**（55 文件，基线 728 + 84）
+  / BE **342/342**（基线 332 + 10），7 新测试文件）+ 真机验证通过 = 第 9 单
+  `8e9612f`。终态复验：build EXIT=0、校验器触达 0 违规、pageStatus
   EXIT=0、schema SCHEMA_IDENTICAL（28 对象零 DDL）→
-  **N3 细化设计已落档（见 N3 段），已可开工（第 9 单）**；BE 白名单摸底完成
+  **N4 转义层位设计、N5 对齐模型待拍板**；BE 白名单摸底完成
   （挂账行），策略待拍板。**
 
 ## 9. 保留勿动（非任务，勿清理）
