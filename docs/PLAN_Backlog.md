@@ -1118,6 +1118,333 @@
 - 状态：**2026-09-29 人工验证通过（四条 + 三轮反馈修复），一单提交 ✅
   `c4e3480`（排除 yorha.db，零 DDL）。**
 
+### 8.13 位编辑 + 十进制录入（批 1-4：字段级 dec 通道 / 位图可视化 / 加工侧子位 / 协议位域块）
+
+> 诉求：项目指令/协议码定义与配置全程面向 HEX，但（a）时常需要位级编辑的指令
+> 定义；（b）指令加工时常需录入十进制（最终指令码仍是十六进制）。经四问确认
+> 拆四批：①字段级 dec 配置 ②指令侧位图可视化 ③加工侧子位录入 ④协议结构化
+> 位域（重方案，涉后端）。
+
+- **批 1（纯 FE）字段级十进制录入**：定义侧 `BlockPropertiesPanel` 参数区顶部
+  固定行「录入进制 (INPUT BASE) HEX | DEC」→ 存 `parameter_config.input_base`
+  （缺省 `hex`，`isDecimalEntry` 大小写不敏感、非法值回退 hex）；加工页
+  `resolveFieldDisplay` 分支 4 按此切十进制通道（十进制原值不补零、
+  `computeFieldInputLimits` 数值域照用但**不回吐** hex `maxLength`、
+  `[nB]` 徽标）；HEX_RAW/BITFIELD 打包值不渲染该行。**不变量：值存储恒数值 →
+  `InstructionEncoder`/后端零改动**（十进制只是 UI 解析/回显层皮肤）。
+- **批 2（纯 FE）位域布局可视化**：新纯函数层 `utils/bitGrid.js`
+  （`buildBitGrid`/`rangeToSegment`/`defaultSegmentName`/`packBits`）——
+  位网格 byte×8、**bit0 在右 = LSB 存储口径**、段按序稳定配色、位号→多占用
+  标 `conflictBits`、`byteCount = max(byte_len, 所需字节)`（溢出位段照常渲染，
+  免得看不见）；`BitFieldEditor` 加位图主视图：空闲格点两下即生成位段
+  （方向无关、同格 = 1 位）、点色块 = 选中该段并与表格行双向联动，表格保留
+  精确数值编辑；打包预览改走 `packBits`（与 `packBitfieldDefault` 镜像
+  测试「改一必改二」）。
+- **批 3（纯 FE）加工侧 BITFIELD 按子位录入（两者并存）**：新
+  `BitSegmentInputs.jsx` —— 整包 hex/dec 输入保留，其下按 `bits[]` 展开子位行
+  （位名 + 十进制输入 + `[b3..b0]` 注记 + `data-bit-max` 上限）。**单一真源 =
+  `inputs[field.id]`**：子位行是派生视图（`unpackBits`），改子位经
+  `writeBitSegment` **只重写本段位**（间隙位/无主位与其它段原样保留）后回写
+  单整数；无输入态逐段回显 `default_val`；拆包/回写走「除模·乘幂」算术而非
+  JS 32 位位运算（>32 位段不被截断，有专测）。**encoder 分支零改动**。
+- **批 4（FE + BE）协议结构化位域块**（用户选定的重方案）：新块型
+  `bitfield`（`blockTypes.js` SSOT 扩展：palette 卡 + `fields: [length, bits]`，
+  `createBlock` 预置 `bits: []`）；属性面板按 `inputType='bits'` 专用分支复用
+  `BitFieldEditor`（同 refs 分流约定）；`toFrameBlocks` 出口把位段搬进
+  `config.params.bits`（脏位段剔除，镜像后端过滤）；`Block.jsx` 卡面显示
+  **打包后的真实字节**（`packBits`）而非 `hex_value`；协议 JSON 导入白名单
+  补 `sanitizeBits`（不丢位段、不给存量块凭空注入空数组）。
+  后端：`ProtocolNodeSchema.bits`（复用指令侧 `BitFieldSchema`；**不补则 pydantic
+  静默丢弃、刷新即失**）→ `routers.protocol._validate_bits` 落库前拦
+  **位域重叠/超容量 400**（镜像 `instruction._validate_bitfields`）→
+  `frame_builder._build_bitfield_config` 只透传、**打包收敛到 `Orchestrator`
+  发射期单点**（新 `handlers/bitfield.py`，`pack_protocol_bits`；封装
+  `/compile/wrapped` 与导出 `/export/binary` 两路共用同一实现）→
+  `BlockType.BITFIELD` 补枚举。语义：**静态默认值打包、发送期不可改值**；
+  不含解码回程（后端 encode-only，无 bytes→fields 解析器，范围外另立批）。
+- **测试（红→绿，四轮）**：批 1 红 **10** → 绿；批 2 红 **9**（`bitGrid` 模块
+  缺失 + 位图交互）→ 绿；批 3 红 **5**（组件缺失 + 页面 4 例）+ 1 处
+  「跨 32 位段」真实缺陷（我实现的 `unpackBits` 起点 32 场景断言错→修正
+  测试向量为 5 字节字段 `0x2200000011`）→ 绿；批 4 后端红 **15**（模块缺失）
+  + 前端红 **10**（blockTypes/toFrameBlocks/validateProtocol 断言）→ 绿。
+  新增 **68 测**：前端 52（bitGrid 16 / BitFieldEditor 8 / BitSegmentInputs 6 /
+  blockTypes 6 / toFrameBlocks 4 / validateProtocol 5 / protocolTree 3 /
+  runnerRenderRules 4 / BlockPropertiesPanel 4 / SmartInput 3 / InstructionProcessor
+  集成 4）+ 后端 19（`test_protocol_bitfield.py`：schema 3 / 入库校验 6 /
+  编码 6 / 端到端 4）。
+- **验收**：FE **648/648（46 文件）** EXIT=0（基线 580 + 68）、后端 **315/315**
+  OK（基线 296 + 19）、`vite build` EXIT=0、yorha-ui 校验器触 8 文件
+  **0 违规**、`generate-page-status.mjs` EXIT=0、schema 与 HEAD 比对
+  **SCHEMA_IDENTICAL**（28 对象 —— 位段存 children JSON 列，**零 DDL**，
+  `yorha.db` 按规不提交）。**回归硬指标**：存量 wrap 共享向量
+  （`FA FA 02 01 02 ED`）与无 wrap 裸发路径逐字节不变（`test_wrap_api` 既有
+  用例 + 新增裸发断言）。
+- 状态：**待人工验证 → 一批一提交（四批可拆四单或合并一单，由用户定）。**
+
+### 8.14 调研后优化（优化批：BIN 三态进制 + 前缀识别 / 位段值表 / 有符号位段 / 位号标尺）
+
+> 前置：§8.13 四批实施后按用户指令调研市面口径（DBC/CANdb++ 信号与值表、
+> Wireshark/010 进制惯例、LSb0/MSb0 位号标注、CRC 五元组与串口组帧目录），
+> 差距表经用户拍板取 1-4 四项一起做（CRC CCITT/CRC32/LRC、长度域 BE/LE、
+> varint/COBS、解码回程暂缓另立批）。**不推翻四批设计**（LSb0 位图/单一真源/
+> 单点打包与行业吻合）。
+
+- **优化 1（纯 FE）三态进制 + 进制前缀识别**：`BlockPropertiesPanel` 录入进制
+  HEX|DEC → **+BIN** 三态（`input_base='bin'`，非法值仍回退 hex）；
+  `resolveFieldDisplay` 新增 binary 通道（位模式定宽回显、placeholder 按位宽），
+  `computeFieldInputLimits` bin 给 `maxLength = byteLen×8`、**无数值域**（位模式
+  语义，数值域交给 dec 通道），`SmartInput` 新增 `type='binary'`（[01] 过滤 →
+  按位宽截断 → 二进制解析发**数值**、徽标 `n/N BITS`、无定长 `[BINARY]`）。
+  前缀容忍：hex 通道剥 `0x/0X` 归一纯 hex（`'0x'` 进行中保留缓冲不发半截值、
+  定长截断不被前缀挤占）；dec 通道 `Number()` 原生吃 `0x/0b`（红测锁定）；
+  bin 通道支持 `0b` 输入糖。**不变量：三通道值存储恒数值 → encoder/后端零改动**。
+- **优化 2（FE + BE schema 透传）位段值表（DBC VAL_ 对齐）**：新共享纯函数层
+  `utils/bitMeta.js`（`sanitizeValueTable`/`parseValueTable`/`formatValueTable`，
+  编辑格式 `0=关,1:开`，`:` 与中文逗号兼容，脏值清洗：非数组丢弃、非对象/NaN
+  value 项过滤）；`BitFieldEditor` 表格加「值表 (VAL_TABLE)」列，位图格 title、
+  默认值 title 回显名称解码（`MODE = 1 (开) · bit0`）；`BitSegmentInputs` 值表
+  位段渲染下拉（label+值 双显，当前值不在表内追加原值选项不留空），选择回传
+  打包整数只动本段；协议侧 `BitFieldSchema.value_table`
+  （`Optional[List[{value,label}]]`）Pydantic 透传走 children JSON **零 DDL**，
+  `protocolTree.sanitizeBits` 导入白名单保留并清洗（无 meta 不注入键）。
+- **优化 3（FE + BE schema 透传）有符号位段（DBC signed 对齐）**：
+  `normalizeBits` 携带 `signed`（非 true 一律 false）；`unpackBits` 两补码解读
+  （0xD8→-40、4 位 0x0C→-4，default 超有符号域按位模式解读 216→-40），
+  `clampBitValue(v, len, signed)` 两补码域 `[-2^(n-1), 2^(n-1)-1]`、
+  `writeBitSegment` 负值先钳域再转位模式（邻段/间隙位保留）；
+  `BitFieldEditor` 行内 U/S 开关 + signed 行默认值放开负域（min/max 两补码域），
+  `BitSegmentInputs` signed 行负值回显与钳制。**打包口径零改动**：FE
+  `raw & mask`、BE `pack_protocol_bits` 均天然两补码（负 default 向量
+  `-40 → D8` 双端锁定），signed 只影响拆包/钳制/UI。
+- **优化 4（纯 FE）位号标尺**：`BitFieldEditor` 网格顶部 `7..0` 列头
+  （LSb0 口径、先于字节行渲染，绝对位号 = 行号×8 + 列位号，免得自己数位）。
+- **零 DDL 存储（优化 2/3 的指令侧）**：bit_fields 表无 JSON 列 → 元数据骑
+  `parameter_config.bit_meta = { [bitId]: {signed?, value_table?} }`。
+  **拆分点** `normalizeFieldPayload`（保存 `saveChanges` 与导入 `analyzeImport`
+  共用，按 bits **重建**覆盖陈旧 meta、无 meta 删键 → 存量负载逐字段不变）；
+  **合并点** `useInstructionData.instructions` memo 读时按 bit id 幂等合并
+  —— **位段自身键优先**（bits 是编辑真源，陈旧 pc.meta 不得覆盖用户改动）。
+  协议侧 bits 在 children JSON，直接挂在位段键上（上优化 2/3 的 Pydantic 透传）。
+- **测试（红→绿一轮）**：红测 FE **22** 失败 + bitGrid 套件因 `bitMeta.js`
+  缺失整体红、BE **3** 失败（负 default 打包为绿锁）。转绿过程修正三处红测
+  自身问题：SmartInput 切片语义 `slice(0, n)`（我误写 `slice(n)`）、两个受控
+  组件测试改 harness（React 受控回灌使同值 change 不触发 onChange）、合并方向
+  改「位段自身键优先」（原 meta 优先会覆盖编辑）。新增 **39 测**：前端 **35**
+  （normalizeInstruction 8 / bitGrid 7 / SmartInput 5 / BitFieldEditor 5 /
+  runnerRenderRules 4 / BitSegmentInputs 3 / useInstructionData 2 /
+  protocolTree 1）+ 后端 4（`test_protocol_bitfield.py` 元数据 3 + E2E 往返 1）。
+  另改批 1 两处既有断言：`input_base='bin'` 从「非法回退 hex」升为真实通道
+  （示例值改 `oct`，非法回退语义不变）。
+- **验收**：FE **683/683（47 文件）** EXIT=0（基线 648 + 35）、后端 **319/319**
+  OK（基线 315 + 4）、`vite build` EXIT=0、yorha-ui 校验器触 4 文件 **0 违规**、
+  `generate-page-status.mjs` EXIT=0、schema **SCHEMA_IDENTICAL**（28 对象，
+  零 DDL）→ 无 db 提交。存量 wrap 向量（`FA FA 02 01 02 ED`）与裸发路径
+  byte-equal 不变。
+- 状态：**待人工验证 → 作为第 5 单（与批 1-4 分开）提交。**
+
+### 8.15 验证反馈：校验标色（属性面板提醒 → 画布卡片颜色）
+
+> 起因：用户在批 1-4/优化批人工验证中提出——属性配置右侧已有 ⛔/⚠ 提醒清单，
+> 但画布上对应的卡没有任何颜色，无法一眼定位问题块。经两问确认：视觉强度 =
+> **边框变色 + 角标**（错误红 / 提醒琥珀，与面板同色系），范围 = **协议定义页 +
+> 指令定义页**（共享 Canvas/Block，两页各传一次；蓝图/编排页不传、零变化）。
+
+- **纯函数** `utils/issueBadges.js`：`buildIssueMap({errors, warnings})` →
+  `Map<blockId, {level, messages}>`——errors/warnings 均带 blockId（两校验器
+  全量核实）；同卡**错误优先**（level 只升不降）、messages 全量聚合（角标
+  title 悬停直读，与面板清单同文）；无 blockId 条目跳过（页面级问题无卡可标）；
+  null/空清单 → 空 Map。
+- **透传链**：页面 `validation`/`validationIssues` memo（随编辑实时重算）→
+  `Canvas` 新可选 prop `validationIssues` → 内部 `useMemo(buildIssueMap)` →
+  渲染处 `issue={issueMap.get(item.id) || null}`；DragOverlay 拖拽镜像不带
+  （拖拽态已有专属视觉）。
+- **卡片视觉（Block 新 prop `issue`）**：非选中态内联 `borderColor`
+  （错误 `#D94834` / 提醒 `#E58D28`，内联优先于主题类——避开 Tailwind 同属性
+  类序不确定）；header 右侧出 ⛔/⚠ 角标芯片（`data-issue-chip`，title = 消息
+  聚合，`bg` 纯色 + 黑字，无圆角）；**选中态让位**：保 3px 亮边（内联色不注入），
+  角标不丢；拾取态同让位。角标计入内容宽度地板（+26px，与标签/页脚同口径）。
+- **测试（红→绿）**：红测 3 文件——`issueBadges.test.js`（6 测：分级映射/
+  错误优先升级/消息聚合/无 blockId 跳过/空输入）、`Block.test.jsx` +4（红边+角标、
+  琥珀+⚠、选中让位保角标、无 issue 零痕迹）、`Canvas.test.jsx`（3 测：按
+  blockId 映射到对应卡、不传零变化、prop 驱动实时点亮）。转绿 **+13 测**。
+- **顺带（用户拍板「收紧过闸」）**：本批触碰 `Canvas.jsx` 触发校验器抓到既有债
+  2 条（`NO_SOFT_SAAS_PADDING`：嵌套泳道 `pl-8`、画布留白 `p-10`，非本批引入），
+  按方案收紧 `pl-8 → pl-3`、`p-10 → p-3`——嵌套组缩进与画布留白变紧，触达
+  文件恢复 0 违规；布局变化随本批一并人工验证。
+- **验收**：FE **696/696（49 文件）** EXIT=0（基线 683 + 13）、后端 **319/319**
+  OK（本批纯 FE，零后端改动）、`vite build` EXIT=0、yorha-ui 校验器触 4 文件
+  0 违规、`generate-page-status.mjs` EXIT=0、schema **SCHEMA_IDENTICAL**
+  （28 对象，零 DDL）→ 无 db 提交。
+- 状态：**待人工验证 → 作为第 6 单（独立于批 1-4 与优化批）提交。**
+
+### 8.16 业务场景全集排期（G1–G7 新缺口 → N1–N5 批次）
+
+> 起因：用户指出逐点发现（提一个查一个）不可持续，要求按「指令编制」业务
+> 全集一次盘满。盘查结论落档 **`docs/BUSINESS_SCENARIOS.md`**（四层能力矩阵 +
+> 缺口 G1–G7 + 挂账清单），本节是其排期执行面。已立暂缓项（CRC 多算法 /
+> 长度域 BE/LE / varint·COBS / 解码回程，§8.14）与已知范围外（float64，E1-4
+> 口径）不重复排。
+>
+> **提交序与并行边界**：
+> - 先按 §8.13–8.15 完成六单（批 1-4 四单 + 优化批 + 标色批）人工验证与提交；
+> - **N1 与六单零文件重叠**（`operator.py` / `validateInstruction.js` 均未被六单
+>   触碰）→ N1 可与六单人工验证**并行开发**，不破坏 hunk 分离；
+> - N2 基本零重叠（设计上避开 SmartInput 即可）；**N3 与六单共享
+>   `normalizeInstruction.js` / `BlockPropertiesPanel.jsx` → 必须等六单提交后开工**；
+> - 本节文档 + BUSINESS_SCENARIOS.md 随 **N1 一并作为第 7 单提交**（不混入六单）。
+
+**N1 护栏批（G5/G6/G7——小批，先行）**
+- 范围 a（G7 摘陷阱）：`validateInstruction` 新增 W `FLOAT64_UNSUPPORTED`——
+  `op=FLOAT_IEEE && byte_len===8` → 提醒「float64 编码未支持（E1-4 范围外），
+  当前 FE 按整数路径输出、BE 保持 zeros（两端不一致）——请改 32 位或 HEX_RAW」。
+  模板 `bits:[32,64]` **不动**（`Instruction.jsx:243-251` 只取首元素作默认，
+  32 本就是默认；真正陷阱入口是手改 byte_len，校验才是正解）。
+- 范围 b（G5 护栏）：`validateInstruction` 新增 W `OP_UNKNOWN`——`op_code` 不在
+  已知全集（`OP_CODES` 14 项 ∪ encoder legacy `INPUT/FIXED/HEADER/TAIL/CALCULATED`）
+  → 提醒「未知算子，编码将落默认整数路径静默出错」。BE 保存侧白名单**挂账**
+  （须先摸存量 op 全集，避免锁死历史数据）。
+- 范围 c（G6 定性）：`STRUCT` 正式定为**存量兼容口径、不补创建模板**
+  （`ARRAY_GROUP + repeat=NONE` 已覆盖纯结构组语义，补模板=制造真重复）；
+  本条为文档定性零代码，若后续业务确认需要独立入口再改一行 SEED。
+- 红测先行：FE `validateInstruction.test.js`（+FLOAT64 W / +OP_UNKNOWN W /
+  已知 op 不误报）；BE 新增 `backend/tests/test_operator_templates.py`
+  断言 `SEED_TEMPLATES` 结构与 FLOAT bits 默认口径（锁 SEED 不回摆）。
+- 验收：§0 统一口径（FE/BE 全量 EXIT=0、`vite build`、校验器 0 违规、
+  pageStatus 生成、schema 零 DDL、既有编码向量 byte-equal 不变）。
+- 状态：**红→绿完成（FE 700/700 · BE 322/322，2026-09-30）→ 待人工验证，
+  随 3 文档一并作为第 7 单提交。**
+
+**N2 字符串批（G2——入口 + 定长 + 字符集三件套）**
+- a 入口：SEED_TEMPLATES 新增 `STRING`（BASE 分类，`param_template:
+  {"value": "string", "encoding": ["ascii","utf8"], "pad_char": "00"}`——value
+  走 keyword 文本输入、encoding 走数组下拉、pad_char 推断为 string 文本）+
+  调色板自动出按钮；`OP_CODES`/`OP_PRIORITY` 加 STRING（`KNOWN_OPS` 经
+  `Object.values(OP_CODES)` 自动跟随）；`Instruction.jsx` 创建特判：`byte_len=8`、
+  `pc.type='string'`（keyword 会被创建逻辑吞掉必须特判，显示/编码链都认它）、
+  `pc.encoding` 数组规范化为标量 `'ascii'`（A1 数组污染先例）。
+- b 定长口径：编码期按 `byte_len` **定长 pad/截断**——`raw byte_len > 0` 才施加
+  定长（链尾 `||1` 归一不适用本分支；缺失 = 契约外，FE 变长原样 / BE 不进分支
+  各自现状锚，W1 BYTE_LEN_MISSING 已提醒）；pad 字节 = `parseInt(pad_char, 16)`，
+  非法/缺省回退 `0x00`；存量 `params.type='string'` 行为变化（变长 → 定长）红测
+  锁定。
+- c 字符集：`ascii` 模式按 **code point** 迭代 `& 0xFF`（与 Python `ord()`
+  byte-equal，代理对单字节口径；>0xFF 脏字节由校验 W 提醒改 utf8）；`utf8`
+  模式 `TextEncoder` ↔ `bytes(s, 'utf-8')`。
+- d 双端镜像：BE `orchestrator.encode_string`（E1 函数群同区）+
+  `datahub.to_block` elif 分支（`op=STRING` 或规范 `type=string`，`byte_len>0`），
+  与 FE `getFieldBytes` string 分支 byte-equal（双向量表锚定：ascii pad/截断、
+  utf8、代理对、pad_char=20）；runner 显示走既有 `pc.type='string'` 通道零改动。
+- 卡面：`Block.jsx` `displayValue` 新增 STRING/`type=string` 文本分支（显示
+  `pc.value ?? pc.default`，空值显空白），替代落 `??` 占位。
+- **文件面（修正）**：与六单共享 `Instruction.jsx`/`Block.jsx`/`orchestrator.py`
+  （各自不同函数区域，提交时按 hunk 分离）、与 N1 共享 `validateInstruction.js`
+  （N1 的 KNOWN_OPS/W4/W5 hunk 随第 7 单、N2 的 STRING W hunk 随第 8 单）；
+  `ParamConfigForm`/`runnerRenderRules`/`SmartInput` 零触碰。
+- 校验：W `STRING_NON_ASCII`（静态值含 >0xFF 且 encoding≠utf8）。
+- **红测（先行）**：FE `InstructionEncoder.test.js` +17（13 向量 + op 缺 pc.type
+  + byte_len 缺失变长 + INPUT 存量定长 + getInitialValues 初始值 + LENGTH_CALC
+  定长尺寸；E1-4 矛盾 type=string 断言按定长口径更新为 '312E3500'——行为变化
+  锁定）、`validateInstruction.test.js` +5（W6 提醒 / utf8 不报 / ≤0xFF 不报 /
+  INPUT default 同口径 / STRING 不误报 OP_UNKNOWN）、`Instruction.test.jsx` +1
+  （创建特判四键）、`Block.test.jsx` +4（卡面原文 / default 原文 / 无值 ?? 锁 /
+  空串空白）；BE `test_encode_string.py` 新 13（13 行向量与 FE 逐行同步 + 函数级
+  pad/变长 + to_block 6 集成）、`test_operator_templates.py` +1（SEED 在席）。
+  初红 FE 25 + BE 2（导入错/缺模板），零误伤旧测。
+- **实现落点**：FE `constants.js`（OP_CODES/OP_PRIORITY 加 STRING）、
+  `InstructionEncoder.js`（string 分支定长重写 + getInitialValues STRING 初始
+  值 = pc.value + fieldSizes 定长化——LENGTH_CALC 引用不再按字符数少算）、
+  `validateInstruction.js`（W6）、`Instruction.jsx`（创建特判 byte_len=8 /
+  pc.type / encoding 归一）、`Block.jsx`（displayValue 文本分支，带 hex 者回落
+  现状）；BE `orchestrator.encode_string`（孤立代理项手工替 U+FFFD——注意
+  Python `errors='replace'` **编码**侧产出的是 `?` 非 FFFD）、`datahub.to_block`
+  elif 分支（`STRING ∪ (INPUT ∧ type=string)`，`byte_len>0` 闸；数值 op 矛盾
+  配置不进支、E1 zeros 契约不变）、`operator.py` SEED。
+- **验收（2026-09-30）**：FE **728/728（49 文件）** EXIT=0（基线 700 + 28）、
+  BE **332/332** OK EXIT=0（基线 322 + 10）、`vite build` EXIT=0、yorha-ui
+  校验器触 4 文件 0 违规、`generate-page-status.mjs` EXIT=0（指令页 availableNow
+  +N2 条目）、schema **SCHEMA_IDENTICAL**（28 对象零 DDL）。
+- 状态：**全量绿 → 待人工验证，作为第 8 单提交**（`validateInstruction.js`
+  按 hunk 与 N1 分离：N1 的 KNOWN_OPS/W4/W5 随第 7 单、N2 的 W6 随第 8 单；
+  `Instruction.jsx`/`Block.jsx`/`orchestrator.py` 与六单同文件分 hunk）。
+
+**N3 分支族批（G1——方案 B：组级 presence，本排期重头）**
+- 前置：**六单提交完成**（共享文件 hunk 分离）+ N1/N2 落地。
+- 模型（零 DDL）：字段/组 `parameter_config.presence = { ref_id, expect }`——
+  编码期 `ref` 实值 `== expect` 才发射本字段/组，否则跳过（两支并列建模：
+  `cmd=A` 组与 `cmd=B` 组同时在指令里，按值只发命中支）。复用三先例：
+  DYNAMIC repeat 的值驱动链路、bit_meta 的 `parameter_config` JSON 骑乘、
+  refs 拾取的面板交互。
+- 编码：`InstructionEncoder.resolveDependencies` PASS 前置扫 presence →
+  未命中字段归零长（尺寸口径对齐 slot=0 先例）；BE `datahub.to_block` 同款
+  过滤（byte-equal）。
+- 显示：lanes/画布两组都渲染 + 条件角标（`presence` chip）；byteOffsets 动态
+  尺寸复用 DYNAMIC repeat 的「未知落 ??」口径。
+- 校验：W `PRESENCE_REF_MISSING`（ref 指向不存在字段）、W `PRESENCE_OVERLAP`
+  （同 ref 同 expect 的多支并存提醒）、E `PRESENCE_SELF`（自引用）。
+- 测试点：红测先行（编码命中/未命中字节、双端镜像、ref 解析、显示标注）；
+  覆盖「可选字段」「TLV count+分支」「按值路由设计期表达」三个验收场景。
+- 范围外（本批不做）：运行期按值自动选指令（多指令路由）、条件表达式
+  （公式引擎 `?:`）、union 同字节重解释。
+- **细化设计（2026-09-30 落档，开工时按此执行）**：
+  1. **判定链（编码期）**：取值复用 `_repeatCount` DYNAMIC 同链
+     `computed[ref_id] ?? inputs[ref_id] ?? pc.value`，抽公共 helper；
+     比较口径 = `String(refVal) === String(expect)` 归一（数值 1 命中 `'1'`）；
+     **fail-open**：`presence` 配置不完整（缺 ref_id / 缺 expect / 非对象）
+     → 视为命中（半成品配置不吞字节，防数据丢失优于严格过滤）。
+  2. **层级与顺序**：presence 判定 **先于** repeat 展开（组未命中连 repeat
+     都不展开）；组未命中 → 整棵子树 0 字节；命中组内子字段**各自独立**判
+     presence（嵌套递归，父命中不豁免子）；字段级与组级同权，未命中 = 尺寸 0
+     （slot=0 先例）。BE 同序（`to_block` 开头判定，未命中返回
+     `byte_length=0 + children=[]`，子树不进 flatten）。
+  3. **设计期显示**：两支卡片**都渲染**（可编辑），按静态值链
+     （pc.value，同 DYNAMIC repeat 静态 resolve 先例）预判尺寸：未命中 →
+     0B/空容器口径；ref 是运行输入静态判不了 → 尺寸落 `??`（「未知落 ??」
+     先例）；header 加 `IF` 条件 chip（title：`条件字段：[ref] == expect`，
+     Block 自读 pc.presence 零 prop 传递）。
+  4. **面板**：BlockPropertiesPanel 尾部独立区「条件存在 (PRESENCE)」——
+     ref 拾取（复用 refs pickingMode 交互）+ expect 文本输入 + 清除。
+  5. **校验**：E `PRESENCE_SELF`、W `PRESENCE_REF_MISSING`（悬空）、
+     W `PRESENCE_INCOMPLETE`（fail-open 配置提醒核对）、W `PRESENCE_OVERLAP`
+     （同 ref 同 expect 多支）——`validateInstruction.js` 第 4 层 hunk（第 9 单）。
+  6. **文件面**：FE `InstructionEncoder.js`（前置扫 + fieldSizes 0）、
+     `validateInstruction.js`（4 码）、`normalizeInstruction.js`（presence 清洗）、
+     `BlockPropertiesPanel.jsx`（面板区）、`Block.jsx`（IF chip，与六单 issue
+     chip 同 header 区 hunk 分离）、`byteOffsets.js`/`useInstructionLanes.js`
+     （静态尺寸口径，两文件当前干净）；BE `datahub.py`（to_block 判定，
+     与 N2 STRING elif 分 hunk）、`orchestrator.py` 尽量零触碰。
+     **测试文件全为 N3 新增层**：encoder/validate/normalize/BlockProperties
+     Panel/Block 测试 + BE `test_encode_presence.py`。
+  7. **红测矩阵**：编码命中/未命中、组子树跳过、嵌套独立、expect 数值
+     字符串归一、fail-open、presence+repeat 先后序、未命中字段被 checksum
+     refs 引用（0 字节进校验）、BE byte-equal 静态向量、校验 4 码、IF chip、
+     面板配置往返；三验收场景（可选字段 / TLV count+分支 / 按值路由）。
+
+**N4 帧字节转义批（G3——立题，开工前需层位设计）**
+- 现状：`orchestrator.py` `ESCAPING LOGIC (Placeholder)` 空占位；编码链无转义点。
+- 前置设计题（开工前拍板）：转义层位（应用层字段后转义 vs 传输层组帧前转义）、
+  转义表可配置（0x7D 型字头 / 0x10 型前缀 / STX-ETX 框）、双端范围、
+  与 wrap（`FA FA…ED`）及暂缓组帧族（varint/COBS）的边界。
+
+**N5 填充 / 对齐批（G4——立题）**
+- 现状：只能 HEX_RAW 手工算 pad；候选模型：字段级 `align`（到 N 字节边界）
+  或组尾自动 pad；与 byte_len=0 语义、lanes 尺寸、后端发射的交互需设计。
+
+**挂账**（不排期，见 `BUSINESS_SCENARIOS.md` 挂账清单）：epoch 模板、加扰、
+切换 op、BE op 白名单拒绝策略（**已摸底 2026-09-30**：只读查 `instruction_fields`
+31 行，op 全集 = HEX_RAW 9 / LENGTH_CALC 5 / INT_UNSIGNED 5 / MAPPING 4 /
+CHECKSUM_CRC 3 / ARRAY_GROUP 2 / TIME_ACCUMULATOR·INT_SIGNED·AUTO_COUNTER 各 1
+——**9 种全部 ∈ KNOWN_OPS，无 legacy op（INPUT/FIXED/… 0 行）、无未知 op、
+无存量 type=string 字段、presence 零行**；白名单取 KNOWN_OPS 全集不锁死任何
+历史数据 → 策略（保存侧拒绝 vs 警告）可随时拍板插队）、组帧族（已立 §8.14）。
+
+- 状态：**排期已落档；N1/N2 实现完成、全量验收绿（2026-09-30）**——N1 红→绿
+  2 轮（FE 700/700 + BE 322/322），N2 红→绿 2 轮（FE **728/728**（49 文件，
+  基线 700 + 28）/ BE **332/332**（基线 322 + 10））、build EXIT=0、校验器触达
+  0 违规、pageStatus EXIT=0、schema SCHEMA_IDENTICAL（28 对象零 DDL）→
+  **文档 + N1 随第 7 单、N2 随第 8 单提交（六单之后）**；N3 细化设计已落档
+  （见 N3 段），待六单提交后开工（第 9 单）；BE 白名单摸底完成（挂账行），
+  策略待拍板。**
+
 ## 9. 保留勿动（非任务，勿清理）
 
 - `backend/core/processor.py` / `graph.py` 未接线（Phase-2 遗留，保留勿删，

@@ -452,6 +452,91 @@
       三轮反馈回归测）、后端 **296/296**、build EXIT=0、校验器触 9 文件
       0 违规、PAGE_STATUS EXIT=0、schema SCHEMA_IDENTICAL（28 对象，零 DDL）
       → 无 db 提交。✅ 2026-09-29 人工验证通过，一单提交 `c4e3480`。
+24. **位编辑 + 十进制录入（批 1-4）**（2026-09-30 口述 + 四问确认后实施，
+    全部红→绿，明细见 `docs/PLAN_Backlog.md` §8.13）：
+    - **批 1 字段级十进制录入**（纯 FE）：属性面板参数区顶部固定行
+      「录入进制 (INPUT BASE) HEX|DEC」存 `parameter_config.input_base`（缺省
+      hex，`isDecimalEntry` 大小写不敏感/非法回退）；加工页定长整数字段切
+      十进制通道（十进制原值、数值域钳制、`[nB]` 徽标，`maxLength` 不回吐）；
+      **值存储恒数值 → encoder/后端零改动**。
+    - **批 2 位图可视化**（纯 FE）：新 `utils/bitGrid.js` 纯函数层（位网格
+      byte×8、bit0 在右 = LSB、冲突标红、溢出段照常渲染、`packBits` 与编码器
+      镜像锁定）；`BitFieldEditor` 加位图主视图（点两格设段、点色块选段、
+      表格↔位图双向联动），表格保留精确数值编辑。
+    - **批 3 加工侧子位录入**（纯 FE，两者并存）：新 `BitSegmentInputs.jsx`，
+      整包输入下方按 `bits[]` 展开子位行；**单一真源 = 字段整数**，改子位经
+      `writeBitSegment` 只重写本段（间隙位保留）、整包改则子位重算；算术拆包
+      避开 JS 32 位截断。
+    - **批 4 协议结构化位域**（FE+BE，重方案）：新块型 `bitfield`（palette +
+      面板复用 BitFieldEditor + `toFrameBlocks` 位段透传 + 卡面显打包字节 +
+      导入白名单补 bits）；后端 `ProtocolNodeSchema.bits`（不补则 pydantic
+      静默丢弃）、`_validate_bits` 落库拦重叠/超容量 400、打包收敛到
+      `Orchestrator` 发射期单点（新 `handlers/bitfield.py`，两路共用）、
+      `BlockType.BITFIELD`。语义：静态默认值打包、发送期不可改值；不含解码
+      回程（后端 encode-only）。
+    - 验收：前端 **648/648（46 文件）**（基线 580 + 68）、后端 **315/315**
+      （基线 296 + 19）、build EXIT=0、校验器触 8 文件 0 违规、PAGE_STATUS
+      EXIT=0、schema **SCHEMA_IDENTICAL**（28 对象 —— 位段存 children JSON
+      列，零 DDL）→ 无 db 提交。存量 wrap 共享向量与裸发路径逐字节不变。
+      **待人工验证 → 一批一提交（可拆四单或合并一单）。**
+
+25. **调研后优化（优化批，批 1-4 的增量）**（2026-09-30 市场调研差距表经用户
+    拍板取 1-4 四项，红→绿，明细见 `docs/PLAN_Backlog.md` §8.14）：
+    - **BIN 三态进制 + 前缀识别**（纯 FE）：录入进制 HEX|DEC|BIN 三态；加工页
+      二进制位模式通道（定宽回显、n/N BITS 徽标、无数值域）；hex 容 0x/0X
+      归一纯 hex、dec 容 0x/0b（Number 原生，红测锁定）、bin 容 0b 输入糖；
+      值存储恒数值 → encoder/后端零改动。
+    - **位段值表（DBC VAL_）**：新 `utils/bitMeta.js`（脏值清洗 +
+      `0=关,1:开` 解析/回显）；位图表格值表列 + 格 title/默认值 title 名称
+      回显；子位行值表下拉（选择仍回传打包整数、只动本段）；协议侧
+      `BitFieldSchema.value_table` Pydantic 透传（children JSON 零 DDL）、
+      协议导入白名单保留并清洗。
+    - **有符号位段（DBC signed）**：`normalizeBits/unpackBits/clampBitValue/
+      writeBitSegment` 两补码语义（拆包负值、域钳制、回写转位模式且邻段保留）；
+      位图 U/S 开关 + signed 行默认值负域、子位行负值回显。**打包口径零改动**
+      （raw&mask 两补码天然覆盖，负 default 向量 `-40→D8` 双端锁）。
+    - **位号标尺**：位图顶部 `7..0` 列头（LSb0 口径，先于字节行）。
+    - **零 DDL 存储**：指令侧元数据骑 `parameter_config.bit_meta` ——
+      `normalizeFieldPayload` 单点按 bits 重建拆分（保存/导入共用）+
+      `instructions` memo 读时按位段 id 幂等合并（**位段自身键优先**，
+      陈旧 pc.meta 不覆盖用户改动）。
+    - 验收：前端 **683/683（47 文件）**（基线 648 + 35）、后端 **319/319**
+      （基线 315 + 4）、build EXIT=0、校验器触 4 文件 0 违规、PAGE_STATUS
+      EXIT=0、schema **SCHEMA_IDENTICAL**（28 对象，零 DDL）→ 无 db 提交。
+      存量 wrap 向量与裸发路径 byte-equal 不变。
+      **待人工验证 → 作为第 5 单（与批 1-4 分开）提交。**
+
+26. **验证反馈：校验标色**（2026-09-30 批 1-4/优化批人工验证中提出，红→绿，
+    明细见 `docs/PLAN_Backlog.md` §8.15）：属性面板的 ⛔/⚠ 提醒清单同步点亮
+    画布对应卡 —— 新纯函数 `utils/issueBadges.js`（清单 → `Map<blockId,
+    {level, messages}>`，错误优先、消息聚合）→ `Canvas` 新 prop
+    `validationIssues` → `Block` 新 prop `issue`：非选中态内联边框色（错误
+    红 `#D94834` / 提醒琥珀 `#E58D28`，与面板同色系）+ header ⛔/⚠ 角标
+    （`data-issue-chip`，title 悬停显全量消息）；选中/拾取态保既有边框、角标
+    不丢；角标计入内容宽度地板。协议定义页 + 指令定义页接线（随编辑实时重算），
+    蓝图/编排页不传零变化。**顺带（拍板「收紧过闸」）**：校验器抓到 Canvas 既有
+    2 条 `NO_SOFT_SAAS_PADDING`（`pl-8` 嵌套缩进 / `p-10` 画布留白，非本批引入），
+    收紧为 `pl-3`/`p-3`（布局变化随本批验证）。验收：前端 **696/696（49 文件）**（基线 683 + 13）、
+    后端 **319/319**（纯 FE 零后端改动）、build EXIT=0、校验器触 4 文件 0 违规、
+    PAGE_STATUS EXIT=0、schema **SCHEMA_IDENTICAL**（零 DDL）→ 无 db 提交。
+    **待人工验证 → 作为第 6 单提交。**
+27. **业务场景全集排期（G1–G7 → N1–N5）**（2026-09-30 用户要求「按指令编制
+    业务全集一次盘满，而非提一个查一个」，盘查落档 `docs/BUSINESS_SCENARIOS.md`、
+    排期见 `docs/PLAN_Backlog.md` §8.16）：四层能力矩阵（值表达 / 结构组织 /
+    字节位布局 / 运行加工 + 护栏）对照出 7 个此前未记录的缺口 —— **G1 条件
+    分支/变体族**（真业务阻断，方案 B：组级 `presence`，N3 重头）、**G2 字符串
+    三连**（无入口 / 不定长 / 非 ASCII 脏字节，N2）、**G3 帧字节转义**（后端
+    仅空 placeholder，N4 立题）、**G4 填充对齐**（N5 立题）、**G5 未知 op 静默
+    错码**（N1 FE 提醒先行，BE 白名单挂账）、**G6 STRUCT 无创建入口**（N1 定性
+    存量兼容）、**G7 float64 陷阱**（N1 校验摘陷阱）。已立暂缓（§8.14 四项）与
+    已知范围外（E1-4 float64）不重复排。**N1 与六单零文件重叠可并行开发；N3
+    与六单共享文件必须等六单提交**。文档 + N1 随第 7 单提交，不混入六单。
+    **进度（2026-09-30）**：N1 红→绿完成（FE 700/700 · BE 322/322）→ 第 7 单；
+    N2 字符串批红→绿完成（红测 FE +28/BE +10，全量 FE **728/728** · BE
+    **332/332**、build 0、校验器触 4 文件 0 违规、pageStatus EXIT=0、schema
+    零 DDL；`STRING` 模板 + 定长 pad/截断 + ascii/utf8 + W6 + 双端 byte-equal
+    向量锚定）→ 第 8 单（`validateInstruction.js` 按 hunk 与 N1 分离）；
+    N3 等六单提交后开工。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

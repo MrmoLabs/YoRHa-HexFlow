@@ -199,3 +199,50 @@ describe('validateInstruction — LENGTH_CALC refs without formula (W3)', () => 
         expect(warnings.some((x) => x.code === 'LENGTH_NO_FORMULA')).toBe(false);
     });
 });
+
+// N1 护栏批（PLAN §8.16 · G5/G7）：未知算子静默错码 + float64 可配出陷阱。
+describe('validateInstruction N1 护栏（G5 未知算子 / G7 float64）', () => {
+    it('W G7: FLOAT_IEEE byte_len=8 提醒 float64 未支持（FE/BE 口径不一致）', () => {
+        const { errors, warnings } = validateInstruction(inst([
+            blk({ op_code: 'FLOAT_IEEE', byte_len: 8, parameter_config: {} }),
+        ]));
+        expect(errors).toEqual([]);
+        const w = warnings.find((x) => x.code === 'FLOAT64_UNSUPPORTED');
+        expect(w).toBeTruthy();
+        expect(w.blockId).toBe('f1');
+        expect(w.message).toMatch(/32/);
+    });
+
+    it('W G7: FLOAT_IEEE 32 位（byte_len=4）不报', () => {
+        const { warnings } = validateInstruction(inst([
+            blk({ op_code: 'FLOAT_IEEE', byte_len: 4, parameter_config: {} }),
+        ]));
+        expect(warnings.some((x) => x.code === 'FLOAT64_UNSUPPORTED')).toBe(false);
+    });
+
+    it('W G5: 未知 op_code 提醒（编码将落默认整数路径静默出错）', () => {
+        const { errors, warnings } = validateInstruction(inst([
+            blk({ op_code: 'WEIRD_OP', parameter_config: {} }),
+        ]));
+        expect(errors).toEqual([]);
+        const w = warnings.find((x) => x.code === 'OP_UNKNOWN');
+        expect(w).toBeTruthy();
+        expect(w.blockId).toBe('f1');
+        expect(w.message).toMatch(/WEIRD_OP/);
+    });
+
+    it('W G5: 已知全集（OP_CODES 14 + encoder legacy 5）不误报', () => {
+        const known = [
+            'HEX_RAW', 'INT_UNSIGNED', 'INT_SIGNED', 'FLOAT_IEEE', 'SCALED_DECIMAL',
+            'BCD_CODE', 'BITFIELD', 'MAPPING', 'ARRAY_GROUP', 'STRUCT',
+            'LENGTH_CALC', 'CHECKSUM_CRC', 'TIME_ACCUMULATOR', 'AUTO_COUNTER',
+            'INPUT', 'FIXED', 'HEADER', 'TAIL', 'CALCULATED',
+        ];
+        const { warnings } = validateInstruction(inst(
+            known.map((op, i) => blk({
+                id: `k${i}`, name: `K${i}`, op_code: op, sequence: i, parameter_config: {},
+            })),
+        ));
+        expect(warnings.some((x) => x.code === 'OP_UNKNOWN')).toBe(false);
+    });
+});

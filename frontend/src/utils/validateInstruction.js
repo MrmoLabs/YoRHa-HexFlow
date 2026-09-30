@@ -9,6 +9,16 @@
 // When in doubt, make it a warning.
 
 import { getBlockLimitRefs, ENCODER_LIMITS } from './encoderLimits';
+import { OP_CODES } from '../constants';
+
+// N1 护栏批（PLAN §8.16 · G5）：编码器已知算子全集 = OP_CODES 14 项 +
+// encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/CALCULATED——encoder 各分支
+// 仍认识、存量数据可能携带）。全集外的 op_code 落 getFieldBytes 默认整数
+// 路径静默出错 → 提醒不阻断（warnings 语义）。
+const KNOWN_OPS = new Set([
+    ...Object.values(OP_CODES),
+    'INPUT', 'FIXED', 'HEADER', 'TAIL', 'CALCULATED',
+]);
 
 const normalizeHex = (h) => String(h || '').replace(/\s/g, '');
 const refList = (r) => (r === undefined || r === null ? [] : (Array.isArray(r) ? r : [r]));
@@ -121,6 +131,25 @@ export function validateInstruction(instruction) {
         if (f.op_code !== 'ARRAY_GROUP' && f.op_code !== 'STRUCT'
             && (f.byte_len === undefined || f.byte_len === null)) {
             warnings.push({ blockId: f.id, code: 'BYTE_LEN_MISSING', message: `「${label || f.id}」字节长度未设置` });
+        }
+
+        // --- W4 (G7): float64 配出即静默错码（E1-4 范围外）——FE 落整数路径、
+        // BE 保持 zeros，两端不一致；模板默认 32，陷阱入口是手改 byte_len=8。 ---
+        if (f.op_code === 'FLOAT_IEEE' && Number(f.byte_len) === 8) {
+            warnings.push({
+                blockId: f.id,
+                code: 'FLOAT64_UNSUPPORTED',
+                message: `「${label || f.id}」float64 编码未支持（E1-4 范围外）：前端按整数路径输出、后端保持 zeros（两端不一致）——请改 32 位或 HEX_RAW`,
+            });
+        }
+
+        // --- W5 (G5): 未知算子——编码落默认整数路径静默出错，提醒核对 ---
+        if (f.op_code && !KNOWN_OPS.has(String(f.op_code))) {
+            warnings.push({
+                blockId: f.id,
+                code: 'OP_UNKNOWN',
+                message: `「${label || f.id}」未知算子（${f.op_code}）：编码将按默认整数路径静默输出——请核对算子模板，避免下发错码`,
+            });
         }
 
         // --- E1: HEX_RAW value must match byte_len exactly ---
