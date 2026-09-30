@@ -64,3 +64,70 @@ describe('BitSegmentInputs（加工侧子位录入）', () => {
         expect(container.querySelector('[data-bit-seg]')).toBeNull();
     });
 });
+
+// 优化批 2/3（市场调研后 DBC 对齐）：值表位段 → 下拉（VAL_）、
+// 有符号位段 → 负值回显与两补码域钳制（signed flag）。
+const VT_BITS = [
+    {
+        id: 'a', bit_name: 'CMD', start_bit: 0, bit_len: 4, default_val: 1,
+        value_table: [{ value: 0, label: '查询' }, { value: 1, label: '设置' }]
+    },
+    { id: 'b', bit_name: 'EN', start_bit: 4, bit_len: 1, default_val: 0 }
+];
+
+describe('BitSegmentInputs 优化批 2/3：值表下拉与有符号子位', () => {
+    it('值表位段 → 下拉（label+值），选择只回写本段（邻段保留）', () => {
+        const onChange = vi.fn();
+        render(<BitSegmentInputs bits={VT_BITS} value={0x11} onChange={onChange} />);
+
+        const sel = row('CMD').querySelector('select');
+        expect(sel).toBeTruthy();
+        expect([...sel.options].map(o => o.textContent)).toEqual(['查询 (0)', '设置 (1)']);
+        expect(sel.value).toBe('1'); // 0x11 → CMD=1 → 设置
+
+        fireEvent.change(sel, { target: { value: '0' } });
+        expect(onChange).toHaveBeenCalledWith(0x10); // 只动低 4 位，EN 所在高段保留
+        // 无值表位段仍走数字输入
+        expect(row('EN').querySelector('input')).toBeTruthy();
+    });
+
+    it('当前值不在值表 → 追加原值选项（select 不留空）', () => {
+        render(<BitSegmentInputs bits={VT_BITS} value={0x05} onChange={vi.fn()} />);
+
+        const sel = row('CMD').querySelector('select');
+        expect(sel.value).toBe('5');
+        expect([...sel.options].map(o => o.textContent)).toContain('5');
+    });
+
+    it('signed 位段：负值回显与两补码域钳制（-200 → -128、999 → 127、-40 → 0xD8）', () => {
+        const temp = [{ id: 't', bit_name: 'TEMP', start_bit: 0, bit_len: 8, default_val: 0, signed: true }];
+        const changes = [];
+        // 受控 harness：整包值随写回更新（否则 React 受控回灌让同值 change 不触发）
+        const Harness = () => {
+            const [v, setV] = useState(0xD8);
+            return (
+                <BitSegmentInputs
+                    bits={temp}
+                    value={v}
+                    onChange={(nv) => { changes.push(nv); setV(nv); }}
+                />
+            );
+        };
+        render(<Harness />);
+
+        const input = row('TEMP').querySelector('input');
+        expect(input.value).toBe('-40'); // 0xD8 → 两补码 -40
+        expect(input.getAttribute('min')).toBe('-128');
+        expect(input.getAttribute('max')).toBe('127');
+
+        fireEvent.change(input, { target: { value: '-200' } });
+        expect(changes).toEqual([0x80]);
+        expect(input.value).toBe('-128'); // 双向同步：回显钳制后的值
+        fireEvent.change(input, { target: { value: '999' } });
+        expect(changes).toEqual([0x80, 0x7F]);
+        expect(input.value).toBe('127');
+        fireEvent.change(input, { target: { value: '-40' } });
+        expect(changes).toEqual([0x80, 0x7F, 0xD8]);
+        expect(input.value).toBe('-40');
+    });
+});

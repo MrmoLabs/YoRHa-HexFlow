@@ -38,6 +38,11 @@ export const packBitfieldDefault = (bits, byteLen) => {
 export const isDecimalEntry = (params = {}) =>
     String(params.input_base || '').toLowerCase() === 'dec';
 
+// 优化批 1（市场调研）：三态进制第三态 —— 二进制（位模式）录入/回显。
+// 与 dec 同族：只换 UI 解析/回显层，值存储恒数值 → encoder/后端口径不变。
+export const isBinaryEntry = (params = {}) =>
+    String(params.input_base || '').toLowerCase() === 'bin';
+
 // 十进制通道的显示值：数值原值（不补零）。BITFIELD 无输入态回退的是
 // packBitfieldDefault 的 hex 串 → 按 hex 解析回打包整数，与 hex 通道同值。
 const toDecimalValue = (v) => {
@@ -47,6 +52,17 @@ const toDecimalValue = (v) => {
     if (/^[0-9A-Fa-f]+$/.test(s)) return parseInt(s, 16);
     const n = Number(s);
     return Number.isFinite(n) ? n : undefined;
+};
+
+// 二进制通道的显示值：按位宽定宽位模式串（负数按字节宽两补码位模式；
+// 超宽取模）。BITFIELD 的 hex 串默认值经 toDecimalValue 同源转换。
+const toBinaryValue = (v, bitWidth) => {
+    const n = toDecimalValue(v);
+    if (n === undefined || !Number.isFinite(n)) return undefined;
+    const width = Math.max(1, Math.floor(bitWidth));
+    const modulus = Math.pow(2, width);
+    const u = ((Math.floor(n) % modulus) + modulus) % modulus;
+    return u.toString(2).padStart(width, '0');
 };
 
 // Field classification: which render lane a leaf field lands in.
@@ -182,6 +198,12 @@ export const resolveFieldDisplay = (field, { inputs = {}, computedValues = {} } 
                     inputType = 'decimal';
                     displayValue = toDecimalValue(rawValue);
                     placeholder = '0';
+                } else if (isBinaryEntry(params)) {
+                    // 优化批 1：二进制位模式回显（按位宽补零）。
+                    inputType = 'binary';
+                    const width = field.byte_len * 8;
+                    displayValue = toBinaryValue(rawValue, width);
+                    placeholder = '0'.repeat(width);
                 } else {
                     inputType = 'hex';
                     if (typeof currentVal === 'number') {
@@ -274,9 +296,16 @@ export const computeFieldInputLimits = (field = {}) => {
     }
 
     const out = { byteLen };
+    if (isBinaryEntry(params)) {
+        // 优化批 1：二进制通道 → maxLength = 位宽（二进制字符数上限）。
+        // 不回吐数值域：位模式语义（0..2^(8n)-1 由位宽天然蕴含；负数/
+        // 有符号域交给 dec 通道），也无 hex 字符数上限。
+        out.maxLength = byteLen * 8;
+    } else {
         // 批 1：十进制通道不回吐 hex 字符数上限（maxLength 只被 SmartInput 的 hex
         // 分支消费），数值域照用 —— 与 resolveFieldDisplay 同判据（isDecimalEntry）。
         if (!isDecimalEntry(params) && (!ptype || ptype === 'number' || ptype === 'hex')) out.maxLength = byteLen * 2;
         if (min !== null) { out.min = min; out.max = max; }
+    }
     return out;
 };

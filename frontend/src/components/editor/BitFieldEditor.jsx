@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { buildBitGrid, rangeToSegment, defaultSegmentName, packBits } from '../../utils/bitGrid';
+import { parseValueTable, formatValueTable, sanitizeValueTable } from '../../utils/bitMeta';
 
 /**
  * BITFIELD 位域布局编辑器
@@ -105,12 +106,27 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
                         {armedBit !== null ? `起点 bit${armedBit} → 选终点` : '点两格设段 / 点色块选段'}
                     </span>
                 </div>
+                {/* 优化批 4：位号标尺 —— 列头标 7..0（LSb0 口径；绝对位号 = B行号×8 + 本列位号） */}
+                <div className="flex items-center gap-1" data-bit-ruler="true">
+                    <span className="w-6 text-right" />
+                    {[7, 6, 5, 4, 3, 2, 1, 0].map(n => (
+                        <span key={n} data-bit-ruler-no={n} className="flex-1 text-center text-[8px] font-mono opacity-70">
+                            {n}
+                        </span>
+                    ))}
+                    <span className="w-6" />
+                </div>
                 {grid.bytes.map((row, r) => (
                     <div key={r} className="flex items-center gap-1" data-byte-row={r}>
                         <span className="text-[8px] opacity-40 font-mono w-6 text-right">B{r}</span>
                         {row.map(cell => {
                             const armed = armedBit !== null && Math.min(armedBit, cell.bitIndex) <= cell.bitIndex && cell.bitIndex <= Math.max(armedBit, cell.bitIndex);
                             const sel = cell.owner >= 0 && cell.owner === selectedIndex;
+                            // 优化批 2：占用格 title 带值表名称解码（MODE = 1 (开) · bit0）
+                            const seg = cell.owner >= 0 ? list[cell.owner] : null;
+                            const segVt = seg ? sanitizeValueTable(seg.value_table) : null;
+                            const segLabel = segVt ? (segVt.find(e => e.value === Number(seg.default_val)) || {}).label : undefined;
+                            const note = segLabel ? ` = ${seg.default_val} (${segLabel})` : '';
                             return (
                                 <div
                                     key={cell.bitIndex}
@@ -120,7 +136,7 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
                                     data-bit-arm={armed ? 'true' : null}
                                     onClick={() => handleCellClick(cell)}
                                     title={cell.owner >= 0
-                                        ? `${cell.name} · bit${cell.bitIndex}`
+                                        ? `${cell.name}${note} · bit${cell.bitIndex}`
                                         : `空闲 bit${cell.bitIndex} · 点击设段`}
                                     className={`flex-1 h-4 border cursor-pointer transition-colors ${cell.owner >= 0 ? '' : 'bg-nier-light/5 hover:bg-nier-light/20'} ${cell.conflict ? 'border-red-500 bg-red-500/30' : 'border-nier-light/30'} ${armed ? 'border-dashed border-nier-light/60' : ''} ${sel ? 'ring-1 ring-nier-light' : ''}`}
                                     style={cell.owner >= 0 ? { backgroundColor: cell.conflict ? undefined : `${cell.color}55` } : undefined}
@@ -132,11 +148,13 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
                 ))}
             </div>
 
-            <div className="grid grid-cols-[1fr_44px_36px_48px_16px] gap-1 text-[8px] opacity-50 uppercase tracking-widest px-0.5">
+            <div className="grid grid-cols-[1fr_44px_36px_48px_96px_18px_16px] gap-1 text-[8px] opacity-50 uppercase tracking-widest px-0.5">
                 <span>名称 (NAME)</span>
                 <span className="text-right">起始位</span>
                 <span className="text-right">位宽</span>
                 <span className="text-right">默认值</span>
+                <span>值表 (VAL_TABLE)</span>
+                <span className="text-center">U/S</span>
                 <span />
             </div>
 
@@ -144,14 +162,22 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
                 {list.map((b, idx) => {
                     const hasConflict = conflicts.has(b.id);
                     const len = Math.max(1, Number(b.bit_len) || 1);
-                    const maxVal = len >= 32 ? 4294967295 : (1 << len) - 1;
+                    // 优化批 3（DBC signed）：默认值域按两补码（S 行允许负值），
+                    // 无符号域不变（len>=32 → 4294967295）。
+                    const signed = b.signed === true;
+                    const maxVal = signed ? Math.pow(2, len - 1) - 1 : (len >= 32 ? 4294967295 : (1 << len) - 1);
+                    const minVal = signed ? -Math.pow(2, len - 1) : 0;
+                    // 优化批 2（DBC VAL_）：默认值 → 值表名称回显
+                    const vt = sanitizeValueTable(b.value_table);
+                    const vtHit = vt ? vt.find(e => e.value === Number(b.default_val)) : null;
+                    const vtLabel = vtHit ? vtHit.label : undefined;
                     return (
                         <div
                             key={b.id || idx}
                             data-bit-row={idx}
                             data-selected={selectedIndex === idx ? 'true' : 'false'}
                             onClick={() => setSelectedIndex(idx)}
-                            className={`grid grid-cols-[1fr_44px_36px_48px_16px] gap-1 items-center cursor-pointer ${hasConflict ? 'bg-red-500/20 border border-red-500/60 px-0.5' : ''} ${selectedIndex === idx ? 'border-l-2 border-nier-light pl-1' : ''}`}
+                            className={`grid grid-cols-[1fr_44px_36px_48px_96px_18px_16px] gap-1 items-center cursor-pointer ${hasConflict ? 'bg-red-500/20 border border-red-500/60 px-0.5' : ''} ${selectedIndex === idx ? 'border-l-2 border-nier-light pl-1' : ''}`}
                             title={hasConflict ? '位范围重叠 (BIT OVERLAP)' : undefined}
                         >
                             <input
@@ -178,16 +204,43 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
                             />
                             <input
                                 type="number"
-                                min="0"
+                                data-bit-default={idx}
+                                min={minVal}
                                 max={maxVal}
                                 value={b.default_val ?? 0}
                                 onChange={(e) => {
                                     const raw = parseInt(e.target.value, 10);
-                                    const v = isNaN(raw) ? 0 : Math.max(0, Math.min(maxVal, raw));
+                                    const v = isNaN(raw) ? minVal : Math.max(minVal, Math.min(maxVal, raw));
                                     update(idx, { default_val: v });
                                 }}
+                                title={vtLabel !== undefined ? `${b.default_val ?? 0} = ${vtLabel}` : '默认值'}
                                 className="bg-transparent border-b border-nier-light/30 text-[10px] font-mono text-nier-light text-right focus:border-nier-light focus:outline-none py-0.5"
                             />
+                            {/* 优化批 2：值表（DBC VAL_）单行文本 —— 0=关,1:开（':' 兼容） */}
+                            <input
+                                type="text"
+                                data-bit-vt={idx}
+                                placeholder="0=关,1:开"
+                                value={formatValueTable(b.value_table)}
+                                onChange={(e) => {
+                                    const table = parseValueTable(e.target.value);
+                                    update(idx, table ? { value_table: table } : { value_table: undefined });
+                                }}
+                                title="值表：0=关,1:开（把打包值解码成名称）"
+                                className="bg-transparent border-b border-nier-light/30 text-[9px] font-mono text-nier-light focus:border-nier-light focus:outline-none py-0.5"
+                            />
+                            {/* 优化批 3：有符号开关（U/S）—— 点击切 signed，位图/子位/回发同步 */}
+                            <button
+                                type="button"
+                                data-bit-signed={idx}
+                                onClick={() => update(idx, { signed: !signed })}
+                                title={signed ? '有符号位段（两补码）— 点击切回无符号' : '无符号位段 — 点击切为有符号'}
+                                className={`text-[8px] font-black leading-none px-0.5 py-1 border transition-colors ${signed
+                                    ? 'bg-nier-light text-black border-nier-light'
+                                    : 'border-nier-light/30 text-nier-light/60 hover:border-nier-light/70 hover:text-nier-light'}`}
+                            >
+                                {signed ? 'S' : 'U'}
+                            </button>
                             <button
                                 onClick={() => remove(idx)}
                                 className="text-red-500/50 hover:text-red-500 text-[10px] px-0.5"

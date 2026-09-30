@@ -411,3 +411,50 @@ describe('computeFieldInputLimits（定长字段输入限制，第 4 批 #4）',
         expect(computeFieldInputLimits(leaf({ byte_len: undefined }))).toBeNull();
     });
 });
+
+// 优化批 1（市场调研后优化）：input_base='bin' 第三态 —— 位模式回显。
+// 与 hex/dec 同口径：只换 UI 解析/回显层，值存储恒数值 → encoder/后端不变。
+describe('优化批 1：BIN 二进制通道（input_base=bin）', () => {
+    it('定长整数字段走二进制通道：位模式定宽回显 + inputType=binary', () => {
+        expect(resolveFieldDisplay(leaf({ parameter_config: { input_base: 'bin' } }), { inputs: { f1: 10 } }))
+            .toMatchObject({ displayValue: '00001010', inputType: 'binary', placeholder: '00000000' });
+        expect(resolveFieldDisplay(leaf({ byte_len: 2, parameter_config: { input_base: 'BIN' } }), { inputs: { f1: 0x0102 } }))
+            .toMatchObject({ displayValue: '0000000100000010', inputType: 'binary' });
+        // 无输入态：原值 undefined（不塞 0），placeholder 按位宽
+        expect(resolveFieldDisplay(leaf({ parameter_config: { input_base: 'bin' } }), {}))
+            .toMatchObject({ displayValue: undefined, inputType: 'binary', placeholder: '00000000' });
+    });
+
+    it('BITFIELD 无输入态：打包默认 hex 串 → 二进制位模式', () => {
+        const r = resolveFieldDisplay(leaf({
+            op_code: 'BITFIELD',
+            byte_len: 1,
+            parameter_config: { input_base: 'bin' },
+            bits: [{ start_bit: 0, bit_len: 4, default_val: 5 }, { start_bit: 4, bit_len: 4, default_val: 10 }]
+        }), {});
+        // 打包默认 0xA5 → 10100101
+        expect(r).toMatchObject({ displayValue: '10100101', inputType: 'binary' });
+    });
+
+    it('仅影响 hex 语义 type：string/text/float 通道原样透传', () => {
+        const binOf = (t) => leaf({ byte_len: 1, parameter_config: { type: t, input_base: 'bin' } });
+        expect(resolveFieldDisplay(binOf('string'), { inputs: { f1: 'A' } }))
+            .toMatchObject({ displayValue: 'A', inputType: 'string' });
+        expect(resolveFieldDisplay(binOf('text'), { inputs: { f1: 'B' } }))
+            .toMatchObject({ displayValue: 'B', inputType: 'text' });
+        expect(resolveFieldDisplay(binOf('float'), { inputs: { f1: 1.5 } }))
+            .toMatchObject({ displayValue: 1.5, inputType: 'float' });
+    });
+
+    it('computeFieldInputLimits：maxLength=位宽、无数值域（位模式语义，域交给 dec 通道）', () => {
+        expect(computeFieldInputLimits(leaf({ parameter_config: { input_base: 'bin' } })))
+            .toEqual({ byteLen: 1, maxLength: 8 });
+        expect(computeFieldInputLimits(leaf({ byte_len: 2, parameter_config: { input_base: 'bin' } })))
+            .toEqual({ byteLen: 2, maxLength: 16 });
+        // 有符号字段按位模式（负数无法用二进制位串直输）
+        expect(computeFieldInputLimits(leaf({ op_code: 'INT_SIGNED', parameter_config: { input_base: 'bin' } })))
+            .toEqual({ byteLen: 1, maxLength: 8 });
+        // 枚举/非整数类型仍不设限
+        expect(computeFieldInputLimits(leaf({ parameter_config: { options: ['A'], input_base: 'bin' } }))).toBeNull();
+    });
+});

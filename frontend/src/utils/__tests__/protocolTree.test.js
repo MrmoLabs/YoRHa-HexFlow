@@ -258,6 +258,29 @@ describe('批 4：协议位域块在复制/导入路径不丢位段', () => {
         const payload = buildImportedProtocolPayload(source, [], counter('q'));
         expect('bits' in payload.children[0]).toBe(false);
     });
+
+    it('导入：位段元数据 signed/value_table 白名单保留（脏值表清洗，无 meta 不注入键）', () => {
+        const source = {
+            id: 'root', label: 'P', type: 'container',
+            children: [{
+                ...bitNode(),
+                bits: [
+                    {
+                        bit_name: 'CMD', start_bit: 0, bit_len: 4, default_val: -1, signed: true,
+                        value_table: [{ value: -1, label: '故障' }, { value: 'x', label: '坏' }, 'junk']
+                    },
+                    { bit_name: 'OK', start_bit: 4, bit_len: 4, default_val: 1, value_table: 'garbage' }
+                ]
+            }]
+        };
+        const payload = buildImportedProtocolPayload(source, [], counter('m'));
+        const bits = payload.children[0].bits;
+        expect(bits[0]).toMatchObject({ bit_name: 'CMD', default_val: -1, signed: true });
+        expect(bits[0].value_table).toEqual([{ value: -1, label: '故障' }]);
+        // 非数组值表 → 丢弃；无 meta 的位段不注入键（与批 4 白名单口径一致）
+        expect(bits[1].value_table).toBeUndefined();
+        expect(bits[1].signed).toBeUndefined();
+    });
 });
 
 describe('buildDuplicateProtocolPayload（协议级复制）', () => {

@@ -72,8 +72,26 @@ export const SmartInput = ({
                 if (out !== num) setLocalValue(String(out));
                 onChange(out);
             }
+        } else if (type === 'binary') {
+            // 优化批 1：二进制通道 —— 0b 前缀（输入糖）→ 纯 [01] → 按位宽
+            // 截断 → 二进制解析发**数值**（与 dec 同：值存储恒数值，encoder 无感）。
+            const clean = raw.replace(/^0[bB]/, '').replace(/[^01]/g, '')
+                .slice(0, Number.isFinite(maxLength) ? maxLength : undefined);
+            if (clean === '') {
+                // 前缀进行中（'0b'）保留缓冲；纯垃圾清空 —— 都不发半截值
+                setLocalValue(/^0[bB]$/.test(raw) ? raw : '');
+                return;
+            }
+            setLocalValue(clean);
+            onChange(parseInt(clean, 2));
         } else if (type === 'hex') {
-            let cleanHex = raw.toUpperCase().replace(/[^0-9A-F]/g, '');
+            // 优化批 1：0x/0X 前缀容忍（Wireshark/010 惯例）—— 前缀是输入糖，
+            // 剥离后按纯 hex 处理，回显归一为纯 hex（maxLength 不被前缀挤占）。
+            if (/^0[xX]$/.test(raw)) {
+                setLocalValue(raw); // 前缀进行中：保留缓冲、不发半截值
+                return;
+            }
+            let cleanHex = raw.toUpperCase().replace(/^0X/, '').replace(/[^0-9A-F]/g, '');
             // 第 4 批 #4：定长 hex 截断（byte_len×2 字符 = 字段字节数）
             if (Number.isFinite(maxLength)) cleanHex = cleanHex.slice(0, maxLength);
             setLocalValue(cleanHex);
@@ -106,6 +124,12 @@ export const SmartInput = ({
     // hex 定长徽标：已用字节数（向上取整，半字节按 1 计 —— encoder parseInt 单字节）
     const usedBytes = (byteLen != null && Number.isFinite(Number(byteLen)) && Number(byteLen) > 0)
         ? Math.min(Number(byteLen), Math.ceil(String(localValue ?? '').replace(/[^0-9A-Fa-f]/g, '').length / 2))
+        : null;
+
+    // 优化批 1：二进制定长徽标按**位**计（n/N BITS，n = 已用位数）
+    const usedBits = (type === 'binary' && byteLen != null && Number.isFinite(Number(byteLen)) && Number(byteLen) > 0)
+        ? Math.min(Number(byteLen) * 8,
+            String(localValue ?? '').replace(/^0[bB]/i, '').replace(/[^01]/g, '').length)
         : null;
 
     return (
@@ -194,6 +218,14 @@ export const SmartInput = ({
                             title={`长度上限 ${byteLen} 字节（${Number(byteLen) * 2} 个十六进制字符）`}
                         >
                             {usedBytes}/{byteLen} BYTES
+                        </span>
+                    ) : usedBits != null ? (
+                        // 优化批 1：定长二进制徽标按位计（n/N BITS）
+                        <span
+                            className="text-[9px] font-black text-[#4a4a4a]/60 uppercase tracking-tighter whitespace-nowrap select-none"
+                            title={`长度上限 ${Number(byteLen) * 8} 位（${byteLen} 字节）`}
+                        >
+                            {usedBits}/{Number(byteLen) * 8} BITS
                         </span>
                     ) : usedBytes != null ? (
                         // 第 4 批 #4：非 hex 通道只标字节上限

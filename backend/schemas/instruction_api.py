@@ -28,6 +28,12 @@ class OperatorTemplateSchema(BaseModel):
         from_attributes = True
 
 # Bit Field Schema (bit-level layout for BITFIELD fields)
+class BitValueTableEntry(BaseModel):
+    """优化批（DBC VAL_ 对齐）：位段值表项 —— value → 人类可读名称。"""
+    value: int
+    label: str = ""
+
+
 class BitFieldSchema(BaseModel):
     id: Optional[str] = None
     sequence: int = 0
@@ -35,6 +41,11 @@ class BitFieldSchema(BaseModel):
     start_bit: int = 0
     bit_len: int = 1
     default_val: int = 0
+    # 优化批（DBC signed/VAL_ 对齐）：有符号位段 + 值表。协议侧 bits 存
+    # children JSON 列 → 此处透传；指令侧不落 bit_fields 列（FE 拆到
+    # parameter_config.bit_meta，零 DDL）。
+    signed: bool = False
+    value_table: Optional[List[BitValueTableEntry]] = None
 
     class Config:
         from_attributes = True

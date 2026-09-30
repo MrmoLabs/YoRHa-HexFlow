@@ -252,9 +252,55 @@ class TestProtocolBitfieldEndToEnd(unittest.TestCase):
         # 被拒的行未被覆盖（落库前置校验语义）
         self.assertEqual(len(get_protocol("proto-bf", db=self.db).children), 3)
 
+    def test_save_readback_preserves_bits_meta(self):
+        """优化批：signed/value_table 元数据走 children JSON 往返不丢，
+        负 default 两补码出帧（与前端 bitGrid packBits 负向量同批口径）。"""
+        b = dict(bit("TEMP", 0, 8, -40), signed=True,
+                 value_table=[{"value": -40, "label": "低温"}])
+        self._save([b])
+        bf = next(n for n in get_protocol("proto-bf", db=self.db).children
+                  if n["id"] == "bf")
+        self.assertTrue(bf["bits"][0]["signed"])
+        self.assertEqual(bf["bits"][0]["value_table"][0]["label"], "低温")
+
+        resp = compile_wrapped_frame(
+            WrappedCompileRequest(protocol_id="proto-bf", payloads=["01 02"]),
+            db=self.db,
+        )
+        self.assertEqual(resp.hex_string, "AA D8 01 02")  # -40 & 0xFF = 0xD8
+
     def test_bare_dispatch_untouched(self):
         """§0 硬约束：无 wrap 的裸发路径逐字节不回归（协议新增块型零影响）。"""
         resp = dispatch_frame(
             DispatchRequest(hex_string="DE AD BE EF", target="loopback"), db=self.db
         )
         self.assertEqual(resp.hex_string, "DE AD BE EF")
+
+
+class TestProtocolBitfieldMeta(unittest.TestCase):
+    """优化批（市场调研后 DBC 对齐）：位段元数据 signed / value_table。
+
+    BitFieldSchema 此前无这两个字段 → pydantic 静默丢弃 → 协议保存即失。
+    纯 Pydantic 层（零 DDL —— 协议 bits 存 children JSON 列）。"""
+
+    def test_bits_meta_passthrough(self):
+        n = pnode(bits=[dict(bit("CMD", 0, 4, 1), signed=True,
+                             value_table=[{"value": 0, "label": "查询"},
+                                          {"value": 1, "label": "设置"}])])
+        self.assertTrue(n.bits[0].signed)
+        self.assertEqual(len(n.bits[0].value_table), 2)
+        self.assertEqual(n.bits[0].value_table[0].label, "查询")
+
+    def test_bits_meta_defaults_when_absent(self):
+        n = pnode(bits=[bit("CMD", 0, 4, 1)])
+        self.assertFalse(n.bits[0].signed)
+        self.assertIsNone(n.bits[0].value_table)
+
+    def test_pack_negative_default_twos_complement(self):
+        # 负 default_val（signed 位段）→ 两补码位模式：-40 & 0xFF = 0xD8，
+        # 与前端 packBits 的 raw & mask 同口径（bitGrid.test.js 负向量同批锁定）
+        self.assertEqual(pack_protocol_bits([bit("TEMP", 0, 8, -40)], 1), "D8")
+
+
+if __name__ == "__main__":
+    unittest.main()

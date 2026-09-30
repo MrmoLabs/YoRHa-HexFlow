@@ -10,6 +10,7 @@
  * （见 packBits 与 packBitfieldDefault 的镜像测试，改一必改二）。
  */
 
+import { sanitizeValueTable } from './bitMeta';
 
 // 段配色（沙色/炭黑体系内的高辨识色，按段序稳定取用）
 export const BIT_GRID_COLORS = [
@@ -26,6 +27,7 @@ const isNonNegInt = (n) => Number.isInteger(n) && n >= 0;
 
 // 位段归一：非法位段（start/bit_len 非整数、bit_len < 1）直接剔除，
 // 既不占格也不参与重叠判定 —— 与 BitFieldEditor 的输入钳制同口径。
+// 优化批 2/3：携带元数据 signed（非 true 一律 false）与 value_table（清洗）。
 export const normalizeBits = (bits) => (Array.isArray(bits) ? bits : [])
     .map((b, idx) => {
         const start = Number(b?.start_bit);
@@ -37,6 +39,8 @@ export const normalizeBits = (bits) => (Array.isArray(bits) ? bits : [])
             start: isNonNegInt(start) ? start : null,
             len: isPosInt(len) ? len : null,
             defaultVal: Number(b?.default_val),
+            signed: b?.signed === true,
+            value_table: sanitizeValueTable(b?.value_table)
         };
     })
     .filter(b => b.start !== null && b.len !== null);
@@ -136,30 +140,66 @@ const segmentValue = (packed, start, len) => {
     return Math.floor(packed / Math.pow(2, start)) % Math.pow(2, len);
 };
 
-/** 子位值钳制到本段域；非数 → 0（0..2^n-1）。 */
-export const clampBitValue = (v, len) => {
+/** 子位值钳制到本段域；非数 → 0。
+ *  优化批 3（DBC signed）：signed 位段按两补码域 [-2^(n-1), 2^(n-1)-1]，
+ *  缺省（unsigned）口径不变：0..2^n-1。 */
+export const clampBitValue = (v, len, signed = false) => {
     const width = Math.max(1, len || 1);
     const n = toInt(Number(v));
     if (n === null) return 0;
+    if (signed) {
+        const half = Math.pow(2, width - 1);
+        return Math.max(-half, Math.min(half - 1, n));
+    }
     const max = Math.pow(2, width) - 1;
     return Math.max(0, Math.min(max, n));
+};
+
+// 两补码解读：高位已置位的无符号值 → 负值（仅 signed 调用）。
+const toSigned = (v, len) => (
+    v >= Math.pow(2, Math.max(1, len) - 1) ? v - Math.pow(2, len) : v
+);
+
+// default 的语义解读：已按有符号域存 → 原样；按位模式存（超有符号域）→
+// 先钳无符号域再两补码（脏数据/导入的 216 → -40）。unsigned → 旧口径。
+const interpretDefault = (raw, len, signed) => {
+    const n = Number.isFinite(Number(raw)) ? Math.floor(Number(raw)) : 0;
+    if (!signed) return clampBitValue(n, len);
+    const half = Math.pow(2, Math.max(1, len - 1));
+    if (n >= -half && n <= half - 1) return n;
+    return toSigned(clampBitValue(n, len), len);
 };
 
 /**
  * 拆包子位行。packed 为 undefined/null → 逐段回退 default_val（与
  * resolveFieldDisplay 的 packBitfieldDefault 同源口径）。
- * 返回 [{ id, name, start, len, value, defaultVal }]，仅含合法位段。
+ * 返回 [{ id, name, start, len, signed, min, max, value_table, value, defaultVal }]，
+ * 仅含合法位段。优化批 3：signed 段 value/default 按两补码解读，
+ * min/max = 有符号域（子位输入钳制直接消费）。
  */
 export const unpackBits = (packed, bits) => normalizeBits(bits).map(b => {
-    const fromValue = segmentValue(toInt(packed), b.start, b.len);
-    const fallback = clampBitValue(b.defaultVal, b.len);
+    const width = b.len;
+    const signed = b.signed === true;
+    const half = Math.pow(2, Math.max(1, width - 1));
+    const max = signed
+        ? half - 1
+        : (width >= 32 ? Number.MAX_SAFE_INTEGER : Math.pow(2, width) - 1);
+    const min = signed ? -half : 0;
+    const fromValue = segmentValue(toInt(packed), b.start, width);
+    const fallback = interpretDefault(b.defaultVal, width, signed);
     return {
         id: b.id,
         name: b.name,
         start: b.start,
-        len: b.len,
+        len: width,
+        signed,
+        min,
+        max,
+        value_table: b.value_table,
         defaultVal: fallback,
-        value: fromValue === null ? fallback : fromValue
+        value: fromValue === null
+            ? fallback
+            : (signed ? toSigned(fromValue, width) : fromValue)
     };
 });
 
@@ -167,17 +207,19 @@ export const unpackBits = (packed, bits) => normalizeBits(bits).map(b => {
  * 回写单个位段：底值 = packed（未录入时取**全部**位段 default_val 的打包值），
  * 先扣掉本段旧值再并入新值 → 其余位/间隙位逐位保持。
  * allBits = 该字段的完整 bits（无输入态的底值靠它，未传则退化为仅本段）。
+ * 优化批 3：signed 段的负值先钳有符号域、再转两补码位模式并入。
  */
 export const writeBitSegment = (packed, segment, newValue, allBits) => {
     const seg = normalizeBits([segment])[0];
     const base = toInt(packed);
     if (!seg) return base ?? 0;
-    const value = clampBitValue(newValue, seg.len);
+    const value = clampBitValue(newValue, seg.len, seg.signed === true);
+    const unsigned = value < 0 ? value + Math.pow(2, seg.len) : value;
     const place = Math.pow(2, seg.start);
     const source = base === null
         ? parseInt(packBits(Array.isArray(allBits) && allBits.length > 0 ? allBits : [segment],
             Math.ceil((seg.start + seg.len) / 8)), 16) >>> 0
         : base;
     const cleared = source - (segmentValue(source, seg.start, seg.len) || 0) * place;
-    return cleared + value * place;
+    return cleared + unsigned * place;
 };

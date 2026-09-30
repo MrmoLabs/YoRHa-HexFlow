@@ -3,12 +3,14 @@ import {
     buildBitGrid,
     rangeToSegment,
     defaultSegmentName,
+    normalizeBits,
     packBits,
     unpackBits,
     writeBitSegment,
     clampBitValue,
     BIT_GRID_COLORS
 } from '../bitGrid';
+import { parseValueTable, formatValueTable } from '../bitMeta';
 import { packBitfieldDefault } from '../../config/runnerRenderRules';
 
 // 批 2：BitFieldEditor 可视化位图的纯函数层。
@@ -169,5 +171,92 @@ describe('unpackBits / writeBitSegment / clampBitValue（子位拆包与回写�
         expect(unpackBits(base, wide).map(s => s.value)).toEqual([0x11, 0x22]);
         expect(writeBitSegment(base, wide[0], 0xAB, wide)).toBe(0x22000000AB);
         expect(writeBitSegment(base, wide[1], 0x33, wide)).toBe(0x3300000011);
+    });
+});
+
+// 优化批 2/3（市场调研后 DBC 对齐）：位段有符号（DBC signed flag）与
+// 值表（DBC VAL_）—— 打包口径不变（raw & mask 两补码天然覆盖），
+// 变的是拆包解读 / 钳制域 / 回写与 UI 语义。
+describe('优化批 2/3：位段有符号与值表', () => {
+    it('normalizeBits 携带 signed/value_table（脏值表清洗：非数组丢弃、非法项过滤）', () => {
+        const norm = normalizeBits([
+            {
+                start_bit: 0, bit_len: 4, default_val: -1, signed: true,
+                value_table: [{ value: -1, label: '故障' }, { value: 'x', label: '坏' }, 'junk']
+            },
+            { start_bit: 4, bit_len: 4, value_table: 'garbage' },
+            { start_bit: 8, bit_len: 4, signed: 'yes' }
+        ]);
+        expect(norm[0]).toMatchObject({ signed: true, value_table: [{ value: -1, label: '故障' }] });
+        expect(norm[1].value_table).toBeUndefined();
+        expect(norm[2].signed).toBe(false); // 非 true 一律按 false
+    });
+
+    it('unpackBits：signed 段按两补码解读（0xD8 → -40），unsigned 口径不变', () => {
+        const seg = { id: 't', bit_name: 'TEMP', start_bit: 0, bit_len: 8, default_val: 0, signed: true };
+        expect(unpackBits(0xD8, [seg])[0].value).toBe(-40);
+        expect(unpackBits(40, [seg])[0].value).toBe(40); // 符号位未置位 → 原值
+        expect(unpackBits(0xD8, [{ ...seg, signed: false }])[0].value).toBe(216);
+        // 4 位有符号：0x0C → -4
+        expect(unpackBits(0x0C, [{ ...seg, bit_len: 4 }])[0].value).toBe(-4);
+        // 无输入态 default：已按有符号域存 → 原样；按位模式存（216）→ 解读为 -40
+        expect(unpackBits(undefined, [{ ...seg, default_val: -40 }])[0].value).toBe(-40);
+        expect(unpackBits(undefined, [{ ...seg, default_val: 216 }])[0].value).toBe(-40);
+        // 行上带 signed/min/max（子位输入钳制域用）
+        expect(unpackBits(0x80, [seg])[0]).toMatchObject({ value: -128, min: -128, max: 127, signed: true });
+    });
+
+    it('clampBitValue：signed 域 [-2^(n-1), 2^(n-1)-1]；unsigned 缺省口径不变', () => {
+        expect(clampBitValue(200, 8, true)).toBe(127);
+        expect(clampBitValue(-200, 8, true)).toBe(-128);
+        expect(clampBitValue(5, 4, true)).toBe(5);
+        expect(clampBitValue(7, 4, true)).toBe(7);
+        expect(clampBitValue(8, 4, true)).toBe(7);
+        expect(clampBitValue(-5, 4, true)).toBe(-5);
+        // unsigned 缺省：0..2^n-1，负数钳 0
+        expect(clampBitValue(5, 2)).toBe(3);
+        expect(clampBitValue(-5, 8)).toBe(0);
+    });
+
+    it('writeBitSegment：signed 负值两补码回写，邻段与高位保留', () => {
+        expect(writeBitSegment(0x00, { start_bit: 0, bit_len: 8, signed: true }, -40)).toBe(0xD8);
+        expect(writeBitSegment(0x0F, { start_bit: 0, bit_len: 4, signed: true }, -4)).toBe(0x0C);
+        expect(writeBitSegment(0x00, { start_bit: 4, bit_len: 4, signed: true }, -1)).toBe(0xF0);
+        // 无 signed 标记 → 仍按 unsigned 钳制（存量口径不变）
+        expect(writeBitSegment(0x00, { start_bit: 0, bit_len: 8 }, -40)).toBe(0);
+    });
+
+    it('packBits 负 default 与 packBitfieldDefault byte-equal（raw&mask 两补码镜像锁定）', () => {
+        const vectors = [
+            [[{ start_bit: 0, bit_len: 8, default_val: -40 }], 1],
+            [[{ start_bit: 0, bit_len: 4, default_val: -1 }], 1],
+            [[{ start_bit: 0, bit_len: 16, default_val: -2 }], 2],
+            [[{ start_bit: 4, bit_len: 8, default_val: -16 }], 2]
+        ];
+        vectors.forEach(([bits, byteLen]) => {
+            expect(packBits(bits, byteLen)).toBe(packBitfieldDefault(bits, byteLen));
+        });
+        expect(packBits([{ start_bit: 0, bit_len: 8, default_val: -40 }], 1)).toBe('D8');
+    });
+});
+
+describe('优化批 2：值表文本解析/回显（BitFieldEditor 编辑格式）', () => {
+    it('parseValueTable：0=关, 1:开 双分隔符容忍、非法行丢弃、负值允许', () => {
+        expect(parseValueTable('0=关, 1:开')).toEqual([
+            { value: 0, label: '关' }, { value: 1, label: '开' }
+        ]);
+        expect(parseValueTable('-1=故障,2=正常')).toEqual([
+            { value: -1, label: '故障' }, { value: 2, label: '正常' }
+        ]);
+        expect(parseValueTable('')).toBeUndefined();
+        expect(parseValueTable('坏行, x=1, =2')).toBeUndefined();
+    });
+
+    it('formatValueTable 往返：数组 → 0=关,1=开；非数组/空 → 空串', () => {
+        expect(formatValueTable([{ value: 0, label: '关' }, { value: 1, label: '开' }]))
+            .toBe('0=关,1=开');
+        expect(formatValueTable(undefined)).toBe('');
+        expect(formatValueTable([])).toBe('');
+        expect(formatValueTable('garbage')).toBe('');
     });
 });

@@ -354,4 +354,88 @@ describe('useInstructionData', () => {
             expect(result.current.currentInstruction.name).toBe('服务端版');
         });
     });
+
+    // ─── 优化批（调研后优化 2/3）：位段元数据零 DDL 存储 ─────────────────────
+    // bit_fields 表无 JSON 列 → signed/value_table 骑 pc.bit_meta：
+    // 读取合并回 bits（编辑视图单源），保存拆分回落 pc（normalizeInstructionPayload）。
+    const bitInstruction = {
+        id: 'inst-bit',
+        device_code: 'DEV-900',
+        code: 'CMD-900',
+        name: '位域指令',
+        type: 'STATIC',
+        fields: [{
+            id: 'f-bit',
+            name: '控制位',
+            op_code: 'BITFIELD',
+            byte_len: 1,
+            parameter_config: {
+                input_base: 'dec',
+                bit_meta: {
+                    b1: { signed: true, value_table: [{ value: 0, label: '关' }, { value: 1, label: '开' }] }
+                }
+            },
+            bits: [
+                { id: 'b1', sequence: 0, bit_name: 'MODE', start_bit: 0, bit_len: 2, default_val: 1 },
+                { id: 'b2', sequence: 1, bit_name: 'EN', start_bit: 2, bit_len: 1, default_val: 1 }
+            ]
+        }]
+    };
+
+    it('读取合并：pc.bit_meta 按位段 id 合并回 bits（编辑视图单源）', async () => {
+        api.getInstructions.mockResolvedValue([bitInstruction]);
+        const { result } = renderHook(() => useInstructionData());
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+        const field = result.current.instructions[0].fields[0];
+        expect(field.bits[0]).toMatchObject({
+            signed: true,
+            value_table: [{ value: 0, label: '关' }, { value: 1, label: '开' }]
+        });
+        expect(field.bits[1].signed).toBeUndefined();
+        // pc 原样保留（bit_meta 不被消费掉 —— 保存时重建同源）
+        expect(field.parameter_config.bit_meta).toBeTruthy();
+        expect(field.parameter_config.input_base).toBe('dec');
+    });
+
+    it('保存拆分：updateInstruction 负载 bits 干净、meta 落 pc.bit_meta（以 bits 为准重建）', async () => {
+        // 编辑态：bits 上携带**新**元数据（读取合并后的单源 + 用户改过值表），
+        // pc.bit_meta 是**陈旧**的 —— 保存必须按 bits 重建覆盖，而非透传旧值。
+        const edited = {
+            ...bitInstruction,
+            fields: [{
+                ...bitInstruction.fields[0],
+                parameter_config: {
+                    input_base: 'dec',
+                    bit_meta: { b1: { value_table: [{ value: 0, label: '旧' }] } }
+                },
+                bits: [
+                    {
+                        id: 'b1', sequence: 0, bit_name: 'MODE', start_bit: 0, bit_len: 2, default_val: 1,
+                        signed: true, value_table: [{ value: 0, label: '关' }, { value: 1, label: '开' }]
+                    },
+                    { id: 'b2', sequence: 1, bit_name: 'EN', start_bit: 2, bit_len: 1, default_val: 1 }
+                ]
+            }]
+        };
+        api.getInstructions.mockResolvedValue([edited]);
+        const { result } = renderHook(() => useInstructionData());
+        await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+        api.updateInstruction.mockResolvedValue({});
+        await act(async () => { await result.current.saveChanges(); });
+
+        expect(api.updateInstruction).toHaveBeenCalledTimes(1);
+        const payload = api.updateInstruction.mock.calls[0][1];
+        const f = payload.fields[0];
+        // bits 落库列口径干净（元数据不进 bit_fields 行）
+        expect(f.bits[0].signed).toBeUndefined();
+        expect(f.bits[0].value_table).toBeUndefined();
+        // 按 bits 重建（陈旧的 pc.bit_meta 被覆盖）
+        expect(f.parameter_config.bit_meta).toEqual({
+            b1: { signed: true, value_table: [{ value: 0, label: '关' }, { value: 1, label: '开' }] }
+        });
+        // 保存未被 validateInstruction 拦截（meta 不构成结构错误）
+        expect(result.current.hasUnsavedChanges).toBe(false);
+    });
 });

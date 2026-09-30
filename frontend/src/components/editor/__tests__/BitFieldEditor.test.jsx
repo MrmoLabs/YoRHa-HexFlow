@@ -114,3 +114,96 @@ describe('BitFieldEditor 位图可视化（批 2）', () => {
         expect(cellOf(15)).toBeTruthy();
     });
 });
+
+// 优化批 2/3/4（市场调研后优化）：位号标尺（LSb0/MSb0 标注惯例 —— 免得自己数）、
+// 有符号切换（DBC signed）、值表编辑与名称回显（DBC VAL_）。
+describe('BitFieldEditor 优化批：位号标尺 / 有符号 / 值表', () => {
+    it('位号标尺：网格顶部 7..0 列头，先于字节行渲染', () => {
+        render(<BitFieldEditor bits={BITS} byteLen={2} onUpdateBits={vi.fn()} />);
+
+        const ruler = document.querySelector('[data-bit-ruler]');
+        expect(ruler).toBeTruthy();
+        expect([...ruler.querySelectorAll('[data-bit-ruler-no]')].map(s => s.textContent))
+            .toEqual(['7', '6', '5', '4', '3', '2', '1', '0']);
+        const firstRow = document.querySelector('[data-byte-row="0"]');
+        expect(!!(ruler.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    });
+
+    it('有符号切换：行内 U/S 芯片，点击写回 signed', () => {
+        const onUpdateBits = vi.fn();
+        const { unmount } = render(<BitFieldEditor bits={BITS} byteLen={1} onUpdateBits={onUpdateBits} />);
+
+        const btn = document.querySelector('[data-bit-signed="0"]');
+        expect(btn).toBeTruthy();
+        expect(btn.textContent).toBe('U');
+        fireEvent.click(btn);
+        expect(onUpdateBits.mock.calls[0][0][0].signed).toBe(true);
+        unmount();
+
+        render(<BitFieldEditor bits={[{ ...BITS[0], signed: true }]} byteLen={1} onUpdateBits={vi.fn()} />);
+        expect(document.querySelector('[data-bit-signed="0"]').textContent).toBe('S');
+    });
+
+    it('有符号位段：默认值输入放开负域（两补码域），键入 -40 写回', () => {
+        const onUpdateBits = vi.fn();
+        render(
+            <BitFieldEditor
+                bits={[{ id: 'a', bit_name: 'TEMP', start_bit: 0, bit_len: 8, default_val: 0, signed: true }]}
+                byteLen={1}
+                onUpdateBits={onUpdateBits}
+            />
+        );
+
+        const input = document.querySelector('[data-bit-default="0"]');
+        expect(input.getAttribute('min')).toBe('-128');
+        expect(input.getAttribute('max')).toBe('127');
+        fireEvent.change(input, { target: { value: '-40' } });
+        expect(onUpdateBits.mock.calls[0][0][0].default_val).toBe(-40);
+    });
+
+    it('值表编辑：0=关,1:开 文本解析写回 value_table；空串清空', () => {
+        // 受控 harness：写回即回显（否则 React 受控回灌让第二次 change 同值不触发）
+        const updates = [];
+        const Harness = () => {
+            const [bts, setBts] = useState(BITS);
+            return (
+                <BitFieldEditor
+                    bits={bts}
+                    byteLen={1}
+                    onUpdateBits={(next) => { updates.push(next); setBts(next); }}
+                />
+            );
+        };
+        render(<Harness />);
+
+        const vt = document.querySelector('[data-bit-vt="0"]');
+        expect(vt).toBeTruthy();
+        expect(vt.value).toBe(''); // 无值表 → 空（placeholder 提示格式）
+        fireEvent.change(vt, { target: { value: '0=关, 1:开' } });
+        expect(updates[0][0].value_table).toEqual([
+            { value: 0, label: '关' }, { value: 1, label: '开' }
+        ]);
+        expect(vt.value).toBe('0=关,1=开'); // 回显归一（1:开 → 1=开）
+
+        fireEvent.change(vt, { target: { value: '' } });
+        expect(updates[1][0].value_table).toBeUndefined();
+        expect(vt.value).toBe('');
+    });
+
+    it('值表回显与名称解码：VT 单元格文本、默认值 title、网格 title 带名称', () => {
+        render(
+            <BitFieldEditor
+                bits={[{
+                    id: 'a', bit_name: 'MODE', start_bit: 0, bit_len: 2, default_val: 1,
+                    value_table: [{ value: 1, label: '开' }]
+                }]}
+                byteLen={1}
+                onUpdateBits={vi.fn()}
+            />
+        );
+
+        expect(document.querySelector('[data-bit-vt="0"]').value).toBe('1=开');
+        expect(document.querySelector('[data-bit-default="0"]').getAttribute('title')).toContain('开');
+        expect(cellOf(0).getAttribute('title')).toContain('开'); // MODE = 1 (开) · bit0
+    });
+});

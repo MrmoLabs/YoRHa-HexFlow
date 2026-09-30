@@ -200,3 +200,72 @@ describe('SmartInput 批 1：十进制通道', () => {
         expect(onChange).toHaveBeenLastCalledWith(-40);
     });
 });
+
+// 优化批 1（市场调研后优化）：三态进制 HEX/DEC/BIN + 前缀识别
+// （Wireshark / 010 Editor 惯例：0x / 0b 前缀按前缀取进制，前缀只是输入糖）。
+describe('SmartInput 优化批 1：BIN 通道与进制前缀', () => {
+    it('binary 通道：[01] 过滤 → 二进制解析发数值；01 外字符不产 NaN', () => {
+        const onChange = vi.fn();
+        render(<SmartInput label="掩码" value="00000000" type="binary" byteLen={1} maxLength={8} onChange={onChange} />);
+
+        const input = screen.getByDisplayValue('00000000');
+        fireEvent.change(input, { target: { value: '11110000' } });
+        expect(onChange).toHaveBeenLastCalledWith(240);
+        // 定长徽标按位计（n/N BITS）
+        expect(screen.getByText('8/8 BITS')).toBeTruthy();
+
+        fireEvent.change(input, { target: { value: '1012' } }); // '2' 被过滤 → '101'
+        expect(onChange).toHaveBeenLastCalledWith(5);
+    });
+
+    it('binary 通道：0b 前缀输入糖 + 超位宽截断', () => {
+        const onChange = vi.fn();
+        render(<SmartInput label="掩码" value="00000000" type="binary" byteLen={1} maxLength={8} onChange={onChange} />);
+
+        const input = screen.getByDisplayValue('00000000');
+        fireEvent.change(input, { target: { value: '0b1010' } });
+        expect(onChange).toHaveBeenLastCalledWith(10);
+        fireEvent.change(input, { target: { value: '111111111' } }); // 9 位 → 截 8
+        expect(onChange).toHaveBeenLastCalledWith(255);
+    });
+
+    it('hex 通道：0x/0X 前缀容忍并归一纯 hex（maxLength 不吃前缀；前缀进行中不发半截值）', () => {
+        const onChange = vi.fn();
+        render(<SmartInput label="命令" value="00" type="hex" maxLength={2} byteLen={1} onChange={onChange} />);
+
+        const input = screen.getByDisplayValue('00');
+        fireEvent.change(input, { target: { value: '0x1A' } });
+        expect(onChange).toHaveBeenLastCalledWith('1A');
+        fireEvent.change(input, { target: { value: '0X1ABC' } });
+        expect(onChange).toHaveBeenLastCalledWith('1A');
+
+        // 前缀进行中（'0x'）：保留缓冲、不发半截值
+        onChange.mockClear();
+        fireEvent.change(input, { target: { value: '0x' } });
+        expect(onChange).not.toHaveBeenCalled();
+        expect(input.value).toBe('0x');
+    });
+
+    it('dec 通道：0x/0b 前缀按前缀进制解析并数值域钳制（宽容解析锁定）', () => {
+        const onChange = vi.fn();
+        render(<SmartInput label="计数" value="0" type="decimal" min={0} max={255} byteLen={1} onChange={onChange} />);
+
+        const input = screen.getByDisplayValue('0');
+        fireEvent.change(input, { target: { value: '0xFF' } });
+        expect(onChange).toHaveBeenLastCalledWith(255);
+        fireEvent.change(input, { target: { value: '0b10100000' } });
+        expect(onChange).toHaveBeenLastCalledWith(160);
+        fireEvent.change(input, { target: { value: '0x1FF' } }); // 511 → 钳 255
+        expect(onChange).toHaveBeenLastCalledWith(255);
+        expect(input.value).toBe('255');
+    });
+
+    it('binary 无定长 → [BINARY] 徽标（hex/dec 徽标口径不变）', () => {
+        const { unmount } = render(<SmartInput label="自由位" value="1010" type="binary" onChange={() => {}} />);
+        expect(screen.getByText('[BINARY]')).toBeTruthy();
+        unmount();
+
+        render(<SmartInput label="命令" value="AA" type="hex" onChange={() => {}} />);
+        expect(screen.getByText('[HEX]')).toBeTruthy();
+    });
+});

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { api } from '../api';
-import { normalizeFieldPayload, normalizeInstructionPayload } from '../utils/normalizeInstruction';
+import { normalizeFieldPayload, normalizeInstructionPayload, mergeFieldBitMeta } from '../utils/normalizeInstruction';
 import { validateInstruction } from '../utils/validateInstruction';
 import { buildDuplicateInstructionPayload } from '../utils/duplicateInstruction';
 import { normalizeInstructionDataOptions } from './instructionDataOptions';
@@ -88,8 +88,18 @@ export function useInstructionData(options = {}) {
     // 共享基准保持已保存版本；干净态直接镜像。useMemo 保引用稳定（下方 effect/
     // ref 依赖 instructions）。
     const instructions = useMemo(() => {
-        if (!hasUnsavedChanges || !draftInstruction) return baseInstructions;
-        return baseInstructions.map(i => (i.id === draftInstruction.id ? draftInstruction : i));
+        const list = (!hasUnsavedChanges || !draftInstruction)
+            ? baseInstructions
+            : baseInstructions.map(i => (i.id === draftInstruction.id ? draftInstruction : i));
+        // 优化批（零 DDL）：读取视图把 pc.bit_meta 按位段 id 合并回 bits ——
+        // 编辑/加工两页共用单源（meta 直接挂在 bit 对象上），幂等、纯视图层，
+        // 不回写共享态；保存时由 normalizeFieldPayload 按 bits 重建拆分。
+        return list.map(instr => ({
+            ...instr,
+            fields: Array.isArray(instr.fields)
+                ? instr.fields.map(mergeFieldBitMeta)
+                : instr.fields
+        }));
     }, [baseInstructions, hasUnsavedChanges, draftInstruction]);
 
     const setInstructionsState = useCallback((nextValue) => {

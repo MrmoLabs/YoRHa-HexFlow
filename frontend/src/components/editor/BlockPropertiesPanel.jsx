@@ -105,12 +105,14 @@ export default function BlockPropertiesPanel({
 
     // 批 1：录入进制读态（缺省 hex；非法值同样回退 hex —— 与 runnerRenderRules
     // isDecimalEntry 判据镜像）
+    // 批 1 + 优化批 1：录入进制三态（hex 缺省 / dec / bin），大小写不敏感、非法回退 hex
     const rawInputBase = String(tempBlockConfig?.parameter_config?.input_base || '').toLowerCase();
-    const inputBase = rawInputBase === 'dec' ? 'DEC' : 'HEX';
-    const INPUT_BASES = { HEX: 'hex', DEC: 'dec' };
+    const inputBase = rawInputBase === 'dec' ? 'DEC' : rawInputBase === 'bin' ? 'BIN' : 'HEX';
+    const INPUT_BASES = { HEX: 'hex', DEC: 'dec', BIN: 'bin' };
     const INPUT_BASE_TITLES = {
         HEX: '十六进制录入（默认）',
-        DEC: '十进制录入'
+        DEC: '十进制录入',
+        BIN: '二进制录入（位模式）'
     };
 
     const handleTempParamUpdate = (key, val) => {
@@ -398,7 +400,7 @@ export default function BlockPropertiesPanel({
                                     录入进制 (INPUT BASE)
                                 </label>
                                 <div className="flex text-[10px] gap-1 border border-nier-light/30 p-0.5 bg-black w-fit">
-                                    {['HEX', 'DEC'].map(m => (
+                                    {['HEX', 'DEC', 'BIN'].map(m => (
                                         <button
                                             key={m}
                                             type="button"

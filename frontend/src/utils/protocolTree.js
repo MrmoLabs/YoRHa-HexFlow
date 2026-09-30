@@ -8,6 +8,7 @@ import { computeByteOffsets } from './byteOffsets';
 import { isNestable } from '../config/blockTypes';
 import { formatUnknown, calculateChecksum, formatToHex } from './formula';
 import { mapChecksumAlgo } from './normalizeInstruction';
+import { sanitizeValueTable } from './bitMeta';
 import { v4 as uuidv4 } from 'uuid';
 
 export const serializeProtocol = (protocol) => JSON.stringify({
@@ -254,12 +255,19 @@ export const buildDuplicateProtocolPayload = (source, existingProtocols = [], ge
 // 缺省 default_val 补 0；口径与 toFrameBlocks.normalizeBitSegments 一致。
 const sanitizeBits = (bits) => (Array.isArray(bits) ? bits : [])
     .filter(b => b && typeof b === 'object')
-    .map(b => ({
-        bit_name: String(b.bit_name ?? ''),
-        start_bit: Math.trunc(Number(b.start_bit)),
-        bit_len: Math.trunc(Number(b.bit_len)),
-        default_val: Math.trunc(Number(b.default_val) || 0)
-    }))
+    .map(b => {
+        // 优化批 2/3：元数据白名单（signed/value_table）—— 脏值表清洗，
+        // 无 meta 不注入键（与批 4 白名单口径一致，存量负载形状不变）。
+        const vt = sanitizeValueTable(b.value_table);
+        return {
+            bit_name: String(b.bit_name ?? ''),
+            start_bit: Math.trunc(Number(b.start_bit)),
+            bit_len: Math.trunc(Number(b.bit_len)),
+            default_val: Math.trunc(Number(b.default_val) || 0),
+            ...(b.signed === true ? { signed: true } : {}),
+            ...(vt ? { value_table: vt } : {})
+        };
+    })
     .filter(b => Number.isFinite(b.start_bit) && Number.isFinite(b.bit_len) && b.bit_len >= 1 && b.start_bit >= 0);
 
 const sanitizeImportedNode = (node) => {
