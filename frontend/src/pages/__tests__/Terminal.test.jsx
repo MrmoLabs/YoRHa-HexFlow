@@ -23,7 +23,9 @@ vi.mock('../../api', () => ({
 const CONFIG = {
     mode: 'loopback',
     tcp: { host: '127.0.0.1', port: 9000, connect_timeout_ms: 3000, read_timeout_ms: 2000 },
-    serial: { port: 'COM3', baudrate: 9600, bytesize: 8, parity: 'N', stopbits: 1, read_timeout_ms: 2000 }
+    serial: { port: 'COM3', baudrate: 9600, bytesize: 8, parity: 'N', stopbits: 1, read_timeout_ms: 2000 },
+    // N4 (G3): 传输层帧字节转义（缺省关闭）
+    escape: { enabled: false, pairs: [] }
 };
 
 const STATUS = {
@@ -146,7 +148,8 @@ describe('Terminal Page（E3 通讯调试）', () => {
         expect(api.setTransportConfig).toHaveBeenCalledWith({
             mode: 'tcp',
             tcp: { host: '10.0.0.5', port: 9000, connect_timeout_ms: 3000, read_timeout_ms: 2000 },
-            serial: { port: 'COM3', baudrate: 9600, bytesize: 8, parity: 'N', stopbits: 1, read_timeout_ms: 2000 }
+            serial: { port: 'COM3', baudrate: 9600, bytesize: 8, parity: 'N', stopbits: 1, read_timeout_ms: 2000 },
+            escape: { enabled: false, pairs: [] } // N4: escape 段随 patch 全量提交
         });
         await waitFor(() => {
             expect(screen.getByText(/配置已生效：模式 TCP/)).toBeDefined();
@@ -177,7 +180,8 @@ describe('Terminal Page（E3 通讯调试）', () => {
         expect(api.setTransportConfig).toHaveBeenCalledWith({
             mode: 'serial',
             tcp: { host: '127.0.0.1', port: 9000, connect_timeout_ms: 3000, read_timeout_ms: 2000 },
-            serial: { port: 'COM3', baudrate: 115200, bytesize: 8, parity: 'E', stopbits: 1.5, read_timeout_ms: 2000 }
+            serial: { port: 'COM3', baudrate: 115200, bytesize: 8, parity: 'E', stopbits: 1.5, read_timeout_ms: 2000 },
+            escape: { enabled: false, pairs: [] } // N4: escape 段随 patch 全量提交
         });
     });
 
@@ -351,5 +355,71 @@ describe('Terminal Page（E3 通讯调试）', () => {
         fireEvent.click(screen.getByRole('button', { name: /存为档案/ }));
 
         await waitFor(() => expect(screen.getByText(/ERR: 档案名已存在/)).toBeDefined());
+    });
+
+    // ---- N4 (G3): 传输层帧字节转义（配置面板） ----
+
+    it('N4: 转义区渲染且缺省关闭、无规则时不显示样例', async () => {
+        render(<Terminal />);
+        await waitFor(() => expect(screen.getByText('帧字节转义 ESCAPE')).toBeDefined());
+
+        expect(screen.getByText('关闭 DISABLED')).toBeDefined();
+        expect(screen.getByRole('button', { name: '启用 ON' })).toBeDefined();
+        expect(screen.queryByText(/样例 SAMPLE/)).toBeNull();
+        expect(screen.queryByText(/未列入受保护字节/)).toBeNull();
+    });
+
+    it('N4: 增改规则行 + 启用后随 APPLY 全量提交 escape 段', async () => {
+        api.setTransportConfig.mockResolvedValue({
+            ...CONFIG,
+            escape: { enabled: true, pairs: [['7D', '7D5D']] }
+        });
+        render(<Terminal />);
+        await waitFor(() => expect(screen.getByText('帧字节转义 ESCAPE')).toBeDefined());
+
+        fireEvent.click(screen.getByRole('button', { name: /添加规则/ }));
+        fireEvent.change(screen.getAllByPlaceholderText('7D')[0], { target: { value: '7d' } });
+        fireEvent.change(screen.getAllByPlaceholderText('7D5D')[0], { target: { value: '7d5d' } });
+        fireEvent.click(screen.getByRole('button', { name: '启用 ON' }));
+
+        // 样例预览与 BE 向量同字节：AA 7D BB → AA 7D 5D BB
+        await waitFor(() => {
+            expect(screen.getByText('AA 7D BB → AA 7D 5D BB')).toBeDefined();
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: /应用配置/ }));
+        await waitFor(() => expect(api.setTransportConfig).toHaveBeenCalledTimes(1));
+        expect(api.setTransportConfig).toHaveBeenCalledWith({
+            mode: 'loopback',
+            tcp: { host: '127.0.0.1', port: 9000, connect_timeout_ms: 3000, read_timeout_ms: 2000 },
+            serial: { port: 'COM3', baudrate: 9600, bytesize: 8, parity: 'N', stopbits: 1, read_timeout_ms: 2000 },
+            escape: { enabled: true, pairs: [['7d', '7d5d']] }
+        });
+        await waitFor(() => expect(screen.getByText('已启用 ENABLED')).toBeDefined());
+        // 生效值回填（BE 归一为大写）
+        await waitFor(() => expect(screen.getAllByPlaceholderText('7D')[0].value).toBe('7D'));
+    });
+
+    it('N4: 删除规则行（多行仅删目标行）', async () => {
+        api.getTransportConfig.mockResolvedValue({
+            ...CONFIG,
+            escape: { enabled: true, pairs: [['7D', '7D5D'], ['11', '7D31']] }
+        });
+        render(<Terminal />);
+        await waitFor(() => expect(screen.getAllByPlaceholderText('7D')).toHaveLength(2));
+
+        fireEvent.click(screen.getAllByRole('button', { name: '删除' })[1]);
+
+        expect(screen.getAllByPlaceholderText('7D')).toHaveLength(1);
+        expect(screen.getAllByPlaceholderText('7D5D')[0].value).toBe('7D5D');
+    });
+
+    it('N4: 前缀未受保护时面板给出歧义提醒', async () => {
+        api.getTransportConfig.mockResolvedValue({
+            ...CONFIG,
+            escape: { enabled: true, pairs: [['11', '7D31']] }
+        });
+        render(<Terminal />);
+        await waitFor(() => expect(screen.getByText(/未列入受保护字节/)).toBeDefined());
     });
 });

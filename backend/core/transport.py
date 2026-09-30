@@ -16,6 +16,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from backend.core.escape import normalize_escape as _normalize_escape
+
 VALID_MODES = ("loopback", "tcp", "serial")
 VALID_PARITIES = ("N", "E", "O")
 VALID_STOPBITS = (1, 1.5, 2)
@@ -50,6 +52,9 @@ def default_config() -> Dict[str, Any]:
             "stopbits": 1,
             "read_timeout_ms": 2000,
         },
+        # N4 (G3): 传输层帧字节转义 —— 缺省关闭；骑在 JSON 配置上（零 DDL），
+        # 语义/归一见 backend/core/escape.py（出线前对内核字节转义）。
+        "escape": {"enabled": False, "pairs": []},
     }
 
 
@@ -69,7 +74,7 @@ def validate_config(config: Any) -> Dict[str, Any]:
     """校验并归一化完整传输配置；非法时抛 ValueError（路由层映射 400）。"""
     if not isinstance(config, dict):
         raise ValueError("传输配置必须是对象")
-    unknown = set(config) - {"mode", "tcp", "serial"}
+    unknown = set(config) - {"mode", "tcp", "serial", "escape"}
     if unknown:
         raise ValueError(f"未知配置字段: {', '.join(sorted(unknown))}")
 
@@ -109,8 +114,12 @@ def validate_config(config: Any) -> Dict[str, Any]:
         raise ValueError("serial.stopbits 必须是 1/1.5/2 之一")
     _require_timeout(ser.get("read_timeout_ms"), "serial.read_timeout_ms")
 
+    # N4 (G3): 转义段归一 —— 缺段（旧库存量）→ 默认关闭；非法 → ValueError → 400
+    escape_norm = _normalize_escape(config.get("escape"))
+
     normalized = deepcopy(config)
     normalized["serial"]["parity"] = parity.upper()
+    normalized["escape"] = escape_norm
     # 1.0/2.0 浮点写法归一为 int，1.5 保持 float。
     if normalized["serial"]["stopbits"] == 1:
         normalized["serial"]["stopbits"] = 1

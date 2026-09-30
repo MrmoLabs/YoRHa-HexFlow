@@ -12,9 +12,10 @@
 - 停止为协作式：delay 分片睡眠逐片查停止位；已发出的 transport.send 不
   打断（短超时内自然结束），停止后剩余步标 SKIPPED。
 - 步执行：apply_plan（TIME/COUNTER 重算 + checksum 反算，见 sequence_plan）
-  → transport.send（read_timeout_ms 取序列 config，None = 传输配置缺省）→
-  记 OK/ERROR。stop_on_error=True（缺省）遇 ERROR 中止 → result=failed；
-  False 记错继续 → 跑完 result=completed。
+  → N4 出线前转义（transport config `escape`，缺省关闭原样；记录/存档即线上
+  字节，replay 不二次转义）→ transport.send（read_timeout_ms 取序列 config，
+  None = 传输配置缺省）→ 记 OK/ERROR。stop_on_error=True（缺省）遇 ERROR
+  中止 → result=failed；False 记错继续 → 跑完 result=completed。
 
 快照字段是轮询契约（P4 序列页）：
 running / result(idle|running|completed|failed|stopped) / sequence_id /
@@ -31,6 +32,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from backend.core import transport
+from backend.core.escape import escape_bytes, table_from_config
 from backend.core.sequence_plan import apply_plan
 
 
@@ -224,6 +226,8 @@ def execute(run: _Run) -> None:
             started = time.perf_counter()
             try:
                 data = apply_plan(step["payload"], step.get("plan"), time.time() * 1000)
+                # N4 (G3): 出线前转义 —— 先转义再记 sent/存档（记录即线上字节）
+                data = escape_bytes(data, table_from_config(transport.get_config()))
                 record["sent"] = " ".join(f"{b:02X}" for b in data)
                 response = transport.send(data, read_timeout_ms=read_timeout_ms)
             except ValueError as e:

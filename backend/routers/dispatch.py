@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.core import response_match, sequence_runner, transport
+from backend.core.escape import escape_hex, table_from_config
 from backend.core.frame_builder import build_wrapped
 from backend.db.database import get_db
 from backend.db.log_store import safe_log
@@ -98,9 +99,16 @@ def dispatch_frame(request: DispatchRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail="序列运行中，手动发送已互斥（先停止序列）")
     # 批次一 1c: wrap 存在 → hex_string 视作内核载荷，先封装再终检 hex
     # （wrap 缺省 → 下方裸帧路径与既有行为逐字节一致，§0 硬约束）。
-    hex_string = request.hex_string
+    # N4 (G3): 出线前先对**内核**按转义表转义、再套壳（外壳 FA…ED 字面不转；
+    # 壳内 length/checksum 因此按线上字节计）—— 缺省关闭 → 原样返回。
+    try:
+        hex_string = escape_hex(
+            request.hex_string, table_from_config(transport.get_config())
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
     if request.wrap is not None:
-        hex_string = _apply_wrap(request.wrap, [request.hex_string], db)
+        hex_string = _apply_wrap(request.wrap, [hex_string], db)
     try:
         data = hex_to_bytes(hex_string)
     except ValueError as e:
@@ -267,9 +275,15 @@ def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_
     if sequence_runner.is_running():
         raise HTTPException(status_code=409, detail="序列运行中，手动发送已互斥（先停止序列）")
     # 批次一 1c: 与 dispatch_frame 同口径 —— wrap 先封装、hex 终检在后
-    hex_string = request.hex_string
+    # N4 (G3): 与 dispatch_frame 同口径 —— 内核先转义再套壳（缺省关闭原样）
+    try:
+        hex_string = escape_hex(
+            request.hex_string, table_from_config(transport.get_config())
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
     if request.wrap is not None:
-        hex_string = _apply_wrap(request.wrap, [request.hex_string], db)
+        hex_string = _apply_wrap(request.wrap, [hex_string], db)
     try:
         data = hex_to_bytes(hex_string)
     except ValueError as e:

@@ -11,6 +11,7 @@ import {
     responseHexOf
 } from '../utils/terminalPanes';
 import { profileBadges, profileOptionLabel, profileSummary } from '../utils/profileView';
+import { escapeHex, escapeWarnings, toEscapeDraft } from '../utils/escapeTable';
 
 // E3 通讯调试页：传输配置模型 UI（发送模式/目标地址/串口参数，接 E2
 // /transport/config|status）+ 三面板 —— 发送历史 / 原始报文 / 响应与错误
@@ -47,7 +48,7 @@ const MODES = [
 ];
 
 // 配置 ⇄ 表单草稿：全部字段以字符串入 input，提交时数值字段再转数字，
-// 空串原样交给后端校验（400 detail 为 SSOT）。
+// 空串原样交给后端校验（400 detail 为 SSOT）。escape 段见 utils/escapeTable.js。
 const toDraft = (config) => ({
     mode: config?.mode || 'loopback',
     tcp: {
@@ -63,11 +64,17 @@ const toDraft = (config) => ({
         parity: config?.serial?.parity || 'N',
         stopbits: String(config?.serial?.stopbits ?? 1),
         read_timeout_ms: String(config?.serial?.read_timeout_ms ?? '')
-    }
+    },
+    escape: toEscapeDraft(config?.escape)
 });
 
 const num = (value) => (value === '' ? value : Number(value));
 
+// 紧凑 hex → 面板显示口径（两字符一对空格分隔）
+const spacedHex = (compact) => (compact.match(/.{1,2}/g) || []).join(' ');
+
+// escape 段与 mode/tcp/serial 同为「整段全量提交」：pairs 是列表，后端
+// _deep_merge 只递归对象 → 列表整体替换（删行才生效）。
 const toPatch = (draft) => ({
     mode: draft.mode,
     tcp: {
@@ -83,6 +90,12 @@ const toPatch = (draft) => ({
         parity: draft.serial.parity,
         stopbits: num(draft.serial.stopbits),
         read_timeout_ms: num(draft.serial.read_timeout_ms)
+    },
+    escape: {
+        enabled: !!draft.escape?.enabled,
+        pairs: (draft.escape?.pairs || []).map(([src, dst]) => [
+            String(src ?? ''), String(dst ?? '')
+        ])
     }
 });
 
@@ -285,6 +298,38 @@ export default function Terminal() {
     const connected = Boolean(status?.connected);
     const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) || null;
 
+    // N4 (G3): 转义表草稿操作 + 样例预览（转义算法 SSOT 在 BE，样例同口径）
+    const escapePairs = draft?.escape?.pairs || [];
+    const setEscape = (escape) => setDraft({ ...draft, escape });
+    const updatePair = (index, slot, value) => setEscape({
+        enabled: !!draft?.escape?.enabled,
+        pairs: escapePairs.map((pair, i) => (
+            i === index
+                ? (slot === 0 ? [value, String(pair?.[1] ?? '')]
+                    : [String(pair?.[0] ?? ''), value])
+                : pair
+        ))
+    });
+    const addPair = () => setEscape({
+        enabled: !!draft?.escape?.enabled,
+        pairs: [...escapePairs, ['', '']]
+    });
+    const removePair = (index) => setEscape({
+        enabled: !!draft?.escape?.enabled,
+        pairs: escapePairs.filter((_, i) => i !== index)
+    });
+
+    const sampleFroms = escapePairs
+        .map((pair) => String(pair?.[0] ?? '').trim().toUpperCase())
+        .filter((value) => value !== '');
+    const escapeSample = sampleFroms.length ? `AA ${sampleFroms.join(' ')} BB` : '';
+    const escapedSample = escapeSample ? escapeHex(escapeSample, draft?.escape) : null;
+    const escapePreview = !escapeSample
+        ? null
+        : `${escapeSample} → ${!draft?.escape?.enabled
+            ? escapeSample
+            : (escapedSample === null ? '—' : spacedHex(escapedSample))}`;
+
     return (
         <div className="flex-1 overflow-auto bg-[radial-gradient(circle_at_top,_rgba(218,212,187,0.12),_transparent_45%),linear-gradient(180deg,_rgba(212,206,178,0.04),_rgba(10,10,10,0))] text-nier-light">
             <NieRModal
@@ -426,6 +471,80 @@ export default function Terminal() {
                                             进程内环回通道，无需目标参数；/dispatch 口径与存量一致。
                                         </p>
                                     )}
+
+                                    {/* N4 (G3): 帧字节转义 —— 出线前对内核字节转义，
+                                        套壳外壳字面不转；缺省关闭，逐字节与存量一致 */}
+                                    <div className="space-y-2 border-t border-nier-light/20 pt-3">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[10px] tracking-[0.15em] opacity-60">帧字节转义 ESCAPE</span>
+                                            <span className="text-[10px] font-bold">
+                                                {draft.escape.enabled ? '已启用 ENABLED' : '关闭 DISABLED'}
+                                            </span>
+                                        </div>
+
+                                        <div className="flex gap-2">
+                                            {[['关闭 OFF', false], ['启用 ON', true]].map(([label, on]) => (
+                                                <button
+                                                    key={label}
+                                                    type="button"
+                                                    onClick={() => setEscape({ ...draft.escape, enabled: on })}
+                                                    className={`px-3 py-1 border text-[10px] font-bold tracking-[0.2em] transition-colors duration-150 ${draft.escape.enabled === on
+                                                        ? 'border-nier-light bg-nier-light text-nier-dark'
+                                                        : 'border-nier-light/40 text-nier-light/70 hover:border-nier-light'}`}
+                                                >
+                                                    {label}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        {escapePairs.map((pair, index) => (
+                                            <div key={`escape-${index}`} className="flex items-end gap-2">
+                                                <label className={labelClass}>
+                                                    原字节
+                                                    <input type="text" value={String(pair?.[0] ?? '')} placeholder="7D"
+                                                        onChange={(e) => updatePair(index, 0, e.target.value)}
+                                                        className={inputClass} />
+                                                </label>
+                                                <span className="pb-1 text-[10px] opacity-50">→</span>
+                                                <label className={labelClass}>
+                                                    替换序列
+                                                    <input type="text" value={String(pair?.[1] ?? '')} placeholder="7D5D"
+                                                        onChange={(e) => updatePair(index, 1, e.target.value)}
+                                                        className={inputClass} />
+                                                </label>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removePair(index)}
+                                                    className="px-2 py-1 border border-nier-light/40 text-[10px] text-nier-light/70 hover:border-nier-light transition-colors duration-150"
+                                                >
+                                                    删除
+                                                </button>
+                                            </div>
+                                        ))}
+
+                                        <button
+                                            type="button"
+                                            onClick={addPair}
+                                            className="px-3 py-1 border border-nier-light/40 text-[10px] font-bold tracking-[0.2em] text-nier-light/70 hover:border-nier-light transition-colors duration-150"
+                                        >
+                                            + 添加规则
+                                        </button>
+
+                                        {escapePreview && (
+                                            <div className="flex gap-2 text-[10px]">
+                                                <span className="opacity-60">样例 SAMPLE</span>
+                                                <span>{escapePreview}</span>
+                                            </div>
+                                        )}
+
+                                        {escapeWarnings(draft.escape).map((warn, i) => (
+                                            <div key={`escape-warn-${i}`} className="text-[10px] text-amber-300/90">⚠ {warn}</div>
+                                        ))}
+
+                                        <p className="text-[10px] leading-4 opacity-50">
+                                            出线前转义内核字节（套壳外壳字面不转）；画布与编译预览仍是逻辑帧，线上字节以发送历史为准。
+                                        </p>
+                                    </div>
 
                                     {configError && <div className="text-red-300 text-[11px]">ERR: {configError}</div>}
 
