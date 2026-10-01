@@ -1,7 +1,6 @@
 """E1-6 (B8): TIME_ACCUMULATOR / AUTO_COUNTER 语义 — 双端 byte-equal 锚点。
 
-向量表与 frontend/src/utils/__tests__/InstructionEncoder.test.js 的 E1-6
-VECTORS 逐行同步（两端各自钉同一张表实现跨语言一致性），改一必改二。
+向量表单一真相源 = vectors/time_counter.json（CP2b / D11-①）：本表与前端 InstructionEncoder.test.js 的 E1-6 TIME/AUTO 向量 同读这一份 JSON，新增/修改向量只写一处；跨语言特殊值约定（{"$v": "Infinity"/"-Infinity"/"NaN"} 包装对象）见 vectors/README.md。
 
 now 以 epoch ms 注入：FE `encodeInstruction` 第 4 参 `opts.now` ↔
 BE `fields_to_blocks(now=…)`。TIME 的 now = _iso_ms(base) + offset —— 两端
@@ -16,31 +15,15 @@ from datetime import datetime
 
 from backend.core.orchestrator import _iso_ms
 from backend.routers.datahub import compile_blocks, fields_to_blocks, frame_bytes
+from vectors.load_vectors import load_vectors
 
-# 与前端 E1-6 TIME_VECTORS 同步：(base_time, offset_ms, byte_len, value, expected_hex)
-TIME_VECTORS = [
-    ("2000-01-01T00:00:00Z", 100_000, 2, 7, "0064"),    # 100s
-    ("2000-01-01T00:00:00", 90_000, 2, 7, "005A"),       # 90s（naive 本地时区）
-    ("2000-01-01T00:00:00Z", -5_000, 2, 7, "0005"),      # now < base → -5 → abs
-    ("2000-01-01T00:00:00Z", 300_000, 1, 7, "2C"),       # 超宽截断 300 & 0xFF
-    ("2000-06-15 10:30:00", 5_400_000, 2, 7, "1518"),    # 90min，空格分隔 ISO
-]
+# 行形状（JSON 行）: (base_time, offset_ms, byte_len, value, expected_hex)
+# CP2b (D11-①): 单一真相源 = vectors/time_counter.json · 表 time —— 两端同读一份，新增向量只写一处
+TIME_VECTORS = load_vectors("time_counter", "time")
 
-# 与前端 E1-6 AUTO_VECTORS 同步：
-# (value, start_val, step, max, byte_len, expected_hex)
-AUTO_VECTORS = [
-    (5, None, 1, 10, 2, "0006"),        # (5+1)%10
-    (9, None, 1, 10, 2, "0000"),        # 回绕到 0
-    (-4, None, 1, 10, 2, "0007"),       # 负值双重取模 → 7（JS/Python 同）
-    (5, None, 2, None, 2, "0007"),      # max 缺省 → 不回绕
-    (-3, None, None, None, 2, "0003"),  # step 缺省 → 0；负值无回绕 → abs 现状
-    (None, 3, 1, 10, 2, "0004"),        # value 缺省 → start_val
-    (300, None, "x", 0, 2, "012C"),     # step 非法 → 0；max 非正 → 不回绕
-    (9, None, 5, 7, 2, "0000"),         # (9+5)%7 = 0
-    (0, 7, 1, None, 2, "0001"),         # value=0 显式（不落到 start_val）
-    (9, None, 1, 10, 1, "00"),          # byte_len=1
-    ("8", None, 1, 10, 2, "0009"),      # 严格十进制字符串 Current
-]
+# 行形状（JSON 行）: # (value, start_val, step, max, byte_len, expected_hex)
+# CP2b (D11-①): 单一真相源 = vectors/time_counter.json · 表 auto —— 两端同读一份，新增向量只写一处
+AUTO_VECTORS = load_vectors("time_counter", "auto")
 
 
 def time_field(base, byte_len, value):

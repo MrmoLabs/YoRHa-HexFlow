@@ -1,0 +1,57 @@
+{
+  "main": {
+    "_note": "三处同值锚点：backend/tests/test_frame_builder.py · test_wrap_api.py · frontend/src/utils/__tests__/blockMerge.test.js 同读这一份",
+    "children": [
+      {
+        "id": "h",
+        "label": "h",
+        "type": "fixed",
+        "byte_length": 2,
+        "hex_value": "FA FA",
+        "config": {},
+        "children": []
+      },
+      {
+        "id": "l",
+        "label": "l",
+        "type": "length",
+        "byte_length": 1,
+        "hex_value": "00",
+        "config": {},
+        "parameter_config": {
+          "type": "length",
+          "refs": [
+            "s"
+          ]
+        },
+        "children": []
+      },
+      {
+        "id": "s",
+        "label": "s",
+        "type": "slot",
+        "byte_length": 0,
+        "hex_value": null,
+        "config": {},
+        "children": []
+      },
+      {
+        "id": "t",
+        "label": "t",
+        "type": "fixed",
+        "byte_length": 1,
+        "hex_value": "ED",
+        "config": {},
+        "children": []
+      }
+    ],
+    "payloads": [
+      "0102"
+    ],
+    "expect": {
+      "hex": "FA FA 02 01 02 ED",
+      "total_length": 6,
+      "warnings": []
+    }
+  }
+}

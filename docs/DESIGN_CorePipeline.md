@@ -25,7 +25,9 @@
   （`/dispatch`、`/dispatch/transaction`、序列 Runner、日志回放）+ 编排导出
   + 加工页预览全部经它；前端 `blockMerge` 降级为**同源预览镜像**（有单测锁双端一致）。
 - **前端预览、后端定稿**（D11-A）：预览失配可容忍，**发送产物以后端为准**；
-  E1 批次建立的双端向量表在收敛完成前**继续双跑**，不撤。
+  E1 批次建立的双端向量表在收敛完成前**继续双跑**，不撤。→ **D11-① 已实施
+  （CP2b，2026-10-01）**：双跑从「两端各抄一张表」改为**同读一份
+  `vectors/*.json`**（新增向量只写一处），② 发送前比对 / ③ 全量替换不在本期。
 - **协议单层 + 容器嵌套**（D2-A）：不做跨协议引用，复用靠复制（批次三 P1-1 已有）。
 
 ## 2. D1 落地：绑定模型（DDL 草案）
@@ -194,7 +196,8 @@ def build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) -> Wrap
 > **零 DDL**（`models.py` 未动、`yorha.db` 不随本批提交），`/dispatch` 裸发缺省
 > 口径逐字节不变。**人工验证 5 项已通过 → 已提交 `5afe706`（2026-10-01）。**
 > 明细与验收见 `PLAN_Backlog.md` §8.19。
-> D11-① 已拆出 **CP2b**（见下），未随本批实施。
+> D11-① 已拆出 **CP2b**（见下），未随本批实施 → **CP2b 已于同日实施完毕**
+> （`PLAN_Backlog.md` §8.20，单一真相源 = 根目录 `vectors/`）。
 
 - D3 槽契约执行（`fit_policy=reject` 生效 + warning 徽标 + 新建槽 UI 默认 reject）
   + D12 删除级联（指令删除引用计数弹窗 + 后端同事务级联，镜像 `test_protocol_delete.py`）。
@@ -223,6 +226,9 @@ def build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) -> Wrap
   重估：向量表含 `Infinity`/`NaN`/`true` 等**JSON 无法直接表达**的值，需先定
   跨语言特殊值约定再迁 ~13 组 / ~15 个测试文件，与本批「防错」主题不同、回归面
   独立。批次二（CP2）**只含防错**三项。明细见 `PLAN_Backlog.md` §1 CP2b。
+  → ✅ **CP2b 已完成（2026-10-01）**：特殊值约定 = **`$v` 包装对象**，两端测试
+  改读 `vectors/*.json`（15 表 / 19 文件），新增向量只写一处；
+  明细见 `PLAN_Backlog.md` §8.20 与 `vectors/README.md`。
 
 ### 批次三（演进 · 2026-10-01 扩容：并入 D13 封装配方）
 

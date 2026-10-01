@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { InstructionEncoder } from '../InstructionEncoder';
+import { loadVectors } from '../../../../vectors/vectors.js';
+import presenceVec from '../../../../vectors/presence.json';
 
 // ─── N3 (G1 · PLAN §8.16): presence 条件存在 —— 编码期判定（红测先行） ────
-// 口径（LEAF/GROUP/COMBINED 向量与 backend/tests/test_encode_presence.py
-// 同步，改一必改二）：
+// 口径（LEAF/GROUP/COMBINED 向量单一真相源 = vectors/presence.json，CP2b/D11-①
+// 与 backend/tests/test_encode_presence.py 同读这一份）：
 // - 判定链 = computed > inputs > pc.value（_repeatCount DYNAMIC 同链），
 //   比较 String(refVal) === String(expect)（数值 1 命中 '1'）；
 // - fail-open：presence 非对象 / 缺 ref_id / 缺 expect / 值链不可解析
@@ -44,33 +46,13 @@ const kid = (id, hex, pid) => ({
     parent_id: pid, parameter_config: { hex },
 });
 
-// 与 backend/tests/test_encode_presence.py LEAF_VECTORS 同步
+// CP2b (D11-①): 单一真相源 = vectors/presence.json —— 两端同读一份，新增向量只写一处。
 // [presence, expectedHex] —— 帧 = cmd(AA) + gated(BB)
-const LEAF_VECTORS = [
-    [{ ref_id: 'cmd', expect: '1' }, 'AABB'],   // 命中
-    [{ ref_id: 'cmd', expect: '2' }, 'AA'],     // 未命中
-    [{ ref_id: 'cmd', expect: '01' }, 'AA'],    // String 严格归一（'1' ≠ '01'）
-    [{ ref_id: 'cmd', expect: ' 1' }, 'AA'],    // 不 trim，严格比较
-    [{}, 'AABB'],                               // fail-open：非对象字段缺失
-    [{ ref_id: 'cmd' }, 'AABB'],                // fail-open：缺 expect
-    [{ expect: '1' }, 'AABB'],                  // fail-open：缺 ref_id
-    ['bad', 'AABB'],                            // fail-open：非对象
-    [null, 'AABB'],                             // fail-open：null
-    [{ ref_id: 'ghost', expect: '1' }, 'AABB'], // fail-open：ref 悬空
-    [{ ref_id: 'cmd', expect: null }, 'AABB'],  // fail-open：expect null
-    [{ ref_id: 'cmd', expect: '' }, 'AABB'],    // fail-open：expect 空串
-    [{ ref_id: 'cmd', expect: 1 }, 'AABB'],     // 数值 expect 命中字符串值
-];
+const LEAF_VECTORS = loadVectors(presenceVec.leaf);
 
-// 与 backend/tests/test_encode_presence.py GROUP_VECTORS 同步
+// CP2b (D11-①): 单一真相源 = vectors/presence.json —— 两端同读一份，新增向量只写一处。
 // [presence, repeat_type, repeat_count, expectedHex] —— 帧 = cmd(AA) + 组(11)
-const GROUP_VECTORS = [
-    [{ ref_id: 'cmd', expect: '2' }, 'FIXED', 3, 'AA'],           // 未命中 → 连 ×3 都不展开
-    [{ ref_id: 'cmd', expect: '1' }, 'FIXED', 3, 'AA111111'], // 命中 → ×3
-    [{ ref_id: 'cmd', expect: '1' }, 'NONE', 1, 'AA11'],
-    [{}, 'FIXED', 2, 'AA1111'],                                   // fail-open → 照常展开
-    [{ ref_id: 'ghost', expect: '1' }, 'FIXED', 2, 'AA1111'],     // 悬空 fail-open → 照常展开
-];
+const GROUP_VECTORS = loadVectors(presenceVec.group);
 
 const buildLeaf = (presence) => ({
     fields: [cmdField(), leaf('opt', 1, 'BB', presence)],

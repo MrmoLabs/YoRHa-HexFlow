@@ -3,8 +3,8 @@
 Run from repo root: python -m unittest discover -s backend/tests
 
 覆盖四块：
-1. 纯函数向量表 `escape_hex` / `escape_bytes` —— 双端向量纪律，与
-   frontend/src/utils/__tests__/escapeTable.test.js 同字节序列，改一必改二；
+1. 纯函数向量表 `escape_hex` / `escape_bytes` —— 单一真相源 =
+   vectors/escape.json（CP2b / D11-①），前端 escapeTable.test.js 同读这一份；
 2. 传输配置 `escape` 段（白名单、旧库缺段补齐、400 文案、大小写归一、
    pairs 列表整体替换语义 —— FE 删行依赖）；
 3. 出线三路接线：/dispatch 裸发、/dispatch 套壳（**内核先转义再套壳**，
@@ -43,25 +43,13 @@ from backend.routers.dispatch import (
 )
 from backend.routers.logs import replay_log
 from backend.routers.transport import get_transport_config, set_transport_config
+from vectors.load_vectors import load_vectors
 
 # ---- 双端共享向量（pairs, 输入 hex, 期望 hex；紧凑大写）----
 # 空表 / 关闭态不在此表 —— 直通语义（原样返回、不解析）由
 # test_disabled_table_is_identity_and_unparsed 单独钉住。
-VECTORS = [
-    # 0x7D 型字头（受保护字节 → 转义前缀 + 替换字节）
-    ([["7D", "7D5D"], ["11", "7D31"], ["13", "7D32"]], "01 7D 02", "017D5D02"),
-    ([["7D", "7D5D"]], "7D 7D", "7D5D7D5D"),
-    # 未受保护字节原样
-    ([["7D", "7D5D"]], "5D 01", "5D01"),
-    # 单趟：替换产物不再二次转义
-    ([["7D", "7D5D"]], "7D 5D", "7D5D5D"),
-    # 0x10 型前缀（替换序列 = 前缀 + 原字节）
-    ([["11", "1011"]], "AA 11 BB", "AA1011BB"),
-    # 非前缀型多字节替换
-    ([["0D", "0D0A"]], "0D 0D", "0D0A0D0A"),
-    # 全字节覆盖含 00
-    ([["00", "7DFF"]], "00 01 00", "7DFF017DFF"),
-]
+# CP2b (D11-①): 单一真相源 = vectors/escape.json —— 两端同读一份，新增向量只写一处
+VECTORS = load_vectors("escape")
 
 PAIRS_7D = [["7D", "7D5D"]]
 # 套壳用：连外壳字节也列入表 —— 证明壳 FA/ED 字面不转

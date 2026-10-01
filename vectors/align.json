@@ -1,0 +1,492 @@
+[
+  [
+    [
+      {
+        "id": "a",
+        "name": "A",
+        "op_code": "FIXED",
+        "byte_len": 2,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "AABB"
+        }
+      },
+      {
+        "id": "b",
+        "name": "B",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "CC",
+          "align": 2
+        }
+      }
+    ],
+    "AABBCC"
+  ],
+  [
+    [
+      {
+        "id": "a",
+        "name": "A",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "AA"
+        }
+      },
+      {
+        "id": "b",
+        "name": "B",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "CC",
+          "align": 2
+        }
+      }
+    ],
+    "AA00CC"
+  ],
+  [
+    [
+      {
+        "id": "a",
+        "name": "A",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "AA"
+        }
+      },
+      {
+        "id": "b",
+        "name": "B",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "CC",
+          "align": 4
+        }
+      }
+    ],
+    "AA000000CC"
+  ],
+  [
+    [
+      {
+        "id": "a",
+        "name": "A",
+        "op_code": "FIXED",
+        "byte_len": 2,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "AABB",
+          "pad_to": 4
+        }
+      },
+      {
+        "id": "b",
+        "name": "B",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "CC"
+        }
+      }
+    ],
+    "AABB0000CC"
+  ],
+  [
+    [
+      {
+        "id": "a",
+        "name": "A",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "AA"
+        }
+      },
+      {
+        "id": "b",
+        "name": "B",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "CC",
+          "align": 2,
+          "pad_byte": "FF"
+        }
+      }
+    ],
+    "AAFFCC"
+  ],
+  [
+    [
+      {
+        "id": "a",
+        "name": "A",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "AA"
+        }
+      },
+      {
+        "id": "b",
+        "name": "B",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "CC",
+          "align": 4,
+          "pad_to": 8
+        }
+      }
+    ],
+    "AA000000CC000000"
+  ],
+  [
+    [
+      {
+        "id": "a",
+        "name": "A",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "AA"
+        }
+      },
+      {
+        "id": "g",
+        "name": "G",
+        "op_code": "ARRAY_GROUP",
+        "byte_len": 0,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "align": 4
+        },
+        "children": [
+          {
+            "id": "x",
+            "name": "X",
+            "op_code": "FIXED",
+            "byte_len": 1,
+            "sequence": 0,
+            "parent_id": "g",
+            "parameter_config": {
+              "hex": "BB"
+            }
+          },
+          {
+            "id": "y",
+            "name": "Y",
+            "op_code": "FIXED",
+            "byte_len": 1,
+            "sequence": 1,
+            "parent_id": "g",
+            "parameter_config": {
+              "hex": "CC"
+            }
+          }
+        ]
+      }
+    ],
+    "AA000000BBCC"
+  ],
+  [
+    [
+      {
+        "id": "g",
+        "name": "G",
+        "op_code": "ARRAY_GROUP",
+        "byte_len": 0,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {},
+        "children": [
+          {
+            "id": "x",
+            "name": "X",
+            "op_code": "FIXED",
+            "byte_len": 1,
+            "sequence": 0,
+            "parent_id": "g",
+            "parameter_config": {
+              "hex": "AA",
+              "align": 2
+            }
+          }
+        ],
+        "repeat_type": "FIXED",
+        "repeat_count": 2
+      }
+    ],
+    "AA00AA"
+  ],
+  [
+    [
+      {
+        "id": "a",
+        "name": "A",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "AA",
+          "value": 1
+        }
+      },
+      {
+        "id": "b",
+        "name": "B",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "CC",
+          "align": 2,
+          "presence": {
+            "ref_id": "a",
+            "expect": "9"
+          }
+        }
+      }
+    ],
+    "AA"
+  ],
+  [
+    [
+      {
+        "id": "a",
+        "name": "A",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "AA",
+          "value": 1
+        }
+      },
+      {
+        "id": "b",
+        "name": "B",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "CC",
+          "align": 2,
+          "presence": {
+            "ref_id": "a",
+            "expect": "1"
+          }
+        }
+      }
+    ],
+    "AA00CC"
+  ],
+  [
+    [
+      {
+        "id": "g",
+        "name": "G",
+        "op_code": "ARRAY_GROUP",
+        "byte_len": 0,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "pad_to": 8
+        },
+        "children": [
+          {
+            "id": "x",
+            "name": "X",
+            "op_code": "FIXED",
+            "byte_len": 1,
+            "sequence": 0,
+            "parent_id": "g",
+            "parameter_config": {
+              "hex": "BB"
+            }
+          }
+        ],
+        "repeat_type": "FIXED",
+        "repeat_count": 2
+      }
+    ],
+    "BBBB000000000000"
+  ],
+  [
+    [
+      {
+        "id": "a",
+        "name": "A",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "AA"
+        }
+      },
+      {
+        "id": "b",
+        "name": "B",
+        "op_code": "FIXED",
+        "byte_len": 2,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "1234",
+          "align": 4
+        },
+        "endianness": "LITTLE"
+      }
+    ],
+    "AA0000003412"
+  ],
+  [
+    [
+      {
+        "id": "a",
+        "name": "A",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "AA"
+        }
+      },
+      {
+        "id": "b",
+        "name": "B",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "CC",
+          "align": 0
+        }
+      }
+    ],
+    "AACC"
+  ],
+  [
+    [
+      {
+        "id": "a",
+        "name": "A",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "AA"
+        }
+      },
+      {
+        "id": "b",
+        "name": "B",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "CC",
+          "align": "9999"
+        }
+      }
+    ],
+    "AACC"
+  ],
+  [
+    [
+      {
+        "id": "a",
+        "name": "A",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "AA"
+        }
+      },
+      {
+        "id": "b",
+        "name": "B",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "CC",
+          "align": "4"
+        }
+      }
+    ],
+    "AA000000CC"
+  ],
+  [
+    [
+      {
+        "id": "a",
+        "name": "A",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "AA"
+        }
+      },
+      {
+        "id": "b",
+        "name": "B",
+        "op_code": "FIXED",
+        "byte_len": 1,
+        "sequence": 0,
+        "parent_id": null,
+        "parameter_config": {
+          "hex": "CC",
+          "align": 2,
+          "pad_byte": "Z"
+        }
+      }
+    ],
+    "AA00CC"
+  ]
+]

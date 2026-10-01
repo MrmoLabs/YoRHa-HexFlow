@@ -1,41 +1,17 @@
 """E1-1 (B5): INT_SIGNED 按位宽两补码 — 双端 byte-equal 锚点（stdlib 直测）。
 
-向量表与 frontend/src/utils/__tests__/InstructionEncoder.test.js 的 VECTORS
-逐行同步（两端各自钉同一张表实现跨语言一致性），改一必改二。
+向量表单一真相源 = vectors/int_signed.json（CP2b / D11-①）：本表与前端 InstructionEncoder.test.js 的 VECTORS 同读这一份 JSON，新增/修改向量只写一处；跨语言特殊值约定（{"$v": "Infinity"/"-Infinity"/"NaN"} 包装对象）见 vectors/README.md。
 """
 
 import unittest
 
 from backend.core.orchestrator import encode_int_signed
 from backend.routers.datahub import compile_blocks, fields_to_blocks, frame_bytes
+from vectors.load_vectors import load_vectors
 
-# (value, byte_len, expected_hex) — 与前端 InstructionEncoder.test.js 同步
-VECTORS = [
-    (-1, 1, "FF"),
-    (-1, 2, "FFFF"),
-    (-1, 8, "FFFFFFFFFFFFFFFF"),
-    (-128, 1, "80"),
-    (-129, 1, "7F"),
-    (0, 1, "00"),
-    (127, 1, "7F"),
-    (128, 1, "80"),
-    (255, 1, "FF"),
-    (256, 1, "00"),
-    (300, 1, "2C"),
-    (-2147483648, 4, "80000000"),
-    (2147483647, 4, "7FFFFFFF"),
-    (-1.5, 1, "FE"),
-    (1.5, 1, "01"),
-    (0.5, 1, "00"),
-    ("-4", 1, "FC"),
-    ("FF", 1, "00"),
-    ("1e3", 1, "00"),
-    ("", 1, "00"),
-    (True, 1, "00"),
-    (float("inf"), 1, "00"),
-    (float("nan"), 1, "00"),
-    (None, 1, "00"),
-]
+# 行形状（JSON 行）: (value, byte_len, expected_hex)
+# CP2b (D11-①): 单一真相源 = vectors/int_signed.json —— 两端同读一份，新增向量只写一处
+VECTORS = load_vectors("int_signed")
 
 
 def field(op, byte_len, cfg=None, sequence=0):

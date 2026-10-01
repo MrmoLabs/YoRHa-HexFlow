@@ -10,6 +10,8 @@ import {
     clampBitValue,
     BIT_GRID_COLORS
 } from '../bitGrid';
+import { loadVectors } from '../../../../vectors/vectors.js';
+import bitfieldVec from '../../../../vectors/bitfield.json';
 import { parseValueTable, formatValueTable } from '../bitMeta';
 import { packBitfieldDefault } from '../../config/runnerRenderRules';
 
@@ -96,18 +98,18 @@ describe('defaultSegmentName / packBits', () => {
     });
 
     // 改一必改二：位图预览打包必须与编码器同口径（runnerRenderRules.packBitfieldDefault）
-    it('packBits 与编码器镜像 packBitfieldDefault 逐例 byte-equal', () => {
-        const vectors = [
-            [[{ start_bit: 0, bit_len: 4, default_val: 5 }, { start_bit: 4, bit_len: 4, default_val: 10 }], 1],
-            [[{ start_bit: 0, bit_len: 8, default_val: 0xFF }], 1],
-            [[{ start_bit: 8, bit_len: 8, default_val: 0x12 }], 2],
-            [[{ start_bit: 0, bit_len: 16, default_val: 0x1234 }], 2],
-            [[{ start_bit: 4, bit_len: 12, default_val: 0xABC }], 2],
-            [[], 1],
-            [[{ start_bit: 0, bit_len: 40, default_val: 1 }], 8]
-        ];
-        for (const [bits, byteLen] of vectors) {
-            expect(packBits(bits, byteLen)).toBe(packBitfieldDefault(bits, byteLen));
+    // CP2b (D11-①): 单一真相源 = vectors/bitfield.json · 表 pack —— 两端同读一份，新增向量只写一处。
+    // 行形状 [segs, byteLen, expectHex]，segs = [start_bit, bit_len, default_val]（此处归一成 FE 键名）
+    it('packBits 与编码器镜像 packBitfieldDefault 逐例 byte-equal（并同钉共享期望 hex）', () => {
+        const vectors = loadVectors(bitfieldVec.pack)
+            .map(([segs, byteLen, expectHex]) => [
+                segs.map(([start_bit, bit_len, default_val]) => ({ start_bit, bit_len, default_val })),
+                byteLen,
+                expectHex.replace(/\s+/g, ''),
+            ]);
+        for (const [bits, byteLen, expected] of vectors) {
+            expect(packBits(bits, byteLen)).toBe(expected);
+            expect(packBitfieldDefault(bits, byteLen)).toBe(expected);
         }
     });
 });

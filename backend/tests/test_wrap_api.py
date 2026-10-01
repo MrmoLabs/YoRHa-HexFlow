@@ -4,8 +4,8 @@
 test_bindings 范式。覆盖：compile 端点 happy/404/400（显式槽悬空、非法载荷）、
 loopback 单发 wrap、事务 wrap、稠密 slot_order、非 wrap 路径逐字节不回归
 （§0 硬约束：/dispatch 缺省裸帧行为不变）。
-双端向量纪律：主向量 FA FA 02 01 02 ED 与 test_frame_builder /
-frontend/src/utils/__tests__/blockMerge.test.js 同字节，改一必改三。
+三处同值主向量 FA FA 02 01 02 ED 的单一真相源 = vectors/wrap.json · 表 main
+（CP2b / D11-①）：本文件 / test_frame_builder.py / blockMerge.test.js 同读这一份。
 """
 
 import tempfile
@@ -29,21 +29,15 @@ from backend.routers.dispatch import (
     dispatch_transaction,
 )
 from backend.schemas.block import WrappedCompileRequest
+from vectors.load_vectors import load_vectors
 
-# 主共享向量协议（与 test_frame_builder.SharedVectorTest 同构）：
-# h "FA FA" / l refs[s] / slot s / t "ED"，载荷 0102 → "FA FA 02 01 02 ED"。
+# 主共享向量协议（CP2b / D11-① 单一真相源 = vectors/wrap.json · 表 main，与
+# test_frame_builder.SharedVectorTest / blockMerge.test.js 三处同读一份）：
+# h "FA FA" / l refs[s] / slot s / t "ED"，载荷 0102 → VECTOR_HEX。
 PROTO_ID = "proto-vector"
-VECTOR_CHILDREN = [
-    {"id": "h", "label": "h", "type": "fixed", "byte_length": 2,
-     "hex_value": "FA FA", "config": {}, "children": []},
-    {"id": "l", "label": "l", "type": "length", "byte_length": 1,
-     "hex_value": "00", "config": {},
-     "parameter_config": {"type": "length", "refs": ["s"]}, "children": []},
-    {"id": "s", "label": "s", "type": "slot", "byte_length": 0,
-     "hex_value": None, "config": {}, "children": []},
-    {"id": "t", "label": "t", "type": "fixed", "byte_length": 1,
-     "hex_value": "ED", "config": {}, "children": []},
-]
+_MAIN = load_vectors("wrap", "main")
+VECTOR_CHILDREN = _MAIN["children"]
+VECTOR_HEX = _MAIN["expect"]["hex"]
 
 # 双槽协议：显式 slot_id 与稠密 slot_order 位次语义用。
 PROTO_2SLOT = "proto-2slot"
@@ -99,7 +93,7 @@ class CompileWrappedEndpointTests(WrapApiTestBase):
             WrappedCompileRequest(protocol_id=PROTO_ID, payloads=["0102"]),
             db=self.db,
         )
-        self.assertEqual(resp.hex_string, "FA FA 02 01 02 ED")
+        self.assertEqual(resp.hex_string, VECTOR_HEX)
         self.assertEqual(resp.total_length, 6)
         self.assertEqual(resp.warnings, [])
 
@@ -167,7 +161,7 @@ class DispatchWrapTests(WrapApiTestBase):
         )
         self.assertEqual(record.status, "SENT")
         self.assertEqual(record.channel, "LOOPBACK")
-        self.assertEqual(record.hex_string, "FA FA 02 01 02 ED")
+        self.assertEqual(record.hex_string, VECTOR_HEX)
         self.assertEqual(record.byte_count, 6)
         self.assertEqual(record.echo, "FAFA020102ED")
         self.assertEqual(record.instruction_name, "开门")
@@ -255,16 +249,16 @@ class TransactionWrapTests(WrapApiTestBase):
         )
         self.assertEqual(record.status, "OK")
         self.assertEqual(record.channel, "LOOPBACK")
-        self.assertEqual(record.hex_string, "FA FA 02 01 02 ED")
+        self.assertEqual(record.hex_string, VECTOR_HEX)
         self.assertEqual(record.byte_count, 6)
-        self.assertEqual(record.attempts[0].sent, "FA FA 02 01 02 ED")
-        self.assertEqual(record.attempts[0].received, "FA FA 02 01 02 ED")
+        self.assertEqual(record.attempts[0].sent, VECTOR_HEX)
+        self.assertEqual(record.attempts[0].received, VECTOR_HEX)
         self.assertEqual(record.echo, "FAFA020102ED")
 
         # 历史口径: 事务按 SENT + raw/response 入栈，hex 为封装后帧
         top = dispatch_mod.dispatch_history(limit=1)[0]
         self.assertEqual(top.status, "SENT")
-        self.assertEqual(top.hex_string, "FA FA 02 01 02 ED")
+        self.assertEqual(top.hex_string, VECTOR_HEX)
 
     def test_transaction_wrap_404(self):
         with self.assertRaises(HTTPException) as ctx:

@@ -1,7 +1,6 @@
 """E1-4 (B2): IEEE 754 float32 编码 — 双端 byte-equal 锚点（stdlib 直测）。
 
-向量表与 frontend/src/utils/__tests__/InstructionEncoder.test.js 的 E1-4 VECTORS
-逐行同步（两端各自钉同一张表实现跨语言一致性），改一必改二。
+向量表单一真相源 = vectors/float_ieee.json（CP2b / D11-①）：本表与前端 InstructionEncoder.test.js 的 E1-4 VECTORS 同读这一份 JSON，新增/修改向量只写一处；跨语言特殊值约定（{"$v": "Infinity"/"-Infinity"/"NaN"} 包装对象）见 vectors/README.md。
 
 契约：op=FLOAT_IEEE + byte_len=4（bits=32）+ 规范 type（缺省/number）→
 float32 大端（网络序），恒 4 字节；bits=64（byte_len=8）与矛盾 type 不在
@@ -12,32 +11,11 @@ import unittest
 
 from backend.core.orchestrator import encode_float_ieee
 from backend.routers.datahub import compile_blocks, fields_to_blocks, frame_bytes
+from vectors.load_vectors import load_vectors
 
-# 与前端 E1-4 VECTORS 同步：(value, expected_hex)
-VECTORS = [
-    (0, "00000000"),
-    (1, "3F800000"),
-    (-1, "BF800000"),
-    (2, "40000000"),
-    (0.5, "3F000000"),
-    (1.5, "3FC00000"),
-    (0.1, "3DCCCCCD"),
-    (-0.1, "BDCCCCCD"),
-    (3.14, "4048F5C3"),
-    (100, "42C80000"),
-    (-100, "C2C80000"),
-    (65536, "47800000"),
-    ("3.14", "4048F5C3"),
-    ("FF", "00000000"),
-    ("1e3", "00000000"),
-    (True, "3F800000"),
-    (False, "00000000"),
-    (float("nan"), "00000000"),
-    (float("inf"), "00000000"),
-    (None, "00000000"),
-    (1e300, "7F800000"),
-    (-1e300, "FF800000"),
-]
+# 行形状（JSON 行）: (value, expected_hex)
+# CP2b (D11-①): 单一真相源 = vectors/float_ieee.json —— 两端同读一份，新增向量只写一处
+VECTORS = load_vectors("float_ieee")
 
 
 def field(op, byte_len, cfg=None, sequence=0, endianness=None, field_id=None):

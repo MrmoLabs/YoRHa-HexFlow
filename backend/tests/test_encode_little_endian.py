@@ -1,7 +1,6 @@
 """E1-2 (B6): endianness=LITTLE 整体逆序 — 双端 byte-equal 锚点（stdlib 直测）。
 
-向量表与 frontend/src/utils/__tests__/InstructionEncoder.test.js 的 E1-2 VECTORS
-逐行同步（两端各自钉同一张表实现跨语言一致性），改一必改二。
+向量表单一真相源 = vectors/little_endian.json（CP2b / D11-①）：本表与前端 InstructionEncoder.test.js 的 E1-2 VECTORS 同读这一份 JSON，新增/修改向量只写一处；跨语言特殊值约定（{"$v": "Infinity"/"-Infinity"/"NaN"} 包装对象）见 vectors/README.md。
 
 语义：先按 op 语义出大端字节，再对整段字节逆序（字节数不变；单字节不动）。
 length/checksum handler 在逆序前的 big-endian 值上计算（Orchestrator.process
@@ -12,17 +11,11 @@ import unittest
 
 from backend.core.orchestrator import _reverse_hex_pairs
 from backend.routers.datahub import compile_blocks, fields_to_blocks, frame_bytes
+from vectors.load_vectors import load_vectors
 
-# (endianness, op, byte_len, cfg, expected_hex) — 与前端 E1-2 VECTORS 同步
-VECTORS = [
-    ("LITTLE", "INT_SIGNED", 2, {"value": -2}, "FEFF"),
-    ("LITTLE", "HEX_RAW", 2, {"hex": "AA BB"}, "BBAA"),
-    ("LITTLE", "HEX_RAW", 1, {"hex": "AA"}, "AA"),
-    ("LITTLE", "FIXED", 2, {"hex": "1234"}, "3412"),
-    ("little", "FIXED", 2, {"hex": "1234"}, "3412"),
-    (None, "FIXED", 2, {"hex": "1234"}, "1234"),
-    ("BIG", "FIXED", 2, {"hex": "1234"}, "1234"),
-]
+# 行形状（JSON 行）: (endianness, op, byte_len, cfg, expected_hex)
+# CP2b (D11-①): 单一真相源 = vectors/little_endian.json —— 两端同读一份，新增向量只写一处
+VECTORS = load_vectors("little_endian")
 
 
 def field(op, byte_len, cfg=None, sequence=0, endianness=None, field_id=None):

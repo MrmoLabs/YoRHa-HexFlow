@@ -1,8 +1,6 @@
 """E1-3 (B3/B4): packed BCD + SCALED factor/offset 定标 — 双端 byte-equal 锚点。
 
-向量表与 frontend/src/utils/__tests__/InstructionEncoder.test.js 的 E1-3
-VECTORS_BCD / VECTORS_SCALED 逐行同步（两端各自钉同一张表实现跨语言一致性），
-改一必改二。
+向量表单一真相源 = vectors/bcd_scaled.json（CP2b / D11-①）：本表与前端 InstructionEncoder.test.js 的 E1-3 VECTORS_BCD / VECTORS_SCALED 同读这一份 JSON，新增/修改向量只写一处；跨语言特殊值约定（{"$v": "Infinity"/"-Infinity"/"NaN"} 包装对象）见 vectors/README.md。
 
 口径：
 - BCD：floor 解析（_floor_numeric，同 INT_SIGNED）→ abs → 数字逐 nibble 打包，
@@ -16,48 +14,15 @@ import unittest
 
 from backend.core.orchestrator import encode_bcd, encode_scaled
 from backend.routers.datahub import compile_blocks, fields_to_blocks, frame_bytes
+from vectors.load_vectors import load_vectors
 
-# 与前端 E1-3 VECTORS_BCD 同步：(value, byte_len, expected_hex)
-VECTORS_BCD = [
-    (25, 2, "0025"),
-    (25, 1, "25"),
-    (0, 2, "0000"),
-    (12345, 2, "2345"),
-    (255, 1, "55"),
-    (-25, 2, "0025"),
-    (12.9, 2, "0012"),
-    (1.5, 1, "01"),
-    (-1.5, 1, "02"),
-    ("42", 1, "42"),
-    ("-7", 1, "07"),
-    ("FF", 1, "00"),
-    ("", 1, "00"),
-    # byte_len=0 不入表：FE 既有 `byte_len || 1` 归一 / BE `>0` 守卫属通用边角，非 B3 语义
-    (True, 1, "00"),
-    (float("inf"), 1, "00"),
-    (float("nan"), 1, "00"),
-    (None, 1, "00"),
-]
+# 行形状（JSON 行）: (value, byte_len, expected_hex)
+# CP2b (D11-①): 单一真相源 = vectors/bcd_scaled.json · 表 bcd —— 两端同读一份，新增向量只写一处
+VECTORS_BCD = load_vectors("bcd_scaled", "bcd")
 
-# 与前端 E1-3 VECTORS_SCALED 同步：(value, factor, offset, byte_len, expected_hex)
-VECTORS_SCALED = [
-    (5, 2, 10, 2, "001E"),
-    (5, None, None, 2, "0005"),
-    (5, "", "", 2, "0005"),
-    (2.7, 1, 0, 2, "0002"),
-    (-3, 1, 0, 2, "0003"),
-    (10, 0.5, 0, 2, "0005"),
-    (10, 2.5, 0, 2, "0019"),
-    (300, 10, 0, 1, "B8"),
-    ("FF", 1, 0, 1, "00"),
-    ("12", 1, 0, 1, "0C"),
-    (7, "3", 0, 1, "15"),
-    (7, 1, "2.5", 1, "09"),
-    (None, 1, 0, 1, "00"),
-    (0.5, 1, 0, 1, "00"),
-    (-0.5, 1, 0, 1, "01"),
-    (255, 1, 0, 2, "00FF"),
-]
+# 行形状（JSON 行）: (value, factor, offset, byte_len, expected_hex)
+# CP2b (D11-①): 单一真相源 = vectors/bcd_scaled.json · 表 scaled —— 两端同读一份，新增向量只写一处
+VECTORS_SCALED = load_vectors("bcd_scaled", "scaled")
 
 
 def field(op, byte_len, cfg=None, sequence=0, endianness=None, field_id=None):

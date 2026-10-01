@@ -1,8 +1,6 @@
 """N2 字符串批（PLAN §8.16 · G2）：STRING 定长文本编码 — 双端 byte-equal 锚点。
 
-向量表与 frontend/src/utils/__tests__/InstructionEncoder.test.js 的
-「N2 定长字符串 STRING」describe::VECTORS 逐行同步（两端各自钉同一张表实现
-跨语言一致性），改一必改二。口径：ascii 按 code point &0xFF（Python ord()
+向量表单一真相源 = vectors/string.json（CP2b / D11-①）：本表与前端 InstructionEncoder.test.js 的 STRING VECTORS 同读这一份 JSON，新增/修改向量只写一处；跨语言特殊值约定（{"$v": "Infinity"/"-Infinity"/"NaN"} 包装对象）见 vectors/README.md。口径：ascii 按 code point &0xFF（Python ord()
 ↔ JS code-point 迭代）、utf8 走 UTF-8 字节流（孤立代理项 → U+FFFD 替换，
 对齐 TextEncoder）、byte_len>0 → pad/截断定长、pad_char 按 2 位以内 hex
 严格解析（非法/缺省 0x00）。
@@ -12,23 +10,11 @@ import unittest
 
 from backend.core.orchestrator import encode_string
 from backend.routers.datahub import compile_blocks, fields_to_blocks, frame_bytes
+from vectors.load_vectors import load_vectors
 
-# (value, byte_len, encoding, pad_char, expected_hex) — 与前端同步
-VECTORS = [
-    ("AB", 4, None, None, "41420000"),
-    ("AB", 4, "ascii", "00", "41420000"),
-    ("AB", 4, "ascii", "20", "41422020"),
-    ("ABCD", 2, "ascii", "00", "4142"),
-    ("中", 3, "utf8", "00", "E4B8AD"),
-    ("中", 2, "utf8", "00", "E4B8"),
-    ("中", 2, "ascii", "00", "2D00"),
-    ("\U0001F600", 2, "ascii", "00", "0000"),
-    ("", 4, "ascii", "00", "00000000"),
-    (0, 4, "ascii", "00", "00000000"),
-    (25, 4, "ascii", "00", "32350000"),
-    ("AB", 4, "ascii", "zz", "41420000"),
-    ("\ud800", 3, "utf8", "00", "EFBFBD"),
-]
+# 行形状（JSON 行）: (value, byte_len, encoding, pad_char, expected_hex)
+# CP2b (D11-①): 单一真相源 = vectors/string.json —— 两端同读一份，新增向量只写一处
+VECTORS = load_vectors("string")
 
 
 def field(op, byte_len, cfg=None, sequence=0):

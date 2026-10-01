@@ -2,13 +2,14 @@ import copy
 import unittest
 
 from backend.core.frame_builder import build_wrapped
+from vectors.load_vectors import load_vectors
 
 # 批次一 1b (D4-A 后端 frame_builder 唯一封装入口)。
 # 语义移植自前端 blockMerge.js（fill/溢出追加/欠载保留/refs 改写），差异点：
 # 载荷是已编码内核 hex（指令编码仍在前端），注入为单 fixed 块，外壳
 # length/checksum 交由 handlers refs 集合模式真值重算。
-# 双端向量纪律：FA FA / 02 / 01 02 / ED 主向量与
-# frontend/src/utils/__tests__/blockMerge.test.js 钉同一字节序列，改一必改二。
+# 三处同值锚点（本文件 / test_wrap_api.py / blockMerge.test.js）的主向量单一真相源
+# = vectors/wrap.json · 表 main（CP2b / D11-①），三处同读一份，新增向量只写一处。
 
 
 def fixed(nid, hex_value, byte_length=None, label=None):
@@ -83,19 +84,14 @@ def shell(children):
 
 
 class SharedVectorTest(unittest.TestCase):
-    """主共享向量：FA FA / 02 / 01 02 / ED（与 blockMerge.test.js 同字节）。"""
+    """主共享向量：FA FA / 02 / 01 02 / ED —— 三处同读 vectors/wrap.json · main。"""
 
     def test_header_length_payload_tail(self):
-        children = shell([
-            fixed("h", "FA FA", 2),
-            length_block("l", ["s"]),
-            slot("s"),
-            fixed("t", "ED", 1),
-        ])
-        result = build_wrapped(children, ["0102"])
-        self.assertEqual(result["hex"], "FA FA 02 01 02 ED")
-        self.assertEqual(result["total_length"], 6)
-        self.assertEqual(result["warnings"], [])
+        main = load_vectors("wrap", "main")
+        result = build_wrapped(main["children"], main["payloads"])
+        self.assertEqual(result["hex"], main["expect"]["hex"])
+        self.assertEqual(result["total_length"], main["expect"]["total_length"])
+        self.assertEqual(result["warnings"], main["expect"]["warnings"])
 
     def test_checksum_refs_set_recomputed(self):
         children = shell([

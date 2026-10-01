@@ -1,7 +1,6 @@
 """N5 (G4 · PLAN §8.16): 字段级 align/pad_to 填充对齐 —— 双端 byte-equal 锚点（stdlib 直测）。
 
-向量表与 frontend/src/utils/__tests__/InstructionEncoder.align.test.js 的 VECTORS
-逐行同步（两端各自钉同一张表实现跨语言一致性），改一必改二。
+向量表单一真相源 = vectors/align.json（CP2b / D11-①）：本表与前端 InstructionEncoder.align.test.js 的 VECTORS 同读这一份 JSON，新增/修改向量只写一处；跨语言特殊值约定（{"$v": "Infinity"/"-Infinity"/"NaN"} 包装对象）见 vectors/README.md。
 
 口径（拍板：字段级 align + pad_to，骑 parameter_config 零 DDL）：
 - align = N（1..4096）→ 该字段**内容起点**绝对偏移补位到 ≡0 (mod N)，已对齐 0 字节；
@@ -23,6 +22,7 @@ import unittest
 
 from backend.core.pad import align_pad_len, pad_hex, pad_spec, pad_to_pad_len
 from backend.routers.datahub import compile_blocks, fields_to_blocks, frame_bytes
+from vectors.load_vectors import load_vectors
 
 
 def L(id_, hexval, seq=0, **kw):
@@ -60,41 +60,9 @@ def G(id_, kids, seq=0, repeat=None, **kw):
     return field
 
 
-# 与前端 VECTORS 逐行同步：(字段规格, 期望帧 hex)
-VECTORS = [
-    # align 已对齐 → 0 补位
-    ([L("a", "AABB"), L("b", "CC", align=2)], "AABBCC"),
-    # align 补 1 / 补 3
-    ([L("a", "AA"), L("b", "CC", align=2)], "AA00CC"),
-    ([L("a", "AA"), L("b", "CC", align=4)], "AA000000CC"),
-    # pad_to 帧尾补 2
-    ([L("a", "AABB", pad_to=4), L("b", "CC")], "AABB0000CC"),
-    # pad_byte 改填充字节值
-    ([L("a", "AA"), L("b", "CC", align=2, pad_byte="FF")], "AAFFCC"),
-    # align + pad_to 同字段：内容起点 4、内容末尾 5 → 补到 8（补 3）
-    ([L("a", "AA"), L("b", "CC", align=4, pad_to=8)], "AA000000CC000000"),
-    # 组级 align：组内容起点补位到 4（归入前一字段的 span）
-    ([L("a", "AA"), G("g", [L("x", "BB"), L("y", "CC")], align=4)], "AA000000BBCC"),
-    # 重复组内子字段 align：逐副本按绝对偏移算（非 Σ×reps 常数）
-    ([G("g", [L("x", "AA", align=2)], repeat=("FIXED", 2))], "AA00AA"),
-    # presence 未命中 → 字段与 pad 都不发
-    ([L("a", "AA", value=1), L("b", "CC", align=2,
-                               presence={"ref_id": "a", "expect": "9"})], "AA"),
-    # presence 命中 → 照常补位
-    ([L("a", "AA", value=1), L("b", "CC", align=2,
-                               presence={"ref_id": "a", "expect": "1"})], "AA00CC"),
-    # pad_to 在末副本之后补一次（副本共 2 字节 → 补 6）
-    ([G("g", [L("x", "BB")], repeat=("FIXED", 2), pad_to=8)], "BBBB000000000000"),
-    # LITTLE：pad 不参与反转（pad 在反转后的字段字节之外）
-    ([L("a", "AA"), L("b", "1234", align=4, endianness="LITTLE")], "AA0000003412"),
-    # 非法 align → 忽略（fail-open）
-    ([L("a", "AA"), L("b", "CC", align=0)], "AACC"),
-    ([L("a", "AA"), L("b", "CC", align="9999")], "AACC"),
-    # 数值串 → 归一（同 byte_len 的 Number/floor 口径）
-    ([L("a", "AA"), L("b", "CC", align="4")], "AA000000CC"),
-    # 非法 pad_byte → 0x00
-    ([L("a", "AA"), L("b", "CC", align=2, pad_byte="Z")], "AA00CC"),
-]
+# 行形状（JSON 行）: (字段规格, 期望帧 hex)
+# CP2b (D11-①): 单一真相源 = vectors/align.json —— 两端同读一份，新增向量只写一处
+VECTORS = load_vectors("align")
 
 
 def frame_of(*fields):

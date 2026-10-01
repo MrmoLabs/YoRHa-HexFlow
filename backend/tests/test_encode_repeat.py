@@ -1,7 +1,6 @@
 """E1-5 (B7): ARRAY_GROUP repeat 展开 — 双端 byte-equal 锚点（stdlib 直测）。
 
-向量表与 frontend/src/utils/__tests__/InstructionEncoder.test.js 的 E1-5
-VECTORS 逐行同步（两端各自钉同一张表实现跨语言一致性），改一必改二。
+向量表单一真相源 = vectors/repeat.json（CP2b / D11-①）：本表与前端 InstructionEncoder.test.js 的 E1-5 VECTORS 同读这一份 JSON，新增/修改向量只写一处；跨语言特殊值约定（{"$v": "Infinity"/"-Infinity"/"NaN"} 包装对象）见 vectors/README.md。
 
 对拷结构：帧 = [ref 字段(FIXED hex)]? + 组(FIXED 11 + FIXED 22)。
 口径：NONE → ×1；FIXED → max(0, floor(repeat_count))（非 number/非有限防御 → 1）；
@@ -13,22 +12,12 @@ datahub.to_block resolve 的 repeat_count 展开容器子树。
 import unittest
 
 from backend.routers.datahub import compile_blocks, fields_to_blocks, frame_bytes
+from vectors.load_vectors import load_vectors
 
-# 与前端 E1-5 VECTORS 同步：(repeat_type, repeat_count, ref_value, expected_hex)
+# 行形状（JSON 行）: (repeat_type, repeat_count, ref_value, expected_hex)
 # ref_value: None=无 value（ref 字段 hex BB）；"ghost"=ref_id 指向不存在字段。
-VECTORS = [
-    ("NONE", 1, None, "1122"),
-    ("FIXED", 3, None, "112211221122"),
-    ("FIXED", 1, None, "1122"),
-    ("FIXED", 0, None, ""),
-    ("FIXED", 2.7, None, "11221122"),
-    ("FIXED", "x", None, "1122"),
-    ("DYNAMIC", 1, 2, "AA" + "11221122"),
-    ("DYNAMIC", 1, "3", "AA" + "112211221122"),
-    ("DYNAMIC", 1, "FF", "AA"),
-    ("DYNAMIC", 1, None, "BB"),
-    ("DYNAMIC", 1, "ghost", ""),
-]
+# CP2b (D11-①): 单一真相源 = vectors/repeat.json —— 两端同读一份，新增向量只写一处
+VECTORS = load_vectors("repeat")
 
 
 def build(repeat_type, repeat_count, ref_value):

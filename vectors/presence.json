@@ -1,0 +1,128 @@
+{
+  "leaf": [
+    [
+      {
+        "ref_id": "cmd",
+        "expect": "1"
+      },
+      "AABB"
+    ],
+    [
+      {
+        "ref_id": "cmd",
+        "expect": "2"
+      },
+      "AA"
+    ],
+    [
+      {
+        "ref_id": "cmd",
+        "expect": "01"
+      },
+      "AA"
+    ],
+    [
+      {
+        "ref_id": "cmd",
+        "expect": " 1"
+      },
+      "AA"
+    ],
+    [
+      {},
+      "AABB"
+    ],
+    [
+      {
+        "ref_id": "cmd"
+      },
+      "AABB"
+    ],
+    [
+      {
+        "expect": "1"
+      },
+      "AABB"
+    ],
+    [
+      "bad",
+      "AABB"
+    ],
+    [
+      null,
+      "AABB"
+    ],
+    [
+      {
+        "ref_id": "ghost",
+        "expect": "1"
+      },
+      "AABB"
+    ],
+    [
+      {
+        "ref_id": "cmd",
+        "expect": null
+      },
+      "AABB"
+    ],
+    [
+      {
+        "ref_id": "cmd",
+        "expect": ""
+      },
+      "AABB"
+    ],
+    [
+      {
+        "ref_id": "cmd",
+        "expect": 1
+      },
+      "AABB"
+    ]
+  ],
+  "group": [
+    [
+      {
+        "ref_id": "cmd",
+        "expect": "2"
+      },
+      "FIXED",
+      3,
+      "AA"
+    ],
+    [
+      {
+        "ref_id": "cmd",
+        "expect": "1"
+      },
+      "FIXED",
+      3,
+      "AA111111"
+    ],
+    [
+      {
+        "ref_id": "cmd",
+        "expect": "1"
+      },
+      "NONE",
+      1,
+      "AA11"
+    ],
+    [
+      {},
+      "FIXED",
+      2,
+      "AA1111"
+    ],
+    [
+      {
+        "ref_id": "ghost",
+        "expect": "1"
+      },
+      "FIXED",
+      2,
+      "AA1111"
+    ]
+  ]
+}

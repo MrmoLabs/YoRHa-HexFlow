@@ -716,7 +716,8 @@
       + D5/D12 交叉引用；`DESIGN_CorePipeline.md` §6.2 矩阵修正、§7 批次二（D14
       口径 + D11-① 并入）、§7 批次三 3d 与 §9.7/§9.8 按 D15 修订；
       `PLAN_Backlog.md` CP2/CP3 行同步。
-      → **CP2 已开工并实现完成（见 33），下一步 CP2b / CP3。**
+      → **CP2 已开工并实现完成（见 33），下一步 CP2b / CP3。CP2b 亦已完成
+      （见 34），仅剩 CP3。**
 
 33. **CP2 Core Pipeline 批次二（防错）实现完成：D3 执行 / D12 删除级联 / D14 三口径**
     （2026-10-01，**零 DDL** —— `models.py` 未动、`yorha.db` 不随本批提交，
@@ -762,7 +763,39 @@
       （载荷定界字节 / 三层帧 / **设备应答是否也带转义**，D15 关联 → 结论供
       CP3-3d 参照）。
       → **已提交 `5afe706`（2026-10-01，代码+文档，零 DDL 未提交 `yorha.db`）
-      → 待办：CP2b（D11-① 共享 fixture，需先定跨语言特殊值约定）→ CP3。**
+      → 待办：CP2b（D11-① 共享 fixture，需先定跨语言特殊值约定）→ CP3。
+      → CP2b 已于同日完成，见条目 34。**
+
+34. **CP2b D11-① 双端共享向量表实现完成（单一真相源 = 根目录 `vectors/`）**
+    （2026-10-01，**零 DDL** —— 纯测试/数据重构，**不改任何生产代码路径**）：
+    - **跨语言特殊值约定拍板 = `$v` 包装对象**：JSON 无 `Infinity`/`NaN`，而向量
+      确需喂这两个值 → `{"$v":"Infinity"}` / `{"$v":"-Infinity"}` /
+      `{"$v":"NaN"}`；**其余标量按 JSON 原型天然分型**（`null`/`true`/数字/字符串），
+      故字符串输入 `"1e3"`、`""` 不会与数值 `1.5`、`0` 撞车（原顾虑的
+      「`NaN`/字符串哨兵撞车」由设计消解，**不采用字符串哨兵**）；特殊值对象只允许
+      恰好一个 `$v` 键，两端加载器对畸形标记**直接抛错**不 fail-open。
+    - **`vectors/` = 12 个 JSON / 15 张表**：11 张平面向量表（`int_signed` /
+      `little_endian` / `bcd_scaled`·双表 / `float_ieee` / `repeat` /
+      `time_counter`·双表 / `string` / `align` / `presence`·双表 / `escape` /
+      `bitfield`）+ **`wrap.json` 三处同值场景树**（`FA FA 02 01 02 ED`，原在
+      `test_frame_builder.py` / `test_wrap_api.py` / `blockMerge.test.js` 各写
+      一遍 → 现同读一份）。双端加载器 `vectors/load_vectors.py` ↔
+      `vectors/vectors.js` 逐条同口径——**「改一必改二」只保留在这一处**。
+    - **改读范围**：13 个 BE 测试文件 + 6 个 FE 测试文件（14 处 `const VECTORS`
+      声明 + wrap 场景树）全部改读共享 JSON，内联字面量删除，**行注归档**进
+      `vectors/README.md`（`#N` = 表下标）。形状适配 3 处（`null`↔`undefined`、
+      `children`↔`fields`、bitfield 三元组↔对象）与「未迁入 = 实现语义同源锚点」
+      清单（`padSpec` / `KNOWN_OPS` / `escape` 实现）记于 README §4/§5。
+    - **验收（自动化全绿）**：BE **426/426**、FE **915/915（63 文件）**、
+      `npx vite build` EXIT=0、yorha-ui 校验器 7 文件 **0 违规**。
+      **测试总数与基线逐表一致**（FE 915 不变）→ 证明 FE 原内联表行数与 BE
+      完全相同，迁移无覆盖增减。
+    - **文档同步**：`PLAN_Backlog.md` §1 CP2b 行与新 §8.20、`DESIGN_Decisions.md`
+      D11 实施注、`DESIGN_CorePipeline.md` §1/§7 拆批注状态、`vectors/README.md`
+      新增；**无 UI 改动 → `pageStatus.json` / `PAGE_STATUS.md` 不动**。
+      → **已提交 待回填（2026-10-01，代码+文档，零 DDL 未提交 `yorha.db`）
+      → 待办：CP3（3a 含 DDL：`frame_recipes` 新表 + `instructions.
+      default_recipe_id`，`yorha.db` 单独同步提交）。**
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

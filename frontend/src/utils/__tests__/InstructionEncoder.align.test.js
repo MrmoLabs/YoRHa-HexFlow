@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { InstructionEncoder } from '../InstructionEncoder';
+import { loadVectors } from '../../../../vectors/vectors.js';
+import alignVec from '../../../../vectors/align.json';
 
 // ─── N5 (G4 · PLAN §8.16): 字段级 align/pad_to 填充对齐 —— 编码期出帧 ────────
-// VECTORS 与 backend/tests/test_encode_align.py 逐行同步（改一必改二）。
 // 口径：
 // - align = N → 内容**起点**绝对偏移补位到 ≡0 (mod N)；pad_to = N → 内容**末尾**
 //   补位到 ≡0 (mod N)；已对齐 0 字节；
@@ -50,41 +51,19 @@ const G = (id, kids, opts = {}) => ({
 // 顶层按位置定序（与 BE frame_of 同规则）
 const build = (specs) => ({ fields: specs.map((f, i) => ({ ...f, sequence: i })) });
 
-// 与 backend/tests/test_encode_align.py VECTORS 同步：(字段规格, 期望帧 hex)
-const VECTORS = [
-    // align 已对齐 → 0 补位
-    [[L('a', 'AABB'), L('b', 'CC', { align: 2 })], 'AABBCC'],
-    // align 补 1 / 补 3
-    [[L('a', 'AA'), L('b', 'CC', { align: 2 })], 'AA00CC'],
-    [[L('a', 'AA'), L('b', 'CC', { align: 4 })], 'AA000000CC'],
-    // pad_to 帧尾补 2
-    [[L('a', 'AABB', { pad_to: 4 }), L('b', 'CC')], 'AABB0000CC'],
-    // pad_byte 改填充字节值
-    [[L('a', 'AA'), L('b', 'CC', { align: 2, pad_byte: 'FF' })], 'AAFFCC'],
-    // align + pad_to 同字段：内容起点 4、内容末尾 5 → 补到 8（补 3）
-    [[L('a', 'AA'), L('b', 'CC', { align: 4, pad_to: 8 })], 'AA000000CC000000'],
-    // 组级 align：组内容起点补位到 4（归入前一字段的 span）
-    [[L('a', 'AA'), G('g', [L('x', 'BB'), L('y', 'CC')], { align: 4 })], 'AA000000BBCC'],
-    // 重复组内子字段 align：逐副本按绝对偏移算（非 Σ×reps 常数）
-    [[G('g', [L('x', 'AA', { align: 2 })], { repeat: ['FIXED', 2] })], 'AA00AA'],
-    // presence 未命中 → 字段与 pad 都不发
-    [[L('a', 'AA', { value: 1 }), L('b', 'CC', { align: 2, presence: { ref_id: 'a', expect: '9' } })], 'AA'],
-    // presence 命中 → 照常补位
-    [[L('a', 'AA', { value: 1 }), L('b', 'CC', { align: 2, presence: { ref_id: 'a', expect: '1' } })], 'AA00CC'],
-    // pad_to 在末副本之后补一次（副本共 2 字节 → 补 6）
-    [[G('g', [L('x', 'BB')], { repeat: ['FIXED', 2], pad_to: 8 })], 'BBBB000000000000'],
-    // LITTLE：pad 不参与反转（pad 在反转后的字段字节之外）
-    [[L('a', 'AA'), L('b', '1234', { align: 4, endianness: 'LITTLE' })], 'AA0000003412'],
-    // 非法 align → 忽略（fail-open）
-    [[L('a', 'AA'), L('b', 'CC', { align: 0 })], 'AACC'],
-    [[L('a', 'AA'), L('b', 'CC', { align: '9999' })], 'AACC'],
-    // 数值串 → 归一（同 byte_len 的 Number/floor 口径）
-    [[L('a', 'AA'), L('b', 'CC', { align: '4' })], 'AA000000CC'],
-    // 非法 pad_byte → 0x00
-    [[L('a', 'AA'), L('b', 'CC', { align: 2, pad_byte: 'Z' })], 'AA00CC'],
-];
+// 同一份数据，两端各按自家形状归一：BE 组树键 children ↔ FE 字段键 fields（递归）
+const toFe = (node) => Array.isArray(node)
+    ? node.map(toFe)
+    : (node && typeof node === 'object'
+        ? Object.fromEntries(Object.entries(node)
+            .map(([k, v]) => [k === 'children' ? 'fields' : k, toFe(v)]))
+        : node);
 
-describe('N5 align/pad_to VECTORS（双端 byte-equal · 改一必改二）', () => {
+// CP2b (D11-①): 单一真相源 = vectors/align.json —— 两端同读一份，新增向量只写一处。
+const VECTORS = loadVectors(alignVec)
+        .map(([specs, hex]) => [specs.map(toFe), hex]);
+
+describe('N5 align/pad_to VECTORS（双端 byte-equal · 同读 vectors/align.json）', () => {
     VECTORS.forEach(([specs, expected], i) => {
         it(`vector#${i} → ${expected}`, () => {
             expect(enc(specs)).toBe(expected);

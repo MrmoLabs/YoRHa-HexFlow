@@ -35,7 +35,7 @@
 | P5 | D 通讯日志落库 + 导出 + 回放（新表 dispatch_logs，三路写入，CSV/JSON 导出，日志重发） | ✅（aa20589，db 同步 b635eac） |
 | CP1 | Core Pipeline 批次一：1a 绑定三列 DDL + 1b frame_builder + 1c 发送 wrap 接线 + 1d 文档（`DESIGN_CorePipeline.md` §7 首批） | **已提交 ✅ `31bc367`（代码+文档）/ `da91228`（db 同步），2026-09-24**——反馈 1（星标确认，§8.8）与反馈 2（协议卡面直填，§8.9）均已并入验收 |
 | CP2 | Core Pipeline 批次二（防错）：D3 `fit_policy=reject` 执行（**存量槽不迁移**）+ 槽契约 warning 徽标 + 新建槽 UI 默认 reject + D12 删除级联（**`sequence_steps` 失效标记不阻断**，活配置级联删 / 冻结快照留 / 日志留）+ **转义层位统一**（封装试发改带 `wrap` 下发）（`DESIGN_CorePipeline.md` §7 批次二） | **已提交 ✅ `5afe706`（代码+文档），2026-10-01**——**人工验证 5 项已通过**（STRICT 400 / 删指令三分弹窗 / 序列失效只读 / 试发 warnings 徽标 / 真实链路帧）：BE 426/426（基线 383 + 43）、FE 915/915（63 文件）、`vite build` EXIT=0、yorha-ui 校验器 13 文件 0 违规；**零 DDL**（`yorha.db` 未随本批提交）。明细见 §8.19。2026-10-01 起为 CP3 硬前置（CP3 的 3a 复用其 reject 分支） |
-| CP2b | D11 分段 ① **向量表共享 fixture 化**（两端测试读同一份 JSON 向量、新增向量只写一处；`DESIGN_Decisions.md` D11 实施注） | ⬜ **未开工**——2026-10-01 从 CP2 **拆出独立成批**（成本重估：向量含 `Infinity`/`NaN` 等 JSON 无法直接表达的值，需先定跨语言特殊值约定，约 13 组向量表 / 15 个测试文件）。**不阻塞 CP3**（CP3 只硬前置 CP2 的 reject 分支） |
+| CP2b | D11 分段 ① **向量表共享 fixture 化**（两端测试读同一份 JSON 向量、新增向量只写一处；`DESIGN_Decisions.md` D11 实施注） | **已提交 ✅ 待回填（代码+文档），2026-10-01**——跨语言特殊值约定拍板 = **`$v` 包装对象**（`{"$v":"Infinity"}` / `"-Infinity"` / `"NaN"`，其余标量按 JSON 原型天然分型）；新增根目录 **`vectors/`（12 个 JSON 文件 / 15 张表 + 双端加载器 + README）**，13 个后端 / 6 个前端测试文件改读共享 JSON。终态：BE 426/426、FE 915/915（63 文件）、`npx vite build` EXIT=0、yorha-ui 校验器 7 文件 0 违规；**零 DDL**。明细见 §8.20。**不阻塞 CP3**（CP3 只硬前置 CP2 的 reject 分支） |
 | CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | ⬜ **未开工**——硬前置 CP2；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**，实施设计已写入 §9 与 §7 3d。3a 含 DDL（新表 + `instructions.default_recipe_id` 补列）→ yorha.db 单独同步提交 |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
@@ -1736,6 +1736,49 @@
   ③ 序列失效徽标 + 步骤只读 + 仍可运行；④ 编排多载荷试发 `warnings` 徽标与 SENT
   实际出线帧；⑤ 真实链路帧核对（载荷定界字节 / 三层帧 / **设备应答是否也带转义**，
   D15 关联 → 该项结论供 CP3-3d 参照）。
+
+### 8.20 双端共享向量表（CP2b · D11 分段 ① 共享 fixture 化）
+
+> 出处：`DESIGN_Decisions.md` **D11 分段 ①** + `DESIGN_CorePipeline.md` §7 批次二
+> 拆批注（2026-10-01，CP2 完成后开工）。**零 DDL**（`models.py` 未动、`yorha.db`
+> 不随本批提交）；**纯测试/数据重构**——不改任何生产代码路径，`/dispatch` 裸发
+> 缺省口径逐字节不变（既有用例钉死）。
+> **终态**：BE 426/426、FE 915/915（63 文件）、`npx vite build` EXIT=0、
+> yorha-ui 校验器 7 文件 0 违规。**已提交 待回填。**
+
+- **跨语言特殊值约定（2026-10-01 拍板）= `$v` 包装对象**：JSON 无 `Infinity`/`NaN`，
+  而向量确需喂这两个值（如 `[NaN, 1, "00"]`）→ `{"$v":"Infinity"}` /
+  `{"$v":"-Infinity"}` / `{"$v":"NaN"}`；**其余标量按 JSON 原型天然分型**
+  （`null`/`true`/数字/字符串），故字符串输入 `"1e3"`、`""` 与数值 `1.5`、`0`
+  不会撞车（这正是弃用字符串哨兵的原因）。特殊值对象**只允许恰好一个 `$v` 键**，
+  两端加载器对畸形标记**直接抛错**不 fail-open。约定与用法记于 `vectors/README.md`。
+- **单一真相源 = 根目录 `vectors/`**（12 文件 / 15 表）：`int_signed` /
+  `little_endian` / `bcd_scaled`（`bcd`+`scaled`）/ `float_ieee` / `repeat` /
+  `time_counter`（`time`+`auto`）/ `string` / `align` / `presence`（`leaf`+`group`）/
+  `escape` / `bitfield`（`pack`）/ `wrap`。前 11 个是平面向量表；**`wrap.json` 是
+  三处同值场景树**（`FA FA / 02 / 01 02 / ED`，迁表前在 `test_frame_builder.py` +
+  `test_wrap_api.py` + `blockMerge.test.js` 各写一遍）。
+- **双端加载器逐条同口径（这一处保留「改一必改二」）**：`vectors/load_vectors.py`
+  `load_vectors(name, key=None)` ↔ `vectors/vectors.js` `loadVectors(node)`，均为
+  递归解 `$v`；后端按 `Path(__file__)` 定位绝对路径、前端 `import ... from '*.json'`
+  （测试文件所在层上溯到仓库根）。
+- **形状差异适配（值不变，各端在测试侧归一，3 处）**：① `null`↔`undefined`——
+  JSON 无 `undefined`，FE 侧对 `repeat.ref_value`、`bcd_scaled.scaled.factor/offset`、
+  `string.encoding/pad_char` 用 `?? undefined` 还原「不写键」（否则
+  `Number(null)===0` 把缺省误当 0）；② `children`↔`fields`——align 组树键名，
+  FE 侧 `toFe()` 递归改名；③ `[start,len,default]` 三元组↔
+  `{start_bit,bit_len,default_val}`——bitfield，FE 侧 `map` 归一并把期望 hex
+  去空格后与两端实现同钉。`wrap.json` 的 `config:{}` 等 BE 冗余键 FE 直接忽略
+  （`blockMerge.test.js` 30 例钉住）。
+- **迁表范围**：13 个后端测试文件（12 个向量表 + `test_wrap_api.py`）与 6 个前端
+  测试文件（14 处 `const VECTORS` 声明 + `wrap` 场景树）全部改为读共享 JSON；
+  内联字面量删除，行注归档进 `vectors/README.md`（`#N` = 表下标）。
+  **未迁入 = 不是数据表的「实现语义同源」锚点**：`pad.py`↔`padSpec.js`、
+  `op_whitelist.py`↔`KNOWN_OPS`、`escape.py`↔`escapeTable.js` 实现（表已共享）——
+  这些仍是真·改一必改二，README §5 已注明。
+- **文档同步**：`DESIGN_Decisions.md` D11 实施注（① 已实施 + `$v` 约定）、
+  `DESIGN_CorePipeline.md` §1/§7 拆批注状态、本节与 §1 CP2b 行、HANDOVER 条目 34。
+  **无 UI 改动 → `pageStatus.json` / `PAGE_STATUS.md` 不动。**
 
 ## 9. 保留勿动（非任务，勿清理）
 

@@ -1,8 +1,8 @@
 """批 4：协议结构化位域（bitfield 块）—— 入库校验 + 编码打包。
 
-与指令侧 BITFIELD 同口径（LSB 位偏移、定宽大端 hex），改一必改二：
-打包向量锚定在 frontend/src/utils/__tests__/bitGrid.test.js 的
-packBits 镜像组（同一批向量逐行对照）。
+与指令侧 BITFIELD 同口径（LSB 位偏移、定宽大端 hex）——两处**实现**各写各的、
+语义需同步（改一必改二）；打包**向量**单一真相源 = vectors/bitfield.json · 表
+pack（CP2b / D11-①），与前端 bitGrid.test.js 同读这一份。
 
 三层契约：
 1. schema：ProtocolNodeSchema 透传 bits（此前被 pydantic 静默丢弃 → 刷新即失）
@@ -34,6 +34,7 @@ from backend.routers.protocol import (
     get_protocol,
     update_protocol,
 )
+from vectors.load_vectors import load_vectors
 
 
 def bit(name, start, length, default=0):
@@ -54,15 +55,8 @@ def pnode(node_id="bf", **kw):
 
 # 与前端 bitGrid.test.js / packBits 同批向量
 # (start, len, default) 列表, byteLen, 期望**线上** hex（build_wrapped 按字节加空格）
-PACK_VECTORS = [
-    ([(0, 4, 5), (4, 4, 10)], 1, "A5"),
-    ([(0, 8, 0xFF)], 1, "FF"),
-    ([(8, 8, 0x12)], 2, "12 00"),
-    ([(0, 16, 0x1234)], 2, "12 34"),
-    ([(4, 12, 0xABC)], 2, "AB C0"),
-    ([], 1, "00"),
-    ([(0, 40, 1)], 8, "00 00 00 00 00 00 00 01"),
-]
+# CP2b (D11-①): 单一真相源 = vectors/bitfield.json · 表 pack —— 两端同读一份，新增向量只写一处
+PACK_VECTORS = load_vectors("bitfield", "pack")
 
 
 class TestProtocolBitfieldSchema(unittest.TestCase):

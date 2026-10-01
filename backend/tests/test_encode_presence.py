@@ -1,8 +1,6 @@
 """N3 (G1 · PLAN §8.16): presence 条件存在 — 双端 byte-equal 锚点（stdlib 直测）。
 
-向量表与 frontend/src/utils/__tests__/InstructionEncoder.presence.test.js 的
-LEAF/GROUP/COMBINED 向量逐行同步（两端各自钉同一张表实现跨语言一致性），
-改一必改二。
+向量表单一真相源 = vectors/presence.json（CP2b / D11-①）：本表与前端 InstructionEncoder.presence.test.js 的 LEAF/GROUP 向量 同读这一份 JSON，新增/修改向量只写一处；跨语言特殊值约定（{"$v": "Infinity"/"-Infinity"/"NaN"} 包装对象）见 vectors/README.md。
 
 口径：
 - 判定 = parameter_config.presence，静态链仅 pc.value（DYNAMIC repeat 静态
@@ -20,6 +18,7 @@ BE 向量不含量 checksum/length 字段（datahub 路径 config=None 时校验
 import unittest
 
 from backend.routers.datahub import compile_blocks, fields_to_blocks, frame_bytes
+from vectors.load_vectors import load_vectors
 
 
 def leaf(id, cfg, sequence=0, op="FIXED", byte_len=1, parent_id=None):
@@ -32,37 +31,19 @@ def cmd_field(value=1):
     return leaf("cmd", {"hex": "AA", "value": value}, sequence=0)
 
 
-# 与前端 LEAF_VECTORS 同步：(presence, expected_hex) — 帧 = cmd(AA) + gated(BB)
-LEAF_VECTORS = [
-    ({"ref_id": "cmd", "expect": "1"}, "AABB"),   # 命中
-    ({"ref_id": "cmd", "expect": "2"}, "AA"),     # 未命中
-    ({"ref_id": "cmd", "expect": "01"}, "AA"),    # String 严格归一（"1" != "01"）
-    ({"ref_id": "cmd", "expect": " 1"}, "AA"),    # 不 trim，严格比较
-    ({}, "AABB"),                                 # fail-open：空对象
-    ({"ref_id": "cmd"}, "AABB"),                  # fail-open：缺 expect
-    ({"expect": "1"}, "AABB"),                    # fail-open：缺 ref_id
-    ("bad", "AABB"),                              # fail-open：非对象
-    (None, "AABB"),                               # fail-open：null
-    ({"ref_id": "ghost", "expect": "1"}, "AABB"), # fail-open：ref 悬空
-    ({"ref_id": "cmd", "expect": None}, "AABB"),  # fail-open：expect null
-    ({"ref_id": "cmd", "expect": ""}, "AABB"),    # fail-open：expect 空串
-    ({"ref_id": "cmd", "expect": 1}, "AABB"),     # 数值 expect 命中字符串值
-]
+# 行形状（JSON 行）: (presence, expected_hex) — 帧 = cmd(AA) + gated(BB)
+# CP2b (D11-①): 单一真相源 = vectors/presence.json · 表 leaf —— 两端同读一份，新增向量只写一处
+LEAF_VECTORS = load_vectors("presence", "leaf")
 
 
 def build_leaf(presence):
     return [cmd_field(), leaf("opt", {"hex": "BB", "presence": presence}, sequence=1)]
 
 
-# 与前端 GROUP_VECTORS 同步：(presence, repeat_type, repeat_count, expected_hex)
+# 行形状（JSON 行）: (presence, repeat_type, repeat_count, expected_hex)
 # — 帧 = cmd(AA) + 组(11)
-GROUP_VECTORS = [
-    ({"ref_id": "cmd", "expect": "2"}, "FIXED", 3, "AA"),           # 未命中 → 连 ×3 都不展开
-    ({"ref_id": "cmd", "expect": "1"}, "FIXED", 3, "AA111111"),  # 命中 → ×3
-    ({"ref_id": "cmd", "expect": "1"}, "NONE", 1, "AA11"),
-    ({}, "FIXED", 2, "AA1111"),                                     # fail-open → 照常展开
-    ({"ref_id": "ghost", "expect": "1"}, "FIXED", 2, "AA1111"),     # 悬空 fail-open → 照常展开
-]
+# CP2b (D11-①): 单一真相源 = vectors/presence.json · 表 group —— 两端同读一份，新增向量只写一处
+GROUP_VECTORS = load_vectors("presence", "group")
 
 
 def build_group(presence, repeat_type, repeat_count):

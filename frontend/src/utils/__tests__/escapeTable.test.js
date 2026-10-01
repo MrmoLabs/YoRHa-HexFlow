@@ -1,21 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { escapeHex, escapeWarnings, toEscapeDraft } from '../escapeTable';
+import { loadVectors } from '../../../../vectors/vectors.js';
+import escapeVec from '../../../../vectors/escape.json';
 
-// N4 (G3): 双端共享向量 —— 与 backend/tests/test_escape.py VECTORS 同字节序列，
-// 改一必改二（转义语义 SSOT = backend/core/escape.py，FE 只用于配置面板样例预览）。
+// CP2b (D11-①): 单一真相源 = vectors/escape.json —— 两端同读一份，新增向量只写一处。
 // 空表 / 关闭态不在此表 —— 直通语义（原样返回、不解析）由下方直通用例钉住。
-const VECTORS = [
-    [[['7D', '7D5D'], ['11', '7D31'], ['13', '7D32']], '01 7D 02', '017D5D02'],
-    [[['7D', '7D5D']], '7D 7D', '7D5D7D5D'],
-    [[['7D', '7D5D']], '5D 01', '5D01'],
-    [[['7D', '7D5D']], '7D 5D', '7D5D5D'],
-    [[['11', '1011']], 'AA 11 BB', 'AA1011BB'],
-    [[['0D', '0D0A']], '0D 0D', '0D0A0D0A'],
-    [[['00', '7DFF']], '00 01 00', '7DFF017DFF']
-];
+const VECTORS = loadVectors(escapeVec);
 
 describe('escapeTable（N4 · G3 传输层帧字节转义）', () => {
-    it('双端共享向量与 BE test_escape.py 同字节（改一必改二）', () => {
+    it('共享向量（vectors/escape.json）与 BE 同字节', () => {
         for (const [pairs, src, want] of VECTORS) {
             expect(escapeHex(src, { enabled: true, pairs })).toBe(want);
         }

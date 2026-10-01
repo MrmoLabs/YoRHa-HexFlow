@@ -1,0 +1,65 @@
+[
+  [
+    "LITTLE",
+    "INT_SIGNED",
+    2,
+    {
+      "value": -2
+    },
+    "FEFF"
+  ],
+  [
+    "LITTLE",
+    "HEX_RAW",
+    2,
+    {
+      "hex": "AA BB"
+    },
+    "BBAA"
+  ],
+  [
+    "LITTLE",
+    "HEX_RAW",
+    1,
+    {
+      "hex": "AA"
+    },
+    "AA"
+  ],
+  [
+    "LITTLE",
+    "FIXED",
+    2,
+    {
+      "hex": "1234"
+    },
+    "3412"
+  ],
+  [
+    "little",
+    "FIXED",
+    2,
+    {
+      "hex": "1234"
+    },
+    "3412"
+  ],
+  [
+    null,
+    "FIXED",
+    2,
+    {
+      "hex": "1234"
+    },
+    "1234"
+  ],
+  [
+    "BIG",
+    "FIXED",
+    2,
+    {
+      "hex": "1234"
+    },
+    "1234"
+  ]
+]

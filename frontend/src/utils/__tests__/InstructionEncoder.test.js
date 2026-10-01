@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { InstructionEncoder } from '../InstructionEncoder';
+import { loadVectors } from '../../../../vectors/vectors.js';
+import bcdScaledVec from '../../../../vectors/bcd_scaled.json';
+import floatIeeeVec from '../../../../vectors/float_ieee.json';
+import intSignedVec from '../../../../vectors/int_signed.json';
+import littleEndianVec from '../../../../vectors/little_endian.json';
+import repeatVec from '../../../../vectors/repeat.json';
+import stringVec from '../../../../vectors/string.json';
+import timeCounterVec from '../../../../vectors/time_counter.json';
 
 describe('InstructionEncoder', () => {
     // Mock Data
@@ -113,17 +121,8 @@ describe('E1-1 INT_SIGNED 两补码（B5 已解 · 双端 byte-equal 锚点）',
     });
     const hexOf = (bytes) => bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
 
-    // 向量表与 backend/tests/test_encode_int_signed.py::VECTORS 逐行同步（改一必改二）。
-    const VECTORS = [
-        [-1, 1, 'FF'], [-1, 2, 'FFFF'], [-1, 8, 'FFFFFFFFFFFFFFFF'],
-        [-128, 1, '80'], [-129, 1, '7F'],
-        [0, 1, '00'], [127, 1, '7F'], [128, 1, '80'], [255, 1, 'FF'],
-        [256, 1, '00'], [300, 1, '2C'],
-        [-2147483648, 4, '80000000'], [2147483647, 4, '7FFFFFFF'],
-        [-1.5, 1, 'FE'], [1.5, 1, '01'], [0.5, 1, '00'],
-        ['-4', 1, 'FC'], ['FF', 1, '00'], ['1e3', 1, '00'], ['', 1, '00'],
-        [true, 1, '00'], [Infinity, 1, '00'], [NaN, 1, '00'], [null, 1, '00'],
-    ];
+    // CP2b (D11-①): 单一真相源 = vectors/int_signed.json —— 两端同读一份，新增向量只写一处。
+    const VECTORS = loadVectors(intSignedVec);
 
     VECTORS.forEach(([value, byteLen, expected], i) => {
         it(`vector#${i} ${String(value)} @${byteLen}B → ${expected}`, () => {
@@ -169,17 +168,8 @@ describe('E1-2 endianness LITTLE 反转（B6 已解 · 双端 byte-equal 锚点�
     });
     const hexOf = (bytes) => bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
 
-    // 向量表与 backend/tests/test_encode_little_endian.py::VECTORS 逐行同步（改一必改二）。
-    const VECTORS = [
-        // [endianness, op, byte_len, cfg, expectedHex] — 先按大端出值，再整体逆序
-        ['LITTLE', 'INT_SIGNED', 2, { value: -2 }, 'FEFF'], // 大端 FFFE → FEFF
-        ['LITTLE', 'HEX_RAW', 2, { hex: 'AA BB' }, 'BBAA'],
-        ['LITTLE', 'HEX_RAW', 1, { hex: 'AA' }, 'AA'],      // 单字节不动
-        ['LITTLE', 'FIXED', 2, { hex: '1234' }, '3412'],
-        ['little', 'FIXED', 2, { hex: '1234' }, '3412'],    // 小写容错归一
-        [null, 'FIXED', 2, { hex: '1234' }, '1234'],        // 缺省 BIG 回归
-        ['BIG', 'FIXED', 2, { hex: '1234' }, '1234'],       // 显式 BIG 回归
-    ];
+    // CP2b (D11-①): 单一真相源 = vectors/little_endian.json —— 两端同读一份，新增向量只写一处。
+    const VECTORS = loadVectors(littleEndianVec);
 
     VECTORS.forEach(([endian, op, byteLen, cfg, expected], i) => {
         it(`vector#${i} ${op} @${byteLen}B endianness=${endian} → ${expected}`, () => {
@@ -248,35 +238,14 @@ describe('E1-3 BCD 打包 + SCALED 定标（B3/B4 已解 · 双端 byte-equal �
         parameter_config: { ...config },
     });
 
-    // 与 backend/tests/test_encode_bcd_scaled.py::VECTORS_BCD 逐行同步（改一必改二）。
-    const VECTORS_BCD = [
-        // [value, byte_len, expected] — floor 解析、abs、超长截高位保低 2n 位
-        [25, 2, '0025'], [25, 1, '25'], [0, 2, '0000'],
-        [12345, 2, '2345'], [255, 1, '55'],
-        [-25, 2, '0025'], [12.9, 2, '0012'], [1.5, 1, '01'], [-1.5, 1, '02'],
-        ['42', 1, '42'], ['-7', 1, '07'], ['FF', 1, '00'], ['', 1, '00'],
-        // byte_len=0 不入表：FE 既有 `byte_len || 1` 归一 / BE `>0` 守卫属通用边角，非 B3 语义
-        [true, 1, '00'], [Infinity, 1, '00'], [NaN, 1, '00'], [null, 1, '00'],
-    ];
+    // CP2b (D11-①): 单一真相源 = vectors/bcd_scaled.json —— 两端同读一份，新增向量只写一处。
+    const VECTORS_BCD = loadVectors(bcdScaledVec.bcd);
 
-    // 与 backend/tests/test_encode_bcd_scaled.py::VECTORS_SCALED 逐行同步（改一必改二）。
-    const VECTORS_SCALED = [
-        // [value, factor, offset, byte_len, expected] — (v+off)*fac → abs(floor) → 定宽
-        [5, 2, 10, 2, '001E'],          // (5+10)*2=30
-        [5, undefined, undefined, 2, '0005'],   // 恒等回归（factor/offset 缺省）
-        [5, '', '', 2, '0005'],          // 空串=缺省 恒等
-        [2.7, 1, 0, 2, '0002'],          // floor
-        [-3, 1, 0, 2, '0003'],           // abs(floor) 口径（通用路径一致）
-        [10, 0.5, 0, 2, '0005'], [10, 2.5, 0, 2, '0019'],
-        [300, 10, 0, 1, 'B8'],           // 溢出截高位 mod 2^8
-        ['FF', 1, 0, 1, '00'],           // 非有限 → 0
-        ['12', 1, 0, 1, '0C'],           // 数字字符串 base
-        [7, '3', 0, 1, '15'],            // factor 数字字符串
-        [7, 1, '2.5', 1, '09'],          // (7+2.5)=9.5 → floor 9
-        [null, 1, 0, 1, '00'],
-        [0.5, 1, 0, 1, '00'], [-0.5, 1, 0, 1, '01'],
-        [255, 1, 0, 2, '00FF'],
-    ];
+    // CP2b (D11-①): 单一真相源 = vectors/bcd_scaled.json —— 两端同读一份，新增向量只写一处。
+    const VECTORS_SCALED = loadVectors(bcdScaledVec.scaled)
+        // JSON 无 undefined：后端 None → JSON null，此处按位还原成 FE 语义的
+        // undefined（factor/offset 缺省 = 不写键），免得 null 被 Number() 解析成 0
+        .map(([v, f, o, len, hex]) => [v, f ?? undefined, o ?? undefined, len, hex]);
 
     VECTORS_BCD.forEach(([value, byteLen, expected], i) => {
         it(`BCD vector#${i} ${String(value)} @${byteLen}B → ${expected}`, () => {
@@ -333,24 +302,8 @@ describe('E1-4 FLOAT_IEEE float32（B2 已解 · 双端 byte-equal 锚点）', (
         parameter_config: { ...config },
     });
 
-    // 与 backend/tests/test_encode_float_ieee.py::VECTORS 逐行同步（改一必改二）。
-    const VECTORS = [
-        // [value, expectedHex] — IEEE 754 float32 大端（网络序），恒 4 字节
-        [0, '00000000'], [1, '3F800000'], [-1, 'BF800000'],
-        [2, '40000000'], [0.5, '3F000000'], [1.5, '3FC00000'],
-        [0.1, '3DCCCCCD'], [-0.1, 'BDCCCCCD'],
-        [3.14, '4048F5C3'], [100, '42C80000'], [-100, 'C2C80000'],
-        [65536, '47800000'],
-        ['3.14', '4048F5C3'],   // 严格十进制字符串
-        ['FF', '00000000'],     // 非法串 → 0
-        ['1e3', '00000000'],    // 拒指数记法（同 E1-1 正则）→ 0
-        [true, '3F800000'], [false, '00000000'],
-        [NaN, '00000000'],      // 非有限 → 0
-        [Infinity, '00000000'],
-        [null, '00000000'],
-        [1e300, '7F800000'],    // 超 f32 范围 → +Infinity（IEEE 溢出）
-        [-1e300, 'FF800000'],
-    ];
+    // CP2b (D11-①): 单一真相源 = vectors/float_ieee.json —— 两端同读一份，新增向量只写一处。
+    const VECTORS = loadVectors(floatIeeeVec);
 
     VECTORS.forEach(([value, expected], i) => {
         it(`vector#${i} ${String(value)} → ${expected}`, () => {
@@ -416,23 +369,12 @@ describe('E1-4 FLOAT_IEEE float32（B2 已解 · 双端 byte-equal 锚点）', (
 });
 
 describe('E1-5 ARRAY_GROUP repeat 展开（B7 已解 · 双端 byte-equal 锚点）', () => {
+    // CP2b (D11-①): 单一真相源 = vectors/repeat.json —— 两端同读一份，新增向量只写一处。
     // 对拷结构：帧 = [ref 字段(FIXED hex)]? + 组(FIXED 11 + FIXED 22)，
-    // 与 backend/tests/test_encode_repeat.py 的 frame_of 同构（改一必改二）。
-    // 向量表两端同步：[repeat_type, repeat_count, ref_value(undefined=无 value;
     // 'ghost'=ref_id 指向不存在字段), expectedRawHex]
-    const VECTORS = [
-        ['NONE', 1, undefined, '1122'],
-        ['FIXED', 3, undefined, '112211221122'],
-        ['FIXED', 1, undefined, '1122'],
-        ['FIXED', 0, undefined, ''],
-        ['FIXED', 2.7, undefined, '11221122'],       // floor → ×2
-        ['FIXED', 'x', undefined, '1122'],           // 非 number 防御 → ×1
-        ['DYNAMIC', 1, 2, 'AA' + '11221122'],        // ref 静态 value → ×2
-        ['DYNAMIC', 1, '3', 'AA' + '112211221122'],  // 严格十进制字符串
-        ['DYNAMIC', 1, 'FF', 'AA'],                  // 非法串 → 0 份
-        ['DYNAMIC', 1, undefined, 'BB'],             // ref 字段无 value → 0 份
-        ['DYNAMIC', 1, 'ghost', ''],                 // ref_id 悬空 → 0 份
-    ];
+    const VECTORS = loadVectors(repeatVec)
+        // JSON 无 undefined：后端 None（无 value / ref 未定义）→ JSON null，还原成 undefined
+        .map(([t, c, ref, hex]) => [t, c, ref ?? undefined, hex]);
 
     const build = (repeat_type, repeat_count, refValue) => {
         const ghost = refValue === 'ghost';
@@ -514,30 +456,13 @@ describe('E1-5 ARRAY_GROUP repeat 展开（B7 已解 · 双端 byte-equal 锚点
 });
 
 describe('E1-6 TIME_ACCUMULATOR / AUTO_COUNTER 语义（B8 已解 · 双端 byte-equal 锚点）', () => {
-    // 与 backend/tests/test_encode_time_counter.py 的 VECTORS 逐行同步，改一必改二。
+    // CP2b (D11-①): 单一真相源 = vectors/time_counter.json —— 两端同读一份，新增向量只写一处。
     // now = Date.parse(base) + offset —— 两端 parse 在 (now − base) 中抵消，
     // 期望纯看 floor(offset/1000) + abs/mod 定宽口径。
-    const TIME_VECTORS = [
-        ['2000-01-01T00:00:00Z', 100_000, 2, 7, '0064'],    // 100s
-        ['2000-01-01T00:00:00', 90_000, 2, 7, '005A'],       // 90s（naive 本地时区）
-        ['2000-01-01T00:00:00Z', -5_000, 2, 7, '0005'],      // now < base → -5 → abs
-        ['2000-01-01T00:00:00Z', 300_000, 1, 7, '2C'],       // 超宽截断 300 mod 2^8
-        ['2000-06-15 10:30:00', 5_400_000, 2, 7, '1518'],    // 90min，空格分隔
-    ];
+    const TIME_VECTORS = loadVectors(timeCounterVec.time);
+    // CP2b (D11-①): 单一真相源 = vectors/time_counter.json —— 两端同读一份，新增向量只写一处。
     // (value, start_val, step, max, byte_len, expected)
-    const AUTO_VECTORS = [
-        [5, null, 1, 10, 2, '0006'],        // (5+1)%10
-        [9, null, 1, 10, 2, '0000'],        // 回绕到 0
-        [-4, null, 1, 10, 2, '0007'],       // 负值双重取模 → 7（JS/Python 同）
-        [5, null, 2, null, 2, '0007'],      // max 缺省 → 不回绕
-        [-3, null, null, null, 2, '0003'],  // step 缺省 → 0；负值无回绕 → abs 现状
-        [null, 3, 1, 10, 2, '0004'],        // value 缺省 → start_val
-        [300, null, 'x', 0, 2, '012C'],     // step 非法 → 0；max 非正 → 不回绕
-        [9, null, 5, 7, 2, '0000'],         // (9+5)%7 = 0
-        [0, 7, 1, null, 2, '0001'],         // value=0 显式（不落到 start_val）
-        [9, null, 1, 10, 1, '00'],          // byte_len=1
-        ['8', null, 1, 10, 2, '0009'],      // 严格十进制字符串 Current
-    ];
+    const AUTO_VECTORS = loadVectors(timeCounterVec.auto);
 
     const strip = (r) => r.hexString.replace(/\s/g, '');
     const timeInstr = (base, byteLen, value) => {
@@ -688,23 +613,11 @@ describe('N2 定长字符串 STRING（G2 · 双端 byte-equal 锚点）', () => 
         parameter_config: { ...cfg },
     });
 
-    // 与 backend/tests/test_encode_string.py::VECTORS 逐行同步（改一必改二）。
+    // CP2b (D11-①): 单一真相源 = vectors/string.json —— 两端同读一份，新增向量只写一处。
     // [value, byte_len, encoding, pad_char, expectedHex]
-    const VECTORS = [
-        ['AB', 4, undefined, undefined, '41420000'],
-        ['AB', 4, 'ascii', '00', '41420000'],
-        ['AB', 4, 'ascii', '20', '41422020'],
-        ['ABCD', 2, 'ascii', '00', '4142'],
-        ['中', 3, 'utf8', '00', 'E4B8AD'],
-        ['中', 2, 'utf8', '00', 'E4B8'],
-        ['中', 2, 'ascii', '00', '2D00'],
-        ['\u{1F600}', 2, 'ascii', '00', '0000'],
-        ['', 4, 'ascii', '00', '00000000'],
-        [0, 4, 'ascii', '00', '00000000'],
-        [25, 4, 'ascii', '00', '32350000'],
-        ['AB', 4, 'ascii', 'zz', '41420000'],
-        ['\ud800', 3, 'utf8', '00', 'EFBFBD'],
-    ];
+    const VECTORS = loadVectors(stringVec)
+        // JSON 无 undefined：后端 None（encoding/pad_char 缺省）→ JSON null，还原成 undefined
+        .map(([v, len, enc, pad, hex]) => [v, len, enc ?? undefined, pad ?? undefined, hex]);
 
     VECTORS.forEach(([value, byteLen, encoding, padChar, expected], i) => {
         it(`vector#${i} v=${JSON.stringify(value)} @${byteLen}B enc=${encoding || 'ascii'} pad=${padChar ?? '00'} → ${expected}`, () => {

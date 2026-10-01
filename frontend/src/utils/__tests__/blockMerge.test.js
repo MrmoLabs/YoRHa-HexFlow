@@ -3,6 +3,8 @@ import { mergeProtocolInstruction, buildLanes, getTotalBytes } from '../blockMer
 // 命名空间二段导入：countSlots 系一期新增导出 —— 红测期不以命名缺失拖垮同文件其余断言
 import * as blockMerge from '../blockMerge';
 import { InstructionEncoder } from '../InstructionEncoder';
+import { loadVectors } from '../../../../vectors/vectors.js';
+import wrapVec from '../../../../vectors/wrap.json';
 
 // C5 编排回归：总长度 / 插槽缺失 / 边界结构。
 // 口径来自 utils/blockMerge.js 实测：
@@ -380,27 +382,23 @@ describe('getTotalBytes slot 归零（发射层同口径）', () => {
     });
 });
 
-// 批次一 (D4-A) 双端共享向量：主向量 FA FA / 02 / 01 02 / ED —— FE merge+encode 与
-// 后端 build_wrapped 钉同一 pretty 字面量。三处同值：本文件 + backend/tests/
-// test_frame_builder.py + test_wrap_api.py，改一必改三。
-describe('共享向量 FA FA 02 01 02 ED（FE merge+encode · 与后端 build_wrapped 同字节）', () => {
+// 批次一 (D4-A) 三处同值锚点：主向量 FA FA / 02 / 01 02 / ED —— CP2b (D11-①)
+// 单一真相源 = vectors/wrap.json · 表 main，本文件 + backend/tests/test_frame_builder.py
+// + test_wrap_api.py 三处同读一份，新增向量只写一处。
+describe('共享向量 FA FA 02 01 02 ED（FE merge+encode · 同读 vectors/wrap.json）', () => {
+    const MAIN = loadVectors(wrapVec.main);
     const vectorProtocol = {
         id: 'p1', label: '向量协议', type: 'container',
-        children: [
-            { id: 'h', label: 'h', type: 'fixed', byte_length: 2, hex_value: 'FA FA', children: [] },
-            { id: 'l', label: 'l', type: 'length', byte_length: 1, hex_value: '00',
-                parameter_config: { type: 'length', refs: ['s'] }, children: [] },
-            { id: 's', label: 's', type: 'slot', byte_length: 0, children: [] },
-            { id: 't', label: 't', type: 'fixed', byte_length: 1, hex_value: 'ED', children: [] }
-        ]
+        children: MAIN.children,
     };
-    // FE 侧字段形状：HEX_RAW + parameter_config.hex（编码器直出固定 hex）
+    // FE 侧字段形状：HEX_RAW + parameter_config.hex（编码器直出固定 hex），
+    // 字节数 = 载荷 hex 长度 / 2，从共享向量的 payloads 派生。
     const vectorInstruction = {
         id: 'i1', name: '指令',
-        fields: [
-            { id: 'f1', parent_id: null, sequence: 0, name: '载荷', byte_length: 2,
-                op_code: 'HEX_RAW', parameter_config: { hex: '0102' } }
-        ]
+        fields: MAIN.payloads.map((hex, i) => ({
+            id: `f${i + 1}`, parent_id: null, sequence: i, name: '载荷',
+            byte_length: hex.length / 2, op_code: 'HEX_RAW', parameter_config: { hex },
+        })),
     };
 
     it('merge + encode 输出与后端 build_wrapped 同字节序列（length refs 改写重算）', () => {
@@ -410,7 +408,7 @@ describe('共享向量 FA FA 02 01 02 ED（FE merge+encode · 与后端 build_wr
         const computed = InstructionEncoder.resolveDependencies(source, inputs);
         const { hexString } = InstructionEncoder.encodeInstruction(source, inputs, computed);
         // encoder 直出 pretty hex（match(/.{1,2}/g).join(' ') 口径）
-        expect(hexString).toBe('FA FA 02 01 02 ED');
-        expect(hexString.replace(/\s/g, '')).toBe('FAFA020102ED');
+        expect(hexString).toBe(MAIN.expect.hex);
+        expect(hexString.replace(/\s/g, '')).toBe(MAIN.expect.hex.replace(/\s/g, ''));
     });
 });
