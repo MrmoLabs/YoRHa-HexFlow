@@ -75,7 +75,7 @@
 
 | 事项 | 状态 | 备注 |
 |---|---|---|
-| 未知 op_code 入库静默错码 | ✅ | FE 保存前 W5 `OP_UNKNOWN` 提醒已上（N1，已知全集 = OP_CODES ∪ encoder legacy，STRING 自动跟随）；BE 白名单拒绝策略仍挂账（须先摸存量 op 全集）→ G5 按定案落地 |
+| 未知 op_code 入库静默错码 | ✅ | FE 保存前 W5 `OP_UNKNOWN` 提醒已上（N1，已知全集 = OP_CODES ∪ encoder legacy，STRING 自动跟随）；G5 收口升级**双端硬拦**（第 12 单 `b715e2b`）：FE OP_UNKNOWN 升结构错误（保存阻断 + ⛔ 章 + 导入预览拦截）+ BE 保存侧 400 |
 | 创建后切换 op | ⚪ | 属性面板 op_code 只读，只能删了重建 → 挂账 |
 | STRUCT 有口径无创建入口 | ✅ | N1 定性：正式定为**存量兼容口径、不补创建模板**（`ARRAY_GROUP+repeat=NONE` 已覆盖纯结构组语义）→ G6 已结 |
 
@@ -89,7 +89,7 @@
 | **G2** | 字符串三连（无入口 / 不定长 / 非 ASCII 脏字节） | ✅ 已解 | §8.16 **N2**（真机验证通过 2026-09-30，第 8 单已提交 `848e248`） |
 | **G3** | 帧字节转义 escaping（后端空 placeholder） | ✅ 已解 | §8.16 **N4**（真机验证通过 2026-09-30，第 10 单已提交 `b7f9fa7`）：层位定案「传输层 · 内核转义后套壳」，配置骑 transport config JSON 零 DDL；**内核域按逻辑字节、壳域按线上字节**；画布与 `/compile/*` 预览仍为逻辑帧，线上字节见发送历史 raw 事件 |
 | **G4** | 填充 / 对齐 | ✅ 已解 | §8.16 **N5**（真机验证通过 2026-09-30，第 11 单已提交 `d8f0d65`）：字段级 `align`（内容起点补到 N 边界）/ `pad_to`（内容末尾补到 N 边界）/ `pad_byte` 骑 `parameter_config` 零 DDL；归一 1..4096 非法 → 0 fail-open（`ALIGN_INVALID`/`PAD_TO_INVALID` 提醒，pad_byte 非法静默 0x00，零 error 不锁保存）；pad 进发射流/偏移尺/LEN/卡宽（卡间空隙即填充字节）、不进长度公式/checksum/byteMap/页脚 LEN（内容口径）；presence 未命中与 repeat=0 不补、LITTLE 反转不涉 pad；FE=BE byte-equal + `/dispatch` 裸发 echo 实测 |
-| **G5** | 未知 op 静默错码无护栏 | ✅ 已解（定案范围） | §8.16 **N1** FE W5 提醒已上；BE 白名单挂账（存量摸底后另排） |
+| **G5** | 未知 op 静默错码无护栏 | ✅ 已解 | §8.16 **N1** FE W5 提醒先行 + **G5 收口双端硬拦**（真机验证通过 2026-10-01，第 12 单已提交 `b715e2b`）：已知全集 20 项双端同源（OP_CODES 15 + encoder legacy 5），FE OP_UNKNOWN 升结构错误（保存阻断 / 卡面 ⛔ / 导入预览拦截）+ BE POST/PUT 保存侧 400（拒绝在任何写入前）；存量 16 指令 × 37 字段全过门不锁历史 |
 | **G6** | STRUCT 创建入口缺失 | ✅ 已定性 | §8.16 N1：正式定为存量兼容、不补模板 |
 | **G7** | float64 可配出但静默错码（FE/BE 还不一致） | ✅ 已按定案落地 | §8.16 **N1** 校验提醒摘陷阱（模板不动） |
 
@@ -98,11 +98,4 @@
 - 绝对时间戳 epoch 模板（INT_UNSIGNED 手工顶）
 - 加扰 / 混淆字段
 - 创建后切换 op（删建即可）
-- BE 保存侧 op 白名单拒绝——**前置摸底已完成（2026-09-30，只读）**：存量
-  `instruction_fields` 31 行的 op_code 全集 = {HEX_RAW 9, LENGTH_CALC 5,
-  INT_UNSIGNED 5, MAPPING 4, CHECKSUM_CRC 3, ARRAY_GROUP 2, TIME_ACCUMULATOR 1,
-  INT_SIGNED 1, AUTO_COUNTER 1}，**9 种全部在 KNOWN_OPS（SEED 14 ∪ legacy 5）
-  之内**，无 legacy（INPUT/FIXED/HEADER/TAIL/CALCULATED 0 行）、无未知 op、
-  无存量 `pc.type='string'` 字段 → 白名单取 KNOWN_OPS 全集**不会锁死任何历史
-  数据**，策略（保存侧 400 拒绝 vs 仅警告）可随时拍板插队，不再阻塞于摸底。
 - 帧转义之外的组帧族（varint/COBS——已立 §8.14 暂缓，不重复排）

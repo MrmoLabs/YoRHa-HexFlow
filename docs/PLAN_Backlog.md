@@ -1281,7 +1281,7 @@
 - 状态：**✅ 真机验证通过（2026-09-30，红/琥珀/让位/pl-3 逐条全绿）→ 第 6 单
   已提交 `3ff0f69`（独立于批 1-4 与优化批）。**
 
-### 8.16 业务场景全集排期（G1–G7 新缺口 → N1–N5 批次）
+### 8.16 业务场景全集排期（G1–G7 新缺口 → N1–N5 批次 + G5 白名单插队批）
 
 > 起因：用户指出逐点发现（提一个查一个）不可持续，要求按「指令编制」业务
 > 全集一次盘满。盘查结论落档 **`docs/BUSINESS_SCENARIOS.md`**（四层能力矩阵 +
@@ -1306,7 +1306,9 @@
 - 范围 b（G5 护栏）：`validateInstruction` 新增 W `OP_UNKNOWN`——`op_code` 不在
   已知全集（`OP_CODES` 14 项 ∪ encoder legacy `INPUT/FIXED/HEADER/TAIL/CALCULATED`）
   → 提醒「未知算子，编码将落默认整数路径静默出错」。BE 保存侧白名单**挂账**
-  （须先摸存量 op 全集，避免锁死历史数据）。
+  （须先摸存量 op 全集，避免锁死历史数据）。**后记（2026-10-01）**：摸底完成 +
+  策略拍板「双端硬拦」→ 本条 W5 已升级为 E（`OP_UNKNOWN` 入 errors），BE
+  `routers/instruction.py` 白名单已落，见下「G5 双端硬拦插队批」（第 12 单 `b715e2b`）。
 - 范围 c（G6 定性）：`STRUCT` 正式定为**存量兼容口径、不补创建模板**
   （`ARRAY_GROUP + repeat=NONE` 已覆盖纯结构组语义，补模板=制造真重复）；
   本条为文档定性零代码，若后续业务确认需要独立入口再改一行 SEED。
@@ -1504,16 +1506,54 @@
   `align=9999` → fail-open（无 chip、偏移不动、摘要「无效→忽略」、卡 ⚠
   `ALIGN_INVALID` 提醒，不锁不报错）；复位 4/8/FF 留证（同 pad_char/presence 先例）。
 
-**挂账**（不排期，见 `BUSINESS_SCENARIOS.md` 挂账清单）：epoch 模板、加扰、
-切换 op、BE op 白名单拒绝策略（**已摸底 2026-09-30**：只读查 `instruction_fields`
-31 行，op 全集 = HEX_RAW 9 / LENGTH_CALC 5 / INT_UNSIGNED 5 / MAPPING 4 /
-CHECKSUM_CRC 3 / ARRAY_GROUP 2 / TIME_ACCUMULATOR·INT_SIGNED·AUTO_COUNTER 各 1
-——**9 种全部 ∈ KNOWN_OPS，无 legacy op（INPUT/FIXED/… 0 行）、无未知 op、
-无存量 type=string 字段、presence 零行**；白名单取 KNOWN_OPS 全集不锁死任何
-历史数据 → 策略（保存侧拒绝 vs 警告）可随时拍板插队）、组帧族（已立 §8.14）。
+**G5 双端硬拦插队批（op 白名单——✅ 已落地，保存策略已拍板「双端硬拦」）**
 
-- 状态：**排期已落档；六单 + N1/N2/N3/N4/N5 全部实现、真机验证通过并分单提交
-  （2026-09-30）**——批1-4 = `23ad28e`/`327ac8c`/`f8dcf64`/`e6a31a4`、
+- 立题：G5 的 BE 半边收口（N1 只上了 FE W5 提醒不阻断 → 直连 API / JSON 导入
+  仍可把未知 op 存进库，`fields_to_blocks` 静默降级 `fixed` → 编码错码）。前置
+  摸底 2026-09-30 已完成（见挂账清项后），本批插队。
+- 摸底（只读，2026-09-30）：`instruction_fields` 存量 op 全集 = HEX_RAW 9 /
+  LENGTH_CALC 5 / INT_UNSIGNED 5 / MAPPING 4 / CHECKSUM_CRC 3 / ARRAY_GROUP 2 /
+  TIME_ACCUMULATOR·INT_SIGNED·AUTO_COUNTER 各 1 —— **9 种全部 ∈ KNOWN_OPS，
+  无 legacy（INPUT/FIXED/… 0 行）、无未知 op、无存量 type=string 字段**；真机
+  sweep 复核 16 指令 × 37 字段 0 未知 → 取全集硬拦不锁任何历史数据。
+- 拍板（2026-10-01，三选一）：**「双端硬拦」**——BE 保存侧 400 + FE W5
+  `OP_UNKNOWN` 从 warnings 升 errors（翻案 N1「提醒不阻断」语义，与 BE 同口径）。
+  备选「仅 BE 硬拦（FE 保持警告）」「仅警告不拦」被否：前者 UX 断层（FE 放行 →
+  撞 400），后者护栏只到可见、错码数据仍可入库。
+- 口径：KNOWN_OPS = OP_CODES 15 项（含 N2 STRING）+ encoder legacy 5 项
+  （INPUT/FIXED/HEADER/TAIL/CALCULATED）= **20 项**，双端逐行同步（FE
+  `validateInstruction.js` ∪ `constants.js` / BE `routers/instruction.py`）——
+  改一必改二；大小写敏感逐字匹配（小写 op 在 FE 编码即落错路径 → 双端同拦）、
+  空 op fail-open（FE 门 `f.op_code &&` 同口径）。
+- 实现：BE `_validate_op_codes`（C2 位域校验同位先例）接 POST（唯一性检查后、
+  任何写入前）与 PUT（元数据写入与字段全量 DELETE 之前）→ 拒绝即存量原样、无
+  半写状态；FE `OP_UNKNOWN` 入 errors → **零新增 UI 接线**自动三处生效：
+  saveChanges 结构错误门（P0-2）阻断保存、issueBadges ⛔ error 级卡面章、
+  analyzeImport 导入预览 errors 分流拦截。
+- 验收（红测先行，红→绿 1 轮）：BE 新 `test_op_whitelist.py` 12 例（全集逐项
+  过门 / KNOWN_OPS 与共享清单逐元素相等防漂移 / 400 detail 断言 / 大小写敏感 /
+  空与 None op fail-open / POST 拒绝零落库 / PUT 拒绝存量原样含元数据 / 全量替换
+  20 项 200）；FE `validateInstruction.test.js` 同批升级（未知 op 入 errors、
+  小写 op 同拦、全集 20 项 + STRING 双清）。门禁：FE **867/867**（62 文件，
+  基线 866 + 1）· BE **383/383**（基线 371 + 12）· `vite build` EXIT=0 ·
+  pageStatus EXIT=0 · 校验器 2 文件 0 违规 · SCHEMA_IDENTICAL（28 对象零 DDL）。
+- 状态：**✅ 真机验证通过（2026-10-01）→ 第 12 单已提交 `b715e2b`**。真机结论
+  （uvicorn 重启载新码 + vite:5173）：POST 未知 op → 400 detail（探针即建即删
+  零残留）；存量 sweep 16 指令 × 37 字段全过门（硬拦不锁历史）；UI 导入预览拦截
+  —— `bad_op_import.json` 经文件选择器入 analyzeImport →「新增 0 ／ 冲突跳过 0
+  ／ 校验错误 1」「[OP_UNKNOWN] 「坏字段」未知算子（WEIRD_OP）…保存已阻止」「没有
+  可导入的指令」+ 零落库；指令页画布 error 章 = 0（存量零误报，warning 提醒不受
+  影响）；CMD-632 APPLY→SAVE 正常回路 UNSAVED 清除（PUT 200 过新校验、N5 配置
+  原样）；PUT 全量替换带 BOGUS_OP → 400 且字段/元数据 UNCHANGED（拒绝在 DELETE
+  前）。
+
+**挂账**（不排期，见 `BUSINESS_SCENARIOS.md` 挂账清单）：epoch 模板、加扰、
+切换 op、组帧族（已立 §8.14）。原挂账项「BE op 白名单拒绝策略」已清 → 见上方
+**G5 双端硬拦插队批**（摸底 2026-09-30 + 拍板 2026-10-01，第 12 单 `b715e2b`）。
+
+- 状态：**排期已落档；六单 + N1/N2/N3/N4/N5 + G5 双端硬拦插队批全部实现、真机
+  验证通过并分单提交（2026-09-30 → 2026-10-01）**——批1-4 =
+  `23ad28e`/`327ac8c`/`f8dcf64`/`e6a31a4`、
   第 5 单优化批 = `3668d37`、第 6 单标色 = `3ff0f69`；N1 红→绿 2 轮（FE
   700/700 + BE 322/322）+ 3 文档 = 第 7 单 `7d50484`；N2 红→绿 2 轮（FE
   **728/728**（49 文件，基线 700 + 28）/ BE **332/332**（基线 322 + 10））=
@@ -1525,9 +1565,12 @@ CHECKSUM_CRC 3 / ARRAY_GROUP 2 / TIME_ACCUMULATOR·INT_SIGNED·AUTO_COUNTER 各 
   真机验证通过 = 第 10 单 `b7f9fa7`；N5 红→绿 2 轮（FE **866/866**（62 文件，
   基线 823 + 43）/ BE **371/371**（基线 367 + 4），FE 6 新测试文件 +
   `byteHighlight` gap 补测、BE `test_encode_align.py` 16 双端共享向量）+
-  真机验证通过 = 第 11 单 `d8f0d65`。终态复验：build EXIT=0、校验器触达 0 违规、
-  pageStatus EXIT=0、schema SCHEMA_IDENTICAL（28 对象零 DDL）→
-  **N5 对齐模型已拍板落地（G4 结）**；BE 白名单摸底完成（挂账行），策略待拍板。**
+  真机验证通过 = 第 11 单 `d8f0d65`；G5 双端硬拦插队批红→绿 1 轮（FE **867/867**
+  （62 文件，基线 866 + 1）/ BE **383/383**（基线 371 + 12），BE
+  `test_op_whitelist.py` 12 例）+ 真机验证通过 = 第 12 单 `b715e2b`。终态复验：
+  build EXIT=0、校验器触达 0 违规、pageStatus EXIT=0、schema SCHEMA_IDENTICAL
+  （28 对象零 DDL）→ **N5 对齐模型已拍板落地（G4 结）**；**G5 双端硬拦已拍板
+  落地、白名单挂账清——G1–G7 全集七项全部已结**。**
 
 ## 9. 保留勿动（非任务，勿清理）
 

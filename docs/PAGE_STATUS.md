@@ -74,7 +74,7 @@
 - 位段元数据（优化批）：位图表格新增「值表 (VAL_TABLE)」列（单行文本 0=关,1:开，':' 兼容、中文逗号容忍）与 U/S 有符号开关（S 行默认值放开两补码域负值）；位图格 title、默认值 title、值表列回显名称解码；网格顶部新增位号标尺 7..0 列头（LSb0 口径，绝对位号 = 行号×8 + 列位号，免得自己数位）。元数据 signed/value_table 零 DDL 存 parameter_config.bit_meta（读取按位段 id 合并回 bits、保存/导入按 bits 重建拆分，单源幂等）。
 - 校验标色（验证反馈批次）：属性面板的 ⛔/⚠ 提醒清单同步点亮画布对应字段卡 —— 非选中态边框按级别变色（结构错误红 #D94834 / 提醒琥珀 #E58D28），header 右侧出 ⛔/⚠ 角标、悬停看全量消息；同卡错误优先，选中态保 3px 亮边只留角标，清单随编辑实时重算。
 - 文本字段算子（N2 · G2）：调色板 BASE 组新增「文本字段 STRING」—— 定长文本录入与出帧（encoding 下拉 ascii|utf8、pad_char 填充字节 hex、byte_len 定长 pad/截断，新建默认 8B / ascii / 0x00），属性面板 value 走文本输入；编码按 code point 出单字节（>0xFF 静态值校验提醒 STRING_NON_ASCII 建议切 utf8，utf8 出 UTF-8 流、孤立代理项 → U+FFFD），LENGTH_CALC 尺寸按定长字节算、卡面显原文、加工页初始值 = 静态 value 可继续键入；后端 encode_string 同口径双端 byte-equal（test_encode_string 向量表锚定），存量 INPUT + type=string 同吃定长与 ASCII 出帧。
-- 保存前结构校验：位域重叠/超容量、引用悬空、标签重复、公式循环依赖、校验块覆盖区为空会阻断保存，问题清单可点击定位到块。
+- 保存前结构校验：位域重叠/超容量、引用悬空、标签重复、公式循环依赖、校验块覆盖区为空、未知算子（OP_UNKNOWN · G5 双端硬拦）会阻断保存，问题清单可点击定位到块。
 - B2–B8 编码器未实现语义已在配置面显式标注（⚠角标/横幅与保存提醒，仅记录不生效）。
 - 字节偏移标尺与指令总长：每块 footer 显示 @偏移（组显示 @00..、动态未知显示 ··），顶栏 LEN 总长并标注 FIXED/VAR（定长直示 nB，变长可算 ~nB，未知下限 nB+），组卡片中央值 = 嵌套内容逐块拼接（字面 hex 子块出 pretty、未知子块按字节数出等量 ??，如 AA 55 ?? ??，页脚/标尺仍显 Σ 尺寸），拖拽/增删后实时重算。
 - 复制指令：列表「副本」一键派生新指令（重生成字段 id、重映射 parent/repeat/refs、名称与代号自动去重后落库并选中）；属性面板「复制块 (DUPLICATE)」入口已按人工验证第 3 轮 #1 移除（duplicateBlockInInstruction util 随删，侧栏「副本」整条指令复制保留）。
@@ -87,6 +87,7 @@
 - 页面↔hook 契约显式化（C7）：选项校验抽为 hooks/instructionDataOptions.js（非法选项降级+警告）、hook 全量 JSDoc、页面解构键 ⊆ hook 返回键的静态契约测试。
 - 卡面取值口径：能确定的值直接显示、不确定按字节数出等量 ??（formula.formatUnknown）—— LENGTH_CALC 结果十进制 `${result}B` 直出（公式含未知/无公式同样出等量 ??）、CHECKSUM 空 refs 出等量 ??、TIME_ACCUMULATOR 中央值下方新增 BASE 基准时间小字（如 BASE 2026-09-23 14:00，未配置 → BASE ?；无基准注入等量 ?? 占位、有基准保留 hex 差值口径）；未配置固定/hex 块照显存储值（`0000`→`00 00`、`00`→`00`，`??` 仅限无法确定内容的卡——第 3 轮 #2，与协议页同口径）（卡面取值口径改造，useInstructionLanes/Block 单测锁形）。
 - 对齐/填充（N5 · G4）：属性面板新增「对齐 / 填充 (ALIGN · PAD_TO)」独立区 —— align（内容起点补到 N 字节边界）/ pad_to（内容末尾补到 N 字节边界）/ pad_byte 填充字节 三输入 + 清除 + 口径摘要（未配置 → 不补位），叶子/组两支卡片均可编辑；两键骑 parameter_config 零 DDL，归一 1..4096（bool/非数/越界 → 0 即关闭）fail-open —— 非法 align/pad_to 出 ALIGN_INVALID/PAD_TO_INVALID 提醒（零 error 不锁保存）、pad_byte 非法静默回落 0x00；卡面 A4·P8 角标（title 说明补位语义）、卡片宽度 = 内容 + 归属 pad → 卡间空隙即填充字节且与偏移尺 @ 芯片逐格对齐，顶栏 LEN 与偏移尺按线上字节含 pad（页脚 LEN / PASS0 长度公式 / checksum 参与区 / byteMap 仍为内容口径不变）；presence 未命中与 repeat=0 不补，组 align 首副本前 / pad_to 末副本后补一次、叶逐副本按绝对游标算，LITTLE 反转不涉 pad；双端 byte-equal（test_encode_align 16 条共享向量 + 真机 FE=BE / 裸发 echo 实测）。
+- 算子白名单硬拦（G5 收口 · 双端）：未知 op_code 在保存/导入两侧硬拦 —— 已知全集 = OP_CODES 15 项（含 STRING）+ encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/CALCULATED）= 20 项，双端同源同步（改一必改二）；FE 校验 OP_UNKNOWN 为结构错误 → 保存阻断弹窗 + 卡面 ⛔ 级章 + JSON 导入预览分流拦截（预览即报「校验错误」不落库），BE POST/PUT 保存侧 400（拒绝在任何写入前，直连 API 同拦；PUT 拒绝即存量原样、无半写状态）；大小写敏感逐字匹配（小写 op 双端同拦）、空 op fail-open 不拦；存量字段全过门，硬拦不锁任何历史数据。
 
 ### 后续建议
 - 补更细的字段引用测试（块移动与保存失败恢复已覆盖）。
