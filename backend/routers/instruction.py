@@ -17,6 +17,20 @@ router = APIRouter(
     tags=["instructions"]
 )
 
+# G5 收口（双端硬拦拍板 2026-09-30）：保存侧已知算子白名单。
+# 双端同源：FE constants.js OP_CODES 15 项（含 N2 的 STRING）+ encoder legacy
+# 5 项（INPUT/FIXED/HEADER/TAIL/CALCULATED）= 20 项，与 FE utils/validateInstruction.js
+# 的 KNOWN_OPS 逐行同步 —— 改一必改二。存量摸底（只读）：instruction_fields 31 行
+# 9 种 op 全在册 → 取全集硬拦不锁任何历史数据。未知 op 若入库，fields_to_blocks
+# 会静默降级 fixed（编码错码）—— 保存前拒绝（C2 位域校验同位先例）。
+KNOWN_OPS = frozenset({
+    "HEX_RAW", "INT_UNSIGNED", "INT_SIGNED", "FLOAT_IEEE", "SCALED_DECIMAL",
+    "BCD_CODE", "BITFIELD", "MAPPING", "ARRAY_GROUP", "STRUCT",
+    "LENGTH_CALC", "CHECKSUM_CRC", "TIME_ACCUMULATOR", "AUTO_COUNTER",
+    "STRING",
+    "INPUT", "FIXED", "HEADER", "TAIL", "CALCULATED",
+})
+
 
 # HELPER: Flat Save (Trust Payload)
 def save_field_flat(db: Session, field_data: InstructionFieldSchema, instruction_id: str):
@@ -79,6 +93,31 @@ def _validate_bitfields(fields):
                 status_code=400,
                 detail=f"「{label}」位域超出容量（{f.byte_len}B = {f.byte_len * 8} bits，Σ{total_bits} bits）",
             )
+
+
+def _validate_op_codes(fields):
+    """G5 收口：保存侧 op_code 白名单（拍板：双端硬拦 · C2 同位先例）。
+
+    口径与 FE validateInstruction 的 W5→E（OP_UNKNOWN errors）逐项对齐：
+    - 大小写敏感逐字匹配（小写 op 在 FE 编码即落错路径 → 双端同拦）；
+    - 空/缺省 op fail-open 不拦（FE 门为 `f.op_code && …` 同口径）；
+    - detail 指明字段名 + 未知 op（FE 保存阻断文案同源，用户可直接定位）。
+    POST/PUT 落库前调用 —— PUT 全量替换的 DELETE 之前，拒绝即存量原样。
+    """
+    if not fields:
+        return
+    for f in fields:
+        op = f.op_code
+        if not op or str(op) in KNOWN_OPS:
+            continue
+        label = f.name or f.id or "UNNAMED"
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"「{label}」未知算子（{op}）：不在已知算子全集（OP_CODES + encoder legacy）"
+                "——保存已拒绝，请核对算子模板或清洗导入数据"
+            ),
+        )
 
 
 def serialize_instruction(db_inst: Instruction) -> InstructionResponse:
@@ -156,6 +195,9 @@ def create_instruction(inst: InstructionCreate, db: Session = Depends(get_db)):
     # C2: 位域强校验 — 重叠/超容量在落库前拒绝（POST）
     _validate_bitfields(inst.fields)
 
+    # G5: op 白名单 — 未知算子在任何写入前拒绝（POST，直连 API 同拦）
+    _validate_op_codes(inst.fields)
+
     # 2. Create Instruction
     new_inst = Instruction(
         id=i_id,
@@ -194,6 +236,10 @@ def update_instruction(id: str, updates: InstructionUpdate, db: Session = Depend
 
     # C2: 位域强校验 — 必须在任何写入发生前拒绝（PUT 全量替换前）
     _validate_bitfields(updates.fields)
+
+    # G5: op 白名单 — 必须在元数据写入与字段 DELETE 之前拒绝（PUT 全量替换前），
+    # 拒绝即存量原样、无半写状态。
+    _validate_op_codes(updates.fields)
 
     # Update Metadata
     db_inst.device_code = updates.device_code

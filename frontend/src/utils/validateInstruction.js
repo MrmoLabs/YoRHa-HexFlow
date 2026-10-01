@@ -12,10 +12,12 @@ import { getBlockLimitRefs, ENCODER_LIMITS } from './encoderLimits';
 import { padSpec } from './padSpec';
 import { OP_CODES } from '../constants';
 
-// N1 护栏批（PLAN §8.16 · G5）：编码器已知算子全集 = OP_CODES 14 项 +
-// encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/CALCULATED——encoder 各分支
-// 仍认识、存量数据可能携带）。全集外的 op_code 落 getFieldBytes 默认整数
-// 路径静默出错 → 提醒不阻断（warnings 语义）。
+// N1 护栏批（PLAN §8.16 · G5）：编码器已知算子全集 = OP_CODES 15 项（含 N2 的
+// STRING）+ encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/CALCULATED——encoder
+// 各分支仍认识、存量数据可能携带）。全集外的 op_code 落 getFieldBytes 默认整数
+// 路径静默出错。
+// G5 收口（双端硬拦拍板 2026-09-30）：W5 从 warnings 升 errors —— 保存阻断，
+// 与 BE 保存侧 400（routers/instruction.py KNOWN_OPS）同口径逐行同步，改一必改二。
 const KNOWN_OPS = new Set([
     ...Object.values(OP_CODES),
     'INPUT', 'FIXED', 'HEADER', 'TAIL', 'CALCULATED',
@@ -144,12 +146,14 @@ export function validateInstruction(instruction) {
             });
         }
 
-        // --- W5 (G5): 未知算子——编码落默认整数路径静默出错，提醒核对 ---
+        // --- W5→E (G5 收口 · 双端硬拦拍板 2026-09-30): 未知算子——编码落默认
+        // 整数路径静默出错（错码）。FE 保存阻断 + BE 保存侧 400 同口径；大小写
+        // 不匹配同样拦（小写 op 在 FE 编码即落错路径），空 op fail-open 不拦。 ---
         if (f.op_code && !KNOWN_OPS.has(String(f.op_code))) {
-            warnings.push({
+            errors.push({
                 blockId: f.id,
                 code: 'OP_UNKNOWN',
-                message: `「${label || f.id}」未知算子（${f.op_code}）：编码将按默认整数路径静默输出——请核对算子模板，避免下发错码`,
+                message: `「${label || f.id}」未知算子（${f.op_code}）：不在已知算子全集（OP_CODES + encoder legacy）——编码将按默认整数路径静默输出，保存已阻止：请核对算子模板或清洗导入数据`,
             });
         }
 

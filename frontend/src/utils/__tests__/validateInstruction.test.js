@@ -220,30 +220,39 @@ describe('validateInstruction N1 护栏（G5 未知算子 / G7 float64）', () =
         expect(warnings.some((x) => x.code === 'FLOAT64_UNSUPPORTED')).toBe(false);
     });
 
-    it('W G5: 未知 op_code 提醒（编码将落默认整数路径静默出错）', () => {
+    it('G5 双端硬拦: 未知 op_code 升 error（保存阻断，W5 → E；BE 同口径 400）', () => {
         const { errors, warnings } = validateInstruction(inst([
             blk({ op_code: 'WEIRD_OP', parameter_config: {} }),
         ]));
-        expect(errors).toEqual([]);
-        const w = warnings.find((x) => x.code === 'OP_UNKNOWN');
-        expect(w).toBeTruthy();
-        expect(w.blockId).toBe('f1');
-        expect(w.message).toMatch(/WEIRD_OP/);
+        const e = errors.find((x) => x.code === 'OP_UNKNOWN');
+        expect(e).toBeTruthy();
+        expect(e.blockId).toBe('f1');
+        expect(e.message).toMatch(/WEIRD_OP/);
+        expect(warnings.some((x) => x.code === 'OP_UNKNOWN')).toBe(false);
     });
 
-    it('W G5: 已知全集（OP_CODES 14 + encoder legacy 5）不误报', () => {
+    it('G5 双端硬拦: 小写 op 同样拦（KNOWN_OPS 大小写敏感，BE 同口径）', () => {
+        const { errors } = validateInstruction(inst([
+            blk({ op_code: 'hex_raw', parameter_config: {} }),
+        ]));
+        expect(errors.some((x) => x.code === 'OP_UNKNOWN')).toBe(true);
+    });
+
+    it('G5 双端硬拦: 已知全集（OP_CODES 15 + encoder legacy 5 = 20）不误报', () => {
         const known = [
             'HEX_RAW', 'INT_UNSIGNED', 'INT_SIGNED', 'FLOAT_IEEE', 'SCALED_DECIMAL',
             'BCD_CODE', 'BITFIELD', 'MAPPING', 'ARRAY_GROUP', 'STRUCT',
             'LENGTH_CALC', 'CHECKSUM_CRC', 'TIME_ACCUMULATOR', 'AUTO_COUNTER',
+            'STRING',
             'INPUT', 'FIXED', 'HEADER', 'TAIL', 'CALCULATED',
         ];
-        const { warnings } = validateInstruction(inst(
+        const { errors, warnings } = validateInstruction(inst(
             known.map((op, i) => blk({
                 id: `k${i}`, name: `K${i}`, op_code: op, sequence: i, parameter_config: {},
             })),
         ));
         expect(warnings.some((x) => x.code === 'OP_UNKNOWN')).toBe(false);
+        expect(errors.some((x) => x.code === 'OP_UNKNOWN')).toBe(false);
     });
 });
 
@@ -281,10 +290,11 @@ describe('validateInstruction N2 文本字段（G2 字符集）', () => {
         expect(warnings.some((x) => x.code === 'STRING_NON_ASCII')).toBe(true);
     });
 
-    it('STRING 属已知算子全集（OP_UNKNOWN 不误报）', () => {
-        const { warnings } = validateInstruction(inst([
+    it('STRING 属已知算子全集（OP_UNKNOWN 不误报，errors/warnings 双清）', () => {
+        const { errors, warnings } = validateInstruction(inst([
             blk({ op_code: 'STRING', byte_len: 8, parameter_config: {} }),
         ]));
         expect(warnings.some((x) => x.code === 'OP_UNKNOWN')).toBe(false);
+        expect(errors.some((x) => x.code === 'OP_UNKNOWN')).toBe(false);
     });
 });
