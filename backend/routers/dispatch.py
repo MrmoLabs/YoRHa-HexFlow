@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from backend.core import response_match, sequence_runner, transport
 from backend.core.escape import escape_hex, table_from_config
 from backend.core.frame_builder import build_wrapped
+from backend.core.recipe_compile import compile_recipe
 from backend.db.database import get_db
 from backend.db.log_store import safe_log
 from backend.db.models import ResponseSpec, ProtocolTemplate
@@ -35,9 +36,15 @@ class WrapSpec(BaseModel):
     批次二 (D14③): **多载荷组**（编排页「封装试发」一组 N 条指令）——
     `payloads` 给出 N 条内核 hex + `slot_ids`/`start_order` 洞序，此时
     `hex_string` 不参与（仍必填，Pydantic 约束；语义见 dispatch_frame）。
-    层位与单条完全一致：**逐条内核先转义 → 再串行套壳**，外壳字面不转。"""
+    层位与单条完全一致：**逐条内核先转义 → 再串行套壳**，外壳字面不转。
 
-    protocol_id: str
+    CP3 3a (D13): 增 `recipe_id` —— 与 `protocol_id` **互斥**（都不给 → 400），
+    配方路径逐层串行套壳（`core/recipe_compile.py`，与 `/compile/wrapped`
+    同一份实现 → 预览与出线同字节）；该路径下 `slot_ids`/`slot_order` 归配方
+    阶段所有、`start_order` 只作用于第 0 层。缺省（不带 wrap）裸帧逐字节不变。"""
+
+    protocol_id: Optional[str] = None
+    recipe_id: Optional[str] = None
     slot_id: Optional[str] = None
     slot_order: Optional[int] = None
     # 批次二 (D14③): 多载荷组（缺省 None → 单条路径逐字节不变）
@@ -99,7 +106,27 @@ def _apply_wrap(
     """批次一 1c: wrap → build_wrapped（单 payload：slot_id 显式优先，否则
     稠密位次 start_order=slot_order）。协议 404 / 语义 400（含批次二
     fit_policy=reject）原样透出；返回 build_wrapped 全结果 —— 调用方取
-    `hex` 终检、`warnings` 交回执（批次二 D3 溢出/欠载徽标）。"""
+    `hex` 终检、`warnings` 交回执（批次二 D3 溢出/欠载徽标）。
+
+    CP3 3a (D13): `wrap.recipe_id` 分支 —— 配方逐层串行套壳（与
+    `/compile/wrapped` 共用 `core/recipe_compile.py`，故预览与出线**同字节**）；
+    与 `protocol_id` 互斥、都不给 → 400。配方路径下 `slot_ids`/`slot_order`
+    归配方阶段所有（此处忽略），`start_order` 只作用于第 0 层。"""
+    if wrap.recipe_id and wrap.protocol_id:
+        raise HTTPException(
+            status_code=400, detail="protocol_id 与 recipe_id 互斥，只能指定一个"
+        )
+    if wrap.recipe_id:
+        return compile_recipe(
+            db,
+            wrap.recipe_id,
+            payloads,
+            start_order=start_order or 0,
+        )
+    if not wrap.protocol_id:
+        raise HTTPException(
+            status_code=400, detail="wrap 须指定 protocol_id 或 recipe_id"
+        )
     protocol = db.query(ProtocolTemplate) \
         .filter(ProtocolTemplate.id == wrap.protocol_id).first()
     if protocol is None:

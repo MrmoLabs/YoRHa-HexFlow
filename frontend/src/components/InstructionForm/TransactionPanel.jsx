@@ -169,10 +169,13 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
                 </button>
             </div>
 
-            {/* 批次一 (D4-A): 封装联动指示 —— wrap 开时事务发送同带协议外壳 */}
+            {/* 批次一 (D4-A): 封装联动指示 —— wrap 开时事务发送同带协议外壳。
+                CP3 3a: 配方态（降级链第 1 级）指示配方名与层数；单协议态形态不变。 */}
             {wrap && (
                 <div className="text-[9px] font-mono text-nier-light/40 uppercase tracking-widest">
-                    WRAP ● {wrap.protocol_id} · {wrap.slot_id || `SLOT ORDER ${wrap.slot_order ?? 0}`}
+                    {wrap.mode === 'recipe'
+                        ? <>WRAP ● RECIPE {wrap.name || wrap.recipe_id} · {(wrap.stages || []).length} 层</>
+                        : <>WRAP ● {wrap.protocol_id} · {wrap.slot_id || `SLOT ORDER ${wrap.slot_order ?? 0}`}</>}
                 </div>
             )}
 

@@ -12,8 +12,14 @@
   （**存量缺省口径**，存量槽不迁移）保留原行为并给 warning；`max_bytes` 超限
   逐槽判定同溢出策略。混合策略下**任一槽 overflow=reject 即阻断追加帧末尾**
   （追加会破坏该协议的结构假设 —— 实施注，D14① 未定，2026-10-01 记）。
-- 双端向量纪律：FA FA / 02 / 01 02 / ED 主向量与
-  frontend/src/utils/__tests__/blockMerge.test.js 钉同一字节序列，改一必改二。
+- **CP3 3a (D13×D3)：`strict_fit=True` 配方路径缺省 `reject`/`reject`** ——
+  主动偏离 D3「默认取现状零回归」（配方零存量）；显式 `fit_policy` 仍照槽上
+  写的生效，缺省 False → 存量与存量路径逐字节不变（§0 硬约束）。返回同时增
+  `logic` = 本层 length/checksum 真值回显（配方分层预览 LEN/CRC 卡面用）。
+- 向量纪律（CP2b / D11-①）：FA FA / 02 / 01 02 / ED 主向量单一真相源 =
+  `vectors/wrap.json` 表 `main`（test_frame_builder / test_wrap_api /
+  blockMerge.test.js 三处同读一份）；CP3 3a 三层配方帧主向量 = 同文件表
+  `three`（三处同读，改一必改三）。
 """
 
 import math
@@ -267,22 +273,57 @@ def _to_blocks(nodes, by_id: dict) -> List[Block]:
     return out
 
 
+def _collect_logic(nodes) -> List[dict]:
+    """发射后遍历 Block 森林，取 length/checksum 块的**真值**（Orchestrator
+    在发射前已把 block.hex_value 算定）→ 配方分层预览的 LEN/CRC 卡面回显
+    （§9.4「该层 LEN/CRC 卡面回显」，复用协议页卡面「真值」口径）。
+
+    文档序前序遍历；`_to_blocks` 恒写 `type=str(ntype)`，故直接比字符串。
+    """
+    out: List[dict] = []
+    for node in nodes or []:
+        if not isinstance(node, Block):
+            continue
+        ntype = str(node.type)
+        if ntype in ("length", "checksum"):
+            out.append(
+                {
+                    "label": node.label,
+                    "type": ntype,
+                    "value": re.sub(r"\s+", "", node.hex_value or ""),
+                }
+            )
+        if node.children:
+            out.extend(_collect_logic(node.children))
+    return out
+
+
 # 批次二 (D3)：槽契约读侧口径 —— 合法值集合与 §3 表一致；存量槽无
 # parameter_config / 无 fit_policy → 缺省 = 现状口径（append/zero_fill）。
 _OVERFLOW_DEFAULT, _UNDERFLOW_DEFAULT = "append", "zero_fill"
 _OVERFLOW_ALLOWED = ("append", "reject")
 _UNDERFLOW_ALLOWED = ("zero_fill", "reject")
+_REJECT = "reject"
 
 
-def _fit_policy(node) -> tuple:
+def _fit_policy(node, strict: bool = False) -> tuple:
     """槽的 (overflow, underflow) 策略。
 
     非法值在协议保存期已被 `protocol.py::_validate_slot_contracts` 拒绝；此处
     fail-open 回缺省（读侧不重复报错，与 refs 悬空丢弃同口径）。
+
+    CP3 3a (D13×D3)：`strict=True`（**配方路径**）时未显式配置的槽缺省改为
+    `reject`/`reject` —— 主动偏离 D3「默认取现状零回归」（配方零存量；多层下
+    溢出 append 的字节会被下一层当正常载荷收下，错误被放大）。显式配置的
+    `fit_policy` 两侧都**照槽上写的生效**，strict 只换缺省值。
     """
+    if strict:
+        overflow_default, underflow_default = _REJECT, _REJECT
+    else:
+        overflow_default, underflow_default = _OVERFLOW_DEFAULT, _UNDERFLOW_DEFAULT
     pc = node.get("parameter_config")
     fp = pc.get("fit_policy") if isinstance(pc, dict) else None
-    overflow, underflow = _OVERFLOW_DEFAULT, _UNDERFLOW_DEFAULT
+    overflow, underflow = overflow_default, underflow_default
     if isinstance(fp, dict):
         if fp.get("overflow") in _OVERFLOW_ALLOWED:
             overflow = fp["overflow"]
@@ -298,13 +339,27 @@ def _max_bytes(node):
     return value if value is not None and value >= 0 else None
 
 
-def build_wrapped(protocol_children, payloads, slot_ids=None, start_order=0) -> dict:
+def build_wrapped(
+    protocol_children,
+    payloads,
+    slot_ids=None,
+    start_order=0,
+    strict_fit: bool = False,
+) -> dict:
     """协议 children + 已编码内核 hex 载荷 → 封装帧（唯一封装入口）。
 
-    返回 {"hex": pretty, "total_length": 字节数, "warnings": [...]}。
+    返回 {"hex": pretty, "total_length": 字节数, "warnings": [...],
+    "logic": [{label, type, value}]} —— `logic` 是本层 length/checksum 块的
+    **真值回显**（发射后 block.hex_value 已定值），供配方分层预览的 LEN/CRC
+    卡面直读；仅多一个键，既有消费方逐键取值 → 零影响。
+
     语义错误（插槽不存在 / 不是插槽 / 重复分配、非法 hex、**fit_policy=reject
     触发的溢出/欠载**）→ ValueError（HTTP 侧 → 400）；warnings 顺序：overflow
     先、underflow 后。
+
+    `strict_fit=True`（CP3 3a 配方路径，§9.5-2）：未显式配置 fit_policy 的槽
+    缺省改为 reject/reject —— **主动偏离 D3 缺省口径**；缺省 False → 存量与
+    存量路径逐字节不变（§0 硬约束）。
     """
     normalized = [_normalize_payload(p) for p in (payloads or [])]
     explicit = list(slot_ids or [])
@@ -408,9 +463,15 @@ def build_wrapped(protocol_children, payloads, slot_ids=None, start_order=0) -> 
 
     # 溢出 ①（条数）：载荷无槽可用 → 追加帧末尾；任一槽 overflow=reject 即阻断
     if overflow:
-        if any(_fit_policy(s)[0] == "reject" for s in slots):
+        if any(_fit_policy(s, strict_fit)[0] == _REJECT for s in slots):
+            # 报错归因要说清 reject 从哪来：槽上显式配置 vs 配方路径缺省（strict）
+            reason = (
+                "协议存在 overflow=reject 的插槽"
+                if any(_fit_policy(s, False)[0] == _REJECT for s in slots)
+                else "配方路径缺省 overflow=reject"
+            )
             errors.append(
-                f"洞位不足：{overflow} 条载荷无可用插槽（协议存在 overflow=reject 的插槽，"
+                f"洞位不足：{overflow} 条载荷无可用插槽（{reason}，"
                 f"禁止追加帧末尾；可用插槽 {len(slots)} 个 / 载荷 {len(normalized)} 条）"
             )
         else:
@@ -425,7 +486,7 @@ def build_wrapped(protocol_children, payloads, slot_ids=None, start_order=0) -> 
         if allowed is None or actual <= allowed:
             continue
         where = f"插槽 {node.get('id')}"
-        if _fit_policy(node)[0] == "reject":
+        if _fit_policy(node, strict_fit)[0] == _REJECT:
             errors.append(
                 f"{where} 溢出：载荷 {actual} 字节 > 允许 {allowed} 字节（overflow=reject）"
             )
@@ -438,7 +499,7 @@ def build_wrapped(protocol_children, payloads, slot_ids=None, start_order=0) -> 
     unfilled = [s for s in slots if s["id"] not in claimed]
     underflow_rejected = 0
     for s in unfilled:
-        if _fit_policy(s)[1] != "reject":
+        if _fit_policy(s, strict_fit)[1] != _REJECT:
             continue
         underflow_rejected += 1
         allowed = _finite_int(s.get("byte_length"))
@@ -462,4 +523,6 @@ def build_wrapped(protocol_children, payloads, slot_ids=None, start_order=0) -> 
         "hex": _pretty(compact),
         "total_length": len(compact) // 2,
         "warnings": warnings,
+        # CP3 3a: length/checksum 真值回显（分层预览卡面用；仅多一个键）
+        "logic": _collect_logic(blocks),
     }

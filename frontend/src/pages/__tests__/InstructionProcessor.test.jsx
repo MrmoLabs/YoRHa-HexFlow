@@ -1,13 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import InstructionProcessor from '../InstructionProcessor';
+import wrapVec from '../../../../vectors/wrap.json';
+import { loadVectors } from '../../../../vectors/vectors.js';
 
 // 批次一 (D4-A): 加工页 wrap 状态机（ok / none / failed / missing 降级裸发）
 // + 封装预览 300ms 防抖 compileWrapped + TRANSMIT / TransactionPanel 双路带 wrap。
+// CP3 3a (D13): 降级链三级（配方 → 默认协议 → 裸发）+ 分层堆叠预览 + 失效徽标；
+// 三层帧主向量单一真相源 = vectors/wrap.json · 表 three（与后端
+// test_frame_recipes / test_wrap_api 三处同读，改一必改三）。
 
 vi.mock('../../api', () => ({
     api: {
         getBindings: vi.fn(),
+        getRecipes: vi.fn(),
         getOperatorTemplates: vi.fn(),
         dispatchPayload: vi.fn(),
         compileWrapped: vi.fn(),
@@ -19,6 +25,43 @@ vi.mock('../../api', () => ({
 }));
 
 import { api } from '../../api';
+
+// CP3 3a 共享向量：三层配方帧（改一必改三）
+const THREE = loadVectors(wrapVec.three);
+const RECIPE_ID = 'recipe-three';
+const RECIPE = {
+    id: RECIPE_ID, name: '三层配方', description: '', version: 1,
+    instruction_id: 'inst-1',
+    stages: THREE.layers.map(layer => ({
+        protocol_id: layer.protocol_id, slot_ids: [layer.slot_id],
+        definition_hash: 'sha256:fixture'
+    }))
+};
+
+// 编译响应的 stages 回显（向量期望值 + 服务端会补的 protocol_label / hash 字段）。
+// 串行编译结果由后端同向量钉死，FE 断言渲染取**同一张表** → 改向量三端同动。
+const recipeStages = (staleIndex = null) => THREE.expect.stages.map(stage => ({
+    index: stage.index,
+    protocol_id: stage.protocol_id,
+    protocol_label: THREE.layers[stage.index].label,
+    hex: stage.hex,
+    total_length: stage.total_length,
+    delta_bytes: stage.delta_bytes,
+    definition_hash: 'sha256:fixture',
+    logic: stage.logic,
+    stale: stage.index === staleIndex,
+    warnings: stage.index === staleIndex ? ['配方已失效：应用壳 定义已变更，请重新保存配方'] : []
+}));
+
+const recipeCompileResult = (staleIndex = null) => ({
+    hex_string: THREE.expect.hex,
+    total_length: THREE.expect.total_length,
+    warnings: staleIndex === null
+        ? []
+        : [`第 ${staleIndex + 1} 层：配方已失效：应用壳 定义已变更，请重新保存配方`],
+    recipe_id: RECIPE_ID,
+    stages: recipeStages(staleIndex)
+});
 
 const PROTOCOLS = [{
     id: 'p-1', label: '外壳协议', type: 'container',
@@ -137,6 +180,7 @@ describe('InstructionProcessor wrap 状态机（批次一 D4-A）', () => {
             Object.assign(new Error('nf'), { response: { status: 404 } })
         );
         api.getOperatorTemplates.mockResolvedValue([]);
+        api.getRecipes.mockResolvedValue([]);
         api.dispatchPayload.mockResolvedValue({ id: 1, status: 'SENT', byte_count: 3 });
         api.compileWrapped.mockResolvedValue({ hex_string: 'AA 00 01', total_length: 3, warnings: [] });
         api.sendTransaction.mockResolvedValue(OK_RECORD);
@@ -243,6 +287,7 @@ describe('指令加工编辑反馈（第 4 批）', () => {
             Object.assign(new Error('nf'), { response: { status: 404 } })
         );
         api.getOperatorTemplates.mockResolvedValue([]);
+        api.getRecipes.mockResolvedValue([]);
         api.getBindings.mockResolvedValue([]);
         api.dispatchPayload.mockResolvedValue({ id: 1, status: 'SENT', byte_count: 5 });
         api.compileWrapped.mockResolvedValue({ hex_string: '00 00 00 00 00', total_length: 5, warnings: [] });
@@ -341,6 +386,7 @@ describe('批 1：字段级十进制录入', () => {
             Object.assign(new Error('nf'), { response: { status: 404 } })
         );
         api.getOperatorTemplates.mockResolvedValue([]);
+        api.getRecipes.mockResolvedValue([]);
         api.getBindings.mockResolvedValue([]);
         api.dispatchPayload.mockResolvedValue({ id: 1, status: 'SENT', byte_count: 2 });
         api.compileWrapped.mockResolvedValue({ hex_string: '00 00', total_length: 2, warnings: [] });
@@ -401,6 +447,7 @@ describe('批 3：BITFIELD 按子位录入', () => {
             Object.assign(new Error('nf'), { response: { status: 404 } })
         );
         api.getOperatorTemplates.mockResolvedValue([]);
+        api.getRecipes.mockResolvedValue([]);
         api.getBindings.mockResolvedValue([]);
         api.dispatchPayload.mockResolvedValue({ id: 1, status: 'SENT', byte_count: 1 });
         api.compileWrapped.mockResolvedValue({ hex_string: '05', total_length: 1, warnings: [] });
@@ -453,5 +500,119 @@ describe('批 3：BITFIELD 按子位录入', () => {
 
         fireEvent.change(segRow('MODE').querySelector('input'), { target: { value: '1' } });
         await waitFor(() => expect(screen.getByDisplayValue('0D')).toBeTruthy());
+    });
+});
+
+// CP3 3a (D13): 降级链三级（配方 → 默认协议 → 裸发）+ 加工页分层堆叠预览 + 失效徽标。
+// 三层帧主向量单一真相源 = vectors/wrap.json · 表 three（三处同读，改一必改三）。
+describe('CP3 3a 加工页降级链与分层预览', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        api.getResponseSpec.mockRejectedValue(
+            Object.assign(new Error('nf'), { response: { status: 404 } })
+        );
+        api.getOperatorTemplates.mockResolvedValue([]);
+        api.getRecipes.mockResolvedValue([]);
+        api.getBindings.mockResolvedValue([]);
+        api.dispatchPayload.mockResolvedValue({ id: 1, status: 'SENT', byte_count: 11 });
+        api.compileWrapped.mockResolvedValue(recipeCompileResult());
+        api.sendTransaction.mockResolvedValue(OK_RECORD);
+    });
+
+    it('第 1 级命中：配方 → RECIPE ACTIVE、编译只给 recipeId、分层堆叠渲染向量三层', async () => {
+        api.getRecipes.mockResolvedValue([RECIPE]);
+        renderPage();
+        await selectInstruction();
+
+        // 降级链第 1 级优先，且按 instruction_id 反查
+        await screen.findByText(/RECIPE ACTIVE/);
+        expect(screen.getByTestId('wrap-status').textContent)
+            .toContain('RECIPE ACTIVE // 三层配方 · 3 层');
+        expect(api.getRecipes).toHaveBeenCalledWith('inst-1');
+
+        // 编译只带 recipeId（槽位归配方阶段所有），响应 stages 驱动分层堆叠
+        await waitFor(() => expect(api.compileWrapped).toHaveBeenCalledTimes(1), { timeout: 2000 });
+        expect(api.compileWrapped).toHaveBeenCalledWith({
+            recipeId: RECIPE_ID, payloads: ['01']
+        });
+
+        await waitFor(() => expect(screen.getByTestId('wrap-layer-2')), { timeout: 2000 });
+        expect(screen.getByTestId('wrap-layers')).toBeTruthy();
+
+        // 三层逐行：层号 · 协议 label · 该层 hex · Δ · LEN 卡面真值
+        THREE.expect.stages.forEach((stage, i) => {
+            const row = screen.getByTestId(`wrap-layer-${i}`);
+            expect(row.textContent).toContain(`L${i + 1}`);
+            expect(row.textContent).toContain(THREE.layers[i].label);
+            expect(row.textContent).toContain(`Δ+${stage.delta_bytes}B`);
+            expect(row.textContent).toContain(`${stage.total_length}B`);
+            expect(row.textContent).toContain(`LEN ${stage.logic[0].label}=${stage.logic[0].value}`);
+            expect(screen.getByText(stage.hex)).toBeTruthy();
+        });
+        // 最后一层 hex = 最终帧（与后端 / compile / dispatch 同一份实现同字节）
+        expect(screen.getByText(THREE.expect.hex)).toBeTruthy();
+        expect(screen.getByText('WRAPPED_LAYERS')).toBeTruthy();
+    });
+
+    it('失效徽标：stage.stale → RECIPE STALE 徽标 + 该层告警（warning 不阻断）', async () => {
+        api.getRecipes.mockResolvedValue([RECIPE]);
+        api.compileWrapped.mockResolvedValue(recipeCompileResult(0));
+        renderPage();
+        await selectInstruction();
+
+        await waitFor(() => expect(screen.getByTestId('wrap-stale')), { timeout: 2000 });
+        expect(screen.getByTestId('wrap-stale').textContent).toContain('配方已失效');
+        // 逐层告警挂在出错层；stale 层角标换 DEF STALE
+        expect(screen.getByTestId('wrap-layer-0').textContent).toContain('DEF STALE');
+        expect(screen.getByTestId('wrap-layer-0').textContent).toContain('配方已失效');
+        expect(screen.getByTestId('wrap-layer-1').textContent).not.toContain('DEF STALE');
+    });
+
+    it('TRANSMIT 与事务同带 recipe_id（预览 / 发送同参同字节）', async () => {
+        api.getRecipes.mockResolvedValue([RECIPE]);
+        renderPage();
+        await selectInstruction();
+        await screen.findByText(/RECIPE ACTIVE/);
+
+        fireEvent.click(screen.getByRole('button', { name: /TRANSMIT_DATA/ }));
+        await waitFor(() => expect(api.dispatchPayload).toHaveBeenCalledTimes(1));
+        expect(api.dispatchPayload).toHaveBeenCalledWith(
+            '01', '开门指令', expect.objectContaining({ mode: 'recipe', recipe_id: RECIPE_ID })
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: /SEND_TRANSACTION/ }));
+        await waitFor(() => expect(api.sendTransaction).toHaveBeenCalledTimes(1));
+        expect(api.sendTransaction.mock.calls[0][0].wrap).toEqual(
+            expect.objectContaining({ mode: 'recipe', recipe_id: RECIPE_ID })
+        );
+        // 事务面板指示配方名与层数（非 protocol_id 形态）
+        expect(screen.getByText(/RECIPE 三层配方 · 3 层/)).toBeTruthy();
+    });
+
+    it('配方拉取失败 → 不整机降级，继续第 2 级默认协议', async () => {
+        api.getRecipes.mockRejectedValue(new Error('backend down'));
+        api.getBindings.mockResolvedValue([DEFAULT_ROW]);
+        renderPage();
+        await selectInstruction();
+
+        await screen.findByText(/WRAP ACTIVE \/\/ p-1/);
+        expect(api.getBindings).toHaveBeenCalledWith('inst-1');
+        expect(api.getRecipes).toHaveBeenCalledWith('inst-1');
+    });
+
+    it('配方 stages 为空（无效配方）→ 落到第 2 级；第 2 级也无 → 裸发', async () => {
+        api.getRecipes.mockResolvedValue([{ ...RECIPE, stages: [] }]);
+        api.getBindings.mockResolvedValue([DEFAULT_ROW]);
+        renderPage();
+        await selectInstruction();
+
+        await screen.findByText(/WRAP ACTIVE \/\/ p-1/);
+
+        // 第 2 级也没有默认行 → 第 3 级裸发（开关禁用）
+        api.getRecipes.mockResolvedValue([]);
+        api.getBindings.mockResolvedValue([]);
+        fireEvent.click(await sidebar().findByText('关门指令'));
+        await screen.findByText(/NO DEFAULT BINDING/);
+        expect(screen.getByRole('button', { name: /WRAP ○/ }).disabled).toBe(true);
     });
 });

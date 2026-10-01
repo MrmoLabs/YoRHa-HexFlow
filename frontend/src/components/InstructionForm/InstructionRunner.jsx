@@ -80,18 +80,26 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
     // TransactionPanel 同带 wrap（内核载荷出线、后端套壳），预览 300ms 防抖调
     // compileWrapped（与发送同参 → 同字节）。默认开（DESIGN_CorePipeline §7 批次一
     // 1c 口径：无绑定/拉取失败自动降级裸发，开关仅在 ok 态可手动关）。
+    //
+    // CP3 3a (D13): wrap 分两型 —— 降级链第 1 级 `mode:'recipe'`（分层堆叠预览）与
+    // 第 2 级默认协议（单帧预览，形态不变）。两型都走 /compile/wrapped，故预览与
+    // 出线恒同字节。
     const wrap = wrapInfo?.status === 'ok' ? wrapInfo.wrap : null;
+    const isRecipeWrap = wrap?.mode === 'recipe';
     const [wrapOn, setWrapOn] = useState(true);
-    const [wrapPreview, setWrapPreview] = useState(null); // { hex, warnings } | null
+    const [wrapPreview, setWrapPreview] = useState(null); // { hex, warnings, stages } | null
     const [wrapPreviewErr, setWrapPreviewErr] = useState('');
     const [wrapPreviewing, setWrapPreviewing] = useState(false);
     const activeWrap = wrapOn && wrap ? wrap : null;
 
     // 换绑定/换指令 → 复位为默认开（新解析结果从默认态起步）与清预览
-    const wrapKey = wrap ? `${wrap.protocol_id}|${wrap.slot_id || ''}|${wrap.slot_order}` : '';
+    const wrapKey = wrap
+        ? (isRecipeWrap ? `recipe|${wrap.recipe_id}` : `${wrap.protocol_id}|${wrap.slot_id || ''}|${wrap.slot_order}`)
+        : '';
     useEffect(() => { setWrapOn(true); }, [wrapKey]);
 
     // 封装预览：300ms 防抖调 POST /compile/wrapped；关开关/换指令即弃在途请求。
+    // 配方态只给 recipeId（槽位归配方阶段所有），响应含 stages[] 分层回显。
     useEffect(() => {
         if (!activeWrap) {
             setWrapPreview(null);
@@ -107,14 +115,20 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
         const timer = setTimeout(async () => {
             setWrapPreviewing(true);
             try {
-                const result = await api.compileWrapped({
-                    protocolId: activeWrap.protocol_id,
-                    payloads: [kernel],
-                    slotIds: [activeWrap.slot_id || null],
-                    startOrder: activeWrap.slot_order ?? 0
-                });
+                const result = activeWrap.mode === 'recipe'
+                    ? await api.compileWrapped({ recipeId: activeWrap.recipe_id, payloads: [kernel] })
+                    : await api.compileWrapped({
+                        protocolId: activeWrap.protocol_id,
+                        payloads: [kernel],
+                        slotIds: [activeWrap.slot_id || null],
+                        startOrder: activeWrap.slot_order ?? 0
+                    });
                 if (!alive) return;
-                setWrapPreview({ hex: result.hex_string, warnings: result.warnings || [] });
+                setWrapPreview({
+                    hex: result.hex_string,
+                    warnings: result.warnings || [],
+                    stages: result.stages || []
+                });
                 setWrapPreviewErr('');
             } catch (err) {
                 if (!alive) return;
@@ -225,6 +239,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
     const instructionName = normalizedInstruction.name || normalizedInstruction.label || 'Unnamed Protocol';
 
     // 批次一 (D4-A): 封装状态文案（状态机四态 + loading 瞬态，均落「降级裸发」）
+    // CP3 3a: ok 态分两型 —— 配方（降级链第 1 级）与默认协议（第 2 级）
     const wrapStatusText = !wrap
         ? (wrapInfo?.status === 'missing'
             ? 'PROTOCOL MISSING — 降级裸发'
@@ -234,8 +249,10 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                     ? 'RESOLVING BINDING...'
                     : 'NO DEFAULT BINDING — 裸发')
         : wrapOn
-            ? `WRAP ACTIVE // ${wrap.protocol_id} · ${wrap.slot_id || 'DENSE'}`
-            : 'WRAP READY // DEFAULT BINDING';
+            ? (isRecipeWrap
+                ? `RECIPE ACTIVE // ${wrap.name || wrap.recipe_id} · ${(wrap.stages || []).length} 层`
+                : `WRAP ACTIVE // ${wrap.protocol_id} · ${wrap.slot_id || 'DENSE'}`)
+            : (isRecipeWrap ? 'WRAP READY // RECIPE' : 'WRAP READY // DEFAULT BINDING');
 
     return (
         <div className="flex-1 flex flex-col h-full bg-nier-bg p-5 gap-8 overflow-hidden">
@@ -327,12 +344,14 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                         </div>
                     </div>
 
-                    {/* 分区 2：协议封装（默认绑定套外框，预览/发送/事务同轨） */}
+                    {/* 分区 2：协议封装（降级链第 1 级配方 / 第 2 级默认绑定，预览·发送·事务同轨） */}
                     <div className="flex flex-col gap-2">
                         <SectionTitle
                             en="PROTOCOL WRAP"
                             zh="协议封装"
-                            hint="开启后按默认绑定协议给内核帧套外框；预览 / TRANSMIT / 事务三路同参同字节"
+                            hint={isRecipeWrap
+                                ? '按封装配方逐层套壳（内核 → 各层外壳）；预览 / TRANSMIT / 事务三路同参同字节'
+                                : '开启后按默认绑定协议给内核帧套外框；预览 / TRANSMIT / 事务三路同参同字节'}
                         />
                         {/* 批次一 (D4-A): 封装开关 —— 状态机 ok 才可开；开 → 预览/TRANSMIT/事务同轨 */}
                         <div className="border border-nier-light/20 p-2 flex items-center justify-between gap-2">
@@ -342,7 +361,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                                 onClick={() => setWrapOn(on => !on)}
                                 disabled={!wrap}
                                 aria-pressed={Boolean(activeWrap)}
-                                title={wrap ? '协议封装开关 (WRAP)' : '无可用默认绑定 — 仅裸发'}
+                                title={wrap ? (isRecipeWrap ? '封装配方开关 (WRAP)' : '协议封装开关 (WRAP)') : '无可用默认绑定 — 仅裸发'}
                                 className={`text-[9px] font-mono uppercase tracking-widest border px-2 py-1 transition-colors duration-100 ${activeWrap
                                     ? 'border-nier-light bg-nier-light text-nier-dark'
                                     : 'border-nier-light/20 text-nier-light/50 hover:border-nier-light/60 hover:text-nier-light'} disabled:opacity-40 disabled:cursor-not-allowed`}
@@ -354,17 +373,64 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                             {wrapStatusText}
                         </div>
 
-                        {/* 封装预览：300ms 防抖 compileWrapped 结果（与发送同参 → 同字节） */}
+                        {/* 封装预览：300ms 防抖 compileWrapped 结果（与发送同参 → 同字节）。
+                            CP3 3a: 配方态 → 分层堆叠（每层协议 · 该层 hex · Δ · LEN/CRC 真值 ·
+                            该层告警），单协议态 → 单帧流（形态不变）。 */}
                         {activeWrap && (
-                            <div className="bg-[#4a4a4a] text-[#dad4bb] p-3 relative border border-[#5c5c5c]">
+                            <div data-testid="wrap-preview" className="bg-[#4a4a4a] text-[#dad4bb] p-3 relative border border-[#5c5c5c]">
                                 <div className="absolute top-0 right-0 bg-[#5c5c5c] text-[9px] px-2 py-0.5 font-bold tracking-widest">
-                                    WRAPPED_STREAM
+                                    {isRecipeWrap ? 'WRAPPED_LAYERS' : 'WRAPPED_STREAM'}
                                 </div>
-                                <div className="font-mono text-xl break-all leading-tight tracking-[0.1em] mt-4">
-                                    {wrapPreviewErr
-                                        ? <span className="text-red-400 text-[10px]">{wrapPreviewErr}</span>
-                                        : (wrapPreview?.hex || (wrapPreviewing ? '···' : '--'))}
+                                <div className="mt-4 flex flex-col gap-2">
+                                    {wrapPreviewErr ? (
+                                        <span className="font-mono text-red-400 text-[10px] break-all">{wrapPreviewErr}</span>
+                                    ) : isRecipeWrap ? (
+                                        <div data-testid="wrap-layers" className="flex flex-col gap-2">
+                                            {(wrapPreview?.stages || []).map(stage => (
+                                                <div
+                                                    key={stage.index}
+                                                    data-testid={`wrap-layer-${stage.index}`}
+                                                    className="border border-nier-light/20 p-2"
+                                                >
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="text-[9px] font-mono tracking-widest text-nier-light/70">
+                                                            L{stage.index + 1} :: {stage.protocol_label || stage.protocol_id}
+                                                        </span>
+                                                        <span className={`text-[9px] font-mono tracking-widest whitespace-nowrap ${stage.stale ? 'text-[#E58D28]' : 'text-nier-light/45'}`}>
+                                                            {stage.stale ? 'DEF STALE' : `Δ+${stage.delta_bytes}B`} · {stage.total_length}B
+                                                        </span>
+                                                    </div>
+                                                    <div className="font-mono text-base break-all tracking-[0.08em] mt-1">
+                                                        {stage.hex}
+                                                    </div>
+                                                    {(stage.logic || []).length > 0 && (
+                                                        <div className="text-[9px] font-mono text-nier-light/45 mt-1 tracking-widest break-all">
+                                                            {stage.logic.map(item => `${item.type === 'length' ? 'LEN' : 'CRC'} ${item.label}=${item.value}`).join(' · ')}
+                                                        </div>
+                                                    )}
+                                                    {(stage.warnings || []).length > 0 && (
+                                                        <div className="text-[9px] font-mono text-yellow-400 mt-1 break-all">
+                                                            ⚠ {stage.warnings.join(' · ')}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                            {!wrapPreview && (
+                                                <div className="font-mono text-xl tracking-[0.1em]">{wrapPreviewing ? '···' : '--'}</div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="font-mono text-xl break-all leading-tight tracking-[0.1em]">
+                                            {wrapPreview?.hex || (wrapPreviewing ? '···' : '--')}
+                                        </div>
+                                    )}
                                 </div>
+                                {/* CP3 3a · D7-A 失效徽标：definition_hash 不符 → 警示不阻断 */}
+                                {isRecipeWrap && (wrapPreview?.stages || []).some(stage => stage.stale) && (
+                                    <div data-testid="wrap-stale" className="mt-2 text-[9px] font-mono text-[#E58D28] tracking-widest break-all">
+                                        ⚠ RECIPE STALE — 配方已失效：协议定义已变更，请重新保存配方
+                                    </div>
+                                )}
                                 {wrapPreview?.warnings?.length > 0 && (
                                     <div className="mt-2 text-[9px] font-mono text-yellow-400 tracking-widest break-all">
                                         ⚠ {wrapPreview.warnings.join(' · ')}

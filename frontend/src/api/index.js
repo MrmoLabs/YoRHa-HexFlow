@@ -21,6 +21,7 @@ import { compileWrapped } from './compile';
 import { dispatchPayload, dispatchWrappedGroup, getDispatchHistory, clearDispatchHistory } from './dispatch';
 import { getTransportConfig, setTransportConfig, getTransportStatus } from './transport';
 import { getBindings, createBinding, updateBinding, deleteBinding } from './bindings';
+import { getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './recipes';
 import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle } from './datahub';
 import { getProfiles, createProfile, updateProfile, deleteProfile, activateProfile } from './profiles';
 import { getResponseSpec, saveResponseSpec, deleteResponseSpec, sendTransaction } from './responseSpecs';
@@ -77,6 +78,13 @@ export const api = {
     createBinding,
     updateBinding,
     deleteBinding,
+
+    // Recipes (CP3 3a · D13: 封装配方 → /recipes CRUD；definition_hash 后端算)
+    getRecipes,
+    getRecipe,
+    createRecipe,
+    updateRecipe,
+    deleteRecipe,
 
     // Data Hub (C3: status / aggregate export / db backup & restore)
     getDatahubStatus,

@@ -11,6 +11,7 @@ from backend.routers.export import router as export_router
 from backend.routers.dispatch import router as dispatch_router
 from backend.routers.transport import router as transport_router
 from backend.routers.binding import router as binding_router
+from backend.routers.recipe import router as recipe_router
 from backend.routers.datahub import router as datahub_router
 from backend.routers.profile import router as profile_router
 from backend.routers.response_spec import router as response_spec_router
@@ -28,6 +29,7 @@ async def lifespan(app: FastAPI):
         SessionLocal,
         ensure_binding_columns,
         ensure_protocol_version_column,
+        ensure_recipe_columns,
     )
     from backend.db.seed import seed_sample_instructions, seed_sample_protocols
     from backend.routers.operator import seed_operator_templates
@@ -38,6 +40,8 @@ async def lifespan(app: FastAPI):
     ensure_protocol_version_column(engine)
     # 批次一 1a: protocol_bindings 三列 + 部分唯一索引自愈（同上口径）。
     ensure_binding_columns(engine)
+    # CP3 3a: instructions.default_recipe_id 单列自愈（同上口径）。
+    ensure_recipe_columns(engine)
     db = SessionLocal()
     try:
         seed_operator_templates(db)
@@ -85,6 +89,7 @@ app.include_router(export_router)
 app.include_router(dispatch_router)
 app.include_router(transport_router)
 app.include_router(binding_router)
+app.include_router(recipe_router)
 app.include_router(datahub_router)
 app.include_router(profile_router)
 app.include_router(response_spec_router)

@@ -53,5 +53,320 @@
       "total_length": 6,
       "warnings": []
     }
+  },
+  "three": {
+    "_note": "CP3 3a 三层配方帧主向量（一处钉死，改一必改三）：backend/tests/test_frame_recipes.py · backend/tests/test_wrap_api.py · frontend/src/pages/__tests__/InstructionProcessor.test.jsx 同读这一份。layers[0] = 最内层（index 0 直接包内核），每层 h + LEN(refs 承载槽) + 槽 + t；manual = 同字节的手工单树（D2-A 现状做法），供「配方 vs 单协议 byte-equal 双跑」。",
+    "kernel": [
+      "0102"
+    ],
+    "layers": [
+      {
+        "protocol_id": "vector-app",
+        "label": "应用壳",
+        "slot_id": "s0",
+        "children": [
+          {
+            "id": "h0",
+            "label": "h0",
+            "type": "fixed",
+            "byte_length": 1,
+            "hex_value": "A0",
+            "config": {},
+            "children": []
+          },
+          {
+            "id": "l0",
+            "label": "l0",
+            "type": "length",
+            "byte_length": 1,
+            "hex_value": "00",
+            "config": {},
+            "parameter_config": {
+              "type": "length",
+              "refs": [
+                "s0"
+              ]
+            },
+            "children": []
+          },
+          {
+            "id": "s0",
+            "label": "s0",
+            "type": "slot",
+            "byte_length": 0,
+            "hex_value": null,
+            "config": {},
+            "children": []
+          },
+          {
+            "id": "t0",
+            "label": "t0",
+            "type": "fixed",
+            "byte_length": 1,
+            "hex_value": "E0",
+            "config": {},
+            "children": []
+          }
+        ]
+      },
+      {
+        "protocol_id": "vector-mid",
+        "label": "中继壳",
+        "slot_id": "s1",
+        "children": [
+          {
+            "id": "h1",
+            "label": "h1",
+            "type": "fixed",
+            "byte_length": 1,
+            "hex_value": "B0",
+            "config": {},
+            "children": []
+          },
+          {
+            "id": "l1",
+            "label": "l1",
+            "type": "length",
+            "byte_length": 1,
+            "hex_value": "00",
+            "config": {},
+            "parameter_config": {
+              "type": "length",
+              "refs": [
+                "s1"
+              ]
+            },
+            "children": []
+          },
+          {
+            "id": "s1",
+            "label": "s1",
+            "type": "slot",
+            "byte_length": 0,
+            "hex_value": null,
+            "config": {},
+            "children": []
+          },
+          {
+            "id": "t1",
+            "label": "t1",
+            "type": "fixed",
+            "byte_length": 1,
+            "hex_value": "E1",
+            "config": {},
+            "children": []
+          }
+        ]
+      },
+      {
+        "protocol_id": "vector-link",
+        "label": "链路壳",
+        "slot_id": "s2",
+        "children": [
+          {
+            "id": "h2",
+            "label": "h2",
+            "type": "fixed",
+            "byte_length": 1,
+            "hex_value": "C0",
+            "config": {},
+            "children": []
+          },
+          {
+            "id": "l2",
+            "label": "l2",
+            "type": "length",
+            "byte_length": 1,
+            "hex_value": "00",
+            "config": {},
+            "parameter_config": {
+              "type": "length",
+              "refs": [
+                "s2"
+              ]
+            },
+            "children": []
+          },
+          {
+            "id": "s2",
+            "label": "s2",
+            "type": "slot",
+            "byte_length": 0,
+            "hex_value": null,
+            "config": {},
+            "children": []
+          },
+          {
+            "id": "t2",
+            "label": "t2",
+            "type": "fixed",
+            "byte_length": 1,
+            "hex_value": "E2",
+            "config": {},
+            "children": []
+          }
+        ]
+      }
+    ],
+    "manual": {
+      "protocol_id": "vector-manual",
+      "label": "手工揉层单树",
+      "children": [
+        {
+          "id": "h2",
+          "label": "h2",
+          "type": "fixed",
+          "byte_length": 1,
+          "hex_value": "C0",
+          "config": {},
+          "children": []
+        },
+        {
+          "id": "l2",
+          "label": "l2",
+          "type": "length",
+          "byte_length": 1,
+          "hex_value": "00",
+          "config": {},
+          "parameter_config": {
+            "type": "length",
+            "refs": [
+              "h1",
+              "l1",
+              "h0",
+              "l0",
+              "s0",
+              "t0",
+              "t1"
+            ]
+          },
+          "children": []
+        },
+        {
+          "id": "h1",
+          "label": "h1",
+          "type": "fixed",
+          "byte_length": 1,
+          "hex_value": "B0",
+          "config": {},
+          "children": []
+        },
+        {
+          "id": "l1",
+          "label": "l1",
+          "type": "length",
+          "byte_length": 1,
+          "hex_value": "00",
+          "config": {},
+          "parameter_config": {
+            "type": "length",
+            "refs": [
+              "h0",
+              "l0",
+              "s0",
+              "t0"
+            ]
+          },
+          "children": []
+        },
+        {
+          "id": "h0",
+          "label": "h0",
+          "type": "fixed",
+          "byte_length": 1,
+          "hex_value": "A0",
+          "config": {},
+          "children": []
+        },
+        {
+          "id": "l0",
+          "label": "l0",
+          "type": "length",
+          "byte_length": 1,
+          "hex_value": "00",
+          "config": {},
+          "parameter_config": {
+            "type": "length",
+            "refs": [
+              "s0"
+            ]
+          },
+          "children": []
+        },
+        {
+          "id": "s0",
+          "label": "s0",
+          "type": "slot",
+          "byte_length": 0,
+          "hex_value": null,
+          "config": {},
+          "children": []
+        },
+        {
+          "id": "t0",
+          "label": "t0",
+          "type": "fixed",
+          "byte_length": 1,
+          "hex_value": "E0",
+          "config": {},
+          "children": []
+        },
+        {
+          "id": "t1",
+          "label": "t1",
+          "type": "fixed",
+          "byte_length": 1,
+          "hex_value": "E1",
+          "config": {},
+          "children": []
+        },
+        {
+          "id": "t2",
+          "label": "t2",
+          "type": "fixed",
+          "byte_length": 1,
+          "hex_value": "E2",
+          "config": {},
+          "children": []
+        }
+      ]
+    },
+    "expect": {
+      "hex": "C0 08 B0 05 A0 02 01 02 E0 E1 E2",
+      "total_length": 11,
+      "kernel_length": 2,
+      "stages": [
+        {
+          "index": 0,
+          "protocol_id": "vector-app",
+          "hex": "A0 02 01 02 E0",
+          "total_length": 5,
+          "delta_bytes": 3,
+          "logic": [
+            { "label": "l0", "type": "length", "value": "02" }
+          ]
+        },
+        {
+          "index": 1,
+          "protocol_id": "vector-mid",
+          "hex": "B0 05 A0 02 01 02 E0 E1",
+          "total_length": 8,
+          "delta_bytes": 3,
+          "logic": [
+            { "label": "l1", "type": "length", "value": "05" }
+          ]
+        },
+        {
+          "index": 2,
+          "protocol_id": "vector-link",
+          "hex": "C0 08 B0 05 A0 02 01 02 E0 E1 E2",
+          "total_length": 11,
+          "delta_bytes": 3,
+          "logic": [
+            { "label": "l2", "type": "length", "value": "08" }
+          ]
+        }
+      ]
+    }
   }
 }

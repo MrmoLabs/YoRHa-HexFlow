@@ -5,13 +5,17 @@ import { useInstructionData } from '../hooks/useInstructionData';
 import NieRDatePicker from '../components/ui/NieRDatePicker';
 import { api } from '../api';
 
-// 批次一 (D4-A): wrap 状态机 —— 换指令按 ?instruction_id= 拉绑定、取 is_default
-// 行解析默认封装协议：
-//   ok      默认行有效且协议在册 → 可开封装（预览 / TRANSMIT / 事务三路联动）
+// wrap 状态机（批次一 D4-A + CP3 3a 降级链三级）—— 换指令按第一个命中的级解析：
+//   第 1 级  配方    GET /recipes?instruction_id= 有行且 stages 非空 → mode:'recipe'
+//                    （加工页分层预览 / TRANSMIT / 事务三路同参同字节）
+//   第 2 级  默认协议 GET /bindings?instruction_id= 取 is_default 行且协议在册
+//   第 3 级  裸发     以下任一：无配方且无默认行 / 协议陈旧已删 / 拉取失败
+//   ok      第 1 或第 2 级命中 → 可开封装
 //   none    无默认行（或未选协议）→ 降级裸发
 //   missing 默认行协议不在 protocols（陈旧/已删）→ 降级裸发
-//   failed  绑定拉取失败 → 降级裸发
+//   failed  绑定拉取失败 → 降级裸发（配方级拉取失败**不整机降级**，继续第 2 级）
 // loading 为解析前瞬态（开关同 none 禁用），必然落到上述四态之一。
+// 三级互斥（DESIGN_CorePipeline §9.3）：配方与默认协议是**或**关系，不叠加。
 const EMPTY_PROTOCOLS = [];
 
 export default function InstructionProcessor({
@@ -46,8 +50,8 @@ export default function InstructionProcessor({
         ));
     }, [instructions, searchTerm]);
 
-    // wrap 状态机（D4-A）：换指令即复位重解析；protocols 恒引用（缺省模块常量），
-    // 防「默认参数每渲染新数组 → effect 自旋」。
+    // wrap 状态机（D4-A + CP3 3a）：换指令即复位重解析；protocols 恒引用（缺省
+    // 模块常量），防「默认参数每渲染新数组 → effect 自旋」。
     const [wrapInfo, setWrapInfo] = useState({ status: 'loading', wrap: null });
     const protocolList = protocols || EMPTY_PROTOCOLS;
     useEffect(() => {
@@ -55,6 +59,30 @@ export default function InstructionProcessor({
         setWrapInfo({ status: 'loading', wrap: null });
         if (!activeInstructionId) return () => { alive = false; };
         (async () => {
+            // ---- 第 1 级：配方（按指令 default_recipe_id 反查，0 或 1 条）----
+            let recipes = [];
+            try {
+                recipes = await api.getRecipes(activeInstructionId);
+            } catch {
+                // 配方级失败只降级到下一级，不把默认协议也一起废掉
+                recipes = [];
+            }
+            if (!alive) return;
+            const recipe = (recipes || [])[0];
+            if (recipe && (recipe.stages || []).length) {
+                setWrapInfo({
+                    status: 'ok',
+                    wrap: {
+                        mode: 'recipe',
+                        recipe_id: recipe.id,
+                        name: recipe.name || '',
+                        stages: recipe.stages
+                    }
+                });
+                return;
+            }
+
+            // ---- 第 2 级：默认封装协议（失败 → failed 裸发，沿批次一 1c 口径）----
             try {
                 const rows = await api.getBindings(activeInstructionId);
                 if (!alive) return;
@@ -84,10 +112,13 @@ export default function InstructionProcessor({
 
     // Send via backend /dispatch（transport abstraction: loopback default, TCP/serial
     // via /transport/config）。wrap 存在 → 后端套协议外壳；null → 裸帧逐字节不变。
+    // 配方态 wrap 原样下发（mode/name/stages 属显示字段，WrapSpec 只取 recipe_id，
+    // Pydantic 多余键忽略）—— 与 /compile/wrapped 预览同一 recipe_id → 同字节。
     const handleSend = async (payload, wrap = null) => {
         const instructionName = currentInstruction?.name || currentInstruction?.label || null;
         const record = await api.dispatchPayload(payload, instructionName, wrap);
-        console.log(`[Processor] Dispatched (LOOPBACK) id=${record.id} bytes=${record.byte_count} wrap=${wrap ? wrap.protocol_id : 'none'}`);
+        const wrapLabel = !wrap ? 'none' : (wrap.mode === 'recipe' ? `recipe:${wrap.recipe_id}` : wrap.protocol_id);
+        console.log(`[Processor] Dispatched (LOOPBACK) id=${record.id} bytes=${record.byte_count} wrap=${wrapLabel}`);
         return record;
     };
 

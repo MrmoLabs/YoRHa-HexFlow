@@ -88,3 +88,25 @@ def ensure_binding_columns(bind):
             "ON protocol_bindings(protocol_id, slot_id) WHERE slot_id IS NOT NULL"
         )
         conn.commit()
+
+
+def ensure_recipe_columns(bind):
+    """CP3 3a (D13): instructions.default_recipe_id 单列自愈。
+
+    main.py lifespan 在 create_all 后调用（镜像 ensure_protocol_version_column /
+    ensure_binding_columns：create_all 只建缺失的表、**不给既有表补列**）。
+    缺列则 ALTER ADD COLUMN TEXT NULL（SQLite 无 IF NOT EXISTS，须 PRAGMA 先查），
+    存量行回填 NULL = 无配方（降级链走默认协议 / 裸发）。
+
+    幂等：已存在 → no-op；表尚不存在 → no-op（后者由 create_all 按 models 建全列，
+    新库同样先 create_all 再进来）。`frame_recipes` 新表本身由 create_all 建。
+    """
+    with bind.connect() as conn:
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(instructions)")}
+        if not columns:
+            return
+        if "default_recipe_id" not in columns:
+            conn.exec_driver_sql(
+                "ALTER TABLE instructions ADD COLUMN default_recipe_id TEXT"
+            )
+            conn.commit()

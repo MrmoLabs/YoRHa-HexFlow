@@ -796,6 +796,57 @@
       → **已提交 `da0179d`（2026-10-01，代码+文档，零 DDL 未提交 `yorha.db`）
       → 待办：CP3（3a 含 DDL：`frame_recipes` 新表 + `instructions.
       default_recipe_id`，`yorha.db` 单独同步提交）。**
+35. **CP3-3a 封装配方数据层 + 串行编译 + 加工页分层预览实现完成**
+    （2026-10-01，**含 DDL** —— `frame_recipes` 新表 + `instructions.default_recipe_id`
+    补列自愈；`models.py` 只增表/列，`/dispatch` 裸发缺省口径逐字节不变，未碰
+    `processor.py` / `graph.py` / `Blueprint.jsx`）：
+    - **数据层**：`models.py::FrameRecipe`（id/name/description/stages(JSON)/version/
+      created_at/updated_at，**无 `instruction_id` 列** —— 关联靠 `instructions.
+      default_recipe_id`，单列天然唯一、关联即顶替）+ 补列；
+      `database.ensure_recipe_columns` 镜像 `ensure_protocol_version_column`
+      （PRAGMA 先查 → ALTER → 幂等 / 表缺 no-op）。`protocol_bindings` **不动**
+      —— 配方与默认协议是**互斥消费**。
+    - **`/recipes` CRUD**（`routers/recipe.py` + `schemas/recipe_api.py`）：
+      `GET ?instruction_id=` 降级链过滤（0/1 条，未关联 = `[]`）；保存期校验 =
+      层数 1..**4**（`MAX_RECIPE_STAGES`）、stage 协议 404、槽存在且为 slot /
+      插槽重复 / 空 stages / 空名 → 400；`version` 缺省跳过、不符 **409**；
+      **删除同事务清指令引用**回执 `cleared_instructions`。
+    - **`definition_hash`**（`core/definition_hash.py`，只 hash 协议 `children`）：
+      **保存期回写、编译期只比对 + `stages[]` 回显、不写库**（编译即回写会让下一次
+      比对必然「已对齐」，失效徽标失去意义 —— §9.1「回写」按响应回显落地）。
+    - **串行编译**（`core/recipe_compile.py`，`/compile/wrapped` 与
+      `dispatch._apply_wrap` **共用同一份实现** → 预览与出线同字节）：stage 0 吃
+      内核组、后续层吃 `[前层输出]`、`start_order` 只作用于 stage 0、`slot_ids`
+      归配方阶段所有；逐层错误带「第 N 层（协议）」前缀；`hex` 恒为最终帧。
+      请求 `protocol_id` 与 `recipe_id` **互斥**、都不给 400。
+    - **`frame_builder` 两处增改**（均加缺省参数 = 原行为）：① `strict_fit=True`
+      把配方路径未显式配置的槽缺省改 `reject`/`reject`（**主动偏离 D3**，
+      报错归因区分「协议存在 overflow=reject 插槽」vs「配方路径缺省 reject」）；
+      ② 返回增 `logic` = 发射后 length/checksum **真值**（分层 LEN/CRC 卡面）。
+    - **范围提前（记入 §7/§9.7）**：`/dispatch`、`/dispatch/transaction` 的
+      `wrap.recipe_id` 接线**原属 3b，已随 3a 实施** —— 加工页「预览 / TRANSMIT /
+      事务三路同参同字节」是批次一立下的不变量，缺接线则配方态预览帧与出线帧
+      **不同字节**。**3b 因此只余编排页配方编辑器 + 编排页试发改线 + curl 冒烟**。
+    - **加工页降级链三级**（`InstructionProcessor` §9.3）：**配方 → 默认绑定协议 →
+      裸发**，互斥取第一个命中；**配方级拉取失败不整机降级**，回落第 2 级。
+      `InstructionRunner` 预览按 `mode` 分叉：配方态**分层堆叠**（层号 · 协议 label ·
+      该层 hex · Δ · LEN/CRC 真值 · 该层告警）+ 顶层 `RECIPE STALE` 失效徽标，
+      单协议态**形态与文案逐字不变**；`TransactionPanel` 配方态指示改配方名 + 层数。
+      新增 `frontend/src/api/recipes.js`，`compileWrapped({recipeId})` 配方态不带 `slotIds`。
+    - **验收（自动化全绿）**：BE **466/466**（基线 426 + 40）、FE **920/920
+      （63 文件，基线 915 + 5）**、`npx vite build` EXIT=0、yorha-ui 校验器 3 文件
+      **0 违规**；另跑**真路由冒烟 25 项 PASS**（TestClient 走完整 FastAPI 栈 ——
+      单测直调函数验不到的路由注册 / 出线 JSON / 删除清引用 / 残留自清，脚本临时
+      目录不往真库留数据）。**三层帧主向量一处钉死改一必改三** = `vectors/wrap.json`
+      新表 **`three`**（三处同读：`test_frame_recipes` / `test_wrap_api` /
+      `InstructionProcessor.test`）。
+    - **文档同步**：`DESIGN_CorePipeline.md` §7 批次三 3a 进度注 + §9.7 排批表
+      两行、`PLAN_Backlog.md` §1 CP3 行与新 §8.21、`DESIGN_Decisions.md` D13/D7
+      实施注、`pageStatus.json` 加工页条目 + `PAGE_STATUS.md` 再生成 + 本条。
+    - **待办**：① `chore(db)` 同步 `yorha.db`（DDL 已落真库：`frame_recipes` 表 +
+      `default_recipe_id` 列已核 PRAGMA）；② **人工验证必查 3 项**（§9.7：三层真实
+      链路帧目视核对 / 分层堆叠逐层字节与协议页卡面一致 / 改动中间层协议 → 失效
+      徽标点亮）；③ CP3 剩余子批 3b / 3c / 3d。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

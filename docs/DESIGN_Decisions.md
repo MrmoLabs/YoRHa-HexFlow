@@ -25,13 +25,13 @@
 | D4 | 封装点位置（谁负责「套协议」） | P1 | 每加一条发送路径重考虑一次，双端继续漂移 | ✅ **A**（后端 frame_builder 单一入口） |
 | D5 | 入方向：协议是否双向 / 应答规格来源 | P1 | 手工应答规则与协议定义持续漂移 | ✅ **A**（协议页「据此生成 response_spec」）+ 实施按 **D15** 分层生成 |
 | D6 | 三时间点语义（设计期/编译期/发送期） | P1 | 冻结 vs 重算口径分散在各页，靠口口相传 | ✅ **A**（先成文于 CorePipeline，序列封装冻结口径随后续批） |
-| D7 | 版本演进与失效通知 | P2 | 指令/协议改了，绑定与冻结产物静默过期 | ✅ **A**（definition_hash 失效徽标，不阻断） |
+| D7 | 版本演进与失效通知 | P2 | 指令/协议改了，绑定与冻结产物静默过期 | ✅ **A**（definition_hash 失效徽标，不阻断）→ **配方消费方已实施（CP3-3a，2026-10-01，后端算 + 保存期回写 + 编译期比对不回写）；binding / response_spec 留 3d** |
 | D8 | 校验责任分层 | P2 | 直连 API 绕过前端的口子继续存在 | ✅ **A**（三层校验表：后端强制、前端前置提示） |
 | D9 | 传输层归属（不归协议定义页管） | P2 | 有人往协议页加波特率，层次混淆 | ✅ **A**（纯文档划界） |
 | D10 | 设备/通道维度（device_code 是否扩到协议与绑定） | P2 | 多设备共用协议时无法区分 | ✅ **A**（先用槽 accepts 白名单近似，协议保持设备无关） |
 | D11 | 编译器单端权威 vs 双端 byte-equal | P2 | 继续靠人肉向量表钉两处 | ✅ **A**（后端权威、前端预览；分批收敛，向量表双跑期间不撤）+ **实施注 2026-10-01 代价重估**，**分段 = ①（共享 fixture，拆 CP2b）** ✅ → **① 已实施（CP2b 完成 2026-10-01）**：单一真相源 = `vectors/`（12 JSON / 15 表），**新增向量只写一处**；②③ 不在本期 |
 | D12 | 引用完整性与级联策略矩阵 | P2 | 删指令留脏行（binding/response_spec/sequence_step/logs） | ✅ **A**（引用计数 + 弹窗警示 + 后端同事务级联兜底）+ 子项已由 **D14 ②** 细化（原文两处口径矛盾） |
-| D13 | 层数模型与跨协议组合（封装配方 vs `PROTOCOL_REF`） | P1 | 外壳套外壳无法组合，或事后上 B 导致 refs 模型与双端编译器返工 | ✅ **A**（封装配方 + 串行 `build_wrapped`；`PROTOCOL_REF` 挂起并写明重开条件，2026-10-01） |
+| D13 | 层数模型与跨协议组合（封装配方 vs `PROTOCOL_REF`） | P1 | 外壳套外壳无法组合，或事后上 B 导致 refs 模型与双端编译器返工 | ✅ **A**（封装配方 + 串行 `build_wrapped`；`PROTOCOL_REF` 挂起并写明重开条件，2026-10-01）→ **3a 已实施（CP3-3a 完成 2026-10-01，含 DDL + 加工页分层预览；`dispatch` `wrap.recipe_id` 接线提前并入 3a）** |
 | D14 | 批次二三个口径（存量槽迁移 / 序列步骤处置 / 转义层位） | P1 | 批次二排了却无法开工，`reject` 分支不知对谁生效、转义层位分歧留现场 | ✅ **A/A/A**（存量不迁移 / `sequence_steps` 失效标记不阻断 / 试发改带 `wrap` 下发，2026-10-01）= CP2 开工前置**已满足** |
 | D15 | 入方向：应答是否逐层解包（D5 × D13 交互） | P1 | 配方上线后单层应答匹配必然失配，`response_specs` 模型返工或现场关校验 | ✅ **A**（`response_spec` 增 `stage` 维度 + 按 `stages` 逆序解包，2026-10-01）= D5-A 实施前置**已满足** |
 
@@ -181,6 +181,15 @@ binding，指令改结构不提醒序列冻结 payload 与 response_spec。
 | **A（推荐）** | 引入 `definition_hash`（指令/协议结构指纹）：binding、sequence_step、response_spec 记录创建时 hash，加载时比对 → 不符给「定义已变更，请重新编译」warning 徽标（复用 `validateProtocol`/`validateInstruction` 问题清单范式，不阻断） | hash 函数需双端同构（或只在前端算）；三处消费方各加一次比对 |
 | **B** | 只做协议侧：协议保存时对受影响 binding 做结构 diff（槽数/槽 id 变化）并回执 | 半套方案，指令侧问题仍在 |
 | **C** | 不做，依赖人工发现 | 零成本，冻结产物过期发错帧 |
+
+> **实施注（2026-10-01 CP3-3a 首个消费方落地）**：A 的**配方消费方**随 3a 实施 ——
+> `core/definition_hash.py` 只 hash 协议 `children`（`sort_keys` 紧凑 JSON →
+> `sha256:<hex>`），**只在后端算**（「双端同构」这个代价就此省掉）；**保存期回写**
+> （`/recipes` 落 `stages[].definition_hash`，客户端传入一律忽略）、**编译期只比对**
+> —— 失效出「配方已失效」warning + `stages[].stale` 徽标**不阻断**。**编译期不回写
+> DB**：若编译即回写，下一次比对必然「已对齐」，徽标即失去意义；故 `stages[]` 回显的
+> hash 是**编译时的当前指纹**（响应回显），**落库只在 `/recipes` 保存期**。binding /
+> response_spec 两处仍留 `DESIGN_CorePipeline.md` §7 批次三 **3d**。
 
 ---
 
@@ -392,6 +401,17 @@ hex 字符串**、纯函数、单遍、无环；`routers/protocol.py::_validate_
 批次与验收）见 `DESIGN_CorePipeline.md` §9；排批见 `PLAN_Backlog.md` §1。
 须进人工验证清单的残余风险：「有 LEN = 不需要转义」为经验判定而非协议保证，
 需在真实链路帧上核对载荷出现定界字节时设备是否异常。
+
+> **实施进度（2026-10-01 CP3-3a 已落地）**：`frame_recipes` 新表 +
+> `instructions.default_recipe_id` 补列（**配方行不带 `instruction_id` 列** ——
+> 关联是**指令指配方**的单列引用，与 §9.1「DRAFT 阶段不牵扯指令行」讲的是两个
+> 不同问题）、`/recipes` CRUD、`/compile/wrapped` 与 `/dispatch`·
+> `/dispatch/transaction` **共用**的 `core/recipe_compile.py` 串行编译、加工页
+> 分层堆叠预览与降级链三级。层数上限 `MAX_RECIPE_STAGES=4`；**配方路径缺省
+> `reject`（溢出与欠载两侧）**、槽上显式 `fit_policy` 仍照写生效，单协议缺省路径
+> 零回归；`definition_hash` 见 D7 实施注。**范围偏离一处**：原属 3b 的 `dispatch`
+> `wrap.recipe_id` 接线提前并入 3a（加工页预览 / TRANSMIT / 事务须同参同字节）。
+> 验收与明细见 `PLAN_Backlog.md` §8.21。
 
 ---
 

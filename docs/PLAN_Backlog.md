@@ -36,7 +36,7 @@
 | CP1 | Core Pipeline 批次一：1a 绑定三列 DDL + 1b frame_builder + 1c 发送 wrap 接线 + 1d 文档（`DESIGN_CorePipeline.md` §7 首批） | **已提交 ✅ `31bc367`（代码+文档）/ `da91228`（db 同步），2026-09-24**——反馈 1（星标确认，§8.8）与反馈 2（协议卡面直填，§8.9）均已并入验收 |
 | CP2 | Core Pipeline 批次二（防错）：D3 `fit_policy=reject` 执行（**存量槽不迁移**）+ 槽契约 warning 徽标 + 新建槽 UI 默认 reject + D12 删除级联（**`sequence_steps` 失效标记不阻断**，活配置级联删 / 冻结快照留 / 日志留）+ **转义层位统一**（封装试发改带 `wrap` 下发）（`DESIGN_CorePipeline.md` §7 批次二） | **已提交 ✅ `5afe706`（代码+文档），2026-10-01**——**人工验证 5 项已通过**（STRICT 400 / 删指令三分弹窗 / 序列失效只读 / 试发 warnings 徽标 / 真实链路帧）：BE 426/426（基线 383 + 43）、FE 915/915（63 文件）、`vite build` EXIT=0、yorha-ui 校验器 13 文件 0 违规；**零 DDL**（`yorha.db` 未随本批提交）。明细见 §8.19。2026-10-01 起为 CP3 硬前置（CP3 的 3a 复用其 reject 分支） |
 | CP2b | D11 分段 ① **向量表共享 fixture 化**（两端测试读同一份 JSON 向量、新增向量只写一处；`DESIGN_Decisions.md` D11 实施注） | **已提交 ✅ `da0179d`（代码+文档），2026-10-01**——跨语言特殊值约定拍板 = **`$v` 包装对象**（`{"$v":"Infinity"}` / `"-Infinity"` / `"NaN"`，其余标量按 JSON 原型天然分型）；新增根目录 **`vectors/`（12 个 JSON 文件 / 15 张表 + 双端加载器 + README）**，13 个后端 / 6 个前端测试文件改读共享 JSON。终态：BE 426/426、FE 915/915（63 文件）、`npx vite build` EXIT=0、yorha-ui 校验器 7 文件 0 违规；**零 DDL**。明细见 §8.20。**不阻塞 CP3**（CP3 只硬前置 CP2 的 reject 分支） |
-| CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | ⬜ **未开工**——硬前置 CP2；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**，实施设计已写入 §9 与 §7 3d。3a 含 DDL（新表 + `instructions.default_recipe_id` 补列）→ yorha.db 单独同步提交 |
+| CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | 🔄 **3a 已实施（2026-10-01，hash 待回填）**，3b/3c/3d 未开工——硬前置 CP2 ✅；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**，实施设计已写入 §9 与 §7。**3a 含 DDL**（`frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈）→ yorha.db 单独同步提交；**3a 提前并入了原属 3b 的 `dispatch` `wrap.recipe_id` 接线**（加工页预览/TRANSMIT/事务三路须同字节，缺接线则预览帧与出线帧不同）。3a 终态：BE 466/466（基线 426 + 40）、FE 920/920（63 文件，基线 915 + 5）、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、**真路由冒烟 25 项 PASS**。明细见 §8.21 |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -1779,6 +1779,78 @@
 - **文档同步**：`DESIGN_Decisions.md` D11 实施注（① 已实施 + `$v` 约定）、
   `DESIGN_CorePipeline.md` §1/§7 拆批注状态、本节与 §1 CP2b 行、HANDOVER 条目 34。
   **无 UI 改动 → `pageStatus.json` / `PAGE_STATUS.md` 不动。**
+
+### 8.21 Core Pipeline 批次三 · 3a（CP3-3a：配方数据层 + 串行编译 + 加工页分层预览）
+
+> 出处：`DESIGN_CorePipeline.md` §7 批次三 / §9.1–§9.7 + `DESIGN_Decisions.md`
+> **D13 = A（封装配方）**（2026-10-01 拍板，硬前置 CP2 ✅）。**含 DDL** ——
+> `frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈，
+> `yorha.db` 沿先例**单独同步提交**；`/dispatch` 裸发缺省口径逐字节不变
+> （既有用例 + 冒烟「不带 wrap 回归」钉死）。
+> **终态**：BE **466/466**（基线 426 + 40）、FE **920/920**（63 文件，基线 915 + 5）、
+> `npx vite build` EXIT=0、yorha-ui 校验器 3 文件 0 违规、**真路由冒烟 25 项 PASS**。
+> 🚧 **提交 hash 待回填。**
+
+- **数据层（DDL）**：`models.py` 新增 `FrameRecipe`（id / name / description /
+  stages(JSON) / version / created_at / updated_at，**无 `instruction_id` 列** ——
+  关联靠 `instructions.default_recipe_id`，单列天然唯一）+ `Instruction.
+  default_recipe_id` 补列；`database.ensure_recipe_columns` 镜像
+  `ensure_protocol_version_column`（PRAGMA 先查 → ALTER ADD COLUMN → 幂等 /
+  表缺 no-op / 存量回填 NULL = 无配方），`main.py` lifespan 在 create_all 后调用。
+  `protocol_bindings` **不动** —— 配方与默认协议是**互斥消费**而非叠加。
+- **`/recipes` CRUD**（`routers/recipe.py` + `schemas/recipe_api.py`，镜像
+  `binding.py` 范式）：`GET ?instruction_id=` 降级链过滤（按 `default_recipe_id`
+  反查 → 0/1 条；未关联 = `[]` 不是 404）；保存期校验 = §9.5-3「配方期」行 ——
+  层数 **1..4**（`MAX_RECIPE_STAGES=4`）、stage 协议 404、槽存在且为 slot /
+  插槽重复 400、配方名非空 ≤128；`version` 乐观并发（缺省跳过比对、给了不符
+  **409**，镜像 `protocols.version`）；**删除同事务清指令引用**并回执
+  `cleared_instructions`（逻辑外键无 FK，同 `protocol_bindings` 删除级联先例）。
+- **`definition_hash` 只在后端算**（`core/definition_hash.py`：协议 `children`
+  子树规范化 JSON（`sort_keys` + 紧凑分隔符）→ `sha256:<hex>`）：**保存期回写**
+  （客户端传入一律忽略）、**编译期比对** —— 失效出「配方已失效」warning +
+  `stages[].stale` **不阻断**（D7-A 口径）。
+  **实施注**：编译期**不回写 DB** —— 若编译即回写，下一次比对必然「已对齐」，
+  失效徽标即失去意义；§9.1「保存与编译时算并回写」的「回写」按**响应回显**
+  （`stages[].definition_hash` = 当前指纹）落地，**落库只在 `/recipes` 保存期**。
+- **串行编译**（`core/recipe_compile.py`，`/compile/wrapped` 与
+  `dispatch._apply_wrap` **共用同一份实现** → 预览与出线同字节）：stage 0 吃内核
+  载荷组、stage n≥1 吃 `[前层输出]`、`start_order` 只作用于 stage 0、`slot_ids`
+  归配方阶段所有（请求侧该字段不参与）；逐层错误带「第 N 层（协议）」前缀、
+  warnings 聚合同前缀；`hex`/`total_length` 恒为**最终帧**（旧调用方零改）。
+  请求 `protocol_id` 与 `recipe_id` **互斥**、都不给 → 400（`protocol_id` 由必填改
+  `Optional`，单协议路径字段逐字不变）。
+- **`frame_builder` 两处增改**（均加参数且缺省值 = 原行为，存量路径零改）：
+  ① `strict_fit=True`（**配方路径**，§9.5-2）把未显式配置的槽缺省改为
+  `reject`/`reject` —— 主动偏离 D3「默认取现状零回归」；报错归因区分「协议存在
+  overflow=reject 的插槽」vs「配方路径缺省 overflow=reject」；
+  ② 返回增 `logic: [{label, type, value}]` = 发射后 length/checksum **真值**
+  （§9.4「该层 LEN/CRC 卡面回显」）。
+- **加工页降级链三级**（`InstructionProcessor`，§9.3）：**配方 → 默认绑定协议 →
+  裸发**，互斥取第一个命中；**配方级拉取失败不整机降级**，继续走第 2 级
+  （绑定级失败仍 `failed` 裸发，沿批次一 1c 口径）。`InstructionRunner` 预览按
+  `mode` 分叉 —— 配方态**分层堆叠**（层号 · 协议 label · 该层 hex · Δ ·
+  LEN/CRC 真值 · 该层告警）+ 顶层 `RECIPE STALE` 失效徽标，单协议态**形态与文案
+  逐字不变**；`TransactionPanel` 配方态指示改配方名 + 层数。新增 `api/recipes.js`
+  + barrel 导出，`compileWrapped({recipeId})` 配方态不带 `slotIds`。
+- **测试**：BE 新建 `test_frame_recipes.py` **32 例**（CRUD / `?instruction_id=`
+  过滤 / version 409 / 删引用回执 / 层数上限 / stage 槽契约 / hash 回写与失效 /
+  补列自愈 4 例 / 编译入口互斥与 404）+ `test_wrap_api.py` 扩 **8 例**
+  `RecipeWrapTests`；FE `InstructionProcessor.test.jsx` 扩 **5 例**。
+  **三层帧主向量一处钉死改一必改三** = `vectors/wrap.json` 新表 **`three`**
+  （三层壳 + 手工揉层单树 `manual` + `expect` 分层回显；三处同读 =
+  `test_frame_recipes` / `test_wrap_api` / `InstructionProcessor.test`）——
+  「配方 vs 单协议**同内核 byte-equal 双跑**」在向量层证明 D2-A 现状手工揉层与
+  配方**等价**。
+- **真路由冒烟**（TestClient 走完整 FastAPI 栈 —— 单测直调函数**验不到**的一段）：
+  `/recipes` 路由注册与 openapi、出线 JSON、互斥/缺省 400、404 detail、
+  version 409、删除清引用、**残留自清** —— 25 项 PASS（脚本在临时目录，
+  不往真库留数据）。
+- **文档同步**：`DESIGN_CorePipeline.md` §7 批次三 3a 进度注 + §9.7 排批表两行、
+  本节与 §1 CP3 行、HANDOVER 条目 35、`DESIGN_Decisions.md` D13/D7 实施注、
+  `pageStatus.json` 加工页条目 + `node scripts/generate-page-status.mjs` 再生成
+  `docs/PAGE_STATUS.md`。
+- **人工验证必查（§9.7，待执行）**：① 三层真实链路帧目视核对；② 分层堆叠视图
+  逐层字节与协议页卡面一致；③ 改动中间层协议 → 加工页失效徽标点亮。
 
 ## 9. 保留勿动（非任务，勿清理）
 

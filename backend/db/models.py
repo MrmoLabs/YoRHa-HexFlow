@@ -27,7 +27,13 @@ class Instruction(Base):
     name = Column(String(128), nullable=False)
     type = Column(String(32), default="DYNAMIC")
     description = Column(Text, nullable=True)
-    
+
+    # CP3 3a (D13): 该指令的默认封装配方。单列 = 结构上天然唯一（每指令至多
+    # 一个默认配方，无需部分唯一索引，§9.1）；NULL = 无配方 → 加工页降级链走
+    # 默认协议 / 裸发。存量库缺列由 database.ensure_recipe_columns 启动自愈
+    # （create_all 不补列，同批次五 version / 批次一 binding 三列先例）。
+    default_recipe_id = Column(String(36), nullable=True)
+
     # Timestamps are handled by DB default currently
     
     # Children
@@ -208,3 +214,22 @@ class DispatchLog(Base):
     step_order = Column(Integer, nullable=True)  # 1-based 步序（仅序列路）
     rtt_ms = Column(Float, nullable=True)  # 事务=末次样本 / 序列=本步；manual·replay 无
     error = Column(Text, nullable=True)  # ERROR 原因（OK 为 NULL）
+
+
+# 13. Frame Recipes（CP3 3a: 封装配方 — D13 拍板 A「封装配方 + 串行编译」，
+# 新表；既有表零改 + instructions.default_recipe_id 一列自愈补列）
+class FrameRecipe(Base):
+    __tablename__ = "frame_recipes"
+
+    id = Column(String(36), primary_key=True)
+    name = Column(String(128), nullable=False)
+    description = Column(Text, nullable=True)
+    # 有序 JSON 数组（index 0 = 最内层，直接包内核）：每项
+    # {protocol_id, slot_ids?, definition_hash?} —— 解析/校验/回写见
+    # schemas/recipe_api.py 与 routers/recipe.py；definition_hash 由服务端算。
+    stages = Column(JSON, nullable=False, default=list)
+    # 镜像 protocols.version 乐观并发：PUT 带 version 与当前行不符 409，
+    # 每次成功写 +1（存量行为缺省 1）。
+    version = Column(Integer, nullable=False, default=1)
+    created_at = Column(Text, nullable=True)  # ISO-8601 UTC
+    updated_at = Column(Text, nullable=True)  # ISO-8601 UTC

@@ -6,6 +6,11 @@ loopback 单发 wrap、事务 wrap、稠密 slot_order、非 wrap 路径逐字�
 （§0 硬约束：/dispatch 缺省裸帧行为不变）。
 三处同值主向量 FA FA 02 01 02 ED 的单一真相源 = vectors/wrap.json · 表 main
 （CP2b / D11-①）：本文件 / test_frame_builder.py / blockMerge.test.js 同读这一份。
+
+CP3 3a（D13 封装配方）追加 RecipeWrapTests：**配方三层帧往返**（预览 = 出线
+同字节）、配方 vs 手工单树**同内核 byte-equal 双跑**、配方路径 `fit_policy`
+缺省 `reject`（§9.5-2）对照存量单协议缺省口径不变 —— 主向量 =
+vectors/wrap.json · 表 three（三处同读，改一必改三）。
 """
 
 import tempfile
@@ -28,7 +33,9 @@ from backend.routers.dispatch import (
     dispatch_frame,
     dispatch_transaction,
 )
+from backend.routers.recipe import create_recipe
 from backend.schemas.block import WrappedCompileRequest
+from backend.schemas.recipe_api import RecipeCreate, RecipeStage
 from vectors.load_vectors import load_vectors
 
 # 主共享向量协议（CP2b / D11-① 单一真相源 = vectors/wrap.json · 表 main，与
@@ -38,6 +45,12 @@ PROTO_ID = "proto-vector"
 _MAIN = load_vectors("wrap", "main")
 VECTOR_CHILDREN = _MAIN["children"]
 VECTOR_HEX = _MAIN["expect"]["hex"]
+
+# CP3 3a 三层配方帧主向量（同文件 · 表 three，三处同读改一必改三）
+THREE = load_vectors("wrap", "three")
+LAYER_IDS = [layer["protocol_id"] for layer in THREE["layers"]]
+MANUAL_ID = THREE["manual"]["protocol_id"]
+RECIPE_ID = "recipe-three"
 
 # 双槽协议：显式 slot_id 与稠密 slot_order 位次语义用。
 PROTO_2SLOT = "proto-2slot"
@@ -358,6 +371,180 @@ class MultiPayloadDispatchTests(WrapApiTestBase):
         record = dispatch_frame(DispatchRequest(hex_string="AA 7D 01"), db=self.db)
         self.assertEqual(record.hex_string, "AA 7D 01")
         self.assertEqual(record.warnings, [])
+
+
+class RecipeWrapTests(WrapApiTestBase):
+    """CP3 3a: 配方三层帧往返（预览 = 出线同字节）+ 配方 vs 单协议 byte-equal。"""
+
+    def setUp(self):
+        super().setUp()
+        for layer in THREE["layers"]:
+            self.db.add(ProtocolTemplate(
+                id=layer["protocol_id"], label=layer["label"],
+                type="container", children=layer["children"],
+            ))
+        self.db.add(ProtocolTemplate(
+            id=MANUAL_ID, label=THREE["manual"]["label"],
+            type="container", children=THREE["manual"]["children"],
+        ))
+        # 欠载对照组：两个**未配置 fit_policy** 的槽（存量形态）
+        self.db.add(ProtocolTemplate(
+            id="proto-loose-two-slots", label="松契约双槽", type="container",
+            children=[
+                {"id": "a", "label": "a", "type": "slot", "byte_length": 0,
+                 "hex_value": None, "config": {}, "children": []},
+                {"id": "b", "label": "b", "type": "slot", "byte_length": 0,
+                 "hex_value": None, "config": {}, "children": []},
+            ],
+        ))
+        self.db.commit()
+        self.recipe = create_recipe(
+            RecipeCreate(
+                id=RECIPE_ID,
+                name="三层配方",
+                stages=[
+                    RecipeStage(protocol_id=layer["protocol_id"],
+                                slot_ids=[layer["slot_id"]])
+                    for layer in THREE["layers"]
+                ],
+            ),
+            self.db,
+        )
+
+    def test_recipe_three_layer_roundtrip(self):
+        """配方串行编译：三层帧与向量期望逐字节一致，stages 分层回显齐全。"""
+        expect = THREE["expect"]
+        resp = compile_wrapped_frame(
+            WrappedCompileRequest(recipe_id=RECIPE_ID, payloads=THREE["kernel"]),
+            db=self.db,
+        )
+        self.assertEqual(resp.hex_string, expect["hex"])
+        self.assertEqual(resp.total_length, expect["total_length"])
+        self.assertEqual(resp.recipe_id, RECIPE_ID)
+        self.assertEqual(resp.warnings, [])
+        self.assertEqual(len(resp.stages), 3)
+
+        for stage, want in zip(resp.stages, expect["stages"]):
+            self.assertEqual(stage.index, want["index"])
+            self.assertEqual(stage.protocol_id, want["protocol_id"])
+            self.assertEqual(stage.hex, want["hex"])
+            self.assertEqual(stage.total_length, want["total_length"])
+            self.assertEqual(stage.delta_bytes, want["delta_bytes"])
+            self.assertEqual(stage.logic, want["logic"])
+            self.assertFalse(stage.stale)
+            self.assertTrue(stage.definition_hash.startswith("sha256:"))
+
+        # Δ 基准：stage 0 相对**内核**字节数（§9.4「相对上层的字节差」）
+        self.assertEqual(
+            resp.stages[0].delta_bytes,
+            expect["stages"][0]["total_length"] - expect["kernel_length"],
+        )
+
+    def test_recipe_byte_equal_with_single_protocol(self):
+        """同内核双跑：配方三层 vs 手工揉层单树（D2-A 现状做法）出同字节。"""
+        via_recipe = compile_wrapped_frame(
+            WrappedCompileRequest(recipe_id=RECIPE_ID, payloads=THREE["kernel"]),
+            db=self.db,
+        )
+        via_manual = compile_wrapped_frame(
+            WrappedCompileRequest(protocol_id=MANUAL_ID, payloads=THREE["kernel"],
+                                  slot_ids=["s0"]),
+            db=self.db,
+        )
+        self.assertEqual(via_recipe.hex_string, via_manual.hex_string)
+        self.assertEqual(via_recipe.total_length, via_manual.total_length)
+        self.assertEqual(via_recipe.hex_string, THREE["expect"]["hex"])
+        # 单协议路径 stages 恒空（字段可选，旧调用方零改）
+        self.assertEqual(via_manual.stages, [])
+        self.assertIsNone(via_manual.recipe_id)
+
+    def test_dispatch_wrapped_recipe_same_bytes_as_compile(self):
+        """预览与出线同字节：/dispatch 带 wrap.recipe_id 走同一份编译实现。"""
+        compiled = compile_wrapped_frame(
+            WrappedCompileRequest(recipe_id=RECIPE_ID, payloads=THREE["kernel"]),
+            db=self.db,
+        )
+        record = dispatch_frame(
+            DispatchRequest(hex_string="0102",
+                            instruction_name="三层封装发送",
+                            wrap=WrapSpec(recipe_id=RECIPE_ID)),
+            db=self.db,
+        )
+        self.assertEqual(record.status, "SENT")
+        self.assertEqual(record.hex_string, compiled.hex_string)
+        self.assertEqual(record.byte_count, compiled.total_length)
+        self.assertEqual(record.hex_string, THREE["expect"]["hex"])
+        self.assertEqual(record.echo,
+                         THREE["expect"]["hex"].replace(" ", ""))
+
+    def test_transaction_wrapped_recipe(self):
+        record = dispatch_transaction(
+            TransactionRequest(hex_string="0102",
+                               wrap=WrapSpec(recipe_id=RECIPE_ID)),
+            db=self.db,
+        )
+        self.assertEqual(record.status, "OK")
+        self.assertEqual(record.hex_string, THREE["expect"]["hex"])
+        self.assertEqual(record.attempts[0].sent, THREE["expect"]["hex"])
+
+    def test_recipe_path_fit_policy_defaults_to_reject(self):
+        """§9.5-2 配方路径缺省 reject：欠载（多一个空槽）→ 400 阻断；同一协议走
+        单协议路径仍是存量缺省（warning 不阻断）—— 两侧口径分别钉死。"""
+        recipe = create_recipe(
+            RecipeCreate(
+                name="松契约配方",
+                stages=[RecipeStage(protocol_id="proto-loose-two-slots",
+                                    slot_ids=["a"])],
+            ),
+            self.db,
+        )
+        with self.assertRaises(HTTPException) as ctx:
+            compile_wrapped_frame(
+                WrappedCompileRequest(recipe_id=recipe.id, payloads=["0102"]),
+                db=self.db,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("欠载", ctx.exception.detail)
+        self.assertIn("underflow=reject", ctx.exception.detail)
+
+        # 对照组：单协议缺省口径 = 零填 + warning（§0 硬约束口径不变）
+        control = compile_wrapped_frame(
+            WrappedCompileRequest(protocol_id="proto-loose-two-slots",
+                                  payloads=["0102"], slot_ids=["a"]),
+            db=self.db,
+        )
+        self.assertEqual(control.warnings, ["空洞：1 个洞未被载荷填充"])
+
+    def test_dispatch_recipe_missing_404(self):
+        with self.assertRaises(HTTPException) as ctx:
+            dispatch_frame(
+                DispatchRequest(hex_string="0102",
+                                wrap=WrapSpec(recipe_id="ghost")),
+                db=self.db,
+            )
+        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertEqual(ctx.exception.detail, "Recipe not found")
+        self.assertEqual(dispatch_mod.dispatch_history(limit=1), [])
+
+    def test_wrap_neither_protocol_nor_recipe_400(self):
+        with self.assertRaises(HTTPException) as ctx:
+            dispatch_frame(
+                DispatchRequest(hex_string="0102", wrap=WrapSpec()), db=self.db
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("protocol_id 或 recipe_id", ctx.exception.detail)
+
+    def test_wrap_mutex_400(self):
+        with self.assertRaises(HTTPException) as ctx:
+            dispatch_frame(
+                DispatchRequest(
+                    hex_string="0102",
+                    wrap=WrapSpec(recipe_id=RECIPE_ID, protocol_id=PROTO_ID),
+                ),
+                db=self.db,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("互斥", ctx.exception.detail)
 
 
 if __name__ == "__main__":
