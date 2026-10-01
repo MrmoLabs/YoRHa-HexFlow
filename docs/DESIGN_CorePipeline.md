@@ -251,7 +251,7 @@ def build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) -> Wrap
 > 「欠载留空 + warning」是缺省口径描述，本批按 §9.5-2 / D13「配方路径强制
 > `reject`」执行；槽上**显式**配置仍照写生效，存量单协议路径缺省零改）。
 >
-> ✅ **3b 已实施（2026-10-01，hash 待回填）**：**纯前端批、零 DDL**（未改
+> ✅ **3b 已提交 `c4b1f7f`（代码+文档），2026-10-01**：**纯前端批、零 DDL**（未改
 > `models.py`/`database.py` → **无 `chore(db)` 提交**；`/dispatch` 缺省口径由既有
 > 用例 + curl 裸帧回归**双钉**，未碰 `processor.py`/`graph.py`/`Blueprint.jsx`）。
 > 编排页属性面板新增**分区 4/5「封装配方 (RECIPE)」**（§9.4）：有序 stage 加层 /
@@ -435,7 +435,7 @@ return {hex: frame, total_length, warnings, stages: [...]}
 | 子批 | 内容 | 验收 |
 |---|---|---|
 | **3a 数据层 + 串行编译** ✅ 已提交 `e63d76f` + `438f3af`（2026-10-01） | `frame_recipes` DDL + `default_recipe_id` 补列自愈 + `/recipes` CRUD + `/compile/wrapped` `recipe_id` 串行编译 + `stages[]` 回显 + `definition_hash` 回写/比对 + 加工页分层堆叠预览与降级链三级。**实施时并入 3b 的 `dispatch` `wrap.recipe_id` 接线**（三路同字节所需，见 §7 3a 进度注 ①） | ✅ `test_frame_recipes.py` 新建（CRUD / 补列自愈幂等 / hash 回写与失效 / 层数上限 / stage 404 / version 409 / 删引用回执）、`test_wrap_api.py` 扩（**recipe 三层帧往返**、配方 vs 单协议**同内核 byte-equal 双跑**、配方路径缺省 `reject` 对照存量 warning、dispatch/事务带 recipe、缺省裸帧**零回归**）、FE `InstructionProcessor` 5 例（分层预览 + 失效徽标 + 降级三级）；三层帧主向量**一处钉死改一必改三** = `vectors/wrap.json` 表 `three`（沿 §7 共享向量先例） |
-| **3b 配方编辑器 + 发送接线** ✅ 已实施（2026-10-01，hash 待回填） | 编排页配方编辑器（有序 stage 增删/排序/选槽/手动保存/离开拦截 + 关联指令换绑）、~~`/dispatch` 与 `/dispatch/transaction` 接 `recipe_id`~~（**已提前随 3a 实施**）、试发改走配方（**未选配方 = 现状组协议逐字节不变**） | ✅ Orchestration 配方编辑 **4 例**（其余用例**零改**，含「四分区 select = 3」）、`dispatch.py` 缺省裸帧既有测试**零改全绿**、**curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 = 预览同字节 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；**零 DDL** |
+| **3b 配方编辑器 + 发送接线** ✅ 已提交 `c4b1f7f`（2026-10-01） | 编排页配方编辑器（有序 stage 增删/排序/选槽/手动保存/离开拦截 + 关联指令换绑）、~~`/dispatch` 与 `/dispatch/transaction` 接 `recipe_id`~~（**已提前随 3a 实施**）、试发改走配方（**未选配方 = 现状组协议逐字节不变**） | ✅ Orchestration 配方编辑 **4 例**（其余用例**零改**，含「四分区 select = 3」）、`dispatch.py` 缺省裸帧既有测试**零改全绿**、**curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 = 预览同字节 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；**零 DDL** |
 | **3c 序列封装帧（D6-B）** | 序列步骤可选 `wrap: {recipe_id}`、保存冻结完整帧 + `plan` 扩外壳 length/checksum **逐层区间**、发送按配方重算 | 序列封装往返过 `match_response`、冻结 vs 重算用例、沿 `normalize_plan` 键集纪律 |
 | **3d 应答与失效徽标（原批次三内容）** | **D5-A 按 D15-A 修订实施**：`response_specs` 增 `stage` 列 + 「据此生成」按配方每层各执行一次 + `response_match` 按 `stages` 逆序解包逐层跑五要素（无配方 = 单层退化）；D7-A 余下 binding/response_spec 两处失效徽标 | 生成映射**按层**用例、**多层应答逆序解包匹配**用例、**单层存量退化回归**、hash 失效/不失配徽标用例 |
 
