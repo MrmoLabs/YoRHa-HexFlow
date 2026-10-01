@@ -93,7 +93,7 @@
       "支持打开日期选择器并预览发送 payload。",
       "发送经后端 /dispatch 走传输抽象（默认环回，可经 /transport/config 切换 TCP/串口真实传输），日志展示成功、失败与等待状态。",
       "支持将当前 payload 导出为 .hex 文件下载。",
-      "参数渲染规则抽为 config/runnerRenderRules.js（字段分类/选项归一/显示值解析/语义标签/定长输入限制/种类章/用量，纯函数 + 57 项单测），RunnerFieldTree 只保留布局（C6）。",
+      "参数渲染规则抽为 config/runnerRenderRules.js（字段分类/选项归一/显示值解析/语义标签/定长输入限制/种类章/用量，纯函数 + 69 项单测），RunnerFieldTree 只保留布局（C6）。",
       "P2 事务发送面板（TransactionPanel）：应答规格编辑（帧头回显/长度自洽/校验反算/掩码忽略区间/前缀后缀五要素，PUT /response-specs 按指令存取，404 = 未配置常态）+ 超时/重发/间隔参数与广播无应答开关，POST /dispatch/transaction 返回逐次 attempt（状态/RTT/失配原因）与统计。",
       "批次一 (D4-A) 封装发送：挂载按 GET /bindings?instruction_id= 取 is_default 行解析默认协议外壳，wrap 状态机 ok/none/failed/missing（无默认行/拉取失败/协议不在册均降级裸发 + 状态提示）；「:: Wrap ::」开关默认开 → TRANSMIT 与 TransactionPanel 同带 wrap 由后端唯一封装入口套壳，封装预览 300ms 防抖调 POST /compile/wrapped（与发送同参同字节，回显完整帧与洞位 warnings），可手动关回裸发。",
       "指令加工编辑反馈四条之一：TIME 类字段（运行秒数）改满亮实线取值形态 + [TIME_PICKER] 徽标与 title 提示（仍点选日期、按 base_time 换算秒数，不再误标 [READ_ONLY] 斜纹锁定板，标签/accent 条恢复满对比）。",
@@ -107,7 +107,11 @@
       "BYTE_STREAM 全字节口径（N5 · 对齐/填充）：字段 byteMap 只记内容字节 —— align/pad_to 填充字节不在任何字段区间内，分段器以无主段（fieldId null，不参与点击高亮）补齐中缝与首尾，渲染串恒 = hexPreview 全字节、与 LEN: N BYTES 同口径（否则预览会吞掉线上真实发出的填充字节）。",
       "字段种类章（第 14 单 · 种类感知）：字段行 label 前出种类小徽标（FIX/TIME/LEN/CKSUM/CALC/MAP/F32/BCD/SCALE/TEXT/SINT/UINT/BIT/CNT/STRUCT/ARRAY/IN/HDR/VAR，resolveRunnerKind 纯函数按 lane 判定、与输入通道同源），悬停 title 讲算子编码特性（如 F32 // IEEE754 float32 大端恒 4B 十进制小数录入）；右徽标保留状态/长度语义（READ_ONLY > TIME_PICKER > n/N BYTES > BITS > [nB] > [TYPE]）不挤占；组头同出种类章（VAR/IN 归一 GROUP）。",
       "种类通道贴合（第 14 单）：FLOAT_IEEE 强制十进制小数通道（占位 '0.0'、input_base 让位、严格十进制小数语法与编码端 float32 分支同口径、指数 '1e5' 不发值 blur 复位）；BCD_CODE 强制十进制数字通道（十进制回显非 hex、占位 0..99…9 数字域、滤非数字按 nibble 限宽不发半截值）；STRING 用量徽标 n/N CHARS|BYTES（ascii 按 code point、utf8 按 TextEncoder，超定长琥珀警示 = 编码端截断）；dec 通道占位即域（0..65535 / -128..127 字段数值域直接亮在占位，FLOAT limits 置 null 不设整数域）。",
-      "种类编码契约补口（第 14 单）：normalize 对可编辑 FLOAT_IEEE/BCD_CODE/INT_SIGNED/SCALED_DECIMAL/AUTO_COUNTER 保留原算子 —— encode 的 f32/打包 BCD/两补码/定标/计数分支按 op 门控，摊平 INPUT 即全灭（真机实锤 FLOAT 3.14 → 00 00 00 03、BCD 1234 → 04 D2；修后 40 48 F5 C3 / 12 34 / FB 逐字节锚定，带静态 value 仍判 FIXED、MAPPING/INT_UNSIGNED/TIME_*/组结构维持摊平）；STRING 静态 value ≠ 固定块 + getInitialValues 按 type=string 兜底（N2 契约真机坐实：CMD-632 'ALPHA' 回显 5/8 CHARS 可继续键入、出帧 16B 与既往基线零漂移）。"
+      "种类编码契约补口（第 14 单）：normalize 对可编辑 FLOAT_IEEE/BCD_CODE/INT_SIGNED/SCALED_DECIMAL/AUTO_COUNTER 保留原算子 —— encode 的 f32/打包 BCD/两补码/定标/计数分支按 op 门控，摊平 INPUT 即全灭（真机实锤 FLOAT 3.14 → 00 00 00 03、BCD 1234 → 04 D2；修后 40 48 F5 C3 / 12 34 / FB 逐字节锚定，带静态 value 仍判 FIXED、MAPPING/INT_UNSIGNED/TIME_*/组结构维持摊平）；STRING 静态 value ≠ 固定块 + getInitialValues 按 type=string 兜底（N2 契约真机坐实：CMD-632 'ALPHA' 回显 5/8 CHARS 可继续键入、出帧 16B 与既往基线零漂移）。",
+      "全种类控件矩阵（第 15 单 · 控件贴合）：身份判定与控件判定分闸 —— classify 的 isEnum 认 original_op_code（MAPPING 被 normalize 摊平成 INPUT 不再丢枚举身份），下拉只由 hasOptions 把闸：有选项照旧原生下拉（回归零漂移），无选项走普通通道输入（字节钳制与 hex 占位保留）+ MAP 章（title 讲明未配置选项）+ 语义行琥珀「NO OPTIONS ⚠」提示（悬停指向指令管理配置 options）；真机示例状态包（副本）枚举映射由 IN 裸文本恢复为 MAP 身份 + 提示。",
+      "CNT 自动计数器推进（第 15 单）：编码器 E1-6「跨帧状态机在调用方」注释落地 —— TRANSMIT 发送成功后 Current=(Current+Step)%Max 自动回写输入态（advanceAutoCounter 与编码端逐句同口径：type 闸 / floor 解析 / input > 静态 value > start_val / max 双重取模，非计数字段返回 null 不误推进），语义行出 NEXT=n 下帧预览 chip，字节流预览实时跟进；事务面板同 payload 多 attempt 不推进。真机示例心跳帧连发两帧：计数 0→1→2、NEXT 1→2→3、字节位 01→02→03。",
+      "HEADER/TAIL 只读加固（第 15 单）：编码端直读 params.hex，可编辑输入不改变出帧即欺骗 —— classify 判只读固定（original_op_code 与字面双回退，时间优先次序不回退），种类章 HDR 身份上移到 isFixed 之前（normalize 改写 op 后仍出 HDR，不再掉 FIX/IN），无 hex 存量帧头回显 0 填充字节（与编码端 0x00 输出同口径）；单测覆盖，存量数据无 HEADER/TAIL 字段。"
+
     ],
     "nextSteps": [
       "展示当前传输模式与连接状态（GET /transport/status），支持在本页切换 loopback/TCP/串口。"

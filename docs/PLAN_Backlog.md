@@ -1625,6 +1625,52 @@
   零漂移；error overlay 0 零崩溃；探针 DELETE 200 清理 → 第 14 单 feature
   `f3adad8`。
 
+### 8.18 加工页全种类控件矩阵补齐（第 15 单 · 用户新需求）
+
+> 用户原话需求：加工时「还是没能贴合展示字段的属性」→ 追问拍板：「时间字段
+> 需要时间设置弹窗、枚举映射需要下拉选项的这种」+「全种类矩阵补齐」。矩阵
+> 审计（14 算子 × 控件形态，代码 + 真机）结论：时间弹窗 / 枚举下拉 / 位段
+> 值表 / 只读计算等主干控件已就位，真缺口三处如下，全部收口；无种子数据种类
+> （SCALE / STRUCT）以探针验收。
+
+- **G1 无选项 MAPPING 枚举身份**（真机坐实：示例状态包（副本）· 枚举映射
+  退化成 IN 裸文本）：身份与控件分闸 —— classify `isEnum` 认
+  original_op_code（normalize 摊平不丢身份），下拉只由 `hasOptions` 把闸：
+  有选项照旧 select（回归零漂移），无选项走普通通道。resolveFieldDisplay
+  枚举分支加 `options.length` 闸（落回通道分支，hex 占位 / inputs 源照旧）；
+  computeFieldInputLimits 的 isEnum 闸改 `(isEnum && hasOptions)`（无选项
+  保留字节钳制，防 01/FF 代码字段敲出溢出域）。呈现 = MAP 章（title 讲明
+  「未配置选项… 配置 options 后自动出下拉」）+ 语义行琥珀 `NO OPTIONS ⚠`
+  （collectSemanticItems warn 项，title 悬停指向指令管理）。
+- **G2 CNT 自动计数器推进**（用户拍板「发送成功后自动推进 + NEXT 预览」）：
+  编码器 E1-6「跨帧状态机在调用方」注释落地 —— 新增 `advanceAutoCounter
+  (field, current)` 纯函数（type 闸 / floor 解析 / input > 静态 value >
+  start_val / max 双重取模，与编码端逐句同口径；非计数字段 → null 不误
+  推进），InstructionRunner.handleSend 成功分支递归 fields 回写 inputs
+  （仅单帧 TRANSMIT；事务面板同 payload 多 attempt 不推进）；语义行出
+  `NEXT=n` 下帧预览 chip（collectSemanticItems(field, {inputs})），字节流
+  预览随 inputs 实时跟进。
+- **G3 HEADER/TAIL 只读加固**：编码端直读 params.hex（或 FIXED 分支），
+  可编辑输入不改变出帧即欺骗 —— classify isFixed 认 original / 字面双回退
+  （时间优先次序不回退）；resolveRunnerKind HDR 分支上移到 isFixed 之前
+  （normalize 改写 op 后仍出 HDR 身份，不再掉 FIX/IN；底部旧 HDR 死枝
+  随之移除）；无 hex 存量帧头回显 0 填充字节（isExplicitHex 认 HEADER/TAIL，
+  与编码端 0x00 输出同口径）。
+- **红测先行**：runnerRenderRules.test +12 例（第 15 单 9 红 → 69 绿；
+  G1 身份/章/通道/钳制/提示 5、G3 只读与 HDR 身份、advanceAutoCounter 3、
+  NEXT chip —— 含 3 条当天即绿的通道/钳制/回显守护断言）。终态 FE
+  **902/902**（63 文件，基线 890 + 12）/ BE **383/383** · build EXIT=0 ·
+  校验器 4 文件 0 违规 · SCHEMA_IDENTICAL 28。
+- **真机（2026-10-01，探针 PROBE-15 即建即删）**：副本枚举映射 MAP 章 +
+  `NO OPTIONS ⚠` 琥珀 + 可编辑 hex 通道占位 `00`（无空下拉）；示例心跳帧
+  CNT `NEXT=1` chip → TRANSMIT 两连发 计数 `0→1→2`、`NEXT 1→2→3`、
+  字节流计数位 `01→02→03`（仅成功路径推进）；回归 —— TIME 弹窗（时/分/秒
+  全出）、示例状态包双下拉（待机/执行/故障 · 测试/测试1）、无误报 NO
+  OPTIONS；探针 SCALE 章 + `FACTOR=10 · OFFSET=5`、STRUCT 组头 + 子字段
+  UINT dec `0..255`；overlay 0 零崩溃；探针 DELETE 200（库回 16 指令）。
+  附注：指令创建路由只存顶层字段，组契约 = 扁平 + parent_id（嵌套 children
+  被静默丢弃，探针以 PUT 修正）→ 第 15 单 feature `db371ab`。
+
 ## 9. 保留勿动（非任务，勿清理）
 
 - `backend/core/processor.py` / `graph.py` 未接线（Phase-2 遗留，保留勿删，

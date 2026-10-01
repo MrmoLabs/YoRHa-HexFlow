@@ -632,6 +632,29 @@
     TRANSMIT → `TX_SUCCESS (LOOPBACK)`；存量 CMD-632 TEXT 章 + 5/8 CHARS
     可编辑 + 16B 零漂移；error overlay 0 零崩溃；探针 DELETE 200。→ 第 14 单
     已提交 `f3adad8`。
+30. **加工页全种类控件矩阵补齐（第 15 单 · 用户新需求）**（2026-10-01）：用户
+    方向「时间字段要时间设置弹窗、枚举映射要下拉选项的这种」+ 拍板「全种类
+    矩阵补齐」「CNT 发送成功后自动推进」。矩阵审计（14 算子 × 控件形态，代码
+    + 真机）确认主干控件（时间弹窗 / 枚举下拉 / 位段值表 / 只读计算 / 种类章 /
+    通道贴合）已就位，真缺口三处收口：① **无选项 MAPPING 枚举身份** ——
+    身份与控件分闸（classify isEnum 认 original_op_code，下拉只由 hasOptions
+    把闸），有选项照旧 select、无选项走普通通道（limits 闸改 (isEnum &&
+    hasOptions) 保字节钳制）+ MAP 章（title 讲未配置）+ 语义行琥珀
+    `NO OPTIONS ⚠`；② **CNT 自动推进** —— 新增 advanceAutoCounter 纯函数
+    （与编码端 E1-6 逐句同口径：type 闸 / floor / input > value > start_val /
+    双重取模，非计数字段 null），handleSend 成功分支回写 inputs（事务面板
+    不推进），语义行出 NEXT=n 下帧预览；③ **HEADER/TAIL 只读加固** ——
+    classify isFixed 认 original/字面双回退 + HDR 章上移 isFixed 之前保身份
+    （旧死枝移除）+ 无 hex 帧头回显 0 填充。红测先行：runnerRenderRules.test
+    +12 例（9 红 → 69 绿）。红绿依据：FE **902/902**（63 文件，基线 890 +
+    12）· BE **383/383** · build EXIT=0 · 校验器 4 文件 0 违规 ·
+    pageStatus EXIT=0 · SCHEMA_IDENTICAL 28。真机（uvicorn:8000 +
+    vite:5173，探针 PROBE-15 即建即删）：副本枚举映射 MAP + NO OPTIONS ⚠ +
+    可编辑 hex；示例心跳帧连发两帧 计数 0→1→2 / NEXT 1→2→3 / 字节位
+    01→02→03；回归 TIME 弹窗 + 示例状态包双下拉 + 无误报；探针 SCALE 章 +
+    FACTOR/OFFSET、STRUCT 组头 + 子字段 UINT dec；overlay 0；探针 DELETE
+    200（库回 16）。附注：创建路由只存顶层字段，组契约 = 扁平 + parent_id
+    （嵌套 children 静默丢弃）。→ 第 15 单已提交 `db371ab`。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
