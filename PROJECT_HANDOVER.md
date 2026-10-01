@@ -604,6 +604,34 @@
     TRANSMIT → `TX_SUCCESS (LOOPBACK)`；`GET /datahub/export/bundle` 200 ZIP、
     16 指令 × 16 帧、CMD - 632 = 16B（N5 口径原样；11 个 0 字节帧 = 0 字段指令
     存量行为，有字段 5 条 = 37 字段与 sweep 一致）。→ 第 13 单已提交 `5310260`。
+29. **加工页字段种类感知（第 14 单 · 用户新需求）**（2026-10-01）：加工页
+    字段配置 UI「更加清晰，友好，贴合字段种类的特性」——只改加工页，定义侧
+    不动。三层对齐：① **种类章** `resolveRunnerKind`（runnerRenderRules.js
+    纯函数，lane 判定复用 classifyRunnerField）→ label 前小徽标
+    F32/BCD/TEXT/SINT/UINT/BIT/… + title 悬停讲编码特性，右徽标保留状态/长度
+    语义不挤占，组头同出章（VAR/IN 归一 GROUP）；② **通道贴合** ——
+    FLOAT_IEEE 强制 float 通道（占位 `0.0`、input_base 让位、严格十进制小数
+    正则与编码端同口径、指数不发值 blur 复位）、BCD_CODE 强制 bcd 数字通道
+    （十进制回显、占位 `0..99…9`、滤非数字按 nibble 限宽）、STRING 用量徽标
+    n/N CHARS|BYTES（超定长琥珀截断警示）、dec 通道占位即域、limits FLOAT→
+    null / BCD→数字域；③ **编码契约补口**（真机实锤后拍板）—— normalize 对
+    可编辑 FLOAT_IEEE/BCD_CODE/INT_SIGNED/SCALED_DECIMAL/AUTO_COUNTER 保留原
+    算子（encode 五种类分支按 op 门控，摊平即全灭：真机 FLOAT 3.14 →
+    `00 00 00 03`、BCD 1234 → `04 D2`；修后 `40 48 F5 C3` / `12 34` / `FB`
+    逐字节锚定；带静态 value 仍判 FIXED、MAPPING/INT_UNSIGNED/TIME_*/组结构
+    维持摊平不扩面）+ STRING 静态 value ≠ 固定块（N2 契约对齐：normalize
+    豁免 TEXT 种类、getInitialValues 按 type=string 兜底 —— 真机 CMD-632
+    'ALPHA' 整行只读坐实为误杀，修后 5/8 CHARS 可继续键入、出帧 16B 零
+    漂移）。红测先行 3 轮（runnerRenderRules 15 红 → 57 绿、normalize 新建
+    8 例 2 红、InstructionEncoder 1 红）+ 集成占位钉点 '0' → '0..65535' 3 处。
+    红绿依据：FE **890/890**（63 文件，基线 867 + 23）· BE **383/383** ·
+    build EXIT=0 · 校验器 5 文件 0 违规 · pageStatus EXIT=0 ·
+    SCHEMA_IDENTICAL 28。真机（uvicorn:8000 + vite:5173，探针即建即删
+    a67196d5）：6 字段探针六章/四占位全出、录入 3.14/1234/-5/HELLO_123456 →
+    BYTE_STREAM 六段逐字节、`1e5` 不发值 blur 复位、12/8 CHARS 琥珀、
+    TRANSMIT → `TX_SUCCESS (LOOPBACK)`；存量 CMD-632 TEXT 章 + 5/8 CHARS
+    可编辑 + 16B 零漂移；error overlay 0 零崩溃；探针 DELETE 200。→ 第 14 单
+    已提交 `f3adad8`。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

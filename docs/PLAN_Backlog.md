@@ -1573,6 +1573,58 @@
   （28 对象零 DDL）→ **N5 对齐模型已拍板落地（G4 结）**；**G5 双端硬拦已拍板
   落地、白名单挂账清——G1–G7 全集七项全部已结**。**
 
+### 8.17 加工页字段种类感知（第 14 单 · 用户新需求）
+
+> 用户原话需求：加工页字段配置 UI「更加清晰，友好，贴合字段种类的特性」——
+> 只改加工页（/processing，序列页共用 normalize），定义侧不动（input_base
+> 对 FLOAT/BCD 的定义侧联动留作未来项）。
+
+- **种类章**：`resolveRunnerKind(field)`（runnerRenderRules.js 纯函数）按
+  classifyRunnerField 的 lane 判定输出 `{key,label,title}`（FIX > TIME > CALC族
+  LEN·CKSUM·CALC > ENUM:MAP > F32/BCD/SCALE/TEXT/SINT/UINT/BIT/CNT/STRUCT/
+  ARRAY/IN/HDR/VAR 兜底），SmartInput label 前小徽标 + title 悬停讲算子编码
+  特性；右徽标保留状态/长度语义（READ_ONLY > TIME_PICKER > n/N BYTES > BITS >
+  [nB] > [TYPE]）不挤占；组头同出种类章（VAR/IN 归一 GROUP）。
+- **通道贴合**：FLOAT_IEEE 强制 float 通道（占位 `0.0`、input_base 让位、
+  严格十进制小数正则与编码端 float32 分支同口径、指数 `1e5` 不发值 blur
+  复位）；BCD_CODE 强制 bcd 数字通道（十进制回显非 hex、占位 `0..99…9`、
+  滤非数字按 nibble 限宽不发半截值）；dec 通道占位即域（`0..65535` /
+  `-128..127`）；limits FLOAT→null（f32 不设整数域）、BCD→`{byteLen,
+  maxLength:2n, min:0, max}`。
+- **STRING 用量徽标**：`computeStringUsage` → `{used,total,unit,over}`
+  （ascii 按 code point、utf8 按 TextEncoder，n/N CHARS|BYTES），超定长琥珀
+  `text-[#E58D28]` 截断警示（与编码端 pad/截断同源）。
+- **解析助手**：`parseBcdInput` / `parseFloatInput` 纯函数（与编码端镜像，
+  改一必改二）。
+- **编码契约补口（真机实锤后拍板，两处超出纯 UI 的行为修正）**：
+  1. normalize 对**可编辑** FLOAT_IEEE/BCD_CODE/INT_SIGNED/SCALED_DECIMAL/
+     AUTO_COUNTER 保留原算子 —— encode 的 f32/打包 BCD/两补码/定标/计数五个
+     分支按 op 门控（InstructionEncoder 行 173/205/302/318/340），摊平成
+     INPUT 即全部死亡（真机实锤 FLOAT 3.14 → `00 00 00 03`、BCD 1234 →
+     `04 D2`）；修后逐字节 `40 48 F5 C3` / `12 34` / `FB` 锚定。带静态 value
+     仍判 FIXED（存量固定块语义不动）；MAPPING/INT_UNSIGNED（编码字节等价）、
+     TIME_ACCUMULATOR→TIME_CUMULATIVE（加工页手动选时刻的既定覆盖语义）、
+     组结构维持摊平不扩面。
+  2. STRING 静态 value ≠ 固定块：N2 契约「加工页初始值 = 静态 value 可继续
+     键入」此前被 value→FIXED 判定误杀（真机 CMD-632 'ALPHA' 整行只读坐实）
+     —— normalize 豁免 TEXT 种类 + getInitialValues 按 type='string' 兜底
+     （op 被摊平后初值契约不丢）；修后回显 5/8 CHARS 可键入、出帧 16B 与
+     既往基线零漂移。
+- **红测先行**：runnerRenderRules.test 15 红 → 57 绿（原 43 + 新 14）；
+  normalizeRunnerInstruction.test 新建 8 例（2 红）；InstructionEncoder.test
+  1 红（摊平形态初值）；集成占位钉点批 1 `'0'` → `'0..65535'` 3 处（占位
+  即域的有意变更）。终态 FE **890/890**（63 文件，基线 867 + 23）/ BE
+  **383/383** · build EXIT=0 · 校验器 5 文件 0 违规 · SCHEMA_IDENTICAL
+  （28 对象零 DDL）。
+- **真机（2026-10-01，探针即建即删 a67196d5）**：6 字段探针（FLOAT/BCD/
+  SINT dec/UINT dec/STRING/BITFIELD）→ F32·BCD·SINT·UINT·TEXT·BIT 六章全出、
+  四占位就位；录入 3.14 / 12a34→1234 / -5 / HELLO_123456 → BYTE_STREAM
+  `40 48 F5 C3 · 12 34 · FB · 00 00 · 48 45 4C 4C 4F 5F 31 32 · 01`；
+  `1e5` 不发值 blur 复位 3.14；12/8 CHARS 琥珀；TRANSMIT →
+  TX_SUCCESS (LOOPBACK)；存量 CMD-632 TEXT 章 + 5/8 CHARS 可编辑 + 16B
+  零漂移；error overlay 0 零崩溃；探针 DELETE 200 清理 → 第 14 单 feature
+  `f3adad8`。
+
 ## 9. 保留勿动（非任务，勿清理）
 
 - `backend/core/processor.py` / `graph.py` 未接线（Phase-2 遗留，保留勿删，
