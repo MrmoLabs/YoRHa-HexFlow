@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from backend.core import sequence_runner
 from backend.core.sequence_plan import normalize_plan
 from backend.db.database import get_db
-from backend.db.models import Sequence, SequenceStep
+from backend.db.models import Instruction, Sequence, SequenceStep
 from backend.schemas.sequence_api import (
     SequenceOut,
     SequencePayload,
@@ -145,7 +145,25 @@ def _step_rows(db: Session, sequence_id: str) -> List[SequenceStep]:
     )
 
 
-def _to_out(row: Sequence, step_rows: List[SequenceStep]) -> SequenceOut:
+def _missing_instruction_ids(db: Session, step_rows: List[SequenceStep]) -> set:
+    """批次二 (D14②): 步骤宿主指令已删除 → 失效标记（**零 DDL**）。
+
+    判据 = `instruction_id` 悬空（等价 LEFT JOIN，批量比对）。步骤的
+    payload/params/plan 是**冻结快照**、Runner 发送不查指令行 → 删宿主后步骤
+    仍可运行，因此不级联删、只标记（与 D7「失效不阻断」同语义）。
+    """
+    wanted = {s.instruction_id for s in step_rows if s.instruction_id}
+    if not wanted:
+        return set()
+    present = {
+        row.id
+        for row in db.query(Instruction.id).filter(Instruction.id.in_(wanted)).all()
+    }
+    return wanted - present
+
+
+def _to_out(db: Session, row: Sequence, step_rows: List[SequenceStep]) -> SequenceOut:
+    missing = _missing_instruction_ids(db, step_rows)
     return SequenceOut(
         id=row.id,
         name=row.name,
@@ -156,6 +174,7 @@ def _to_out(row: Sequence, step_rows: List[SequenceStep]) -> SequenceOut:
                 id=s.id,
                 step_order=s.step_order,
                 instruction_id=s.instruction_id,
+                instruction_missing=s.instruction_id in missing,
                 label=s.label,
                 delay_ms=s.delay_ms,
                 params=s.params,
@@ -200,7 +219,7 @@ def list_sequences(db: Session = Depends(get_db)) -> List[SequenceOut]:
         .all()
     ):
         grouped.setdefault(step.sequence_id, []).append(step)
-    return [_to_out(row, grouped.get(row.id, [])) for row in rows]
+    return [_to_out(db, row, grouped.get(row.id, [])) for row in rows]
 
 
 @router.post("", response_model=SequenceOut)
@@ -215,7 +234,7 @@ def create_sequence(payload: SequencePayload, db: Session = Depends(get_db)) -> 
     _write_steps(db, row.id, steps)
     db.commit()
     db.refresh(row)
-    return _to_out(row, _step_rows(db, row.id))
+    return _to_out(db, row, _step_rows(db, row.id))
 
 
 @router.get("/{sequence_id}", response_model=SequenceOut)
@@ -223,7 +242,7 @@ def get_sequence(sequence_id: str, db: Session = Depends(get_db)) -> SequenceOut
     row = db.query(Sequence).filter(Sequence.id == sequence_id).first()
     if not row:
         raise HTTPException(status_code=404, detail="Sequence not found")
-    return _to_out(row, _step_rows(db, row.id))
+    return _to_out(db, row, _step_rows(db, row.id))
 
 
 @router.put("/{sequence_id}", response_model=SequenceOut)
@@ -246,7 +265,7 @@ def update_sequence(
     _write_steps(db, row.id, steps)
     db.commit()
     db.refresh(row)
-    return _to_out(row, _step_rows(db, row.id))
+    return _to_out(db, row, _step_rows(db, row.id))
 
 
 @router.delete("/{sequence_id}")

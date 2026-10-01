@@ -330,6 +330,35 @@ class DispatchEscapeTests(EscapeWireTestBase):
         )
         self.assertEqual(record.hex_string, "FA FA 02 01 7D ED")
 
+    def test_multi_payload_same_layering_as_single(self):
+        # 批次二 (D14③): 试发改走 wrap.payloads —— 层位与单条完全一致：
+        # 逐条内核先转义、外壳 FA/ED 字面不转，壳 length 按转义后线上字节。
+        self._enable(PAIRS_SHELL)
+        single = dispatch_frame(
+            DispatchRequest(hex_string="01 7D", wrap=WrapSpec(protocol_id=PROTO_ID)),
+            db=self.db,
+        )
+        dispatch_mod._history.clear()
+        multi = dispatch_frame(
+            DispatchRequest(
+                instruction_name="封装试发",
+                wrap=WrapSpec(protocol_id=PROTO_ID, payloads=["01 7D"]),
+            ),
+            db=self.db,
+        )
+        self.assertEqual(single.hex_string, "FA FA 03 01 7D 5D ED")
+        self.assertEqual(multi.hex_string, single.hex_string)
+        self.assertEqual(multi.byte_count, single.byte_count)
+
+    def test_multi_payload_disabled_byte_equal(self):
+        record = dispatch_frame(
+            DispatchRequest(
+                wrap=WrapSpec(protocol_id=PROTO_ID, payloads=["01 7D"])
+            ),
+            db=self.db,
+        )
+        self.assertEqual(record.hex_string, "FA FA 02 01 7D ED")
+
     def test_invalid_kernel_hex_detail_stable(self):
         # 关闭态错误文案（存量口径）
         with self.assertRaises(HTTPException) as off:

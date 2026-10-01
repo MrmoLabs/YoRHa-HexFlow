@@ -105,6 +105,63 @@ def _validate_node_bits(node) -> None:
         )
 
 
+# 批次二 (D3/D14①)：槽契约字段合法值 —— 存脏值会被读侧 fail-open 静默成
+# append/zero_fill（正是 D14① 要消灭的「静默错帧」），故保存期拒绝。
+# 只校验新字段 `fit_policy`（存量槽无此字段 → 零存量影响、不迁移）；
+# `max_bytes` / `accepts` 的语义比较属设计期 warning（validateProtocol），不拦。
+_SLOT_OVERFLOW = ("append", "reject")
+_SLOT_UNDERFLOW = ("zero_fill", "reject")
+
+
+def _iter_nodes(children):
+    for node in children or []:
+        yield node
+        yield from _iter_nodes(node.children)
+
+
+def _validate_slot_contracts(children) -> None:
+    """批次二 (D3): 插槽 `fit_policy` 结构与取值 400 校验（保存期）。
+
+    形态（`DESIGN_CorePipeline.md` §3 表）：`{overflow: append|reject,
+    underflow: zero_fill|reject}`，两键均可选；未知键 / 非法取值 / 非对象
+    一律 400 —— 否则读侧 fail-open 会让 reject 静默降级回 append，防错失效。
+    """
+    for node in _iter_nodes(children):
+        if node.type != "slot":
+            continue
+        pc = node.parameter_config
+        if pc is None:
+            continue
+        if not isinstance(pc, dict):
+            raise HTTPException(status_code=400, detail="插槽 parameter_config 必须是对象")
+        fp = pc.get("fit_policy")
+        if fp is None:
+            continue
+        label = node.label or node.id
+        if not isinstance(fp, dict):
+            raise HTTPException(
+                status_code=400,
+                detail=f"「{label}」fit_policy 必须是对象（{{overflow, underflow}}）",
+            )
+        unknown = sorted(set(fp) - {"overflow", "underflow"})
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"「{label}」fit_policy 含未知键：{', '.join(unknown)}",
+            )
+        overflow, underflow = fp.get("overflow"), fp.get("underflow")
+        if overflow is not None and overflow not in _SLOT_OVERFLOW:
+            raise HTTPException(
+                status_code=400,
+                detail=f"「{label}」fit_policy.overflow 非法：{overflow!r}（须为 append | reject）",
+            )
+        if underflow is not None and underflow not in _SLOT_UNDERFLOW:
+            raise HTTPException(
+                status_code=400,
+                detail=f"「{label}」fit_policy.underflow 非法：{underflow!r}（须为 zero_fill | reject）",
+            )
+
+
 @router.get("/", response_model=List[ProtocolResponse])
 def get_protocols(db: Session = Depends(get_db)):
     return db.query(ProtocolTemplate).order_by(ProtocolTemplate.label.asc()).all()
@@ -122,6 +179,7 @@ def get_protocol(protocol_id: str, db: Session = Depends(get_db)):
 def create_protocol(payload: ProtocolCreate, db: Session = Depends(get_db)):
     _validate_refs(payload.children)
     _validate_bits(payload.children)
+    _validate_slot_contracts(payload.children)
     protocol_id = payload.id or str(uuid.uuid4())
 
     protocol = ProtocolTemplate(
@@ -134,6 +192,8 @@ def create_protocol(payload: ProtocolCreate, db: Session = Depends(get_db)):
     db.add(protocol)
     db.commit()
     db.refresh(protocol)
+    # 非映射属性（不入库）：新建协议必然无悬空槽引用，回 0 让两端同一响应形。
+    protocol.dangling_slots_cleared = 0
     return protocol
 
 
@@ -157,15 +217,36 @@ def update_protocol(protocol_id: str, payload: ProtocolUpdate, db: Session = Dep
 
     _validate_refs(payload.children)
     _validate_bits(payload.children)
+    _validate_slot_contracts(payload.children)
     protocol.label = payload.label
     protocol.type = payload.type
     protocol.description = payload.description
     protocol.children = [node.model_dump() for node in payload.children]
+
+    # 批次二 (D12 §6.2「槽节点」行)：协议内删块 → 绑定 slot_id 悬空 → 置 NULL
+    # 并回执计数（不静默：回执带 N）。逻辑外键无 FK，悬空会让编排页按 slot_id
+    # 找槽落空、后续绑定校验再也无法自证 —— 保存期是删块的唯一入口，就地收口。
+    # 在 version +1 与 commit 之前做，同一事务一并落库。
+    slot_ids = {n.id for n in _iter_nodes(payload.children) if n.type == "slot"}
+    query = (
+        db.query(ProtocolBinding)
+        .filter(ProtocolBinding.protocol_id == protocol_id)
+        .filter(ProtocolBinding.slot_id.isnot(None))
+    )
+    if slot_ids:
+        query = query.filter(ProtocolBinding.slot_id.notin_(slot_ids))
+    dangling = query.all()
+    for binding in dangling:
+        binding.slot_id = None
+    cleared = len(dangling)
+
     # 任何成功写（含跳过比对的直通写）都 +1 —— 否则直通写会让持旧 version
     # 的其他客户端误判「仍一致」。
     protocol.version = (protocol.version or 0) + 1
     db.commit()
     db.refresh(protocol)
+    # 非映射属性（不入库）：回执本次保存清掉的悬空 slot_id 条数。
+    protocol.dangling_slots_cleared = cleared
     return protocol
 
 

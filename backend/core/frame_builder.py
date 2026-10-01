@@ -6,8 +6,12 @@
   refs 集合模式真值重算。
 - 洞序 = 协议树 DFS（镜像 FE fill：遇 slot 不下钻）；显式 slot_ids（存原始
   id）优先，其余按 start_order 起的稠密位次；洞未填保留 slot（发射归零）；
-  溢出 append 根末尾 —— 溢出/欠载均为现状口径（D3），批次一仅 warning 不
-  阻断（fit_policy reject 批次二）。
+  溢出 append 根末尾。
+- **批次二 (D3/D14①)：溢出/欠载按槽 `fit_policy` 执行** —— `reject` →
+  ValueError（HTTP 侧 400）含槽 id 与实际/允许字节数；`append`/`zero_fill`
+  （**存量缺省口径**，存量槽不迁移）保留原行为并给 warning；`max_bytes` 超限
+  逐槽判定同溢出策略。混合策略下**任一槽 overflow=reject 即阻断追加帧末尾**
+  （追加会破坏该协议的结构假设 —— 实施注，D14① 未定，2026-10-01 记）。
 - 双端向量纪律：FA FA / 02 / 01 02 / ED 主向量与
   frontend/src/utils/__tests__/blockMerge.test.js 钉同一字节序列，改一必改二。
 """
@@ -263,12 +267,44 @@ def _to_blocks(nodes, by_id: dict) -> List[Block]:
     return out
 
 
+# 批次二 (D3)：槽契约读侧口径 —— 合法值集合与 §3 表一致；存量槽无
+# parameter_config / 无 fit_policy → 缺省 = 现状口径（append/zero_fill）。
+_OVERFLOW_DEFAULT, _UNDERFLOW_DEFAULT = "append", "zero_fill"
+_OVERFLOW_ALLOWED = ("append", "reject")
+_UNDERFLOW_ALLOWED = ("zero_fill", "reject")
+
+
+def _fit_policy(node) -> tuple:
+    """槽的 (overflow, underflow) 策略。
+
+    非法值在协议保存期已被 `protocol.py::_validate_slot_contracts` 拒绝；此处
+    fail-open 回缺省（读侧不重复报错，与 refs 悬空丢弃同口径）。
+    """
+    pc = node.get("parameter_config")
+    fp = pc.get("fit_policy") if isinstance(pc, dict) else None
+    overflow, underflow = _OVERFLOW_DEFAULT, _UNDERFLOW_DEFAULT
+    if isinstance(fp, dict):
+        if fp.get("overflow") in _OVERFLOW_ALLOWED:
+            overflow = fp["overflow"]
+        if fp.get("underflow") in _UNDERFLOW_ALLOWED:
+            underflow = fp["underflow"]
+    return overflow, underflow
+
+
+def _max_bytes(node):
+    """槽的 `max_bytes`（注入载荷字节数上限）；未设/非法 → None（不限）。"""
+    pc = node.get("parameter_config")
+    value = _finite_int(pc.get("max_bytes")) if isinstance(pc, dict) else None
+    return value if value is not None and value >= 0 else None
+
+
 def build_wrapped(protocol_children, payloads, slot_ids=None, start_order=0) -> dict:
     """协议 children + 已编码内核 hex 载荷 → 封装帧（唯一封装入口）。
 
     返回 {"hex": pretty, "total_length": 字节数, "warnings": [...]}。
-    语义错误（插槽不存在 / 不是插槽 / 重复分配、非法 hex）→ ValueError
-    （HTTP 侧 → 400）；warnings 顺序：overflow 先、underflow 后。
+    语义错误（插槽不存在 / 不是插槽 / 重复分配、非法 hex、**fit_policy=reject
+    触发的溢出/欠载**）→ ValueError（HTTP 侧 → 400）；warnings 顺序：overflow
+    先、underflow 后。
     """
     normalized = [_normalize_payload(p) for p in (payloads or [])]
     explicit = list(slot_ids or [])
@@ -365,13 +401,56 @@ def build_wrapped(protocol_children, payloads, slot_ids=None, start_order=0) -> 
 
         apply_rewrites(roots)
 
-    # ---- warnings（overflow 先、underflow 后；批次一仅告警不阻断）----
-    warnings = []
+    # ---- 批次二 (D3/D14①)：fit_policy 执行 —— reject → ValueError（HTTP 400）----
+    # 缺省（append/zero_fill，存量槽不迁移）保持原 warning 文案与原行为。
+    warnings: List[str] = []
+    errors: List[str] = []
+
+    # 溢出 ①（条数）：载荷无槽可用 → 追加帧末尾；任一槽 overflow=reject 即阻断
     if overflow:
-        warnings.append(f"洞位不足：{overflow} 条载荷无可用插槽，已追加帧末尾")
-    underflow = sum(1 for s in slots if s["id"] not in claimed)
-    if underflow:
-        warnings.append(f"空洞：{underflow} 个洞未被载荷填充")
+        if any(_fit_policy(s)[0] == "reject" for s in slots):
+            errors.append(
+                f"洞位不足：{overflow} 条载荷无可用插槽（协议存在 overflow=reject 的插槽，"
+                f"禁止追加帧末尾；可用插槽 {len(slots)} 个 / 载荷 {len(normalized)} 条）"
+            )
+        else:
+            warnings.append(f"洞位不足：{overflow} 条载荷无可用插槽，已追加帧末尾")
+
+    # 溢出 ②（字节数）：载荷超槽 max_bytes → 逐槽按该槽 overflow 策略（§3：报错
+    # 带槽 id 与实际/允许字节数）
+    for pi in sorted(payload_slot):
+        node = payload_slot[pi]
+        allowed = _max_bytes(node)
+        actual = len(normalized[pi]) // 2
+        if allowed is None or actual <= allowed:
+            continue
+        where = f"插槽 {node.get('id')}"
+        if _fit_policy(node)[0] == "reject":
+            errors.append(
+                f"{where} 溢出：载荷 {actual} 字节 > 允许 {allowed} 字节（overflow=reject）"
+            )
+        else:
+            warnings.append(
+                f"{where} 溢出：载荷 {actual} 字节 > 允许 {allowed} 字节，已按 append 保留"
+            )
+
+    # 欠载：逐槽按该槽 underflow 策略（reject 的槽逐个报，未 reject 才汇总 warning）
+    unfilled = [s for s in slots if s["id"] not in claimed]
+    underflow_rejected = 0
+    for s in unfilled:
+        if _fit_policy(s)[1] != "reject":
+            continue
+        underflow_rejected += 1
+        allowed = _finite_int(s.get("byte_length"))
+        allowed_text = "不限" if allowed is None else f"{allowed} 字节"
+        errors.append(
+            f"插槽 {s.get('id')} 欠载：实际 0 字节 / 允许 {allowed_text}（underflow=reject）"
+        )
+    if unfilled and not underflow_rejected:
+        warnings.append(f"空洞：{len(unfilled)} 个洞未被载荷填充")
+
+    if errors:
+        raise ValueError("；".join(errors))
 
     # ---- 转 Block → Orchestrator 发射 → 空白折叠按对重排 pretty ----
     by_id: Dict[str, dict] = {}

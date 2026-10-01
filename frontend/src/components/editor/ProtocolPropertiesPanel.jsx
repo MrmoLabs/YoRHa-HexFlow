@@ -209,6 +209,65 @@ export default function ProtocolPropertiesPanel({
                                 </div>
                             );
                         }
+                        // 批次二 (D3/D14①): fit 分支 —— 槽的溢出/欠载策略两下拉，
+                        // 存点 parameter_config.fit_policy（零 DDL，镜像 refs/select
+                        // 的 inputType 分流）。读态回落缺省 = 现状口径（append /
+                        // zero_fill，存量槽不迁移）；写入带 type（同 select 口径）。
+                        if (field.inputType === 'fit') {
+                            const pc = selectedBlock.parameter_config || {};
+                            const fp = pc.fit_policy || {};
+                            const overflow = fp.overflow ?? 'append';
+                            const underflow = fp.underflow ?? 'zero_fill';
+                            const isStrict = overflow === 'reject' || underflow === 'reject';
+                            // 写入恒带两键（用解析后的值兜底）：避免只存一半时
+                            // 对端回退口径与本端显示不一致
+                            const setFp = (patch) => onUpdateBlock(selectedBlock.id, {
+                                parameter_config: {
+                                    ...pc,
+                                    type: selectedBlock.type,
+                                    fit_policy: { overflow, underflow, ...fp, ...patch }
+                                }
+                            });
+                            // 值域 = §3 表：overflow append|reject / underflow
+                            // zero_fill|reject（不给交叉值，避免存进后端会被
+                            // 读侧 fail-open 的组合）
+                            const policies = (label, value, onChange, options) => (
+                                <>
+                                    <label className="text-[9px] opacity-70 uppercase tracking-widest">{label}</label>
+                                    <select
+                                        value={value}
+                                        onChange={(e) => onChange(e.target.value)}
+                                        className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono tracking-wide"
+                                    >
+                                        {options.map(opt => (
+                                            <option key={opt.value} value={opt.value} className="bg-nier-dark text-nier-light">{opt.label}</option>
+                                        ))}
+                                    </select>
+                                </>
+                            );
+                            return (
+                                <div key={field.id} className="flex flex-col gap-2 border border-dashed border-nier-light/30 p-2 bg-nier-light/5">
+                                    <div className="flex justify-between items-center">
+                                        <label className="text-xs opacity-70 uppercase tracking-widest">{field.label}</label>
+                                        <span className={`text-[9px] font-bold ${isStrict ? 'text-yellow-500' : 'opacity-60'}`}>
+                                            {isStrict ? 'STRICT' : 'LEGACY'}
+                                        </span>
+                                    </div>
+                                    {policies('溢出 (OVERFLOW)：载荷放不下时', overflow, (v) => setFp({ overflow: v }), [
+                                        { value: 'append', label: '追加帧末尾 (APPEND · 不阻断)' },
+                                        { value: 'reject', label: '拒绝并报错 (REJECT · 400)' }
+                                    ])}
+                                    {policies('欠载 (UNDERFLOW)：槽未被填充时', underflow, (v) => setFp({ underflow: v }), [
+                                        { value: 'zero_fill', label: '归零发射 (ZERO_FILL · 不阻断)' },
+                                        { value: 'reject', label: '拒绝并报错 (REJECT · 400)' }
+                                    ])}
+                                    <p className="text-[9px] font-mono opacity-60 leading-relaxed">
+                                        缺省 = 追加 / 归零（存量口径，仅告警不阻断）；
+                                        REJECT 触发时后端 400（含槽 id 与实际/允许字节数）。
+                                    </p>
+                                </div>
+                            );
+                        }
                         // 批次四: select 分支（dot-path 存点 parameter_config.*
                         // 通用 input 无法承载 —— 同 refs 口径按 inputType 分流）。
                         // 读 pc[末段] ?? field.default；写入时带 type（镜像 refs

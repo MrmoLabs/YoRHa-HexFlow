@@ -23,8 +23,8 @@ def fixed(nid, hex_value, byte_length=None, label=None):
     }
 
 
-def slot(nid, label=None, children=None):
-    return {
+def slot(nid, label=None, children=None, parameter_config=None):
+    node = {
         "id": nid,
         "label": label or nid,
         "type": "slot",
@@ -33,6 +33,10 @@ def slot(nid, label=None, children=None):
         "config": {},
         "children": children or [],
     }
+    # 批次二 (D3): 槽契约走 parameter_config（零 DDL）——不传则保持存量形态
+    if parameter_config is not None:
+        node["parameter_config"] = parameter_config
+    return node
 
 
 def length_block(nid, refs, byte_length=1):
@@ -253,6 +257,99 @@ class WarningTest(unittest.TestCase):
         result = build_wrapped(children, ["01 02"])
         self.assertEqual(result["hex"], "01 02")
         self.assertEqual(result["total_length"], 2)
+
+
+class FitPolicyTest(unittest.TestCase):
+    """批次二 (D3/D14①): 溢出/欠载/超上限按槽 fit_policy 执行。
+
+    三态 = reject（阻断 ValueError）/ append / zero_fill（缺省，存量零回归）；
+    存量槽不动（D14① 拍板：不迁移），只有显式配 reject 的槽才阻断。
+    """
+
+    REJECT = {"fit_policy": {"overflow": "reject", "underflow": "reject"}}
+    # 缺省（无 fit_policy）= append + zero_fill —— 存量零回归锚
+    def test_default_overflow_appends_with_warning(self):
+        children = shell([slot("s")])
+        result = build_wrapped(children, ["0102", "0304"])
+        self.assertEqual(result["hex"], "01 02 03 04")
+        self.assertIn("洞位不足：1 条载荷无可用插槽，已追加帧末尾", result["warnings"])
+
+    def test_default_underflow_zero_fills_with_warning(self):
+        children = shell([slot("s1"), slot("s2")])
+        result = build_wrapped(children, ["0102"])
+        self.assertEqual(result["warnings"], ["空洞：1 个洞未被载荷填充"])
+
+    def test_overflow_reject_raises_with_count(self):
+        children = shell([slot("s", parameter_config=self.REJECT)])
+        with self.assertRaises(ValueError) as ctx:
+            build_wrapped(children, ["0102", "0304"])
+        self.assertIn("洞位不足：1 条载荷无可用插槽", str(ctx.exception))
+        self.assertIn("禁止追加帧末尾", str(ctx.exception))
+
+    def test_underflow_reject_raises_with_slot_and_bytes(self):
+        children = shell([slot("s", parameter_config=self.REJECT)])
+        with self.assertRaises(ValueError) as ctx:
+            build_wrapped(children, [])
+        message = str(ctx.exception)
+        self.assertIn("欠载", message)
+        self.assertIn("s", message)
+        self.assertIn("实际 0 字节", message)
+
+    def test_underflow_reject_scoped_to_rejecting_slot_only(self):
+        # 只有显式 reject 的槽阻断，同协议里 zero_fill 缺省槽照常告警
+        children = shell([
+            slot("bad", parameter_config=self.REJECT),
+            slot("ok"),
+        ])
+        with self.assertRaises(ValueError) as ctx:
+            build_wrapped(children, [])
+        self.assertIn("bad", str(ctx.exception))
+        self.assertNotIn("插槽 ok", str(ctx.exception))
+
+    def test_mixed_overflow_policy_any_reject_blocks_append(self):
+        # 实施注：条数溢出无槽归属 → 任一槽 overflow=reject 即阻断追加帧末尾
+        children = shell([
+            slot("strict", parameter_config={"fit_policy": {"overflow": "reject"}}),
+            slot("loose"),
+        ])
+        with self.assertRaises(ValueError) as ctx:
+            build_wrapped(children, ["0102", "0304", "0506"])
+        self.assertIn("洞位不足", str(ctx.exception))
+
+    def test_max_bytes_reject_raises_with_actual_and_allowed(self):
+        children = shell([
+            slot("s", parameter_config={
+                "fit_policy": {"overflow": "reject", "underflow": "zero_fill"},
+                "max_bytes": 1,
+            }),
+        ])
+        with self.assertRaises(ValueError) as ctx:
+            build_wrapped(children, ["0102"])
+        message = str(ctx.exception)
+        self.assertIn("溢出", message)
+        self.assertIn("2 字节", message)
+        self.assertIn("1 字节", message)
+
+    def test_max_bytes_within_limit_silent(self):
+        children = shell([
+            slot("s", parameter_config={
+                "fit_policy": {"overflow": "reject", "underflow": "zero_fill"},
+                "max_bytes": 4,
+            }),
+        ])
+        result = build_wrapped(children, ["0102"])
+        self.assertEqual(result["warnings"], [])
+
+    def test_max_bytes_default_policy_only_warns(self):
+        children = shell([slot("s", parameter_config={"max_bytes": 1})])
+        result = build_wrapped(children, ["0102"])
+        self.assertTrue(any("溢出" in w for w in result["warnings"]))
+
+    def test_reject_error_blocks_before_emitting_frame(self):
+        # reject 语义：连 hex 都不产出（ValueError 而非半成品 result）
+        children = shell([slot("s", parameter_config=self.REJECT)])
+        with self.assertRaises(ValueError):
+            build_wrapped(children, [])
 
 
 if __name__ == "__main__":

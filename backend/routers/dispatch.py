@@ -30,15 +30,29 @@ class WrapSpec(BaseModel):
 
     slot_id 显式指定插槽（存协议原始 id，绑定表同源）优先；缺省则按
     slot_order 起的稠密位次（同协议组内 0..n-1 位次，绑定 slot_order 同源）。
-    wrap 缺省 → 裸帧路径与既有行为逐字节一致（§0 硬约束）。"""
+    wrap 缺省 → 裸帧路径与既有行为逐字节一致（§0 硬约束）。
+
+    批次二 (D14③): **多载荷组**（编排页「封装试发」一组 N 条指令）——
+    `payloads` 给出 N 条内核 hex + `slot_ids`/`start_order` 洞序，此时
+    `hex_string` 不参与（仍必填，Pydantic 约束；语义见 dispatch_frame）。
+    层位与单条完全一致：**逐条内核先转义 → 再串行套壳**，外壳字面不转。"""
 
     protocol_id: str
     slot_id: Optional[str] = None
     slot_order: Optional[int] = None
+    # 批次二 (D14③): 多载荷组（缺省 None → 单条路径逐字节不变）
+    payloads: Optional[List[str]] = None
+    slot_ids: Optional[List[Optional[str]]] = None
+    start_order: Optional[int] = None
 
 
 class DispatchRequest(BaseModel):
-    hex_string: str = Field(..., description="Assembled hex stream to send (wrap 存在时为内核载荷)")
+    # 批次二 (D14③): 与 wrap.payloads **二选一** —— 编排页「封装试发」一组 N 条
+    # 内核载荷走 payloads（可不带 hex_string）；缺省裸帧/单条内核路径不变。
+    hex_string: Optional[str] = Field(
+        None,
+        description="Assembled hex stream to send (wrap 单条时为内核载荷；多载荷组改给 wrap.payloads)",
+    )
     instruction_name: Optional[str] = Field(None, description="Source instruction label")
     wrap: Optional[WrapSpec] = Field(None, description="批次一: 可选协议封装（缺省裸帧）")
 
@@ -60,6 +74,9 @@ class DispatchRecord(BaseModel):
     hex_string: str
     instruction_name: Optional[str] = None
     echo: str  # response bytes, compact uppercase hex (loopback = payload echo)
+    # 批次二 (D3): 封装期溢出/欠载/超上限告警（append/zero_fill 路径）——
+    # 与 /compile/wrapped 的 warnings 同源同文案；reject 路径已在 400 detail。
+    warnings: List[str] = Field(default_factory=list)
     events: List[DispatchEvent] = Field(default_factory=list)
 
 
@@ -72,24 +89,34 @@ def append_history(record: DispatchRecord) -> None:
     _history.appendleft(record)
 
 
-def _apply_wrap(wrap: WrapSpec, payloads: List[str], db: Session) -> str:
+def _apply_wrap(
+    wrap: WrapSpec,
+    payloads: List[str],
+    db: Session,
+    slot_ids: Optional[List[Optional[str]]] = None,
+    start_order: Optional[int] = None,
+) -> dict:
     """批次一 1c: wrap → build_wrapped（单 payload：slot_id 显式优先，否则
-    稠密位次 start_order=slot_order）。协议 404 / 语义 400 原样透出；产出 hex
-    再交 hex_to_bytes 终检 —— 校验顺序 wrap 先于 hex（裸帧路径逐字节不变）。"""
+    稠密位次 start_order=slot_order）。协议 404 / 语义 400（含批次二
+    fit_policy=reject）原样透出；返回 build_wrapped 全结果 —— 调用方取
+    `hex` 终检、`warnings` 交回执（批次二 D3 溢出/欠载徽标）。"""
     protocol = db.query(ProtocolTemplate) \
         .filter(ProtocolTemplate.id == wrap.protocol_id).first()
     if protocol is None:
         raise HTTPException(status_code=404, detail="Protocol not found")
+    if slot_ids is None:
+        slot_ids = [wrap.slot_id] if wrap.slot_id else None
+    if start_order is None:
+        start_order = wrap.slot_order or 0
     try:
-        result = build_wrapped(
+        return build_wrapped(
             protocol.children or [],
             payloads,
-            slot_ids=[wrap.slot_id] if wrap.slot_id else None,
-            start_order=wrap.slot_order or 0,
+            slot_ids=slot_ids,
+            start_order=start_order,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    return result["hex"]
 
 
 @router.post("/", response_model=DispatchRecord)
@@ -101,14 +128,37 @@ def dispatch_frame(request: DispatchRequest, db: Session = Depends(get_db)):
     # （wrap 缺省 → 下方裸帧路径与既有行为逐字节一致，§0 硬约束）。
     # N4 (G3): 出线前先对**内核**按转义表转义、再套壳（外壳 FA…ED 字面不转；
     # 壳内 length/checksum 因此按线上字节计）—— 缺省关闭 → 原样返回。
+    # 批次二 (D14③ 转义层位统一): 单条与多载荷组（编排页「封装试发」）共用同
+    # 一条层位规则 = **逐条内核先转义 → 再套壳**。此前试发是「先 /compile/wrapped
+    # 套完壳 → 再裸发」，escape 开启时会把整帧当内核转义，与本路由带 wrap 的
+    # 「只转内核」语义不一致（两路径出字节不同）。
+    table = table_from_config(transport.get_config())
+    warnings: List[str] = []
+    # 批次二 (D14③): hex_string 与 wrap.payloads 二选一（都不给 → 400，早于任何
+    # 转义/封装，避免拿 None 去 escape）
+    multi = request.wrap.payloads if (request.wrap is not None and request.wrap.payloads is not None) else None
+    if multi is None and request.hex_string is None:
+        raise HTTPException(status_code=400, detail="hex_string 与 wrap.payloads 至少提供一个")
     try:
-        hex_string = escape_hex(
-            request.hex_string, table_from_config(transport.get_config())
-        )
+        if multi is not None:
+            escaped = [escape_hex(p, table) for p in multi]
+            wrapped = _apply_wrap(
+                request.wrap,
+                escaped,
+                db,
+                slot_ids=request.wrap.slot_ids,
+                start_order=request.wrap.start_order,
+            )
+            hex_string = wrapped["hex"]
+            warnings = wrapped["warnings"]
+        else:
+            hex_string = escape_hex(request.hex_string, table)
+            if request.wrap is not None:
+                wrapped = _apply_wrap(request.wrap, [hex_string], db)
+                hex_string = wrapped["hex"]
+                warnings = wrapped["warnings"]
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
-    if request.wrap is not None:
-        hex_string = _apply_wrap(request.wrap, [hex_string], db)
     try:
         data = hex_to_bytes(hex_string)
     except ValueError as e:
@@ -123,6 +173,7 @@ def dispatch_frame(request: DispatchRequest, db: Session = Depends(get_db)):
         byte_count=len(data),
         hex_string=payload_spaced,
         instruction_name=request.instruction_name,
+        warnings=warnings,
     )
 
     try:
@@ -283,7 +334,7 @@ def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
     if request.wrap is not None:
-        hex_string = _apply_wrap(request.wrap, [hex_string], db)
+        hex_string = _apply_wrap(request.wrap, [hex_string], db)["hex"]
     try:
         data = hex_to_bytes(hex_string)
     except ValueError as e:

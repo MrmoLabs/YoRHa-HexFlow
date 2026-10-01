@@ -51,6 +51,16 @@ export const BLOCK_PROPERTY_FIELDS = {
             { value: 'XOR_8', label: 'XOR8' },
             { value: 'CRC_16_MODBUS', label: 'CRC16-MODBUS' }
         ]
+    },
+    // 批次二 (D3/D14①): 插槽溢出/欠载策略 —— 存点 parameter_config.fit_policy
+    // {overflow: append|reject, underflow: zero_fill|reject}（零 DDL，§3 表）。
+    // 后端 frame_builder 执行（reject → 400），保存期 protocol.py 校验取值。
+    // key 点路径 + inputType 'fit' → 面板专用分支（两个下拉 + 缺省口径注记），
+    // 同 refs/algo 的「inputType 分流」约定。
+    fit: {
+        key: 'parameter_config.fit_policy',
+        label: '装填策略 (Fit Policy)',
+        inputType: 'fit'
     }
 };
 
@@ -109,7 +119,8 @@ export const BLOCK_TYPES = [
         defaultByteLength: 1,
         nestable: false,
         palette: { title: '添加插槽 (Slot)', mainLabel: '插槽', subLabel: 'SLOT', dashed: true },
-        fields: ['length']
+        // 批次二 (D3): + fit 装填策略下拉（溢出/欠载），存 parameter_config
+        fields: ['length', 'fit']
     }
 ];
 
@@ -143,6 +154,11 @@ export const createBlock = (type, makeId) => {
         // 映射），单一 SSOT 不双写。
         ...(type === 'length' || type === 'checksum'
             ? { parameter_config: { type, refs: [] } }
+            : {}),
+        // 批次二 (D14①): 新建槽默认 fit_policy=reject（防错；存量槽不迁移、保持
+        // 缺省 append/zero_fill，属性面板 fit 下拉可改回）。
+        ...(type === 'slot'
+            ? { parameter_config: { fit_policy: { overflow: 'reject', underflow: 'reject' } } }
             : {})
     };
 };

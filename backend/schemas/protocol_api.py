@@ -49,6 +49,9 @@ class ProtocolResponse(ProtocolBase):
     id: str
     # 批次五: 回读 version 供客户端下一次 PUT 携带（新建恒 1，每次成功写 +1）。
     version: int = 1
+    # 批次二 (D12 §6.2 槽节点行): 本次保存清掉的悬空 binding.slot_id 条数
+    # （协议内删块导致）。非映射属性、不入库；GET 路径缺省 0。
+    dangling_slots_cleared: int = 0
 
     class Config:
         from_attributes = True

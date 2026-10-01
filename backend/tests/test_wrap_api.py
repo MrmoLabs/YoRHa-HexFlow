@@ -284,5 +284,87 @@ class TransactionWrapTests(WrapApiTestBase):
         self.assertEqual(record.echo, "AA5501")
 
 
+class MultiPayloadDispatchTests(WrapApiTestBase):
+    """批次二 (D14③ 转义层位统一): 编排页「封装试发」改带 wrap 下发。
+
+    试发此前是「先 /compile/wrapped 套完壳 → 再裸发」，escape 开启时会把**整帧**
+    当内核转义；本组钉死新口径 = 与单条路径同一条层位规则：逐条内核先转义、再套壳，
+    且产物与 /compile/wrapped 逐字节一致。
+    """
+
+    def test_multi_payload_byte_equal_with_compile(self):
+        compiled = compile_wrapped_frame(
+            WrappedCompileRequest(protocol_id=PROTO_2SLOT, payloads=["0102", "0304"]),
+            db=self.db,
+        )
+        record = dispatch_frame(
+            DispatchRequest(
+                instruction_name="封装试发",
+                wrap=WrapSpec(protocol_id=PROTO_2SLOT, payloads=["0102", "0304"]),
+            ),
+            db=self.db,
+        )
+        self.assertEqual(record.status, "SENT")
+        self.assertEqual(record.hex_string, compiled.hex_string)
+        self.assertEqual(record.byte_count, compiled.total_length)
+        # 稠密位次：s1 → 0102、中间 fixed CC、s2 → 0304
+        self.assertEqual(record.hex_string, "01 02 CC 03 04")
+
+    def test_hex_string_omitted_is_allowed(self):
+        record = dispatch_frame(
+            DispatchRequest(
+                wrap=WrapSpec(protocol_id=PROTO_2SLOT, payloads=["0102"], slot_ids=["s2"])
+            ),
+            db=self.db,
+        )
+        self.assertEqual(record.hex_string, "CC 01 02")
+
+    def test_neither_hex_string_nor_payloads_400(self):
+        with self.assertRaises(HTTPException) as ctx:
+            dispatch_frame(DispatchRequest(instruction_name="空"), db=self.db)
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("至少提供一个", ctx.exception.detail)
+        self.assertEqual(dispatch_mod.dispatch_history(limit=1), [])
+
+    def test_warnings_surface_on_record(self):
+        # PROTO_ID 单槽 → 第二条载荷无槽可用：缺省 append + warning（不阻断）
+        record = dispatch_frame(
+            DispatchRequest(
+                wrap=WrapSpec(protocol_id=PROTO_ID, payloads=["0102", "0304"])
+            ),
+            db=self.db,
+        )
+        self.assertEqual(record.status, "SENT")
+        self.assertTrue(any("洞位不足" in w for w in record.warnings))
+
+    def test_reject_blocks_send_with_400(self):
+        self.db.add(ProtocolTemplate(
+            id="proto-reject", label="拒溢协议", type="container",
+            children=[{
+                "id": "s", "label": "s", "type": "slot", "byte_length": 0,
+                "hex_value": None, "config": {}, "children": [],
+                "parameter_config": {"fit_policy": {
+                    "overflow": "reject", "underflow": "reject"}},
+            }],
+        ))
+        self.db.commit()
+        with self.assertRaises(HTTPException) as ctx:
+            dispatch_frame(
+                DispatchRequest(
+                    wrap=WrapSpec(protocol_id="proto-reject", payloads=["0102", "0304"])
+                ),
+                db=self.db,
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("洞位不足", ctx.exception.detail)
+        self.assertEqual(dispatch_mod.dispatch_history(limit=1), [])
+
+    def test_bare_frame_path_unchanged(self):
+        # §0 硬约束：缺省裸帧逐字节不变（本批只动带 wrap 的新分支）
+        record = dispatch_frame(DispatchRequest(hex_string="AA 7D 01"), db=self.db)
+        self.assertEqual(record.hex_string, "AA 7D 01")
+        self.assertEqual(record.warnings, [])
+
+
 if __name__ == "__main__":
     unittest.main()

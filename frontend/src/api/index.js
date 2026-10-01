@@ -12,12 +12,13 @@ import {
     getInstruction,
     createInstruction,
     updateInstruction,
-    deleteInstruction
+    deleteInstruction,
+    getInstructionReferences
 } from './instructions';
 import { getOperatorTemplates } from './operators';
 import { exportHexFile, exportBinaryFromBlocks } from './export';
 import { compileWrapped } from './compile';
-import { dispatchPayload, getDispatchHistory, clearDispatchHistory } from './dispatch';
+import { dispatchPayload, dispatchWrappedGroup, getDispatchHistory, clearDispatchHistory } from './dispatch';
 import { getTransportConfig, setTransportConfig, getTransportStatus } from './transport';
 import { getBindings, createBinding, updateBinding, deleteBinding } from './bindings';
 import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle } from './datahub';
@@ -48,6 +49,8 @@ export const api = {
     createInstruction,
     updateInstruction,
     deleteInstruction,
+    // 批次二 (D12/D14②): 删前引用计数（弹窗列受影响项后再确认）
+    getInstructionReferences,
 
     // Operators
     getOperatorTemplates,
@@ -61,6 +64,8 @@ export const api = {
 
     // Dispatch / transport (loopback default; TCP/serial via /transport/config)
     dispatchPayload,
+    // 批次二 (D14③): 试发多载荷组带 wrap 下发（后端先转义内核再套壳）
+    dispatchWrappedGroup,
     getDispatchHistory,
     clearDispatchHistory,
     getTransportConfig,

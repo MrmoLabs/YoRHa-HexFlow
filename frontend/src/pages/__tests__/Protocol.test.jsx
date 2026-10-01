@@ -1096,4 +1096,51 @@ describe('Protocol Page', () => {
             })]
         }));
     });
+
+    // 批次二 (D3/D14①): 槽的装填策略两下拉 —— 值域分侧（overflow append|reject /
+    // underflow zero_fill|reject），缺省 LEGACY（append+zero_fill = 现状口径），
+    // 任一置 reject 转 STRICT；手动 SAVE 落 parameter_config.fit_policy（零 DDL）。
+    it('装填策略下拉：slot 卡 → 双下拉缺省 LEGACY，溢出改 reject 转 STRICT，点保存落 fit_policy', async () => {
+        api.updateProtocol.mockImplementation(async (id, payload) => ({ id, ...payload }));
+
+        render(
+            <ProtocolHarness
+                initialProtocols={[{
+                    id: 'proto-1', label: '主协议', type: 'container',
+                    children: [{
+                        id: 's-a', label: '洞', type: 'slot', byte_length: 2, hex_value: '00'
+                    }]
+                }]}
+            />
+        );
+
+        fireEvent.click(screen.getByRole('button', { name: '洞' }));
+        const label = screen.getByText('装填策略 (Fit Policy)');
+        const wrap = label.parentElement.parentElement; // 行头 div → 虚线容器
+        const selects = wrap.querySelectorAll('select');
+        expect(selects.length).toBe(2);
+        expect(selects[0].value).toBe('append');
+        expect(selects[1].value).toBe('zero_fill');
+        expect(wrap.textContent).toContain('LEGACY');
+        // 值域分侧：溢出侧不给 zero_fill、欠载侧不给 append
+        const overflowOpts = [...selects[0].querySelectorAll('option')].map(o => o.value);
+        expect(overflowOpts).toEqual(['append', 'reject']);
+        const underflowOpts = [...selects[1].querySelectorAll('option')].map(o => o.value);
+        expect(underflowOpts).toEqual(['zero_fill', 'reject']);
+
+        fireEvent.change(selects[0], { target: { value: 'reject' } });
+        expect(screen.getByText('STRICT')).toBeTruthy();
+        expect(api.updateProtocol).not.toHaveBeenCalled(); // 反馈 #3：无自动落库
+        await saveViaButton();
+
+        expect(api.updateProtocol).toHaveBeenCalledWith('proto-1', expect.objectContaining({
+            children: [expect.objectContaining({
+                id: 's-a',
+                parameter_config: {
+                    type: 'slot',
+                    fit_policy: { overflow: 'reject', underflow: 'zero_fill' }
+                }
+            })]
+        }));
+    });
 });

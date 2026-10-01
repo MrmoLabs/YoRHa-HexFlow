@@ -34,6 +34,9 @@
 | P4 | B2 序列编排前端（新菜单页「序列编排」，pageStatus 第 7 项，快捷键 F） | ✅（d33c319） |
 | P5 | D 通讯日志落库 + 导出 + 回放（新表 dispatch_logs，三路写入，CSV/JSON 导出，日志重发） | ✅（aa20589，db 同步 b635eac） |
 | CP1 | Core Pipeline 批次一：1a 绑定三列 DDL + 1b frame_builder + 1c 发送 wrap 接线 + 1d 文档（`DESIGN_CorePipeline.md` §7 首批） | **已提交 ✅ `31bc367`（代码+文档）/ `da91228`（db 同步），2026-09-24**——反馈 1（星标确认，§8.8）与反馈 2（协议卡面直填，§8.9）均已并入验收 |
+| CP2 | Core Pipeline 批次二（防错）：D3 `fit_policy=reject` 执行（**存量槽不迁移**）+ 槽契约 warning 徽标 + 新建槽 UI 默认 reject + D12 删除级联（**`sequence_steps` 失效标记不阻断**，活配置级联删 / 冻结快照留 / 日志留）+ **转义层位统一**（封装试发改带 `wrap` 下发）（`DESIGN_CorePipeline.md` §7 批次二） | 🟡 **实现完成 · 自动化全绿（2026-10-01），待人工验证 → 提交后回填 hash**：BE 426/426（基线 383 + 43）、FE 915/915（63 文件）、`vite build` EXIT=0、yorha-ui 校验器 13 文件 0 违规；**零 DDL**（`yorha.db` 不随本批提交）。明细见 §8.19。2026-10-01 起为 CP3 硬前置（CP3 的 3a 复用其 reject 分支） |
+| CP2b | D11 分段 ① **向量表共享 fixture 化**（两端测试读同一份 JSON 向量、新增向量只写一处；`DESIGN_Decisions.md` D11 实施注） | ⬜ **未开工**——2026-10-01 从 CP2 **拆出独立成批**（成本重估：向量含 `Infinity`/`NaN` 等 JSON 无法直接表达的值，需先定跨语言特殊值约定，约 13 组向量表 / 15 个测试文件）。**不阻塞 CP3**（CP3 只硬前置 CP2 的 reject 分支） |
+| CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | ⬜ **未开工**——硬前置 CP2；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**，实施设计已写入 §9 与 §7 3d。3a 含 DDL（新表 + `instructions.default_recipe_id` 补列）→ yorha.db 单独同步提交 |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -1670,6 +1673,68 @@
   UINT dec `0..255`；overlay 0 零崩溃；探针 DELETE 200（库回 16 指令）。
   附注：指令创建路由只存顶层字段，组契约 = 扁平 + parent_id（嵌套 children
   被静默丢弃，探针以 PUT 修正）→ 第 15 单 feature `db371ab`。
+
+### 8.19 Core Pipeline 批次二（CP2 · 防错：D3 执行 / D12 删除级联 / D14 三口径）
+
+> 出处：`DESIGN_CorePipeline.md` §7 批次二 + `DESIGN_Decisions.md` **D14 = A/A/A**
+> （2026-10-01 拍板，开工前置已满足）。**零 DDL**（`backend/db/models.py` 未动，
+> `yorha.db` 不随本批提交）；`/dispatch` 裸发缺省口径逐字节不变
+> （`test_bare_frame_path_unchanged` 等既有用例钉死）。
+> **终态**：BE 426/426、FE 915/915（63 文件）、`npx vite build` EXIT=0、
+> yorha-ui 校验器 13 文件 0 违规。**待人工验证 → 一批一提交。**
+
+- **D14-A 存量不迁移 · D3 执行收口**（`backend/core/frame_builder.py`）：新增
+  `_fit_policy` / `_max_bytes` 助手，装填三态执行 —— ①条数溢出（载荷放不进槽组）、
+  ②`max_bytes` 超限、③欠载逐槽判；`overflow`/`underflow = reject` → `ValueError`
+  → **400**（detail 带槽 id 与实际/允许字节数），缺省 `append`/`zero_fill` 保持原
+  warning 文案不变。**实施注**：条数溢出无槽归属 → **任一槽 `overflow=reject` 即
+  阻断追加帧末尾**；`max_bytes` 超限归 overflow 策略。
+- **D3 槽契约保存期校验 + 新建槽默认 reject**：`routers/protocol.py`
+  `_validate_slot_contracts`（create/update 调用，**只校验新字段 `fit_policy`**，
+  非法 400 不 fail-open）+ `_iter_nodes` + 删槽后指向它的 `binding.slot_id` 置
+  NULL 并回执 `dangling_slots_cleared`（`schemas/protocol_api.py::ProtocolResponse`
+  新增该字段，缺省 0，`from_attributes` 缺属性回落默认 → GET 安全）。前端
+  `config/blockTypes.js`：slot `fields: ['length','fit']` + `BLOCK_PROPERTY_FIELDS.fit`
+  （`inputType:'fit'`，存点 `parameter_config.fit_policy`）+ **新建槽预置
+  reject/reject**；`ProtocolPropertiesPanel.jsx` 新增 fit 分支（溢出/欠载两下拉，
+  值域分侧不给交叉值，任一 REJECT 亮 `STRICT`、缺省亮 `LEGACY` + 口径注记）。
+- **D14-B 序列步骤失效标记（不阻断）**：`routers/sequence.py::_missing_instruction_ids`
+  读时批量比对 → `schemas/sequence_api.py::SequenceStepOut.instruction_missing`
+  （**零 DDL**，读时派生）；`pages/Sequences.jsx` 列表行琥珀「失效」徽标（+ 一层
+  本地兜底判据）+ 该步骤编辑降只读（指令下拉锁死出「（宿主指令已删除）」占位、
+  标签/延时禁改、红提示改黄提示「帧是冻结快照仍可运行」）。
+- **D12 删除三分口径 + 删前引用计数**：`routers/instruction.py` 新增
+  `GET /{id}/references`（四表计数 + `total`）；`DELETE` 同事务三分处置 ——
+  活配置（`protocol_bindings`/`response_specs`）级联删、冻结快照（`sequence_steps`）
+  **留**并回执 `orphaned_sequence_steps`、日志（`dispatch_logs`）只读保留
+  （404 detail 保持 `Not Found` 不改）。前端 `api/instructions.js::getInstructionReferences`
+  + `useInstructionData.deleteInstruction` 删前计数 → 弹窗按三分口径列受影响项与
+  处置（`describeReferences`/`describeDeletion` 导出纯函数钉文案），计数接口失败
+  **降级回原文案、不拦删除**。
+- **D14-C 转义层位统一**：`routers/dispatch.py` `WrapSpec` 增
+  `payloads`/`slot_ids`/`start_order`、`_apply_wrap` 改返回含 `warnings` 的 dict、
+  `DispatchRecord.warnings`、`hex_string` 改 `Optional` + 与 `wrap` **二选一 400**、
+  **多载荷 = 逐条内核先转义再套壳**（与单条 wrap 同层位）。前端
+  `api/dispatch.js::dispatchWrappedGroup`（body 不带 `hex_string`）+ 编排页
+  `handleTrialSend` 去掉「`/compile/wrapped` → 裸发」两跳、改带 wrap 直发
+  `POST /dispatch`，`record.warnings` 独立琥珀徽标（不拼进 SENT 文本）。
+- **测试**：BE 新增 `test_slot_contract.py`（槽契约 + 悬空回执）、
+  `test_instruction_delete.py`（引用计数 + 级联矩阵），扩展
+  `test_frame_builder.py::FitPolicyTest`（三态 + 缺省回归）、
+  `test_sequence_api.py::InstructionMissingFlagTest`、
+  `test_wrap_api.py::MultiPayloadDispatchTests`、`test_escape.py` 多载荷层位；
+  FE 扩 `blockTypes` / `useInstructionData` / `Orchestration` / `Sequences` /
+  `Protocol` 五处用例（含 fit 面板值域与 STRICT 徽标、试发带 wrap 下发、
+  弹窗三分口径、失效徽标与只读）。
+- **文档同步**：`pageStatus.json` 四页能力条目（protocol / instruction /
+  orchestration / sequences）+ `node scripts/generate-page-status.mjs` 重生成
+  `docs/PAGE_STATUS.md`；`DESIGN_CorePipeline.md` §6.1/§9.5 三层校验表
+  「⬜ 批次二补」→ ✅ + §7 批次二状态注；本节与 §1 CP2 行、HANDOVER 条目 33。
+- **人工验证清单（待办）**：① 新建槽默认 STRICT → 试发溢出/欠载 **400**（核对
+  detail 含槽 id 与字节数）；存量槽仍 append/zero_fill 只出琥珀 warning；
+  ② 删指令弹窗三分口径与回执计数（含 `orphaned_sequence_steps`）；③ 序列失效
+  徽标 + 步骤只读 + 仍可运行；④ 编排多载荷试发 `warnings` 徽标与 SENT 实际出线帧；
+  ⑤ 真实链路帧核对（载荷定界字节 / 三层帧 / **设备应答是否也带转义**，D15 关联）。
 
 ## 9. 保留勿动（非任务，勿清理）
 

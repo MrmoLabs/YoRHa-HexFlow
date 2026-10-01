@@ -10,6 +10,32 @@ import { useHistory } from './useHistory';
 // re-exported here so existing consumers keep working.
 export { normalizeFieldPayload, normalizeInstructionPayload };
 
+// 批次二 (D12/D14②): 删除确认与回执文案 —— 四表按数据性质三分：
+// 活配置（protocol_bindings / response_specs）随删清理、冻结快照（sequence_steps）
+// 保留并标失效、日志（dispatch_logs）只读保留。导出便于单测钉口径。
+export const describeReferences = (refs) => {
+    const head = '警告：确认永久删除此指令？';
+    if (!refs || !refs.total) {
+        return `${head}\n\n无引用：绑定 / 应答规格 / 序列步骤 / 通讯日志均未指向本指令。`;
+    }
+    const lines = [head, '', `本指令被 ${refs.total} 处引用：`];
+    if (refs.bindings) lines.push(`· 协议绑定 ${refs.bindings} 条 → 随删清理（活配置）`);
+    if (refs.response_specs) lines.push(`· 应答规格 ${refs.response_specs} 条 → 随删清理（活配置）`);
+    if (refs.sequence_steps) lines.push(`· 序列步骤 ${refs.sequence_steps} 条 → 保留（帧已冻结可继续运行，编辑入口标失效）`);
+    if (refs.dispatch_logs) lines.push(`· 通讯日志 ${refs.dispatch_logs} 条 → 只读保留`);
+    lines.push('', '删除后不可撤销。确认继续？');
+    return lines.join('\n');
+};
+
+export const describeDeletion = (result) => {
+    if (!result) return '已删除指令';
+    const parts = ['已删除指令'];
+    if (result.deleted_bindings) parts.push(`绑定 ${result.deleted_bindings} 条级联`);
+    if (result.deleted_response_specs) parts.push(`应答规格 ${result.deleted_response_specs} 条级联`);
+    if (result.orphaned_sequence_steps) parts.push(`序列步骤 ${result.orphaned_sequence_steps} 条留失效`);
+    return parts.join(' · ');
+};
+
 /**
  * useInstructionData — data layer for the Instruction (指令) and
  * InstructionProcessor (加工) pages.
@@ -373,21 +399,30 @@ export function useInstructionData(options = {}) {
     const deleteInstruction = async (id, openConfirmCallback) => {
         const doDelete = async () => {
             try {
-                await api.deleteInstruction(id);
+                const result = await api.deleteInstruction(id);
                 if (!isMountedRef.current) return;
                 const rem = instructionsRef.current.filter(i => i.id !== id);
                 setInstructionsState(rem);
                 reconcileActiveInstruction(rem, activeInstructionIdRef.current === id ? null : activeInstructionIdRef.current);
                 setHasUnsavedChanges(false);
                 setDraftInstruction(null); // 反馈 #2：删除后无活动草稿
-                showStatus('已删除指令', 1000);
+                showStatus(describeDeletion(result), 2500);
             } catch (e) {
                 showStatus(`删除失败：${e?.response?.data?.detail || e?.message || '未知错误'}`);
             }
         };
 
+        // 批次二 (D12/D14②): 删前 GET 引用计数 → 弹窗列出受影响项与处置
+        // （镜像协议页 P0-1 的 GET 计数 + 确认范式）。计数接口失败不拦删除，
+        // 降级回原文案（后端仍是同事务级联兜底）。
         if (openConfirmCallback) {
-            return openConfirmCallback("警告：确认永久删除此指令？", doDelete);
+            let refs = null;
+            try {
+                refs = await api.getInstructionReferences(id);
+            } catch (e) {
+                refs = null;
+            }
+            return openConfirmCallback(describeReferences(refs), doDelete);
         } else {
             return doDelete();
         }

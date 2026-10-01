@@ -5,7 +5,15 @@ from typing import List
 import uuid
 
 from backend.db.database import get_db, engine, Base
-from backend.db.models import Instruction, InstructionField, BitField
+from backend.db.models import (
+    Instruction,
+    InstructionField,
+    BitField,
+    DispatchLog,
+    ProtocolBinding,
+    ResponseSpec,
+    SequenceStep,
+)
 from backend.schemas.instruction_api import InstructionCreate, InstructionResponse, InstructionFieldSchema, BitFieldSchema, InstructionUpdate
 
 # Create tables if not exist (Simple migration)
@@ -263,12 +271,70 @@ def update_instruction(id: str, updates: InstructionUpdate, db: Session = Depend
     db.refresh(db_inst)
     return serialize_instruction(db_inst)
 
+@router.get("/{id}/references")
+def get_instruction_references(id: str, db: Session = Depends(get_db)):
+    """批次二 (D12/D14②): 删前引用计数 —— 镜像协议页 P0-1 的 `GET` 计数范式。
+
+    四表按**数据性质**分三类（D14② 拍板口径）：
+    - **活配置** `protocol_bindings` / `response_specs` → 删除时**级联删**；
+    - **冻结快照** `sequence_steps` → **失效标记不阻断**（payload/plan 自含、
+      Runner 发送不查指令行 → 删宿主后仍可运行，只是编辑器回选不到）；
+    - **日志** `dispatch_logs` → **只读保留**。
+    前端据本端点在弹窗里列出受影响项后再确认。
+    """
+    if db.query(Instruction.id).filter(Instruction.id == id).first() is None:
+        raise HTTPException(status_code=404, detail="Instruction not found")
+    counts = {
+        "instruction_id": id,
+        "bindings": db.query(ProtocolBinding)
+        .filter(ProtocolBinding.instruction_id == id).count(),
+        "response_specs": db.query(ResponseSpec)
+        .filter(ResponseSpec.instruction_id == id).count(),
+        "sequence_steps": db.query(SequenceStep)
+        .filter(SequenceStep.instruction_id == id).count(),
+        "dispatch_logs": db.query(DispatchLog)
+        .filter(DispatchLog.instruction_id == id).count(),
+    }
+    counts["total"] = sum(
+        counts[k] for k in ("bindings", "response_specs", "sequence_steps", "dispatch_logs")
+    )
+    return counts
+
+
 @router.delete("/{id}")
 def delete_instruction(id: str, db: Session = Depends(get_db)):
+    """批次二 (D12/D14②): 按数据性质三分处置，同事务一次落库。
+
+    此前只删本体（`db.delete`），四表全留脏行 —— 逻辑外键无 FK，脏行不报错、
+    只静默错。现在：活配置级联删、冻结快照留（回执 orphaned 计数供前端提示
+    「N 条序列步骤的宿主已删除，步骤保留可继续运行」）、日志只读保留。
+    """
     db_inst = db.query(Instruction).filter(Instruction.id == id).first()
     if not db_inst:
         raise HTTPException(status_code=404, detail="Not Found")
-    
+
+    # 计数先于删除（同事务内顺序敏感）
+    deleted_bindings = (
+        db.query(ProtocolBinding)
+        .filter(ProtocolBinding.instruction_id == id)
+        .delete(synchronize_session=False)
+    )
+    deleted_specs = (
+        db.query(ResponseSpec)
+        .filter(ResponseSpec.instruction_id == id)
+        .delete(synchronize_session=False)
+    )
+    # 冻结快照：保留（序列步骤 payload 自含，删宿主不破坏可运行性）
+    orphaned_steps = (
+        db.query(SequenceStep).filter(SequenceStep.instruction_id == id).count()
+    )
+
     db.delete(db_inst)
     db.commit()
-    return {"status": "deleted", "id": id}
+    return {
+        "status": "deleted",
+        "id": id,
+        "deleted_bindings": deleted_bindings,
+        "deleted_response_specs": deleted_specs,
+        "orphaned_sequence_steps": orphaned_steps,
+    }

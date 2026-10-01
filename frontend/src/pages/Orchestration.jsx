@@ -51,6 +51,9 @@ export default function Orchestration({ protocols, instructions }) {
     // C1 封装试发：发送中闸 + 回显（SENT: hex / SEND FAILED: detail 含 409）
     const [isSending, setIsSending] = useState(false);
     const [sendMsg, setSendMsg] = useState('');
+    // 批次二 (D3): 封装期溢出/欠载告警（append/zero_fill 路径不阻断，但不得静默）
+    // —— 从 sendMsg 文本里拆出来，独立琥珀徽标渲染。
+    const [sendWarnings, setSendWarnings] = useState([]);
     // 人工验证反馈 1: 星标设默认须经点击确认环节 → 待确认的绑定 id（null = 无）
     const [starConfirmId, setStarConfirmId] = useState(null);
     const [loaded, setLoaded] = useState(false);
@@ -280,15 +283,18 @@ export default function Orchestration({ protocols, instructions }) {
         });
     };
 
-    // C1 封装试发（批次一 D4 改线）：逐指令前端编码内核 hex（normalizeInstructionBlocks
-    // → getInitialValues → resolveDependencies → encodeInstruction，与加工页同链路）
-    // → POST /compile/wrapped（后端唯一封装入口，洞位分配/length·checksum 重算）
-    // → POST /dispatch 发封装后帧。instruction_name 用当前绑定指令名；
-    // 409/失败 detail 透出在 sendMsg；warnings（洞位不足/空洞）随 SENT 回显。
+    // C1 封装试发（批次一 D4 改线 → 批次二 D14③ 再改线）：逐指令前端编码内核
+    // hex（normalizeInstructionBlocks → getInitialValues → resolveDependencies →
+    // encodeInstruction，与加工页同链路）→ **带 wrap 直接 POST /dispatch**，
+    // 后端逐条转义内核 → 再套壳（与单条 wrap 同层位）。
+    // 此前是先 POST /compile/wrapped 套完壳再裸发整帧，escape 开启时会把整帧当
+    // 内核转义，与带 wrap 的「只转内核」语义不同（两路径出字节不同）。
+    // record.hex_string = 实际出线帧；record.warnings = 溢出/欠载告警（琥珀徽标）。
     const handleTrialSend = async () => {
         if (!mergedBlocks.length || isSending) return;
         setIsSending(true);
         setSendMsg('');
+        setSendWarnings([]);
         try {
             const group = groupBindings
                 .map(b => ({ binding: b, instruction: instructions.find(i => i.id === b.instructionId) }))
@@ -301,16 +307,15 @@ export default function Orchestration({ protocols, instructions }) {
                 return hexString.replace(/\s/g, '');
             });
             const slotIds = group.map(({ binding }) => binding.slotId || null);
-            const result = await api.compileWrapped({
+            const record = await api.dispatchWrappedGroup({
                 protocolId: currentBinding.protocolId,
                 payloads,
                 slotIds,
-                startOrder: 0
+                startOrder: 0,
+                instructionName: selectedInstruction?.label || selectedInstruction?.name || null
             });
-            const instructionName = selectedInstruction?.label || selectedInstruction?.name || null;
-            await api.dispatchPayload(result.hex_string, instructionName);
-            const warnings = result.warnings?.length ? ` · ${result.warnings.join(' · ')}` : '';
-            setSendMsg(`SENT: ${result.hex_string}${warnings}`);
+            setSendMsg(`SENT: ${record.hex_string}`);
+            setSendWarnings(record.warnings || []);
         } catch (err) {
             setSendMsg(`SEND FAILED: ${err?.message || 'UNKNOWN'}`);
         } finally {
@@ -477,7 +482,8 @@ export default function Orchestration({ protocols, instructions }) {
                                     >
                                         {isExporting ? 'EXPORTING...' : 'EXPORT .BIN'}
                                     </button>
-                                    {/* C1 封装试发：同合并树前端编译 → POST /dispatch */}
+                                    {/* C1 封装试发：同合并树前端编码 → 带 wrap POST /dispatch
+                                        （批次二 D14③：后端先转义内核再套壳） */}
                                     <button
                                         onClick={handleTrialSend}
                                         disabled={!mergedBlocks.length || isSending}
@@ -494,6 +500,20 @@ export default function Orchestration({ protocols, instructions }) {
                                 {sendMsg && (
                                     <div className={`text-[9px] font-mono mt-0.5 break-all ${sendMsg.startsWith('SENT') ? 'text-green-400' : 'text-red-400'}`}>
                                         {sendMsg}
+                                    </div>
+                                )}
+                                {/* 批次二 (D3): 封装告警琥珀徽标 —— append/zero_fill
+                                    路径不阻断但不静默；reject 走 SEND FAILED 红字 */}
+                                {sendWarnings.length > 0 && (
+                                    <div className="mt-1 flex flex-col gap-0.5" data-testid="trial-send-warnings">
+                                        {sendWarnings.map((w, i) => (
+                                            <span
+                                                key={`send-warn-${i}`}
+                                                className="border border-yellow-500/50 text-yellow-400 text-[9px] font-mono tracking-widest px-1.5 py-0.5 break-all"
+                                            >
+                                                ⚠ {w}
+                                            </span>
+                                        ))}
                                     </div>
                                 )}
                             </div>

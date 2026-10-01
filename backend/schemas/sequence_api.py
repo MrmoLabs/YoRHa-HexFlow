@@ -38,6 +38,9 @@ class SequenceStepOut(BaseModel):
     params: Optional[Dict[str, Any]] = None
     payload: str
     plan: Optional[Dict[str, Any]] = None
+    # 批次二 (D14②): 宿主指令已被删除 → 步骤失效标记（冻结快照仍可运行，仅
+    # 编辑入口不可用）。零 DDL：判据 = instruction_id 悬空。
+    instruction_missing: bool = False
 
 
 class SequenceOut(BaseModel):

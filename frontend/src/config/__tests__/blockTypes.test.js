@@ -47,3 +47,30 @@ describe('blockTypes 位域块（批 4）', () => {
         expect(createBlock('fixed', () => mk())).toMatchObject({ type: 'fixed', byte_length: 1 });
     });
 });
+
+// 批次二 (D3/D14①): 插槽契约 —— 新建槽默认 reject（防错），存量槽不迁移；
+// fit 走 inputType='fit' 专用分支（镜像 refs/algo 的面板分流约定）。
+describe('blockTypes 插槽契约（批次二 D3/D14①）', () => {
+    it('slot 字段 = length + fit（fit 声明 inputType=fit、无 parse）', () => {
+        const t = BLOCK_TYPES.find(b => b.type === 'slot');
+        expect(t.fields).toEqual(['length', 'fit']);
+        expect(BLOCK_PROPERTY_FIELDS.fit.inputType).toBe('fit');
+        expect(BLOCK_PROPERTY_FIELDS.fit.parse).toBeUndefined();
+        expect(getBlockFields('slot').map(f => f.id)).toEqual(['length', 'fit']);
+    });
+
+    it('createBlock("slot") 默认 fit_policy = reject/reject（新建防错）', () => {
+        const b = createBlock('slot', () => mk());
+        expect(b.parameter_config).toEqual({
+            fit_policy: { overflow: 'reject', underflow: 'reject' }
+        });
+    });
+
+    it('非槽块不预置 fit_policy（存量形态零影响）', () => {
+        expect(createBlock('fixed', () => mk()).parameter_config).toBeUndefined();
+        expect(createBlock('bitfield', () => mk()).parameter_config).toBeUndefined();
+        // length/checksum 仍只有 type + refs（不被 fit 分支污染）
+        expect(createBlock('length', () => mk()).parameter_config).toEqual({ type: 'length', refs: [] });
+        expect(createBlock('checksum', () => mk()).parameter_config).toEqual({ type: 'checksum', refs: [] });
+    });
+});

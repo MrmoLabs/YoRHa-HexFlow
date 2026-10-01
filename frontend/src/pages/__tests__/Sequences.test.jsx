@@ -255,15 +255,33 @@ describe('Sequences Page', () => {
         });
     });
 
-    it('step with missing instruction shows the degradation notice (payload preserved)', async () => {
+    it('step with missing instruction shows the 失效 badge + read-only notice (payload preserved)', async () => {
         api.listSequences.mockResolvedValue([{
             ...SEQ_ROW,
-            steps: [{ id: 'st-gone', step_order: 0, instruction_id: 'instr-gone', label: '孤儿', delay_ms: 0, params: null, payload: 'AABB', plan: null }]
+            steps: [{ id: 'st-gone', step_order: 0, instruction_id: 'instr-gone', label: '孤儿',
+                delay_ms: 0, params: null, payload: 'AABB', plan: null, instruction_missing: true }]
         }]);
         await renderPage();
+        // 批次二 (D14②): 列表层先给失效徽标（不打开编辑器也看得见）
+        expect(screen.getByText('失效')).toBeTruthy();
+
         fireEvent.click(screen.getByTitle('编辑该步骤'));
-        await screen.findByText(/指令缺失（原指令已删除）/);
+        // 编辑降只读：宿主悬空提示（帧已冻结仍可运行）+ 指令下拉锁死
+        // （下拉里的「（宿主指令已删除）」占位项会同文案 → 用提示正文区分）
+        await screen.findByText(/步骤帧是冻结快照/);
+        expect(screen.getByText('（宿主指令已删除）')).toBeTruthy();
         // 已编译 payload 保留（行上 2B 徽标仍在）
         expect(screen.getByText('2B')).toBeTruthy();
+    });
+
+    it('steps served without instruction_missing still badge when host absent locally', async () => {
+        // 本地兜底：服务端未带标记（老会话）但 instructions 列表已无宿主 → 同样打标
+        api.listSequences.mockResolvedValue([{
+            ...SEQ_ROW,
+            steps: [{ id: 'st-gone', step_order: 0, instruction_id: 'instr-gone', label: '孤儿',
+                delay_ms: 0, params: null, payload: 'AABB', plan: null }]
+        }]);
+        await renderPage();
+        expect(screen.getByText('失效')).toBeTruthy();
     });
 });

@@ -22,7 +22,9 @@ vi.mock('../../api', () => ({
         deleteBinding: vi.fn(),
         exportBinaryFromBlocks: vi.fn(),
         compileWrapped: vi.fn(),
-        dispatchPayload: vi.fn()
+        dispatchPayload: vi.fn(),
+        // 批次二 (D14③): 试发改带 wrap 下发（后端先转义内核再套壳）
+        dispatchWrappedGroup: vi.fn()
     }
 }));
 
@@ -34,6 +36,7 @@ const mountApis = () => {
     api.exportBinaryFromBlocks.mockResolvedValue(new Blob(['']));
     api.compileWrapped.mockResolvedValue({ hex_string: 'AA 05 01', total_length: 3, warnings: [] });
     api.dispatchPayload.mockResolvedValue({ status: 'ok', hex_string: 'AA 05' });
+    api.dispatchWrappedGroup.mockResolvedValue({ status: 'SENT', hex_string: 'AA 05 01', warnings: [] });
 };
 
 // 等待挂载加载 + 默认绑定落定（加载链路为异步微任务）
@@ -494,9 +497,10 @@ describe('Orchestration Page', () => {
         expect(api.dispatchPayload).not.toHaveBeenCalled();
     });
 
-    // C1 封装试发闭环（批次一 D4 改线）：逐指令前端编码内核 → POST /compile/wrapped
-    //（后端唯一封装入口）→ POST /dispatch 发封装帧；失败（含 409 detail）透出。
-    it('C1 封装试发：编码内核 → compileWrapped → dispatchPayload，SENT 回显 / 失败透出', async () => {
+    // C1 封装试发闭环（批次一 D4 改线 → 批次二 D14③ 再改线）：逐指令前端编码内核
+    // → **带 wrap 直接 POST /dispatch**（后端逐条转义内核 → 再套壳），不再「先
+    // /compile/wrapped 套壳 → 再裸发整帧」；record.warnings → 琥珀徽标独立渲染。
+    it('C1 封装试发：编码内核 → dispatchWrappedGroup 带 wrap 下发，SENT 回显 / 失败透出', async () => {
         render(
             <Orchestration
                 protocols={[{
@@ -518,21 +522,57 @@ describe('Orchestration Page', () => {
         await awaitDefaultBinding();
 
         fireEvent.click(screen.getByRole('button', { name: /封装试发/ }));
-        // 逐指令编码内核（byte_length 1 无 op → '00'）→ compileWrapped 走后端封装
-        await waitFor(() => expect(api.compileWrapped).toHaveBeenCalledTimes(1));
-        expect(api.compileWrapped).toHaveBeenCalledWith({
+        // 逐指令编码内核（byte_length 1 无 op → '00'）→ 一组载荷带 wrap 下发
+        await waitFor(() => expect(api.dispatchWrappedGroup).toHaveBeenCalledTimes(1));
+        expect(api.dispatchWrappedGroup).toHaveBeenCalledWith({
             protocolId: 'proto-1',
             payloads: ['00'],
             slotIds: [null],
-            startOrder: 0
+            startOrder: 0,
+            instructionName: '示例指令'
         });
-        await waitFor(() => expect(api.dispatchPayload).toHaveBeenCalledTimes(1));
-        expect(api.dispatchPayload).toHaveBeenCalledWith('AA 05 01', '示例指令');
+        // 层位改线：不再走「先套壳再裸发」两跳
+        expect(api.compileWrapped).not.toHaveBeenCalled();
         expect(await screen.findByText(/^SENT:/)).toBeDefined();
 
-        api.dispatchPayload.mockRejectedValueOnce(new Error('409: dispatch in flight'));
+        api.dispatchWrappedGroup.mockRejectedValueOnce(new Error('409: dispatch in flight'));
         fireEvent.click(screen.getByRole('button', { name: /封装试发/ }));
         expect(await screen.findByText(/SEND FAILED: 409/)).toBeDefined();
+    });
+
+    // 批次二 (D3): 封装期溢出/欠载告警不得静默 —— record.warnings 走独立琥珀
+    // 徽标（不再拼进 SENT 文本），且不阻断发送（append/zero_fill 路径）。
+    it('C1 封装试发 warnings：独立琥珀徽标渲染，SENT 文本不拼接', async () => {
+        render(
+            <Orchestration
+                protocols={[{
+                    id: 'proto-1',
+                    label: '壳协议',
+                    children: [
+                        { id: 'h', label: '帧头', type: 'fixed', byte_length: 1, hex_value: 'AA' },
+                        { id: 's', label: '洞', type: 'slot', byte_length: 0, hex_value: '00' }
+                    ]
+                }]}
+                instructions={[{
+                    id: 'inst-1',
+                    name: '示例指令',
+                    fields: [{ id: 'f1', parent_id: null, sequence: 0, name: '命令字', byte_length: 1 }]
+                }]}
+            />
+        );
+        await awaitDefaultBinding();
+
+        api.dispatchWrappedGroup.mockResolvedValueOnce({
+            status: 'SENT',
+            hex_string: 'AA 01',
+            warnings: ['空洞：1 个洞未被载荷填充']
+        });
+        fireEvent.click(screen.getByRole('button', { name: /封装试发/ }));
+
+        const chips = await screen.findByTestId('trial-send-warnings');
+        expect(chips.textContent).toContain('空洞：1 个洞未被载荷填充');
+        const sent = screen.getByText(/^SENT:/);
+        expect(sent.textContent).not.toContain('空洞');
     });
 
     // 批次一 (D1 一行两用): 星标 = 指令默认封装绑定 —— 设默认须点击确认（人工

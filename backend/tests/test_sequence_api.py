@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.core import sequence_runner, transport
 from backend.db.database import Base
-from backend.db.models import SequenceStep
+from backend.db.models import Instruction, SequenceStep
 from backend.routers import dispatch as dispatch_mod
 from backend.routers.dispatch import (
     DispatchRequest,
@@ -311,6 +311,48 @@ class SequenceRunTest(SequenceApiTestBase):
         status = stop_sequence()
         self.assertFalse(status.running)
         self.assertEqual(status.result, "idle")
+
+
+class InstructionMissingFlagTest(SequenceApiTestBase):
+    """批次二 (D14②): 宿主指令已删 → 步骤失效标记（零 DDL，读时批量比对）。
+
+    判据 = `instruction_id` 悬空；步骤 payload/plan 是冻结快照、Runner 发送不查
+    指令行 → 删宿主后**步骤仍可运行**，因此不级联删、只标失效（与 D7「失效不
+    阻断」同语义）。列表 / 详情 / 创建回显三处同标。
+    """
+
+    def test_host_absent_is_flagged_on_create(self):
+        out = self._create()
+        self.assertTrue(out.steps[0].instruction_missing)
+
+    def test_host_present_is_not_flagged(self):
+        self.db.add(Instruction(id=INSTR, device_code="01", code="C1", name="宿主"))
+        self.db.commit()
+        out = self._create()
+        self.assertFalse(out.steps[0].instruction_missing)
+
+    def test_flag_follows_host_life_cycle(self):
+        self.db.add(Instruction(id=INSTR, device_code="01", code="C1", name="宿主"))
+        self.db.commit()
+        out = self._create()
+        self.assertFalse(out.steps[0].instruction_missing)
+
+        # 删宿主 → 详情与列表都标失效；步骤本身一字未动
+        self.db.query(Instruction).filter(Instruction.id == INSTR).delete()
+        self.db.commit()
+        before = self.db.query(SequenceStep).first()
+        payload_before, plan_before, order_before = before.payload, before.plan, before.step_order
+
+        got = get_sequence(out.id, db=self.db)
+        self.assertTrue(got.steps[0].instruction_missing)
+        listed = list_sequences(db=self.db)
+        self.assertTrue(listed[0].steps[0].instruction_missing)
+
+        after = self.db.query(SequenceStep).first()
+        self.assertEqual(
+            (after.payload, after.plan, after.step_order),
+            (payload_before, plan_before, order_before),
+        )
 
 
 if __name__ == "__main__":

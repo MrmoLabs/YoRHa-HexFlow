@@ -339,6 +339,14 @@ export default function Sequences() {
         return id ? `${String(id).slice(0, 8)}…（指令缺失）` : '未选指令';
     };
 
+    // 批次二 (D14②): 步骤宿主悬空 → 失效徽标。判据两层：后端 instruction_missing
+    // （读时批量比对 instruction_id，零 DDL）+ 本地兜底（列表刚被外部删指令、
+    // draft 尚未刷新时也点得出来）。冻结快照仍可运行 —— 只是编辑入口降只读。
+    const stepHostMissing = (s) => Boolean(
+        s.instruction_missing
+        || (s.instruction_id && !instructions.some((x) => x.id === s.instruction_id))
+    );
+
     const step = editorIndex !== null && draft ? draft.steps[editorIndex] : null;
     const formReady = !!step && !!formInstruction;
 
@@ -505,6 +513,16 @@ export default function Sequences() {
                                                 <span className="opacity-40 w-6">{String(i + 1).padStart(2, '0')}</span>
                                                 <span className="truncate w-28">{s.label || `step-${i + 1}`}</span>
                                                 <span className="truncate opacity-60 flex-1">{instrName(s.instruction_id)}</span>
+                                                {/* 批次二 (D14②): 宿主已删 → 失效徽标
+                                                    （帧已冻结仍可运行，仅编辑入口只读） */}
+                                                {stepHostMissing(s) && (
+                                                    <span
+                                                        className="border border-yellow-500/50 text-yellow-400 px-1 shrink-0 text-[9px] tracking-widest"
+                                                        title="宿主指令已删除：步骤帧已冻结、可继续运行；编辑入口已降为只读"
+                                                    >
+                                                        失效
+                                                    </span>
+                                                )}
                                                 <span className="opacity-50">{Number(s.delay_ms) > 0 ? `${s.delay_ms}ms` : '直发'}</span>
                                                 <span className={s.payload ? 'text-[#E58D28]' : 'text-red-400'}>
                                                     {s.payload ? `${payloadByteCount(s.payload)}B` : '未编译'}
@@ -565,11 +583,14 @@ export default function Sequences() {
                                                 指令
                                                 <select
                                                     value={stepInstructionId}
-                                                    disabled={running}
+                                                    disabled={running || stepHostMissing(step)}
                                                     onChange={(e) => handleStepInstructionChange(e.target.value)}
                                                     className="bg-nier-dark border border-nier-light/30 px-2 py-1 text-xs font-mono text-nier-light disabled:opacity-50"
                                                 >
                                                     {instructions.length === 0 && <option value="">（指令库为空）</option>}
+                                                    {stepHostMissing(step) && !instructions.some((x) => x.id === stepInstructionId) && (
+                                                        <option value={stepInstructionId}>（宿主指令已删除）</option>
+                                                    )}
                                                     {instructions.map((x) => (
                                                         <option key={x.id} value={x.id}>
                                                             {`${x.code || ''} ${x.name || x.label || x.id}`.trim()}
@@ -583,7 +604,7 @@ export default function Sequences() {
                                                     type="text"
                                                     maxLength={128}
                                                     value={stepLabel}
-                                                    disabled={running}
+                                                    disabled={running || stepHostMissing(step)}
                                                     onChange={(e) => setStepLabel(e.target.value)}
                                                     className="w-40 bg-nier-dark border border-nier-light/30 px-2 py-1 text-xs font-mono text-nier-light disabled:opacity-50"
                                                 />
@@ -595,7 +616,7 @@ export default function Sequences() {
                                                     min={0}
                                                     max={60000}
                                                     value={stepDelay}
-                                                    disabled={running}
+                                                    disabled={running || stepHostMissing(step)}
                                                     onChange={(e) => setStepDelay(e.target.value)}
                                                     className="w-28 bg-nier-dark border border-nier-light/30 px-2 py-1 text-xs font-mono text-nier-light disabled:opacity-50"
                                                 />
@@ -603,8 +624,9 @@ export default function Sequences() {
                                         </div>
 
                                         {!formReady ? (
-                                            <div className="border border-red-500/30 bg-red-500/10 px-2 py-1 text-[11px] font-mono text-red-300">
-                                                指令缺失（原指令已删除）：无法再编辑表单，可保留已编译 payload，或移除该步骤。
+                                            <div className="border border-yellow-500/40 bg-yellow-500/10 px-2 py-1 text-[11px] font-mono text-yellow-300">
+                                                宿主指令已删除：步骤帧是冻结快照、仍可继续运行（D14② 失效不阻断）；
+                                                本步骤编辑已降只读，要改请移除后重新添加。
                                             </div>
                                         ) : (
                                             <>
