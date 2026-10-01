@@ -512,7 +512,7 @@ hex 字符串**、纯函数、单遍、无环；`routers/protocol.py::_validate_
 2. **D6-B 冻结口径**（配方下已扩为逐层区间，见 `DESIGN_CorePipeline.md` §9.7
    3c）：补一条 —— `recipe_id` 与配方 `definition_hash` 一并存进 `sequence_steps`，
    协议结构变了才亮徽标。**零争议，随 3c 落地**。
-   ✅ **已随 3c 实施（2026-10-01，提交 `<待提交>` / db `<待提交>`）**：落库形
+   ✅ **已随 3c 实施（2026-10-01，提交 `fbad083` / db `17c6830`）**：落库形
    `sequence_steps.wrap = {recipe_id, definition_hash}`（**新增单列，符合硬约束**），
    读侧 `stale` 由 `recipe_compile.current_fingerprint` 比对 `stages_fingerprint`
    （配方 stages 与其所引协议定义的复合 sha256）—— 配方或协议任一改动即点亮，

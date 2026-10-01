@@ -949,7 +949,7 @@
       §7 批次三 3c 进度注 + §9.7 排批表 3c 行 + 人工验证 ⑤、`PLAN_Backlog.md`
       §1 CP3 行 + 新 §8.23、`DESIGN_Decisions.md` D6 关联与 D15-② 实施注、
       本条、`pageStatus.json` 序列页条目 + `PAGE_STATUS.md` 再生成。
-    - **提交**：→ **`<待提交>`（代码+文档）/ `<待提交>`（db 同步），2026-10-01**。
+    - **提交**：→ **已提交 `fbad083`（代码+文档）→ `17c6830`（chore(db) DDL 落库），2026-10-01**。
     - **待办**：CP3 剩余子批 **3d**（D5-A 按 D15-A 修订实施：`response_specs` 增
       `stage` 列 + 按层生成 + 逆序解包；D7-A 余下 binding/response_spec 两处失效徽标）。
 
