@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import Canvas from '../components/editor/Canvas';
+import RecipeEditor from '../components/editor/RecipeEditor';
 import NieRModal from '../components/ui/NieRModal';
 import { api } from '../api';
 import { mergeProtocolInstruction, buildLanes, getTotalBytes, countSlots, normalizeInstructionBlocks } from '../utils/blockMerge';
@@ -42,6 +43,30 @@ const toLocal = (row) => ({
 
 const syncErrorText = (prefix, err) => `${prefix}：${err?.message || '后端不可用'}`;
 
+// CP3 3b (D13): 配方本地态 ⇄ 服务端行。stages 深拷贝（改草稿不污染已加载行，
+// 放弃时可安全重取）；`definition_hash` 由**服务端**算并回写（§9.5-1），草稿里
+// 只随行保留，出线时剥除（客户端传了也会被忽略，不发更干净）。
+const cloneStages = (stages) => (stages || []).map(stage => ({
+    protocol_id: stage.protocol_id,
+    ...(stage.slot_ids && stage.slot_ids.length ? { slot_ids: [...stage.slot_ids] } : {}),
+    ...(stage.definition_hash ? { definition_hash: stage.definition_hash } : {})
+}));
+
+const cloneRecipe = (row) => ({
+    id: row.id,
+    name: row.name || '',
+    description: row.description ?? null,
+    stages: cloneStages(row.stages),
+    // 加工页降级链第 1 级要按它反查（instructions.default_recipe_id）
+    instructionId: row.instruction_id || '',
+    version: row.version ?? 1
+});
+
+const stagesToServer = (stages) => (stages || []).map(stage => ({
+    protocol_id: stage.protocol_id,
+    ...(stage.slot_ids && stage.slot_ids.length ? { slot_ids: stage.slot_ids } : {})
+}));
+
 export default function Orchestration({ protocols, instructions }) {
     // State for Bindings (Mappings)
     const [bindings, setBindings] = useState([]);
@@ -59,6 +84,19 @@ export default function Orchestration({ protocols, instructions }) {
     const [loaded, setLoaded] = useState(false);
     const [loadFailed, setLoadFailed] = useState(false);
     const [syncMsg, setSyncMsg] = useState('');
+
+    // CP3 3b (D13): 编排页配方编辑器 —— 列表挂载拉取 + 单份本地草稿 + 手动保存
+    // （沿本页 SAVE 范式）。脏时禁切换/禁新建（单份草稿无处驻留，防静默丢稿）。
+    const [recipes, setRecipes] = useState([]);
+    const [activeRecipeId, setActiveRecipeId] = useState('');
+    const [recipeDraft, setRecipeDraft] = useState(null);
+    const [recipeDirty, setRecipeDirty] = useState(false);
+    const [recipeSaving, setRecipeSaving] = useState(false);
+    const [recipeLoaded, setRecipeLoaded] = useState(false);
+    const [recipeMsg, setRecipeMsg] = useState(null);      // {text, ok} | null
+    const [recipeDeleteId, setRecipeDeleteId] = useState(null);
+    const recipeDirtyRef = useRef(false);
+    recipeDirtyRef.current = recipeDirty;
 
     // 反馈 #4 手动保存：脏行 id 集合（属性编辑草稿）—— SAVE 逐行落库；
     // 星标/增删等即时写成功也会出队同行（PUT 即落库）。
@@ -110,6 +148,25 @@ export default function Orchestration({ protocols, instructions }) {
         return () => { alive = false; };
     }, []);
 
+    // 1b) CP3 3b: 挂载拉取配方列表（GET /recipes 全量）—— 失败只提示，不阻断
+    // 绑定编辑与组协议试发（未建配方时试发仍走现状组协议路径，逐字节不变）。
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            try {
+                const rows = await api.getRecipes();
+                if (!alive) return;
+                setRecipes(Array.isArray(rows) ? rows : []);
+            } catch (err) {
+                if (!alive) return;
+                setRecipeMsg({ text: syncErrorText('配方加载失败', err) + '（新建/保存可能不可用）', ok: false });
+            } finally {
+                if (alive) setRecipeLoaded(true);
+            }
+        })();
+        return () => { alive = false; };
+    }, []);
+
     // 2) 加载完成后空表种默认绑定：服务端空则同步 POST 落库；加载失败仅本地
     useEffect(() => {
         if (!loaded || bindings.length) return;
@@ -154,10 +211,10 @@ export default function Orchestration({ protocols, instructions }) {
 
     // 反馈 #4：未保存属性编辑的刷新拦截（事件时读 ref）。卸载不再自动冲刷 ——
     // 手动保存语义，脏行草稿跨选中驻留本地（切换绑定行不丢），刷新即弃（由
-    // 本拦截兜底提示）。
+    // 本拦截兜底提示）。CP3 3b: 配方草稿同口径纳入拦截（离开即弃）。
     useEffect(() => {
         const onBeforeUnload = (e) => {
-            if (dirtyRef.current) {
+            if (dirtyRef.current || recipeDirtyRef.current) {
                 e.preventDefault();
                 e.returnValue = '';
             }
@@ -283,6 +340,133 @@ export default function Orchestration({ protocols, instructions }) {
         });
     };
 
+    // ── CP3 3b (D13): 配方编辑器回调 ──────────────────────────────────────
+    // 选择配方：服务端行拷成草稿（深拷贝 → 放弃不污染已加载行）。脏时组件已禁
+    // 选择器，此处再兜底一次，防键盘/直达路径丢稿。
+    const handleSelectRecipe = (id) => {
+        if (recipeDirty) return;
+        const row = recipes.find(r => r.id === id);
+        if (!row) {
+            setActiveRecipeId('');
+            setRecipeDraft(null);
+            setRecipeDirty(false);
+            return;
+        }
+        setActiveRecipeId(row.id);
+        setRecipeDraft(cloneRecipe(row));
+        setRecipeDirty(false);
+        setRecipeMsg(null);
+    };
+
+    // 新建：沿本页「空表种默认绑定」先例 —— 立即 POST 落库（不是本地草稿），
+    // 之后编辑一律 PUT + version 乐观并发；id 前端 uuid（protocol.py 先例）。
+    const handleCreateRecipe = async () => {
+        if (!recipeLoaded || recipeDirty || recipeSaving || !protocols.length) return;
+        setRecipeSaving(true);
+        setRecipeMsg(null);
+        try {
+            const row = await api.createRecipe({
+                id: uuidv4(),
+                name: `新配方 (NEW) ${recipes.length + 1}`,
+                stages: [{ protocol_id: protocols[0].id }]
+            });
+            setRecipes(prev => [...prev, row]);
+            setActiveRecipeId(row.id);
+            setRecipeDraft(cloneRecipe(row));
+            setRecipeDirty(false);
+            setRecipeMsg({ text: `已新建 (CREATED) v${row.version}`, ok: true });
+        } catch (err) {
+            setRecipeMsg({ text: syncErrorText('新建失败', err), ok: false });
+        } finally {
+            setRecipeSaving(false);
+        }
+    };
+
+    const handleRecipeStagesChange = (stages) => {
+        setRecipeDraft(prev => (prev ? { ...prev, stages } : prev));
+        setRecipeDirty(true);
+    };
+
+    const handleRecipeNameChange = (name) => {
+        setRecipeDraft(prev => (prev ? { ...prev, name } : prev));
+        setRecipeDirty(true);
+    };
+
+    // 关联指令 = 加工页降级链第 1 级的读入口（GET /recipes?instruction_id=）。
+    // 只进草稿，随 SAVE 落库（None 不改 / "" 解除，服务端同口径）。
+    const handleRecipeLinkChange = (instructionId) => {
+        setRecipeDraft(prev => (prev ? { ...prev, instructionId } : prev));
+        setRecipeDirty(true);
+    };
+
+    // 手动保存：PUT 走 version 乐观并发（不符 409 透出）。
+    // 换绑须**先清旧指针再设新指针** —— _link_instruction 只写目标指令行、不回清
+    // 旧指针，直接设新会让旧指令继续指向本配方（RecipeResponse「0 或 1 条」破）。
+    const handleSaveRecipe = async () => {
+        if (!recipeDraft || !recipeDirty || recipeSaving) return;
+        setRecipeSaving(true);
+        const serverRow = recipes.find(r => r.id === recipeDraft.id);
+        const base = {
+            name: recipeDraft.name,
+            description: recipeDraft.description ?? null,
+            stages: stagesToServer(recipeDraft.stages)
+        };
+        const oldLink = serverRow?.instruction_id || '';
+        const newLink = recipeDraft.instructionId || '';
+        try {
+            let row;
+            if (oldLink && newLink && oldLink !== newLink) {
+                const cleared = await api.updateRecipe(recipeDraft.id, { instruction_id: '' });
+                setRecipes(prev => prev.map(r => (r.id === cleared.id ? cleared : r)));
+                row = await api.updateRecipe(recipeDraft.id, {
+                    ...base, instruction_id: newLink, version: cleared.version
+                });
+            } else {
+                row = await api.updateRecipe(recipeDraft.id, {
+                    ...base,
+                    ...(oldLink !== newLink ? { instruction_id: newLink } : {}),
+                    version: serverRow?.version
+                });
+            }
+            setRecipes(prev => prev.map(r => (r.id === row.id ? row : r)));
+            setRecipeDraft(cloneRecipe(row));
+            setRecipeDirty(false);
+            setRecipeMsg({ text: `已保存 (SAVED) v${row.version}`, ok: true });
+        } catch (err) {
+            setRecipeMsg({ text: syncErrorText('配方保存失败', err), ok: false });
+        } finally {
+            setRecipeSaving(false);
+        }
+    };
+
+    // 删除：服务端同事务解除指向本配方的指令关联（回执 cleared_instructions）
+    const handleDeleteRecipe = async (id) => {
+        setRecipeDeleteId(null);
+        if (recipeSaving) return;
+        try {
+            const res = await api.deleteRecipe(id);
+            setRecipes(prev => prev.filter(r => r.id !== id));
+            if (activeRecipeId === id) {
+                setActiveRecipeId('');
+                setRecipeDraft(null);
+                setRecipeDirty(false);
+            }
+            setRecipeMsg({
+                text: res?.cleared_instructions
+                    ? `已删除 · 解除 ${res.cleared_instructions} 条指令关联`
+                    : '已删除 (DELETED)',
+                ok: true
+            });
+        } catch (err) {
+            setRecipeMsg({ text: syncErrorText('删除失败', err), ok: false });
+        }
+    };
+
+    // 当前生效配方（未选 = null → 试发走组协议现状路径）；显示名优先取草稿
+    // （改名未保存时头部指示要即时跟随，否则指示与实际出线对不上）
+    const activeRecipe = recipes.find(r => r.id === activeRecipeId) || null;
+    const wrapRecipeName = recipeDraft ? recipeDraft.name : (activeRecipe?.name || '');
+
     // C1 封装试发（批次一 D4 改线 → 批次二 D14③ 再改线）：逐指令前端编码内核
     // hex（normalizeInstructionBlocks → getInitialValues → resolveDependencies →
     // encodeInstruction，与加工页同链路）→ **带 wrap 直接 POST /dispatch**，
@@ -291,7 +475,9 @@ export default function Orchestration({ protocols, instructions }) {
     // 内核转义，与带 wrap 的「只转内核」语义不同（两路径出字节不同）。
     // record.hex_string = 实际出线帧；record.warnings = 溢出/欠载告警（琥珀徽标）。
     const handleTrialSend = async () => {
-        if (!mergedBlocks.length || isSending) return;
+        // 配方有未保存更改 → 禁发：后端只认已落库配方，带脏稿试发会出「预想与
+        // 出线不一致」的静默错帧（本批正是为防这个）
+        if (!mergedBlocks.length || isSending || recipeDirty) return;
         setIsSending(true);
         setSendMsg('');
         setSendWarnings([]);
@@ -306,14 +492,22 @@ export default function Orchestration({ protocols, instructions }) {
                 const { hexString } = InstructionEncoder.encodeInstruction(source, inputs, computed);
                 return hexString.replace(/\s/g, '');
             });
-            const slotIds = group.map(({ binding }) => binding.slotId || null);
-            const record = await api.dispatchWrappedGroup({
-                protocolId: currentBinding.protocolId,
-                payloads,
-                slotIds,
-                startOrder: 0,
-                instructionName: selectedInstruction?.label || selectedInstruction?.name || null
-            });
+            const instructionName = selectedInstruction?.label || selectedInstruction?.name || null;
+            const record = await api.dispatchWrappedGroup(
+                activeRecipe
+                    // CP3 3b (D13): 选中配方 → 试发走配方，后端逐层串行套壳，与
+                    // 加工页预览/TRANSMIT 同一份 core/recipe_compile → 同字节。
+                    // 槽位与层序归配方阶段所有，**不下发 slot_ids/start_order**。
+                    ? { recipeId: activeRecipe.id, payloads, instructionName }
+                    // 未选配方 → 组协议现状路径（批次二 D14③ 层位口径，逐字节不变）
+                    : {
+                        protocolId: currentBinding.protocolId,
+                        payloads,
+                        slotIds: group.map(({ binding }) => binding.slotId || null),
+                        startOrder: 0,
+                        instructionName
+                    }
+            );
             setSendMsg(`SENT: ${record.hex_string}`);
             setSendWarnings(record.warnings || []);
         } catch (err) {
@@ -474,7 +668,18 @@ export default function Orchestration({ protocols, instructions }) {
                             <div className="ml-auto flex flex-col items-end">
                                 <label className="text-[10px] opacity-70 uppercase tracking-widest">总长度 (Total Size)</label>
                                 <div className="text-xl font-bold font-mono">{totalBytes} <span className="text-sm font-normal opacity-50">Bytes</span></div>
-                                <div className="flex gap-2 mt-1">
+                                <div className="flex gap-2 mt-1 items-center">
+                                    {/* CP3 3b (D13): 试发 wrap 来源指示 —— 有配方走配方
+                                        （逐层串行套壳），否则走组协议现状路径 */}
+                                    <span
+                                        data-testid="trial-wrap-source"
+                                        title={activeRecipe
+                                            ? `配方 ${wrapRecipeName} · ${activeRecipe.stages?.length || 0} 层（后端逐层套壳）`
+                                            : '组协议（当前绑定的协议外壳）'}
+                                        className={`text-[9px] font-mono tracking-widest min-w-0 max-w-[10rem] truncate ${activeRecipe ? 'text-[#E58D28]' : 'opacity-60'}`}
+                                    >
+                                        WRAP :: {activeRecipe ? `配方 ${wrapRecipeName}` : '组协议'}
+                                    </span>
                                     <button
                                         onClick={handleExportBinary}
                                         disabled={!mergedBlocks.length || isExporting}
@@ -483,10 +688,14 @@ export default function Orchestration({ protocols, instructions }) {
                                         {isExporting ? 'EXPORTING...' : 'EXPORT .BIN'}
                                     </button>
                                     {/* C1 封装试发：同合并树前端编码 → 带 wrap POST /dispatch
-                                        （批次二 D14③：后端先转义内核再套壳） */}
+                                        （批次二 D14③：后端先转义内核再套壳）；CP3 3b 起有
+                                        配方时改带 recipe_id，配方脏稿则禁发 */}
                                     <button
                                         onClick={handleTrialSend}
-                                        disabled={!mergedBlocks.length || isSending}
+                                        disabled={!mergedBlocks.length || isSending || recipeDirty}
+                                        title={recipeDirty
+                                            ? '配方有未保存更改 — 先保存 (SAVE) 再试发'
+                                            : (activeRecipe ? `试发走配方：${wrapRecipeName}` : '试发走组协议')}
                                         className="border border-nier-light/60 text-nier-light text-[10px] font-mono tracking-widest px-3 py-1 hover:bg-nier-light hover:text-nier-dark transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                                     >
                                         {isSending ? 'SENDING...' : '封装试发 (TRIAL SEND)'}
@@ -563,7 +772,7 @@ export default function Orchestration({ protocols, instructions }) {
 
                 {currentBinding && (
                     <div className="space-y-6 text-sm">
-                        {/* 分区 1/4 绑定标识 —— label 输入草稿 */}
+                        {/* 分区 1/5 绑定标识 —— label 输入草稿 */}
                         <div>
                             <div className="text-[9px] opacity-50 border-b border-white/10 pb-1 mb-2">绑定标识 (IDENTITY)</div>
                             <div className="flex flex-col gap-1">
@@ -577,7 +786,7 @@ export default function Orchestration({ protocols, instructions }) {
                             </div>
                         </div>
 
-                        {/* 分区 2/4 结构选择 —— 协议外壳/指令内核从头部下沉（#6②）；
+                        {/* 分区 2/5 结构选择 —— 协议外壳/指令内核从头部下沉（#6②）；
                             DOM 序 = 协议外壳 → 指令内核（select[0] 断言锚点不破） */}
                         <div>
                             <div className="text-[9px] opacity-50 border-b border-white/10 pb-1 mb-2">结构选择 (STRUCTURE)</div>
@@ -603,7 +812,7 @@ export default function Orchestration({ protocols, instructions }) {
                             </div>
                         </div>
 
-                        {/* 分区 3/4 洞位 —— B3 洞位下拉（holeRank 标脏）+ 装配规则说明 */}
+                        {/* 分区 3/5 洞位 —— B3 洞位下拉（holeRank 标脏）+ 装配规则说明 */}
                         <div>
                             <div className="text-[9px] opacity-50 border-b border-white/10 pb-1 mb-2">洞位 (HOLE)</div>
                             <div className="flex flex-col gap-1">
@@ -642,7 +851,31 @@ export default function Orchestration({ protocols, instructions }) {
                     </div>
                 )}
 
-                {/* 分区 4/4 操作 —— #4/#6③: 底部常驻保存区（计数行 + 脏时可用
+                {/* 分区 4/5 封装配方 —— CP3 3b (D13)：与绑定无关，恒渲染（未建
+                    配方时试发仍走组协议现状路径）。编辑器只上报 stages 意图，落库、
+                    version 乐观并发与换绑两步都在 handleSaveRecipe。 */}
+                <div className="mt-6 text-sm">
+                    <RecipeEditor
+                        protocols={protocols}
+                        recipes={recipes}
+                        activeRecipeId={activeRecipeId}
+                        draft={recipeDraft}
+                        dirty={recipeDirty}
+                        saving={recipeSaving}
+                        loaded={recipeLoaded}
+                        message={recipeMsg}
+                        instructions={instructions}
+                        onSelect={handleSelectRecipe}
+                        onCreate={handleCreateRecipe}
+                        onDelete={(id) => setRecipeDeleteId(id)}
+                        onNameChange={handleRecipeNameChange}
+                        onLinkChange={handleRecipeLinkChange}
+                        onStagesChange={handleRecipeStagesChange}
+                        onSave={handleSaveRecipe}
+                    />
+                </div>
+
+                {/* 分区 5/5 操作 —— #4/#6③: 底部常驻保存区（计数行 + 脏时可用
                     SAVE；mt-auto 贴面板底，镜像指令页动作区）。 */}
                 <div className="pt-4 border-t border-nier-light/20 mt-auto space-y-3">
                     <div className="text-[9px] opacity-50 border-b border-white/10 pb-1 mb-2">操作 (ACTIONS)</div>
@@ -667,6 +900,17 @@ export default function Orchestration({ protocols, instructions }) {
                     message={`确认将「${bindings.find(b => b.id === starConfirmId)?.label || ''}」设为该指令的默认封装绑定？\n\n· 加工页封装发送将使用此绑定的协议外壳\n· 同指令其他绑定的默认标记将被清除（服务端同事务）`}
                     onConfirm={() => applyStarConfirm(starConfirmId)}
                     onCancel={() => setStarConfirmId(null)}
+                />
+            )}
+
+            {/* CP3 3b: 删配方确认 —— 服务端会同事务解除指向本配方的指令关联
+                （回执 cleared_instructions），属改变封装关系语义 → 弹确认 */}
+            {recipeDeleteId && (
+                <NieRModal
+                    isOpen={Boolean(recipeDeleteId)}
+                    message={`确认删除配方「${recipes.find(r => r.id === recipeDeleteId)?.name || ''}」？\n\n· 指向该配方的指令关联将被解除（加工页回落到默认协议或裸发）\n· 该操作不可撤销，须重新新建配方`}
+                    onConfirm={() => handleDeleteRecipe(recipeDeleteId)}
+                    onCancel={() => setRecipeDeleteId(null)}
                 />
             )}
         </div>

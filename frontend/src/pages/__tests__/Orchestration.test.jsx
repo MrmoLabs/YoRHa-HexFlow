@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import Orchestration from '../Orchestration';
 import { api } from '../../api';
 
@@ -20,6 +20,11 @@ vi.mock('../../api', () => ({
         createBinding: vi.fn(),
         updateBinding: vi.fn(),
         deleteBinding: vi.fn(),
+        // CP3 3b (D13): 编排页配方编辑器 + 试发改走配方
+        getRecipes: vi.fn(),
+        createRecipe: vi.fn(),
+        updateRecipe: vi.fn(),
+        deleteRecipe: vi.fn(),
         exportBinaryFromBlocks: vi.fn(),
         compileWrapped: vi.fn(),
         dispatchPayload: vi.fn(),
@@ -33,6 +38,15 @@ const mountApis = () => {
     api.createBinding.mockImplementation((payload) => Promise.resolve({ ...payload, slot_order: 0 }));
     api.updateBinding.mockImplementation((id, payload) => Promise.resolve({ ...payload, id }));
     api.deleteBinding.mockResolvedValue({ status: 'deleted' });
+    // CP3 3b: 配方默认空表（既有用例不进配方态 → 属性面板仍 3 个 select）
+    api.getRecipes.mockResolvedValue([]);
+    api.createRecipe.mockImplementation((payload) => Promise.resolve({
+        version: 1, description: null, instruction_id: null, stages: [], ...payload
+    }));
+    api.updateRecipe.mockImplementation((id, payload) => Promise.resolve({
+        id, version: 2, description: null, instruction_id: null, stages: [], ...payload
+    }));
+    api.deleteRecipe.mockResolvedValue({ status: 'deleted', cleared_instructions: 0 });
     api.exportBinaryFromBlocks.mockResolvedValue(new Blob(['']));
     api.compileWrapped.mockResolvedValue({ hex_string: 'AA 05 01', total_length: 3, warnings: [] });
     api.dispatchPayload.mockResolvedValue({ status: 'ok', hex_string: 'AA 05' });
@@ -727,5 +741,185 @@ describe('Orchestration Page', () => {
         const panelAside = asides[asides.length - 1];
         expect(panelAside.className).toContain('shrink-0');
         expect(panelAside.className).toContain('overflow-y-auto');
+    });
+
+    // ─── CP3 3b (D13): 编排页配方编辑器 + 试发改走配方 ─────────────────────
+    const PROTO_SHELL = {
+        id: 'proto-1',
+        label: '壳协议A',
+        children: [
+            { id: 'h', label: '帧头', type: 'fixed', byte_length: 1, hex_value: 'AA' },
+            { id: 's0', label: '洞1', type: 'slot', byte_length: 0, hex_value: '00' },
+            { id: 's1', label: '洞2', type: 'slot', byte_length: 0, hex_value: '00' }
+        ]
+    };
+    const RECIPE_ROW = {
+        id: 'recipe-1', name: '外壳配方', description: null, version: 1,
+        instruction_id: null, stages: [{ protocol_id: 'proto-1' }]
+    };
+    const renderRecipePage = () => render(
+        <Orchestration
+            protocols={[PROTO_SHELL, { id: 'proto-2', label: '壳协议B', children: [] }]}
+            instructions={[
+                {
+                    id: 'inst-1', name: '指令A',
+                    fields: [{ id: 'f1', parent_id: null, sequence: 0, name: '命令字', byte_length: 1 }]
+                },
+                { id: 'inst-2', name: '指令B', fields: [] }
+            ]}
+        />
+    );
+    const selectRecipe = async (id = 'recipe-1') => {
+        await waitFor(() => expect(screen.getByTestId('recipe-select')).toBeDefined());
+        fireEvent.change(screen.getByTestId('recipe-select'), { target: { value: id } });
+        await waitFor(() => expect(screen.getByTestId('recipe-save')).toBeDefined());
+    };
+    const slotChips = () => within(screen.getByTestId('recipe-slots-0')).getAllByRole('button');
+
+    it('CP3 3b 配方编辑器：新建立即落库 → 改名/加层只进草稿 → SAVE 一次 PUT（带 version + 归一 stages），脏点与离开拦截联动', async () => {
+        renderRecipePage();
+        await awaitDefaultBinding();
+        await waitFor(() => expect(api.getRecipes).toHaveBeenCalledTimes(1));
+
+        // 未选配方：只给新建入口（不占属性面板 select → 既有用例 select 计数不破）
+        await waitFor(() => expect(screen.getByTestId('recipe-new').disabled).toBe(false));
+        expect(screen.queryByTestId('recipe-select')).toBeNull();
+
+        // 新建：立即 POST 落库（沿本页「空表种默认绑定」先例），首层缺省首协议
+        fireEvent.click(screen.getByTestId('recipe-new'));
+        await waitFor(() => expect(api.createRecipe).toHaveBeenCalledTimes(1));
+        expect(api.createRecipe).toHaveBeenCalledWith(expect.objectContaining({
+            id: expect.any(String),
+            stages: [{ protocol_id: 'proto-1' }]
+        }));
+        await waitFor(() => expect(screen.getByTestId('recipe-stage-count').textContent).toContain('1 / 4'));
+        expect(screen.getByTestId('recipe-dirty').textContent).toBe('配方已同步');
+        expect(screen.getByTestId('recipe-save').disabled).toBe(true);
+        expect(api.updateRecipe).not.toHaveBeenCalled();
+
+        // 改名 + 加层 → 只进草稿（手动保存语义：零防抖零即时 PUT）
+        fireEvent.change(screen.getByTestId('recipe-name'), { target: { value: '三层外壳' } });
+        fireEvent.click(screen.getByTestId('recipe-add-stage'));
+        expect(screen.getByTestId('recipe-stage-count').textContent).toContain('2 / 4');
+        expect(api.updateRecipe).not.toHaveBeenCalled();
+        expect(screen.getByTestId('recipe-dirty').textContent).toBe('配方未保存');
+        expect(screen.getByTestId('recipe-save').disabled).toBe(false);
+
+        // 离开拦截：配方脏稿同样拦刷新（与绑定脏点同口径）
+        const dirtyUnload = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(dirtyUnload);
+        expect(dirtyUnload.defaultPrevented).toBe(true);
+
+        // SAVE → 一次 PUT 带合并快照 + 版本乐观并发（id = 新建时前端 uuid）
+        fireEvent.click(screen.getByTestId('recipe-save'));
+        await waitFor(() => expect(api.updateRecipe).toHaveBeenCalledTimes(1));
+        expect(api.updateRecipe).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+            name: '三层外壳',
+            stages: [{ protocol_id: 'proto-1' }, { protocol_id: 'proto-1' }],
+            version: 1
+        }));
+        // 保存成功 → 草稿毕业、脏点清零、离开不再拦
+        await waitFor(() => expect(screen.getByTestId('recipe-dirty').textContent).toBe('配方已同步'));
+        const cleanUnload = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(cleanUnload);
+        expect(cleanUnload.defaultPrevented).toBe(false);
+    });
+
+    it('CP3 3b stage 操作：加层封顶 4、上/下移换序、换协议清槽、选槽位次 badge、删层保底 1', async () => {
+        api.getRecipes.mockResolvedValue([{ ...RECIPE_ROW }]);
+        renderRecipePage();
+        await awaitDefaultBinding();
+        await selectRecipe();
+
+        expect(screen.getByTestId('recipe-stage-count').textContent).toContain('1 / 4');
+
+        // 选槽 = 成员关系 + 选择顺序（#n = 第 n 条载荷，「位置对应 payloads」）
+        expect(slotChips()).toHaveLength(2);
+        fireEvent.click(slotChips()[0]);
+        expect(slotChips()[0].getAttribute('aria-pressed')).toBe('true');
+        expect(slotChips()[0].textContent).toBe('#1 洞1');
+        fireEvent.click(slotChips()[1]);
+        expect(slotChips()[1].textContent).toBe('#2 洞2');
+        // 取消第 1 位 → 后一位顶上（位次重排，不留空洞）
+        fireEvent.click(slotChips()[0]);
+        expect(slotChips()[0].getAttribute('aria-pressed')).toBe('false');
+        expect(slotChips()[1].textContent).toBe('#1 洞2');
+
+        // 加层到 4 → 封顶禁用（服务端同口径 400）
+        fireEvent.click(screen.getByTestId('recipe-add-stage'));
+        fireEvent.click(screen.getByTestId('recipe-add-stage'));
+        fireEvent.click(screen.getByTestId('recipe-add-stage'));
+        expect(screen.getByTestId('recipe-stage-count').textContent).toContain('4 / 4');
+        expect(screen.getByTestId('recipe-add-stage').disabled).toBe(true);
+
+        // 第 2 层换协议（槽位作废 → 置空回稠密位次）→ 上移到首位
+        fireEvent.change(screen.getByTestId('recipe-protocol-1'), { target: { value: 'proto-2' } });
+        expect(screen.getByTestId('recipe-protocol-0').value).toBe('proto-1');
+        fireEvent.click(screen.getByRole('button', { name: '第 2 层上移' }));
+        expect(screen.getByTestId('recipe-protocol-0').value).toBe('proto-2');
+        expect(screen.getByTestId('recipe-protocol-1').value).toBe('proto-1');
+        // 下移复原（可逆）
+        fireEvent.click(screen.getByRole('button', { name: '第 1 层下移' }));
+        expect(screen.getByTestId('recipe-protocol-0').value).toBe('proto-1');
+
+        // 删层：可减到 1 层，之后禁删（服务端「至少 1 层」同口径）
+        for (let i = 0; i < 3; i += 1) {
+            fireEvent.click(screen.getByRole('button', { name: '删除第 1 层' }));
+        }
+        expect(screen.getByTestId('recipe-stage-count').textContent).toContain('1 / 4');
+        expect(screen.getByRole('button', { name: '删除第 1 层' }).disabled).toBe(true);
+    });
+
+    it('CP3 3b 试发改走配方：选中配方 → dispatchWrappedGroup 带 recipeId（不带 protocolId/slotIds），配方脏稿禁发', async () => {
+        api.getRecipes.mockResolvedValue([{ ...RECIPE_ROW }]);
+        renderRecipePage();
+        await awaitDefaultBinding();
+        await selectRecipe();
+
+        // 头部 wrap 来源指示切到配方
+        expect(screen.getByTestId('trial-wrap-source').textContent).toContain('配方 外壳配方');
+        expect(screen.getByTestId('trial-wrap-source').textContent).not.toContain('组协议');
+
+        fireEvent.click(screen.getByRole('button', { name: /封装试发/ }));
+        await waitFor(() => expect(api.dispatchWrappedGroup).toHaveBeenCalledTimes(1));
+        // 配方路径：槽位与层序归配方阶段所有 → protocolId/slotIds/startOrder 一个都不下发
+        expect(api.dispatchWrappedGroup).toHaveBeenCalledWith({
+            recipeId: 'recipe-1',
+            payloads: ['00'],
+            instructionName: '指令A'
+        });
+        // 层位口径不变：不走「先套壳再裸发」两跳
+        expect(api.compileWrapped).not.toHaveBeenCalled();
+        expect(await screen.findByText(/^SENT:/)).toBeDefined();
+
+        // 配方脏稿 → 试发禁用（后端只认已落库配方，带脏稿试发 = 预想与出线不一致）
+        fireEvent.change(screen.getByTestId('recipe-name'), { target: { value: '改了名' } });
+        expect(screen.getByRole('button', { name: /封装试发/ }).disabled).toBe(true);
+        expect(screen.getByTestId('trial-wrap-source').textContent).toContain('配方 改了名');
+    });
+
+    it('CP3 3b 关联指令换绑：先清旧指针再设新指针（_link_instruction 不回清旧指针）', async () => {
+        api.getRecipes.mockResolvedValue([{ ...RECIPE_ROW, instruction_id: 'inst-1' }]);
+        renderRecipePage();
+        await awaitDefaultBinding();
+        await selectRecipe();
+
+        expect(screen.getByTestId('recipe-link').value).toBe('inst-1');
+        fireEvent.change(screen.getByTestId('recipe-link'), { target: { value: 'inst-2' } });
+        expect(screen.getByTestId('recipe-dirty').textContent).toBe('配方未保存');
+
+        fireEvent.click(screen.getByTestId('recipe-save'));
+        await waitFor(() => expect(api.updateRecipe).toHaveBeenCalledTimes(2));
+
+        // 第 1 步：清掉 inst-1 的指针（否则它继续指向本配方，「0 或 1 条」不变量破）
+        expect(api.updateRecipe.mock.calls[0][0]).toBe('recipe-1');
+        expect(api.updateRecipe.mock.calls[0][1]).toEqual({ instruction_id: '' });
+        // 第 2 步：带清空后的 version 再设新指针 + 同批保存名称与层级
+        expect(api.updateRecipe.mock.calls[1][1]).toMatchObject({
+            instruction_id: 'inst-2',
+            version: 2
+        });
+        // 回显：草稿毕业为服务端行（link 反查 = inst-2）
+        await waitFor(() => expect(screen.getByTestId('recipe-link').value).toBe('inst-2'));
     });
 });

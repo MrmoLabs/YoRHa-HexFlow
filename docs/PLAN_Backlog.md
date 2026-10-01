@@ -36,7 +36,7 @@
 | CP1 | Core Pipeline 批次一：1a 绑定三列 DDL + 1b frame_builder + 1c 发送 wrap 接线 + 1d 文档（`DESIGN_CorePipeline.md` §7 首批） | **已提交 ✅ `31bc367`（代码+文档）/ `da91228`（db 同步），2026-09-24**——反馈 1（星标确认，§8.8）与反馈 2（协议卡面直填，§8.9）均已并入验收 |
 | CP2 | Core Pipeline 批次二（防错）：D3 `fit_policy=reject` 执行（**存量槽不迁移**）+ 槽契约 warning 徽标 + 新建槽 UI 默认 reject + D12 删除级联（**`sequence_steps` 失效标记不阻断**，活配置级联删 / 冻结快照留 / 日志留）+ **转义层位统一**（封装试发改带 `wrap` 下发）（`DESIGN_CorePipeline.md` §7 批次二） | **已提交 ✅ `5afe706`（代码+文档），2026-10-01**——**人工验证 5 项已通过**（STRICT 400 / 删指令三分弹窗 / 序列失效只读 / 试发 warnings 徽标 / 真实链路帧）：BE 426/426（基线 383 + 43）、FE 915/915（63 文件）、`vite build` EXIT=0、yorha-ui 校验器 13 文件 0 违规；**零 DDL**（`yorha.db` 未随本批提交）。明细见 §8.19。2026-10-01 起为 CP3 硬前置（CP3 的 3a 复用其 reject 分支） |
 | CP2b | D11 分段 ① **向量表共享 fixture 化**（两端测试读同一份 JSON 向量、新增向量只写一处；`DESIGN_Decisions.md` D11 实施注） | **已提交 ✅ `da0179d`（代码+文档），2026-10-01**——跨语言特殊值约定拍板 = **`$v` 包装对象**（`{"$v":"Infinity"}` / `"-Infinity"` / `"NaN"`，其余标量按 JSON 原型天然分型）；新增根目录 **`vectors/`（12 个 JSON 文件 / 15 张表 + 双端加载器 + README）**，13 个后端 / 6 个前端测试文件改读共享 JSON。终态：BE 426/426、FE 915/915（63 文件）、`npx vite build` EXIT=0、yorha-ui 校验器 7 文件 0 违规；**零 DDL**。明细见 §8.20。**不阻塞 CP3**（CP3 只硬前置 CP2 的 reject 分支） |
-| CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | 🔄 **3a 已提交 ✅ `e63d76f`（代码+文档）/ `438f3af`（db 同步），2026-10-01**，3b/3c/3d 未开工——硬前置 CP2 ✅；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**，实施设计已写入 §9 与 §7。**3a 含 DDL**（`frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈）→ yorha.db 单独同步提交；**3a 提前并入了原属 3b 的 `dispatch` `wrap.recipe_id` 接线**（加工页预览/TRANSMIT/事务三路须同字节，缺接线则预览帧与出线帧不同）。3a 终态：BE 466/466（基线 426 + 40）、FE 920/920（63 文件，基线 915 + 5）、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、**真路由冒烟 25 项 PASS**。明细见 §8.21 |
+| CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | 🔄 **3a 已提交 ✅ `e63d76f`（代码+文档）/ `438f3af`（db 同步）；3b 已实施（2026-10-01，hash 待回填）**，3c/3d 未开工——硬前置 CP2 ✅；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**，实施设计已写入 §9 与 §7。**3a 含 DDL**（`frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈）→ yorha.db 单独同步提交；**3a 提前并入了原属 3b 的 `dispatch` `wrap.recipe_id` 接线**（加工页预览/TRANSMIT/事务三路须同字节，缺接线则预览帧与出线帧不同）。3a 终态：BE 466/466（基线 426 + 40）、FE 920/920（63 文件，基线 915 + 5）、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、**真路由冒烟 25 项 PASS**；明细见 §8.21。**3b 终态**：**纯前端批、零 DDL**（未改 `models.py`/`database.py`，`yorha.db` 未随本批提交）—— FE **924/924（63 文件，基线 920 + 4）**、既有「属性面板四分区 select = 3」用例**零改全绿**（未建配方时编辑器不占 select）、BE 466/466、`npx vite build` EXIT=0、yorha-ui 校验器 3 文件 0 违规、**真 curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；明细见 §8.22 |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -1852,6 +1852,72 @@
   `docs/PAGE_STATUS.md`。
 - **人工验证必查（§9.7，待执行）**：① 三层真实链路帧目视核对；② 分层堆叠视图
   逐层字节与协议页卡面一致；③ 改动中间层协议 → 加工页失效徽标点亮。
+
+### 8.22 Core Pipeline 批次三 · 3b（CP3-3b：编排页配方编辑器 + 试发改线 + curl 冒烟）
+
+（2026-10-01，**纯前端批、零 DDL** —— 未改 `models.py` / `database.py`，`yorha.db`
+不随本批提交；未碰 `processor.py` / `graph.py` / `Blueprint.jsx`，`/dispatch` 缺省
+口径由既有用例 + curl 裸帧回归**双钉**。3a 已提前并入 `dispatch` `wrap.recipe_id`
+接线，故 3b 只剩**编辑器**与**试发改线**两块。）
+
+**范围（`DESIGN_CorePipeline.md` §9.4「编排绑定页」行 + §9.7 3b 行）**
+
+- **新组件 `frontend/src/components/editor/RecipeEditor.jsx`**（编排页属性面板
+  **分区 4/5「封装配方 (RECIPE)」**，分区 5/5 仍是底部 SAVE 操作区）：
+  - **有序 stage 列表**：加层 / 上移 / 下移 / 删层 + 每层选协议 + 选槽；层数
+    **1..`MAX_RECIPE_STAGES`=4**（与后端 `recipe_api.MAX_RECIPE_STAGES` 同值）、
+    **删层保底 1 层**（服务端同口径 400）；
+  - **加层缺省沿用上一层协议**（最常见 = 同一外壳再套一层），首层用首个协议；
+  - **换协议 → 该层 `slot_ids` 置空**（槽属另一棵协议树，留着即脏引用 → 服务端 400），
+    置空 = 回稠密位次；
+  - **选槽 = 成员关系 + 选择顺序**：位次 badge `#n` 即第 n 条载荷（§9.1「位置对应
+    payloads」）；取消后位次自动前移不留空洞；无槽协议不出芯片；
+  - **新建即 POST 落库**（沿本页「空表种默认绑定」先例，id 前端 uuid），之后编辑
+    一律 PUT + `version` 乐观并发（不符 **409** 透出）；
+  - **手动保存沿本页 SAVE 底置范式**：脏点 + 「配方未保存/已同步」+ 底部按钮；
+    **离开拦截**：配方脏稿纳入页面既有 `beforeunload`；
+  - **脏时禁切换配方 / 禁新建 / 禁试发**（单份草稿无处驻留 → 防静默丢稿；后端只认
+    已落库配方，带脏稿试发 = 预想与出线不一致）。
+- **未建配方时试发仍走组协议**（现状路径逐字节不变），编辑器此时**只渲染新建入口、
+  不占任何 select** → 既有「属性面板四分区 select = 3」用例**零改全绿**。
+- **头部 wrap 来源指示**：`WRAP :: 配方 <名>`（琥珀）vs `WRAP :: 组协议`；显示名
+  **优先取草稿**（改名未保存时指示即时跟随，否则指示与实际出线对不上）。
+- **试发改走配方**：`dispatchWrappedGroup({recipeId, payloads, instructionName})` →
+  `wrap.recipe_id`，**不下发 `slotIds`/`startOrder`**（槽位与层序归配方阶段所有，
+  §9.1 / `recipe_compile`）；未选配方 → 原组协议参数对象**逐字不变**（批次二 D14③
+  层位口径）。
+- **关联指令下拉（LINK）= 加工页降级链第 1 级的读入口**（写 `instructions.
+  default_recipe_id`）。**换绑两步**：`_link_instruction` 只写目标指令行、**不回清
+  旧指针**，直接设新会让旧指令继续指向本配方（`RecipeResponse`「0 或 1 条」不变量破）
+  → 保存时**先 `instruction_id:""` 清旧、再带清空后的 `version` 设新**；仅改名/改层
+  不发该字段（`None` = 不改）。
+- **删配方弹 `NieRModal` 确认**（服务端同事务解除指向本配方的指令关联）；`GET /recipes`
+  全量挂载拉取，**失败只提示不阻断**绑定编辑与组协议试发。
+
+**测试**：FE `Orchestration.test.jsx` 新增 **4 例**（编辑器新建 → 改名/加层 → SAVE
+单次 PUT + 脏点 + 离开拦截 / stage 操作四件套 / 试发改走配方且脏稿禁发 / 关联换绑
+两步），其余**零改**。**curl 冒烟**（`Temp/opencode/cp3b_curl_smoke.ps1`，临时脚本
+不入库）：真 uvicorn + `curl.exe`，**不是 TestClient**（单测直调函数验不到真实 HTTP
+栈）——**13 项 ALL PASS**：建协议 / 建配方（`version=1` + 服务端回写 `definition_hash`）/
+GET 往返 / 配方编译 `AA 01 02` / **dispatch 带 `recipe_id` 出线 = 预览同字节** /
+**不带 wrap 裸帧回归**（`0102` 逐字节不变）/ 组协议 wrap 回归 / 删配方
+`cleared_instructions=0` / 删协议 / 残留清零（`GET /recipes = []`）。
+
+**终态**：BE **466/466**、FE **924/924（63 文件，基线 920 + 4）**、
+`npx vite build` EXIT=0、yorha-ui 校验器 3 文件 0 违规、curl 冒烟 13 项 ALL PASS。
+
+> **注**：冒烟的临时插入/删除会改 SQLite 文件字节（插入后页内容不与插入前字节等价），
+> 已还原到 3a 提交态；BE 全量测试已核实**不脏 `yorha.db`**。3b **零 DDL** →
+> **无 `chore(db)` 提交**。
+
+**人工验证（§9.7 3b 段，待执行）**：① 编排页新建配方 → 加层 / 换序 / 选槽 → SAVE →
+刷新后回读一致；② 选中配方点「封装试发」→ 出线帧与头部 `WRAP :: 配方` 指示一致、
+**未选配方时与改前逐字节一致**；③ 改名（未保存）→ 试发按钮置灰，保存后恢复。
+
+- **文档同步**：`DESIGN_CorePipeline.md` §7 批次三 3b 进度注 + §9.7 排批表、
+  本节、`PLAN_Backlog.md` §1 CP3 行、`PROJECT_HANDOVER.md` 条目 36、
+  `DESIGN_Decisions.md` D13 实施注、`pageStatus.json` 编排页条目 +
+  `node scripts/generate-page-status.mjs` 再生成 `docs/PAGE_STATUS.md`。
 
 ## 9. 保留勿动（非任务，勿清理）
 
