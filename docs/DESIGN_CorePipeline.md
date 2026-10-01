@@ -192,7 +192,8 @@ def build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) -> Wrap
 > ✅ **已落地（CP2，2026-10-01）**：下三项全部实现并自动化全绿 —— BE **426/426**、
 > FE **915/915（63 文件）**、`npx vite build` EXIT=0、yorha-ui 校验器 13 文件 0 违规；
 > **零 DDL**（`models.py` 未动、`yorha.db` 不随本批提交），`/dispatch` 裸发缺省
-> 口径逐字节不变。明细与验收见 `PLAN_Backlog.md` §8.19；**待人工验证 → 一批一提交**。
+> 口径逐字节不变。**人工验证 5 项已通过 → 已提交 `5afe706`（2026-10-01）。**
+> 明细与验收见 `PLAN_Backlog.md` §8.19。
 > D11-① 已拆出 **CP2b**（见下），未随本批实施。
 
 - D3 槽契约执行（`fit_policy=reject` 生效 + warning 徽标 + 新建槽 UI 默认 reject）

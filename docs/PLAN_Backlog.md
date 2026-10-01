@@ -34,7 +34,7 @@
 | P4 | B2 序列编排前端（新菜单页「序列编排」，pageStatus 第 7 项，快捷键 F） | ✅（d33c319） |
 | P5 | D 通讯日志落库 + 导出 + 回放（新表 dispatch_logs，三路写入，CSV/JSON 导出，日志重发） | ✅（aa20589，db 同步 b635eac） |
 | CP1 | Core Pipeline 批次一：1a 绑定三列 DDL + 1b frame_builder + 1c 发送 wrap 接线 + 1d 文档（`DESIGN_CorePipeline.md` §7 首批） | **已提交 ✅ `31bc367`（代码+文档）/ `da91228`（db 同步），2026-09-24**——反馈 1（星标确认，§8.8）与反馈 2（协议卡面直填，§8.9）均已并入验收 |
-| CP2 | Core Pipeline 批次二（防错）：D3 `fit_policy=reject` 执行（**存量槽不迁移**）+ 槽契约 warning 徽标 + 新建槽 UI 默认 reject + D12 删除级联（**`sequence_steps` 失效标记不阻断**，活配置级联删 / 冻结快照留 / 日志留）+ **转义层位统一**（封装试发改带 `wrap` 下发）（`DESIGN_CorePipeline.md` §7 批次二） | 🟡 **实现完成 · 自动化全绿（2026-10-01），待人工验证 → 提交后回填 hash**：BE 426/426（基线 383 + 43）、FE 915/915（63 文件）、`vite build` EXIT=0、yorha-ui 校验器 13 文件 0 违规；**零 DDL**（`yorha.db` 不随本批提交）。明细见 §8.19。2026-10-01 起为 CP3 硬前置（CP3 的 3a 复用其 reject 分支） |
+| CP2 | Core Pipeline 批次二（防错）：D3 `fit_policy=reject` 执行（**存量槽不迁移**）+ 槽契约 warning 徽标 + 新建槽 UI 默认 reject + D12 删除级联（**`sequence_steps` 失效标记不阻断**，活配置级联删 / 冻结快照留 / 日志留）+ **转义层位统一**（封装试发改带 `wrap` 下发）（`DESIGN_CorePipeline.md` §7 批次二） | **已提交 ✅ `5afe706`（代码+文档），2026-10-01**——**人工验证 5 项已通过**（STRICT 400 / 删指令三分弹窗 / 序列失效只读 / 试发 warnings 徽标 / 真实链路帧）：BE 426/426（基线 383 + 43）、FE 915/915（63 文件）、`vite build` EXIT=0、yorha-ui 校验器 13 文件 0 违规；**零 DDL**（`yorha.db` 未随本批提交）。明细见 §8.19。2026-10-01 起为 CP3 硬前置（CP3 的 3a 复用其 reject 分支） |
 | CP2b | D11 分段 ① **向量表共享 fixture 化**（两端测试读同一份 JSON 向量、新增向量只写一处；`DESIGN_Decisions.md` D11 实施注） | ⬜ **未开工**——2026-10-01 从 CP2 **拆出独立成批**（成本重估：向量含 `Infinity`/`NaN` 等 JSON 无法直接表达的值，需先定跨语言特殊值约定，约 13 组向量表 / 15 个测试文件）。**不阻塞 CP3**（CP3 只硬前置 CP2 的 reject 分支） |
 | CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | ⬜ **未开工**——硬前置 CP2；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**，实施设计已写入 §9 与 §7 3d。3a 含 DDL（新表 + `instructions.default_recipe_id` 补列）→ yorha.db 单独同步提交 |
 
@@ -1681,7 +1681,7 @@
 > `yorha.db` 不随本批提交）；`/dispatch` 裸发缺省口径逐字节不变
 > （`test_bare_frame_path_unchanged` 等既有用例钉死）。
 > **终态**：BE 426/426、FE 915/915（63 文件）、`npx vite build` EXIT=0、
-> yorha-ui 校验器 13 文件 0 违规。**待人工验证 → 一批一提交。**
+> yorha-ui 校验器 13 文件 0 违规。**人工验证 5 项已通过 → 已提交 `5afe706`。**
 
 - **D14-A 存量不迁移 · D3 执行收口**（`backend/core/frame_builder.py`）：新增
   `_fit_policy` / `_max_bytes` 助手，装填三态执行 —— ①条数溢出（载荷放不进槽组）、
@@ -1730,11 +1730,12 @@
   orchestration / sequences）+ `node scripts/generate-page-status.mjs` 重生成
   `docs/PAGE_STATUS.md`；`DESIGN_CorePipeline.md` §6.1/§9.5 三层校验表
   「⬜ 批次二补」→ ✅ + §7 批次二状态注；本节与 §1 CP2 行、HANDOVER 条目 33。
-- **人工验证清单（待办）**：① 新建槽默认 STRICT → 试发溢出/欠载 **400**（核对
-  detail 含槽 id 与字节数）；存量槽仍 append/zero_fill 只出琥珀 warning；
-  ② 删指令弹窗三分口径与回执计数（含 `orphaned_sequence_steps`）；③ 序列失效
-  徽标 + 步骤只读 + 仍可运行；④ 编排多载荷试发 `warnings` 徽标与 SENT 实际出线帧；
-  ⑤ 真实链路帧核对（载荷定界字节 / 三层帧 / **设备应答是否也带转义**，D15 关联）。
+- **人工验证清单 ✅ 5 项已通过（2026-10-01，记录保留）**：① 新建槽默认 STRICT →
+  试发溢出/欠载 **400**（detail 含槽 id 与字节数），存量槽仍 append/zero_fill 只出
+  琥珀 warning；② 删指令弹窗三分口径与回执计数（含 `orphaned_sequence_steps`）；
+  ③ 序列失效徽标 + 步骤只读 + 仍可运行；④ 编排多载荷试发 `warnings` 徽标与 SENT
+  实际出线帧；⑤ 真实链路帧核对（载荷定界字节 / 三层帧 / **设备应答是否也带转义**，
+  D15 关联 → 该项结论供 CP3-3d 参照）。
 
 ## 9. 保留勿动（非任务，勿清理）
 

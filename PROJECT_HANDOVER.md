@@ -749,18 +749,20 @@
       内核再套壳**；`api/dispatch.js::dispatchWrappedGroup` + 编排页
       `handleTrialSend` 去掉「`/compile/wrapped` → 裸发」两跳改带 wrap 直发，
       `record.warnings` 独立琥珀徽标（不拼进 SENT 文本）。
-    - **验收（自动化全绿）**：BE **426/426**（基线 383 + 43，新增
+    - **验收（自动化全绿 · 人工验证 5 项已通过）**：BE **426/426**（基线 383 + 43，新增
       `test_slot_contract.py` / `test_instruction_delete.py`）、FE **915/915
       （63 文件）**、`npx vite build` EXIT=0、yorha-ui 校验器 13 文件 **0 违规**；
       文档同步 = `pageStatus.json` 四页条目 + `docs/PAGE_STATUS.md` 重生成 +
       `PLAN_Backlog.md` §1 CP2 行与 §8.19 + `DESIGN_CorePipeline.md` §6.1/§9.5
       「⬜ 批次二补」→ ✅ 与 §7 批次二状态注。
-    - **人工验证清单（待办）**：① 新建槽默认 STRICT → 试发溢出/欠载 **400**
-      （detail 含槽 id 与字节数），存量槽仍只出琥珀 warning；② 删指令弹窗三分口径
-      与回执计数；③ 序列失效徽标 + 步骤只读 + 仍可运行；④ 编排多载荷试发
-      `warnings` 徽标与 SENT 实际出线帧；⑤ 真实链路帧核对（载荷定界字节 /
-      三层帧 / **设备应答是否也带转义**，D15 关联）。
-      → **待办：人工验证 → 一批一提交（无 DDL，不提交 `yorha.db`）→ CP2b / CP3。**
+    - **人工验证清单 ✅ 5 项已通过（2026-10-01）**：① 新建槽默认 STRICT → 试发
+      溢出/欠载 **400**（detail 含槽 id 与字节数），存量槽仍只出琥珀 warning；
+      ② 删指令弹窗三分口径与回执计数；③ 序列失效徽标 + 步骤只读 + 仍可运行；
+      ④ 编排多载荷试发 `warnings` 徽标与 SENT 实际出线帧；⑤ 真实链路帧核对
+      （载荷定界字节 / 三层帧 / **设备应答是否也带转义**，D15 关联 → 结论供
+      CP3-3d 参照）。
+      → **已提交 `5afe706`（2026-10-01，代码+文档，零 DDL 未提交 `yorha.db`）
+      → 待办：CP2b（D11-① 共享 fixture，需先定跨语言特殊值约定）→ CP3。**
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
