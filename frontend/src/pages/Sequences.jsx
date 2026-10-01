@@ -16,6 +16,7 @@ import {
     reorder,
     resultLabel,
     resultTone,
+    shellSummary,
     stepTone
 } from '../utils/sequenceView';
 
@@ -28,13 +29,25 @@ import {
 // op_code——normalizeRunnerInstruction 会把 TIME_ACCUMULATOR 映成
 // TIME_CUMULATIVE、AUTO_COUNTER 映成 INPUT，只有 raw 才与后端发送时重算
 // byte-equal（计划键集严格同形，改一须核对 utils/sequenceView.js）。
+// CP3 3c (D6-B) 序列封装帧：步骤可选封装配方（编辑器 RECIPE 选择器）——选中
+// 即落草稿步骤 wrap.recipe_id，随 APPLY/保存提交；请求形只收 {recipe_id}
+// （definition_hash/stale 属响应形，透传会被 400 未知字段）。有 wrap 的步骤
+// payload = 冻结完整封装帧、plan.shell 由后端保存期注入，前端只透传 + 展示
+// （shellSummary），不自算外壳；选回「无封装」发 wrap:null，后端自动切回内核。
 
 const toDraft = (row) => ({
     name: row.name || '',
     description: row.description || '',
     stopOnError: row.config?.stop_on_error !== false,
     timeout: row.config?.read_timeout_ms == null ? '' : String(row.config.read_timeout_ms),
-    steps: (row.steps || []).map((s) => ({ ...s }))
+    // CP3 3c (D6-B): 步骤 wrap 响应形 {recipe_id, definition_hash, stale} 直落
+    // 草稿；null 不落键 —— 键缺席 = 从未封装，保存时不带 wrap（裸帧请求形与
+    // 改前逐字节一致，见 saveBody）。
+    steps: (row.steps || []).map((s) => {
+        const step = { ...s };
+        if (!step.wrap) delete step.wrap;
+        return step;
+    })
 });
 
 const saveBody = (draft) => ({
@@ -45,14 +58,22 @@ const saveBody = (draft) => ({
         read_timeout_ms: draft.timeout.trim() === '' ? null : Number(draft.timeout)
     },
     // 服务端字段（id/step_order）剥离：PUT 后后端重建步骤行并重排 step_order
-    steps: draft.steps.map((s) => ({
-        instruction_id: s.instruction_id,
-        label: s.label || null,
-        delay_ms: Math.min(60000, Math.max(0, Math.trunc(Number(s.delay_ms) || 0))),
-        params: s.params ?? null,
-        payload: s.payload,
-        plan: s.plan ?? null
-    }))
+    steps: draft.steps.map((s) => {
+        const step = {
+            instruction_id: s.instruction_id,
+            label: s.label || null,
+            delay_ms: Math.min(60000, Math.max(0, Math.trunc(Number(s.delay_ms) || 0))),
+            params: s.params ?? null,
+            payload: s.payload,
+            plan: s.plan ?? null
+        };
+        // CP3 3c (D6-B): wrap 请求形只收 {recipe_id}（definition_hash/stale 透传
+        // 会被 _wrap_spec 400 未知字段）；选回「无封装」→ 显式 null（后端按旧
+        // 区间切回内核、剥 plan.shell）；键缺席 = 从未封装 → 不带该键，裸帧
+        // 路径请求形与改前逐字节一致。
+        if ('wrap' in s) step.wrap = s.wrap ? { recipe_id: s.wrap.recipe_id } : null;
+        return step;
+    })
 });
 
 export default function Sequences() {
@@ -62,6 +83,7 @@ export default function Sequences() {
     const [selectedId, setSelectedId] = useState(null);
     const [draft, setDraft] = useState(null);
     const [instructions, setInstructions] = useState([]);
+    const [recipes, setRecipes] = useState([]); // CP3 3c (D6-B): 步骤 RECIPE 选择器选项
     const [status, setStatus] = useState(null);
     const [loadError, setLoadError] = useState('');
     const [msg, setMsg] = useState('');
@@ -107,6 +129,12 @@ export default function Sequences() {
         api.getInstructions()
             .then(setInstructions)
             .catch(() => setInstructions([])); // 取不到指令库 → 步骤编辑禁用（提示可见）
+        // CP3 3c (D6-B): 挂载拉一次配方列表（GET /recipes 全量，Orchestration
+        // 同款）——失败静默降级空数组：选择器只剩「无封装」，已封装步骤回显
+        // id 截断名 + 缺失占位项，不阻断编排。
+        api.getRecipes()
+            .then(setRecipes)
+            .catch(() => setRecipes([]));
         let alive = true;
         const tick = async () => {
             try {
@@ -302,6 +330,18 @@ export default function Sequences() {
         // hook 重置新指令默认值；回填 effect 因 instruction_id 不匹配而跳过
     };
 
+    // CP3 3c (D6-B): 配方选择器 → 草稿步骤 wrap 字段（随 APPLY / 保存一起提交）。
+    // 选回「无封装」：原本封装过的显式置 null（后端切回内核、剥 plan.shell）；
+    // 从未封装的保持键缺席 —— 裸帧请求形逐字节不变（见 saveBody 的 'wrap' in s）。
+    const handleStepWrapChange = (recipeId) => {
+        if (running || editorIndex === null || !draft) return;
+        applyDraftSteps(draft.steps.map((s, i) => {
+            if (i !== editorIndex) return s;
+            if (!recipeId) return 'wrap' in s ? { ...s, wrap: null } : s;
+            return { ...s, wrap: { recipe_id: recipeId } };
+        }));
+    };
+
     const removeStep = (i) => {
         if (running || !draft) return;
         applyDraftSteps(draft.steps.filter((_, x) => x !== i));
@@ -327,7 +367,11 @@ export default function Sequences() {
             delay_ms: delay,
             params: { ...form.inputs },
             payload: live.payload,
-            plan: live.plan
+            plan: live.plan,
+            // CP3 3c (D6-B): 封装配方随 APPLY 一并落步（键缺席 = 从未封装）。
+            // APPLY 后 payload = 内核帧、plan 无 shell → 后端按 wrap 重新套壳；
+            // 未「应用」时则透传 GET 回来的完整帧 + 带 shell 的 plan，幂等重冻。
+            ...('wrap' in s ? { wrap: s.wrap } : {})
         } : s)));
         setMsg(`步骤 ${editorIndex + 1} 已应用（${payloadByteCount(live.payload)} 字节）`);
         setLoadError('');
@@ -337,6 +381,14 @@ export default function Sequences() {
         const instr = instructions.find((x) => x.id === id);
         if (instr) return `${instr.code || ''} ${instr.name || instr.label || ''}`.trim();
         return id ? `${String(id).slice(0, 8)}…（指令缺失）` : '未选指令';
+    };
+
+    // CP3 3c (D6-B): 配方显示名（WRAP :: 指示 / 选择器占位项用）。配方列表
+    // 未加载或已被删 → id 截断回退，与 instrName 同口径（不阻断回显）。
+    const recipeName = (id) => {
+        const rec = recipes.find((x) => x.id === id);
+        if (rec) return rec.name || id;
+        return `${String(id).slice(0, 8)}…（配方缺失）`;
     };
 
     // 批次二 (D14②): 步骤宿主悬空 → 失效徽标。判据两层：后端 instruction_missing
@@ -349,6 +401,9 @@ export default function Sequences() {
 
     const step = editorIndex !== null && draft ? draft.steps[editorIndex] : null;
     const formReady = !!step && !!formInstruction;
+    // CP3 3c (D6-B): 冻结步骤计划的外壳逐层区间摘要（plan.shell 由后端保存期
+    // 注入，buildPlan/live 不产出）——回显在既有计划摘要面板。
+    const frozenShell = shellSummary(step?.plan);
 
     return (
         <div className="flex-1 overflow-auto bg-[radial-gradient(circle_at_top,_rgba(218,212,187,0.12),_transparent_45%),linear-gradient(180deg,_rgba(212,206,178,0.04),_rgba(10,10,10,0))] text-nier-light">
@@ -513,6 +568,26 @@ export default function Sequences() {
                                                 <span className="opacity-40 w-6">{String(i + 1).padStart(2, '0')}</span>
                                                 <span className="truncate w-28">{s.label || `step-${i + 1}`}</span>
                                                 <span className="truncate opacity-60 flex-1">{instrName(s.instruction_id)}</span>
+                                                {/* CP3 3c (D6-B): 已封装步骤 → WRAP 来源指示 + 配方
+                                                    失效徽标（wrap.stale，协议定义已变更 —— 不阻断） */}
+                                                {s.wrap?.recipe_id && (
+                                                    <span
+                                                        data-testid={`step-wrap-${i}`}
+                                                        className="text-[#E58D28] shrink-0 max-w-[9rem] truncate text-[9px] tracking-widest"
+                                                        title={`封装配方：${recipeName(s.wrap.recipe_id)}（发送期由后端按配方重算外壳）`}
+                                                    >
+                                                        {`WRAP :: ${recipeName(s.wrap.recipe_id)}`}
+                                                    </span>
+                                                )}
+                                                {s.wrap?.stale && (
+                                                    <span
+                                                        data-testid={`step-wrap-stale-${i}`}
+                                                        className="border border-yellow-500/50 text-yellow-400 px-1 shrink-0 text-[9px] tracking-widest"
+                                                        title="封装配方已失效：协议定义已变更（步骤冻结帧不受影响，不阻断保存/运行）"
+                                                    >
+                                                        失效
+                                                    </span>
+                                                )}
                                                 {/* 批次二 (D14②): 宿主已删 → 失效徽标
                                                     （帧已冻结仍可运行，仅编辑入口只读） */}
                                                 {stepHostMissing(s) && (
@@ -565,17 +640,39 @@ export default function Sequences() {
                                 {/* 步骤编辑器（选中某步时展开） */}
                                 {step && (
                                     <div className="border border-nier-light/40 bg-nier-dark/70 p-3 flex flex-col gap-3">
-                                        <div className="flex items-center justify-between">
+                                        <div className="flex items-center justify-between gap-2">
                                             <span className="text-[11px] font-mono tracking-[0.3em] opacity-60">
                                                 STEP {String(editorIndex + 1).padStart(2, '0')} // 编辑器
                                             </span>
-                                            <button
-                                                type="button"
-                                                onClick={closeEditor}
-                                                className="border border-nier-light/25 px-2 py-1 text-[10px] font-mono hover:bg-nier-light/10 transition-all"
-                                            >
-                                                关闭 ×
-                                            </button>
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                {/* CP3 3c (D6-B): 编辑器头部回显封装来源 + 配方失效
+                                                    徽标（wrap.stale 点亮、不阻断） */}
+                                                {step.wrap?.recipe_id && (
+                                                    <span
+                                                        data-testid="step-editor-wrap"
+                                                        className="font-mono text-[9px] tracking-widest text-[#E58D28] min-w-0 truncate"
+                                                        title={`封装配方：${recipeName(step.wrap.recipe_id)}（保存期后端按配方冻结完整封装帧）`}
+                                                    >
+                                                        {`WRAP :: ${recipeName(step.wrap.recipe_id)}`}
+                                                    </span>
+                                                )}
+                                                {step.wrap?.stale && (
+                                                    <span
+                                                        data-testid="step-editor-wrap-stale"
+                                                        className="border border-yellow-500/50 text-yellow-400 px-1 shrink-0 font-mono text-[9px] tracking-widest"
+                                                        title="封装配方已失效：协议定义已变更（步骤冻结帧不受影响，不阻断保存/运行）"
+                                                    >
+                                                        失效
+                                                    </span>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    onClick={closeEditor}
+                                                    className="border border-nier-light/25 px-2 py-1 text-[10px] font-mono hover:bg-nier-light/10 transition-all shrink-0"
+                                                >
+                                                    关闭 ×
+                                                </button>
+                                            </div>
                                         </div>
 
                                         <div className="flex gap-3 items-end flex-wrap text-[11px] font-mono">
@@ -621,6 +718,34 @@ export default function Sequences() {
                                                     className="w-28 bg-nier-dark border border-nier-light/30 px-2 py-1 text-xs font-mono text-nier-light disabled:opacity-50"
                                                 />
                                             </label>
+                                            {/* CP3 3c (D6-B): 封装配方选择器（可选）—— 选中即落
+                                                草稿步骤 wrap.recipe_id，随 APPLY / 保存提交；
+                                                「无封装」= 从未封装则键缺席、原本封装过则发 null。 */}
+                                            <label className="flex flex-col gap-1 opacity-60">
+                                                配方 RECIPE（可选）
+                                                <select
+                                                    data-testid="step-wrap-recipe"
+                                                    value={step.wrap?.recipe_id || ''}
+                                                    disabled={running || stepHostMissing(step)}
+                                                    title={step.wrap?.recipe_id
+                                                        ? `已封装：${recipeName(step.wrap.recipe_id)}（选回「无封装」= 取消套壳）`
+                                                        : '无封装（裸帧路径，请求形不变）'}
+                                                    onChange={(e) => handleStepWrapChange(e.target.value)}
+                                                    className="bg-nier-dark border border-nier-light/30 px-2 py-1 text-xs font-mono text-nier-light disabled:opacity-50"
+                                                >
+                                                    <option value="">无封装</option>
+                                                    {step.wrap?.recipe_id && !recipes.some((x) => x.id === step.wrap.recipe_id) && (
+                                                        <option value={step.wrap.recipe_id}>
+                                                            {`（配方缺失：${step.wrap.recipe_id}）`}
+                                                        </option>
+                                                    )}
+                                                    {recipes.map((x) => (
+                                                        <option key={x.id} value={x.id}>
+                                                            {x.name || x.id}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                            </label>
                                         </div>
 
                                         {!formReady ? (
@@ -646,9 +771,16 @@ export default function Sequences() {
                                                     <span className="mt-3 block">{live?.payload || '—'}</span>
                                                 </div>
 
-                                                {live?.plan && (
-                                                    <div className="border border-nier-light/25 px-2 py-1 text-[10px] font-mono text-[#E58D28]">
+                                                {/* CP3 3c (D6-B): 计划摘要面板 —— live 计划（发送期
+                                                    重算）+ 冻结步骤的 shell 逐层区间（SHELL L1..Ln /
+                                                    每层 LEN@·CRC@ 绝对字节位） */}
+                                                {(live?.plan || frozenShell) && (
+                                                    <div
+                                                        data-testid="step-plan-summary"
+                                                        className="border border-nier-light/25 px-2 py-1 text-[10px] font-mono text-[#E58D28] break-all"
+                                                    >
                                                         PLAN: {planSummary(live.plan)}
+                                                        {frozenShell ? ` · ${frozenShell}` : ''}
                                                     </div>
                                                 )}
                                                 {(live?.warnings || []).map((w) => (

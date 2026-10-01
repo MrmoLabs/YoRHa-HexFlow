@@ -112,7 +112,7 @@ def build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) -> Wrap
 |---|---|---|
 | `POST /dispatch` | `DispatchRequest` 增可选 `wrap: {protocol_id, slot_bindings?}`；缺省 = 现裸帧路径零改 | 既有调用/测试逐字节不变 |
 | `POST /dispatch/transaction` | 同上可选 `wrap` | 同上 |
-| 序列 Runner | `sequence_steps` **不动**（冻结 payload 口径不变）；序列级封装为后续批（D6-B 条款，见 §7 批次三） | 零改 |
+| 序列 Runner | `sequence_steps` 冻结 payload 口径不变；**序列级封装已随 3c 落地**（步骤级可选 `wrap` + `plan` 扩外壳逐层区间，见 §7 批次三 / §9.7 3c） | 未封装步骤逐字节不变 |
 | 日志回放 | 回放已落库 `hex_string`，原样重发（帧已封装过），**不套** | 零改 |
 | `POST /compile/wrapped`（新） | 加工页/编排页预览与「定稿」：传 instruction_id + 参数 → 返回内核帧 + 完整帧 | 新端点，无存量影响 |
 | 编排页「封装试发」 | 改调 `/compile/wrapped` 定稿再 `/dispatch`（或直接带 `wrap`） | 行为等价（同源后） |
@@ -128,7 +128,7 @@ def build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) -> Wrap
 | CHECKSUM | `??` | 内核帧反算 | **封装帧整体反算**（协议外壳 refs 纳入 span） |
 | TIME_ACCUMULATOR | 基准 `base_time` | 差值预览 | 发送墙钟重算（序列 `plan.dynamic` 已实现；加工页即时编译天然满足） |
 | AUTO_COUNTER | start/step/max | 当前值 | 序列按发送重算；加工页手动推进 |
-| **封装帧** | 协议树 + 槽契约（结构） | **不定值**（无参数参与外壳） | **每次发送即时编译**；序列冻结封装帧 = 批次三引入（保存冻结 payload_full + plan 扩外壳 length/checksum 区间） |
+| **封装帧** | 协议树 + 槽契约（结构） | **不定值**（无参数参与外壳） | **每次发送即时编译**；序列冻结封装帧 = **3c 已落地**（保存冻结 payload_full + `plan.shell` 逐层 length/checksum 区间，发送期切回内核按配方重算 → 冻结 vs 重算分离） |
 | 应答规格（D5-A） | 协议定义派生初值 | 手工增量覆盖 | 匹配引擎消费（现状 `response_match`） |
 
 > 规则一句话：**结构在设计期定、值在编译期定、时间性量与封装在发送期定。**
@@ -265,6 +265,29 @@ def build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) -> Wrap
 > （`_link_instruction` 不回清旧指针，否则破 `RecipeResponse`「0 或 1 条」不变量）。
 > 终态：FE **924/924（基线 920 + 4）**、BE 466/466、`vite build` EXIT=0、校验器 0 违规、
 > **真 curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`）。明细 `PLAN_Backlog.md` §8.22。
+>
+> ✅ **3c 已提交 `<待提交>`（代码+文档）/ `<待提交>`（db 同步），2026-10-01**：
+> **含 DDL** —— `sequence_steps` 新增 `wrap JSON` 单列自愈（`database.
+> ensure_sequence_step_columns`，镜像 3a `ensure_recipe_columns` 先例）→ yorha.db
+> 沿先例**单独同步提交**。步骤级可选 `wrap:{recipe_id}`，**冻结 vs 重算分离**（D6-B）：
+> ① **保存期** 入参先 `normalize_plan` 归一 → 有 `wrap` 即切内核 + `compile_recipe` →
+> `shell_plan` 注入 **`plan.shell`**（每层 length/checksum 的**本帧坐标**区间）→ 完整帧
+> 二次归一后冻结进 `payload`，`wrap = {recipe_id, definition_hash}` 落库（请求形只收
+> `{recipe_id}`，未知键 400；`definition_hash`/`stale` 属响应形）；
+> ② **发送期** `_frame_for_send` 分支 —— 无 shell = `apply_plan → 整帧转义`
+> （**逐字节不变**，`test_bare_frame_path_unchanged` 口径不受影响）；有 shell =
+> `kernel_slice → 内核侧 apply_plan → 内核转义 → compile_wrap 套壳 → 整帧出线`
+> （层位同 dispatch「先转内核再套壳」），编译失败记 `WRAP: {原因}`（与 `PLAN:`/`TRANSPORT:` 三分）；
+> ③ **读侧** `_wrap_with_stale` 按 recipe_id 比 `current_fingerprint`（配方 stages 或所引
+> 协议任一改动 → `stale=true` 徽标点亮，**不阻断运行**）；
+> ④ **回退** 传 `plan` 带 shell 但 `wrap` 缺席/null → 按旧区间切回内核 + `core_plan`
+> 剥 shell —— 两种前端形态均幂等，**前端只透传不计算**。
+> 前端 = 配方选择器 + `WRAP :: <配方名>` 回显（卡片 + 编辑器头部）+ `stale` 徽标 +
+> `plan.shell` 层摘要（新纯函数 `shellSummary`），**`buildPlan` 输出键集一行未改**
+> （shell 由后端注入 = 单一真相源，另有用例钉死键集）。
+> 终态：BE **496/496（基线 466 + 30）**、FE **932/932（63 文件，基线 924 + 8）**、
+> `npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**真路由冒烟 30 项 ALL PASS**
+> + **真浏览器 UI 验证 6 项通过**。明细 `PLAN_Backlog.md` §8.23。
 
 - **3a 配方数据层 + 串行编译**（详见 §9.1–§9.3、§9.5）：`frame_recipes` 新表 +
   `instructions.default_recipe_id` 补列自愈 + `/recipes` CRUD + `/compile/wrapped`
@@ -436,7 +459,7 @@ return {hex: frame, total_length, warnings, stages: [...]}
 |---|---|---|
 | **3a 数据层 + 串行编译** ✅ 已提交 `e63d76f` + `438f3af`（2026-10-01） | `frame_recipes` DDL + `default_recipe_id` 补列自愈 + `/recipes` CRUD + `/compile/wrapped` `recipe_id` 串行编译 + `stages[]` 回显 + `definition_hash` 回写/比对 + 加工页分层堆叠预览与降级链三级。**实施时并入 3b 的 `dispatch` `wrap.recipe_id` 接线**（三路同字节所需，见 §7 3a 进度注 ①） | ✅ `test_frame_recipes.py` 新建（CRUD / 补列自愈幂等 / hash 回写与失效 / 层数上限 / stage 404 / version 409 / 删引用回执）、`test_wrap_api.py` 扩（**recipe 三层帧往返**、配方 vs 单协议**同内核 byte-equal 双跑**、配方路径缺省 `reject` 对照存量 warning、dispatch/事务带 recipe、缺省裸帧**零回归**）、FE `InstructionProcessor` 5 例（分层预览 + 失效徽标 + 降级三级）；三层帧主向量**一处钉死改一必改三** = `vectors/wrap.json` 表 `three`（沿 §7 共享向量先例） |
 | **3b 配方编辑器 + 发送接线** ✅ 已提交 `c4b1f7f`（2026-10-01） | 编排页配方编辑器（有序 stage 增删/排序/选槽/手动保存/离开拦截 + 关联指令换绑）、~~`/dispatch` 与 `/dispatch/transaction` 接 `recipe_id`~~（**已提前随 3a 实施**）、试发改走配方（**未选配方 = 现状组协议逐字节不变**） | ✅ Orchestration 配方编辑 **4 例**（其余用例**零改**，含「四分区 select = 3」）、`dispatch.py` 缺省裸帧既有测试**零改全绿**、**curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 = 预览同字节 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；**零 DDL** |
-| **3c 序列封装帧（D6-B）** | 序列步骤可选 `wrap: {recipe_id}`、保存冻结完整帧 + `plan` 扩外壳 length/checksum **逐层区间**、发送按配方重算 | 序列封装往返过 `match_response`、冻结 vs 重算用例、沿 `normalize_plan` 键集纪律 |
+| **3c 序列封装帧（D6-B）** ✅ 已提交 `<待提交>` + `<待提交>`（db），2026-10-01 | 序列步骤可选 `wrap: {recipe_id}`、保存冻结完整帧 + `plan` 扩外壳 length/checksum **逐层区间**（`plan.shell`）、发送按配方重算、读侧 `stale` 失效徽标、**含 DDL**（`sequence_steps.wrap` 单列自愈） | ✅ **自动化三项全过** —— ① 序列封装往返过 `match_response`（`test_sequence_wrap.py`：三层冻结帧 `sent == received` 且与主向量 `three` 同字节）；② **冻结 vs 重算用例**（内核 `plan.dynamic` 在套壳下重算 + 配方协议改动后重算、冻结 `payload`/`plan.shell` 字节不动）；③ **`normalize_plan` 键集纪律**（无 shell 时仍是 `{dynamic, checksum}`、未知键 400、嵌套不变量逐条、`core_plan`/`kernel_slice` 往返）；另补 `ensure_sequence_step_columns` **补列自愈四态**（镜像 `ensure_recipe_columns` 模板）；**真路由冒烟 30 项 + 真浏览器 UI 验证 6 项 ALL PASS** |
 | **3d 应答与失效徽标（原批次三内容）** | **D5-A 按 D15-A 修订实施**：`response_specs` 增 `stage` 列 + 「据此生成」按配方每层各执行一次 + `response_match` 按 `stages` 逆序解包逐层跑五要素（无配方 = 单层退化）；D7-A 余下 binding/response_spec 两处失效徽标 | 生成映射**按层**用例、**多层应答逆序解包匹配**用例、**单层存量退化回归**、hash 失效/不失配徽标用例 |
 
 - **节奏**沿 §7：测试 EXIT=0 → `vite build` EXIT=0 → yorha-ui 校验器 0 违规 →
@@ -444,7 +467,12 @@ return {hex: frame, total_length, warnings, stages: [...]}
 - **人工验证必查**：① 三层真实链路帧目视核对（载荷出现定界字节时设备是否异常 ——
   D13「有 LEN = 不需要转义」为经验判定）；② 分层堆叠视图逐层字节与协议页卡面一致；
   ③ 改动中间层协议 → 加工页失效徽标点亮；④ **3d 用真实应答帧核对**：设备回的
-  外壳帧能否逆序解包、内层五要素命中；**应答是否也带转义字节**（D15 关联待确认项）。
+  外壳帧能否逆序解包、内层五要素命中；**应答是否也带转义字节**（D15 关联待确认项）；
+  ⑤ **3c 序列封装**：序列页选配方 → APPLY → 保存，卡片字节数 = 冻结完整帧、`PLAN`
+  摘要出 `SHELL L1..LN` 逐层 LEN/CRC 偏移（与后端 `shell_plan` 同坐标）；运行后
+  逐步 `sent` 与冻结帧**同字节**（外壳重算等价）；改中间层协议 → `WRAP ::` 旁
+  `stale` 徽标点亮；**未选配方步骤的 PUT 请求体与改前逐字节一致**。
+  ✅ **3a①②③ / 3b①②③ / 3c⑤ 共 7 项已执行通过（2026-10-01）**。
 
 ### 9.8 本期明确不做
 

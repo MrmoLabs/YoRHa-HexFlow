@@ -8,6 +8,7 @@ import {
     planSummary,
     payloadByteCount,
     reorder,
+    shellSummary,
     PLAN_ALGO,
     EMPTY_CONFIG
 } from '../sequenceView';
@@ -324,5 +325,61 @@ describe('sequenceView status helpers', () => {
 
     it('EMPTY_CONFIG mirrors server-normalized defaults', () => {
         expect(EMPTY_CONFIG).toEqual({ stop_on_error: true, read_timeout_ms: null });
+    });
+});
+
+describe('sequenceView shell summary (CP3 3c D6-B)', () => {
+    it('buildPlan never emits a shell key — shell is backend-injected SSOT', () => {
+        const fields = [
+            timeField(),
+            { id: 'a', op_code: 'FIXED', byte_len: 2, parameter_config: {} },
+            ckField(['a'])
+        ];
+        const bm = [
+            { start: 0, end: 2, fieldId: 't1' },
+            { start: 2, end: 4, fieldId: 'a' },
+            { start: 4, end: 6, fieldId: 'ck' }
+        ];
+        const out = run(fields, bm);
+        expect(out.plan).not.toBeNull();
+        // 输出键集严格 {dynamic, checksum} —— shell 由后端保存期注入（前端只透传）
+        expect(Object.keys(out.plan).sort()).toEqual(['checksum', 'dynamic']);
+        expect('shell' in out.plan).toBe(false);
+        // 展示函数只读不改（调用后键集不变）
+        shellSummary(out.plan);
+        expect(Object.keys(out.plan).sort()).toEqual(['checksum', 'dynamic']);
+    });
+
+    it('shellSummary renders layer span + per-layer LEN/CRC offsets, empty without shell', () => {
+        expect(shellSummary(null)).toBe('');
+        expect(shellSummary({ dynamic: [], checksum: null })).toBe('');
+        expect(shellSummary({ dynamic: [], checksum: null, shell: null })).toBe('');
+        expect(shellSummary({ shell: { layers: [] } })).toBe('');
+
+        // 几何对齐 backend/core/recipe_compile.shell_plan：16 字节帧 3 层，
+        // 由内到外 offset 递减、最外层 0（坐标 = 最终帧绝对字节）
+        const plan = {
+            dynamic: [], checksum: null,
+            shell: {
+                recipe_id: 'rec-1',
+                definition_hash: 'sha256:deadbeef',
+                kernel: { offset: 6, length: 4 },
+                layers: [
+                    { index: 0, offset: 5, size: 7,
+                        length: [{ offset: 5, byte_length: 1 }], checksum: [{ offset: 10, byte_length: 2 }] },
+                    { index: 1, offset: 3, size: 11,
+                        length: [{ offset: 3, byte_length: 2 }], checksum: [{ offset: 12, byte_length: 2 }] },
+                    { index: 2, offset: 0, size: 16,
+                        length: [{ offset: 0, byte_length: 2 }], checksum: [{ offset: 14, byte_length: 2 }] }
+                ]
+            }
+        };
+        expect(shellSummary(plan)).toBe(
+            'SHELL L1..L3 · L1 LEN@5 CRC@10 · L2 LEN@3 CRC@12 · L3 LEN@0 CRC@14'
+        );
+        // 层无 LEN/CRC 字段时仍列层号（层数信息不丢）；单层不写 L1..L1
+        expect(shellSummary({
+            shell: { layers: [{ index: 0, offset: 0, size: 4, length: [], checksum: [] }] }
+        })).toBe('SHELL L1 · L1');
     });
 });

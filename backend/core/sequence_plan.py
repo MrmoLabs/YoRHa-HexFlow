@@ -35,7 +35,15 @@ _SCALAR = (int, float, str, type(None))  # 计数模板值：JSON 标量（bool/
 _TIME_KEYS = {"field_id", "op", "offset", "byte_len", "base_time"}
 _COUNTER_KEYS = {"field_id", "op", "offset", "byte_len", "value", "start_val", "step", "max"}
 _CHECKSUM_KEYS = {"offset", "byte_length", "algo", "byte_order", "regions"}
-_PLAN_KEYS = {"dynamic", "checksum"}
+# CP3 3c (D6-B): 序列封装帧 —— 冻结完整帧里外壳的逐层区间（同上严格键集，
+# 未知键一律 ValueError → 400；前端不产此键、由路由保存期注入，见
+# recipe_compile.shell_plan）。
+_PLAN_KEYS = {"dynamic", "checksum", "shell"}
+_SHELL_KEYS = {"recipe_id", "definition_hash", "kernel", "layers"}
+_SHELL_KERNEL_KEYS = {"offset", "length"}
+_SHELL_LAYER_KEYS = {"index", "offset", "size", "length", "checksum"}
+_SHELL_FIELD_KEYS = {"offset", "byte_length"}
+_MAX_SHELL_LAYERS = 4
 
 
 def _require_int(value: Any, name: str, lo: int, hi: int) -> int:
@@ -180,12 +188,117 @@ def _normalize_checksum(payload_len: int, raw: Any) -> Optional[Dict[str, Any]]:
     return checksum
 
 
+def _normalize_shell(payload_len: int, raw: Any) -> Optional[Dict[str, Any]]:
+    """`plan.shell` 归一：冻结完整帧里外壳的逐层区间（D6-B）。
+
+    坐标口径 = **最终帧绝对字节**（`recipe_compile.shell_plan` 产出），故越界
+    校验与 `payload_len` 同一把尺。嵌套不变量：层序 0..n-1 连续、offset 严格
+    递减、最外层恒 0、内核必须落在第 0 层区间内 —— 任一不成立即认为冻结帧与
+    配方不同步（防止拿旧区间去切新帧）。
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("plan.shell 必须是对象或 null")
+    unknown = set(raw) - _SHELL_KEYS
+    if unknown:
+        raise ValueError(f"plan.shell 未知字段: {', '.join(sorted(unknown))}")
+
+    recipe_id = raw.get("recipe_id")
+    if not isinstance(recipe_id, str) or not (1 <= len(recipe_id) <= 64):
+        raise ValueError("plan.shell.recipe_id 必须是 1..64 字符")
+
+    kernel_raw = raw.get("kernel")
+    if not isinstance(kernel_raw, dict):
+        raise ValueError("plan.shell.kernel 必须是对象")
+    unknown = set(kernel_raw) - _SHELL_KERNEL_KEYS
+    if unknown:
+        raise ValueError(f"plan.shell.kernel 未知字段: {', '.join(sorted(unknown))}")
+    kernel = {
+        "offset": _require_int(kernel_raw.get("offset"), "plan.shell.kernel.offset", 0, payload_len),
+        "length": _require_int(kernel_raw.get("length"), "plan.shell.kernel.length", 1, payload_len),
+    }
+    if kernel["offset"] + kernel["length"] > payload_len:
+        raise ValueError("plan.shell.kernel 超出 payload 范围")
+
+    layers_raw = raw.get("layers")
+    if not isinstance(layers_raw, list) or not layers_raw:
+        raise ValueError("plan.shell.layers 必须是非空数组")
+    if len(layers_raw) > _MAX_SHELL_LAYERS:
+        raise ValueError(f"plan.shell.layers 最多 {_MAX_SHELL_LAYERS} 层")
+
+    layers: List[Dict[str, Any]] = []
+    prev_start: Optional[int] = None
+    for i, item in enumerate(layers_raw):
+        where = f"plan.shell.layers[{i}]"
+        if not isinstance(item, dict):
+            raise ValueError(f"{where} 必须是对象")
+        unknown = set(item) - _SHELL_LAYER_KEYS
+        if unknown:
+            raise ValueError(f"{where} 未知字段: {', '.join(sorted(unknown))}")
+        index = _require_int(item.get("index"), f"{where}.index", 0, _MAX_SHELL_LAYERS - 1)
+        if index != i:
+            raise ValueError(f"{where}.index 必须按层序连续（期望 {i}，得到 {index}）")
+        start = _require_int(item.get("offset"), f"{where}.offset", 0, payload_len)
+        size = _require_int(item.get("size"), f"{where}.size", 1, payload_len)
+        if start + size > payload_len:
+            raise ValueError(f"{where} 超出 payload 范围")
+        if prev_start is not None and start >= prev_start:
+            raise ValueError(f"{where}.offset 必须小于外层（外壳由外向内逐层嵌套）")
+        for kind in ("length", "checksum"):
+            rows_raw = item.get(kind)
+            if rows_raw is None:
+                rows_raw = []
+            if not isinstance(rows_raw, list):
+                raise ValueError(f"{where}.{kind} 必须是数组")
+            rows: List[Dict[str, int]] = []
+            for j, row in enumerate(rows_raw):
+                row_where = f"{where}.{kind}[{j}]"
+                if not isinstance(row, dict):
+                    raise ValueError(f"{row_where} 必须是对象")
+                unknown = set(row) - _SHELL_FIELD_KEYS
+                if unknown:
+                    raise ValueError(f"{row_where} 未知字段: {', '.join(sorted(unknown))}")
+                field_offset = _require_int(
+                    row.get("offset"), f"{row_where}.offset", 0, payload_len
+                )
+                byte_length = _require_int(
+                    row.get("byte_length"), f"{row_where}.byte_length", 1, 8
+                )
+                if field_offset < start or field_offset + byte_length > start + size:
+                    raise ValueError(f"{row_where} 超出该层区间")
+                rows.append({"offset": field_offset, "byte_length": byte_length})
+            item = {**item, kind: rows}
+        layers.append(item)
+        prev_start = start
+
+    if layers[-1]["offset"] != 0:
+        raise ValueError("plan.shell.layers 最外层 offset 必须为 0（= 冻结帧起点）")
+    first = layers[0]
+    if not (
+        first["offset"] <= kernel["offset"]
+        and kernel["offset"] + kernel["length"] <= first["offset"] + first["size"]
+    ):
+        raise ValueError("plan.shell.kernel 必须落在第 1 层区间内")
+
+    shell: Dict[str, Any] = {"recipe_id": recipe_id, "kernel": kernel, "layers": layers}
+    definition_hash = raw.get("definition_hash")
+    if definition_hash is not None:
+        if not isinstance(definition_hash, str) or not definition_hash:
+            raise ValueError("plan.shell.definition_hash 必须是字符串")
+        shell["definition_hash"] = definition_hash
+    return shell
+
+
 def normalize_plan(payload_hex: Any, plan: Any) -> Tuple[bytes, Optional[Dict[str, Any]]]:
     """校验并归一化 (payload, plan) → (帧字节, 归一化计划)；非法抛 ValueError。
 
     plan 为 None → (帧, None)（原样发送）。归一化计划为严格形态：
     {"dynamic": [...], "checksum": {...} | None}——未知键一律拒绝（同 P2
     normalize_spec 的严格纪律，防前端字段名漂移静默失效）。
+
+    CP3 3c (D6-B)：plan 带 `shell`（序列封装帧的逐层外壳区间）时**才**多出
+    第三个键 `shell`；存量步骤的归一化形状逐字不变（零回归锚）。
     """
     data = _clean_payload(payload_hex)
     if plan is None:
@@ -195,10 +308,41 @@ def normalize_plan(payload_hex: Any, plan: Any) -> Tuple[bytes, Optional[Dict[st
     unknown = set(plan) - _PLAN_KEYS
     if unknown:
         raise ValueError(f"未知 plan 字段: {', '.join(sorted(unknown))}")
-    return data, {
+    normalized: Dict[str, Any] = {
         "dynamic": _normalize_dynamic(len(data), plan.get("dynamic")),
         "checksum": _normalize_checksum(len(data), plan.get("checksum")),
     }
+    if "shell" in plan:
+        shell = _normalize_shell(len(data), plan.get("shell"))
+        if shell is not None:
+            normalized["shell"] = shell
+    return data, normalized
+
+
+def core_plan(plan: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """D6-B：拆出**内核侧**补丁（dynamic/checksum），供套壳前先打内核补丁。
+
+    内核侧区间相对内核帧（与前端 buildPlan 同一坐标），故须先切内核再补丁；
+    `shell` 只是外壳几何，不参与补丁。
+    """
+    if not plan:
+        return None
+    if "shell" not in plan:
+        return plan
+    return {"dynamic": plan.get("dynamic"), "checksum": plan.get("checksum")}
+
+
+def kernel_slice(data: bytes, plan: Optional[Dict[str, Any]]) -> bytes:
+    """D6-B：冻结完整帧 → 内核帧（无 shell → 原样；越界 → ValueError）。"""
+    shell = (plan or {}).get("shell")
+    if not shell:
+        return bytes(data)
+    kernel = shell.get("kernel") or {}
+    start = int(kernel.get("offset", -1))
+    length = int(kernel.get("length", 0))
+    if start < 0 or length <= 0 or start + length > len(data):
+        raise ValueError("plan.shell.kernel 超出冻结帧")
+    return bytes(data[start:start + length])
 
 
 def apply_plan(data: bytes, plan: Optional[Dict[str, Any]], now_ms: float) -> bytes:

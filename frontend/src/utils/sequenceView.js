@@ -265,6 +265,26 @@ export function planSummary(plan) {
     return parts.length > 0 ? parts.join(' · ') : '静态帧';
 }
 
+// CP3 3c (D6-B): `plan.shell` 逐层区间摘要（展示用纯函数，只读不改 SSOT）——
+// 层数 + 每层 LEN/CRC 字段在**最终帧**的绝对字节位置（坐标口径 = 后端
+// core/recipe_compile.shell_plan：layers 由内到外、最外层 offset 恒 0）。
+// shell 由后端保存期注入（routers/sequence._freeze_wrap），buildPlan 永不产出
+// 该键（前端只透传不自算）；无 shell → ''（调用方不渲染）。
+// 例：'SHELL L1..L3 · L1 LEN@5 CRC@10 · L2 LEN@3 CRC@12 · L3 LEN@0 CRC@14'。
+export function shellSummary(plan) {
+    const layers = plan?.shell?.layers;
+    if (!Array.isArray(layers) || layers.length === 0) return '';
+    const parts = [layers.length === 1 ? 'SHELL L1' : `SHELL L1..L${layers.length}`];
+    layers.forEach((layer, i) => {
+        const tags = [];
+        (Array.isArray(layer?.length) ? layer.length : []).forEach((f) => tags.push(`LEN@${f.offset}`));
+        (Array.isArray(layer?.checksum) ? layer.checksum : []).forEach((f) => tags.push(`CRC@${f.offset}`));
+        const n = Number.isInteger(layer?.index) ? layer.index + 1 : i + 1;
+        parts.push(`L${n}${tags.length > 0 ? ` ${tags.join(' ')}` : ''}`);
+    });
+    return parts.join(' · ');
+}
+
 // 紧凑 hex 帧的字节数（分隔符不计；空 → 0）。
 export function payloadByteCount(payload) {
     const cleaned = String(payload || '').replace(/[\s,_-]/g, '');

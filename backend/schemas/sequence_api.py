@@ -18,6 +18,11 @@ class SequenceStepSpec(BaseModel):
     plan: Optional[Dict[str, Any]] = Field(
         None, description="发送时重算计划 {dynamic, checksum}（normalize_plan 归一后入库）"
     )
+    # CP3 3c (D6-B): 序列封装帧 —— 选配方后该步冻结**完整封装帧**，plan 由路由
+    # 注入 plan.shell（外壳逐层区间）；发送期按配方重算外壳。未选 = 现状裸帧路径。
+    wrap: Optional[Dict[str, Any]] = Field(
+        None, description="{recipe_id}（请求形）；落库形另带 definition_hash"
+    )
 
 
 class SequencePayload(BaseModel):
@@ -41,6 +46,9 @@ class SequenceStepOut(BaseModel):
     # 批次二 (D14②): 宿主指令已被删除 → 步骤失效标记（冻结快照仍可运行，仅
     # 编辑入口不可用）。零 DDL：判据 = instruction_id 悬空。
     instruction_missing: bool = False
+    # CP3 3c (D6-B): 配方引用（{recipe_id, definition_hash}）；协议结构变了才亮
+    # 徽标（D15 关联项 2），步骤冻结帧不受影响、不阻断。
+    wrap: Optional[Dict[str, Any]] = None
 
 
 class SequenceOut(BaseModel):

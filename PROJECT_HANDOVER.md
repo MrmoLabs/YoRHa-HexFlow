@@ -894,6 +894,65 @@
       改名未保存 → 试发按钮置灰，保存后恢复）；② CP3 剩余子批 **3c**（序列封装帧
       D6-B）与 **3d**（D5-A `response_spec` `stage` 维度 + D7-A 余下徽标）。
 
+37. **CP3-3c 序列封装帧实现完成（D6-B 冻结 vs 重算分离）**
+    （2026-10-01，**含 DDL** —— `sequence_steps` 新增 `wrap JSON` 单列，故有
+    `chore(db)` 提交；未碰 `processor.py`/`graph.py`/`Blueprint.jsx`；未封装步骤的
+    `/dispatch` 缺省口径与序列发送路径由既有用例 + 冒烟**双钉**）：
+    - **保存期冻结**（`routers/sequence.py` `_normalize_steps(db, …)` / `_freeze_wrap`）：
+      入参先 `normalize_plan` 归一 → 有 `wrap` 即 `kernel_slice` 切内核 →
+      `compile_recipe` → `recipe_compile.shell_plan` 注入 **`plan.shell`**（每层
+      length/checksum 的**本帧绝对坐标**区间）→ 完整帧二次归一后冻结进 `payload`，
+      `wrap = {recipe_id, definition_hash}` 落库。**请求形只收 `{recipe_id}`**
+      （`_wrap_spec` 未知键 400）；`definition_hash`/`stale` 属**响应形**，透传即 400。
+    - **发送期重算**（`core/sequence_runner.py` `_frame_for_send`）：无 `plan.shell`
+      = `apply_plan → 整帧转义`（**逐字节不变**）；有 shell = `kernel_slice →
+      内核侧 apply_plan → 内核转义 → `compile_wrap(recipe_id, kernel_hex)` 套壳 →
+      整帧出线（层位同 dispatch「先转内核再套壳」）；编译异常抛 `WrapError` →
+      记步 `WRAP: {原因}`，与 `PLAN:`/`TRANSPORT:` **三分类**。路由侧
+      `_compile_wrap_factory()` 每次自开 `SessionLocal`（请求会话已关）。
+    - **读侧失效徽标**：`_wrap_with_stale(db, wrap, seen)` 按 recipe_id 缓存
+      `recipe_compile.current_fingerprint`（配方 `stages` + 所引协议的复合 sha256）
+      与冻结时 `definition_hash` 比对 → `wrap.stale`；配方/协议缺失也按 `stale=true`
+      （只提示不阻断，冻结帧仍可运行）。
+    - **回退路径**：`plan` 带 shell 但 `wrap` 缺席 / `null` → 按旧区间切回内核 +
+      `core_plan` 剥 shell —— **两种前端形态均幂等，前端只透传不计算**。
+    - **几何 SSOT**：`frame_builder._collect_shell`（发射期 `orchestrator.block_spans`
+      取每块真实区间）→ `recipe_compile.shell_plan`（`head_i`/`S_i` 平移为最终帧
+      绝对坐标）→ `sequence_plan._normalize_shell`（严格键集 + 嵌套不变量：层序
+      0..n-1 连续、offset 严格递减、最外层恒 0、内核落第 0 层、字段不出层区间）。
+      **`shell` 仅当输入存在才输出** → 存量 plan 键集零回归。
+    - **DDL**：`models.py` 新列 + `database.ensure_sequence_step_columns`（镜像
+      `ensure_recipe_columns`：缺列 `ALTER TABLE sequence_steps ADD COLUMN wrap JSON`，
+      幂等、表不存在 no-op）+ `main.py` lifespan 调用；`schemas/sequence_api.py` 增
+      `SequenceStepSpec.wrap` / `SequenceStepOut.wrap`。
+    - **前端**（仅 `frontend/`）：步骤编辑器新增 `RECIPE（可选）` 选择器
+      （`data-testid="step-wrap-recipe"`）+ 卡片/编辑器头部 `WRAP :: <配方名>` 回显 +
+      `stale` 徽标 + 新纯函数 `utils/sequenceView.shellSummary(plan)` 渲染
+      `SHELL L1..LN · LN LEN@x CRC@y` 层摘要；**`buildPlan` 输出键集一行未改**
+      （shell 后端注入 = 单一真相源，另有用例钉死 `['checksum','dynamic']`）；
+      `toDraft` 对响应形 `wrap: null` **剥键**（键缺席 = 从未封装）→ 裸帧 PUT
+      请求形逐字节不变。
+    - **验收**：BE **496/496（基线 466 + 30）**、FE **932/932（63 文件，基线 924 + 8）**、
+      `npx vite build` EXIT=0、yorha-ui 校验器 4 文件 **0 违规**；**真路由冒烟 30 项
+      ALL PASS**（真 uvicorn + `curl.exe`）：冻结帧 = 主向量 `three` 同字节 /
+      `plan.shell` 偏移 `[4,2,0]` 尺寸 `[5,8,11]` LEN `[5,3,1]` / 裸帧 `plan=null
+      wrap=null` 零回归 / 三类 400 定位 `steps[0]:` / GET 回读与 PUT 幂等 /
+      运行 `sent` = 冻结帧（转义用例 12B 同步核过）/ 改中间层协议 → `stale=true`
+      且冻结字节不动 / 还原 → `stale` 清、**残留清零**（16 指令 · 3 协议 · 0 配方 ·
+      1 原有序列原样）。
+      **真浏览器 UI 验证 6 项**：真实 PUT 请求体 = `{payload: 内核, plan: 无 shell,
+      wrap:{recipe_id}}` 且**第 2 步不带 `wrap` 键**、卡片 20B（11B 内核 + 9B 头）、
+      `WRAP ::` 两处回显、`PLAN` 摘要 `SHELL L1..L3 · L1 LEN@5 · L2 LEN@3 · L3 LEN@1`
+      （与后端坐标一致）、UI 启动运行 2/2 OK 且第 1 步 `sent` = `C0 11 B0 0E A0 0B
+      <11B> E0 E1 E2`（20B 几何自洽）。
+    - **文档同步**：`DESIGN_CorePipeline.md` §4 序列 Runner 行 + §5 封装帧行 +
+      §7 批次三 3c 进度注 + §9.7 排批表 3c 行 + 人工验证 ⑤、`PLAN_Backlog.md`
+      §1 CP3 行 + 新 §8.23、`DESIGN_Decisions.md` D6 关联与 D15-② 实施注、
+      本条、`pageStatus.json` 序列页条目 + `PAGE_STATUS.md` 再生成。
+    - **提交**：→ **`<待提交>`（代码+文档）/ `<待提交>`（db 同步），2026-10-01**。
+    - **待办**：CP3 剩余子批 **3d**（D5-A 按 D15-A 修订实施：`response_specs` 增
+      `stage` 列 + 按层生成 + 逆序解包；D7-A 余下 binding/response_spec 两处失效徽标）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

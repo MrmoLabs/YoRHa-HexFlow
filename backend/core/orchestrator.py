@@ -2,7 +2,7 @@ import math
 import re
 import struct
 from datetime import datetime
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 from backend.schemas.block import Block, BlockType
 from backend.handlers.length import LengthHandler
 from backend.handlers.checksum import ChecksumHandler
@@ -109,6 +109,12 @@ class Orchestrator:
         #    且被 emit_blocks 过滤后不改 handler 眼里的内容字节。
         final_hex = []
         cursor = 0
+        # CP3 3c (D6-B): 发射期旁路记录 —— 叶块 id → [(内容起点, 内容终点), ...]。
+        # 只增记录、不改发射顺序与字节；供 frame_builder 求载荷注入点（= 外壳
+        # 头部字节数）与 length/checksum 字段的绝对位置（plan.shell 逐层区间）。
+        # 一对起点/终点 = 单次发射；repeat 展开同 id 多次 → 追加成列表。
+        # align 前置 pad 归前一块、pad_to 后置 pad 归后一块（内容口径，同 handler）。
+        self.block_spans: Dict[str, List[Tuple[int, int]]] = {}
         for b in self.flattened_stream:
             if not isinstance(b, Block):
                 # 容器级 pad 标记：kind=align → 补到 N 边界；pad_to → 同式。
@@ -137,8 +143,10 @@ class Orchestrator:
                     val = _reverse_hex_pairs(val)
                 # 转义不在此层（N4 定案：传输层 · 内核转义后套壳）——本函数输出
                 # 逻辑字节；线上转义见 backend/core/escape.py（dispatch/sequence 调用）。
+                content_start = cursor
                 final_hex.append(val)
                 cursor += len(re.sub(r"\s+", "", val)) // 2
+                self.block_spans.setdefault(b.id, []).append((content_start, cursor))
                 if pad_to:
                     n = pad_to_pad_len(cursor, pad_to)
                     if n > 0:

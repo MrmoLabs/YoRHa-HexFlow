@@ -46,6 +46,14 @@ def kernel_length(payloads: Optional[List[str]]) -> int:
     return total
 
 
+def _compact(hex_text) -> str:
+    """hex 归一（去空格/逗号/换行/下划线）——长度与切片计算前统一口径。"""
+    text = str(hex_text)
+    for ch in (" ", ",", "\n", "\r", "\t", "_"):
+        text = text.replace(ch, "")
+    return text
+
+
 def compile_recipe(
     db: Session,
     recipe_id: str,
@@ -121,6 +129,9 @@ def compile_recipe(
                 "definition_hash": current_hash,
                 "stale": stale,
                 "logic": out.get("logic", []),
+                # CP3 3c (D6-B): 该层外壳的绝对字节位置（本层帧坐标）
+                "shell": out.get("shell") or {"payload_offset": None,
+                                              "length": [], "checksum": []},
             }
         )
         prev_total = total
@@ -131,3 +142,100 @@ def compile_recipe(
         "warnings": warnings,
         "stages": echo,
     }
+
+
+def shell_plan(
+    result: Dict[str, object],
+    kernel_hex: str,
+    recipe_id: str,
+    definition_hash: Optional[str] = None,
+) -> Dict[str, object]:
+    """CP3 3c (D6-B): 编译产物 → `plan.shell`（**最终帧绝对坐标**的逐层区间）。
+
+    几何关系（层 0 = 内核层，最后 = 最外层）：
+
+    - 层 i 的帧 = `head_i` + 内层输出 + `tail_i` → 层 i 在最终帧中的起点
+      `S_i = Σ_{j>i} head_j`，最外层 `S_{n-1} = 0`；
+    - 内核起点 = `S_0 + head_0 = Σ head_j`（内核整体连续嵌在最内层里）；
+    - `layers[i] = {index, offset=S_i, size=该层帧字节数, length[], checksum[]}`
+      —— `length`/`checksum` 的 offset 已平移到最终帧，可直接叠在冻结帧上显示。
+
+    单一载荷是前提（序列步骤 = 一条内核帧）：多载荷下第 1 层不连续，
+    `i-payload-0` 只能定位第 1 条 → 由路由侧先拒绝。
+    """
+    stages = list(result.get("stages") or [])
+    if not stages:
+        raise ValueError("配方没有可编译的阶段")
+
+    heads: List[int] = []
+    for stage in stages:
+        offset = (stage.get("shell") or {}).get("payload_offset")
+        if offset is None:
+            raise ValueError(
+                f"第 {int(stage.get('index', 0)) + 1} 层无可用插槽，无法定位内核"
+            )
+        heads.append(int(offset))
+
+    starts = [0] * len(stages)
+    for i in range(len(stages) - 2, -1, -1):
+        starts[i] = starts[i + 1] + heads[i + 1]
+
+    kernel = {
+        "offset": starts[0] + heads[0],
+        "length": len(_compact(kernel_hex)) // 2,
+    }
+    layers: List[Dict[str, object]] = []
+    for i, stage in enumerate(stages):
+        base = starts[i]
+        shell = stage.get("shell") or {}
+        layers.append({
+            "index": i,
+            "offset": base,
+            "size": int(stage["total_length"]),
+            "length": [
+                {"offset": base + int(f["offset"]), "byte_length": int(f["byte_length"])}
+                for f in shell.get("length") or []
+            ],
+            "checksum": [
+                {"offset": base + int(f["offset"]), "byte_length": int(f["byte_length"])}
+                for f in shell.get("checksum") or []
+            ],
+        })
+
+    out: Dict[str, object] = {"recipe_id": str(recipe_id), "kernel": kernel, "layers": layers}
+    if definition_hash:
+        out["definition_hash"] = definition_hash
+    return out
+
+
+def stages_fingerprint(stage_hashes) -> Optional[str]:
+    """CP3 3c (D15 关联项 2): 配方各层 `definition_hash` 的**复合指纹**。
+
+    序列步骤冻结期把该指纹存进 `sequence_steps.wrap.definition_hash`；读侧
+    `current_fingerprint` 按当前协议定义重算比对 → 协议结构变了才亮徽标
+    （D7-A：不阻断，冻结帧仍可发）。分隔符取 U+001F 防拼接歧义。
+    """
+    parts = [str(h) for h in (stage_hashes or []) if h]
+    if not parts:
+        return None
+    import hashlib
+
+    return "sha256:" + hashlib.sha256("\x1f".join(parts).encode("utf-8")).hexdigest()
+
+
+def current_fingerprint(db: Session, recipe) -> Optional[str]:
+    """按**当前**协议定义重算配方复合指纹（读侧 stale 比对；不编译帧）。
+
+    任一层协议已删除 → None（无法比对，调用方按「已失效」处理）。
+    """
+    parts: List[str] = []
+    for stage in list(recipe.stages or []):
+        protocol = (
+            db.query(ProtocolTemplate)
+            .filter(ProtocolTemplate.id == stage.get("protocol_id"))
+            .first()
+        )
+        if protocol is None:
+            return None
+        parts.append(protocol_definition_hash(protocol.children))
+    return stages_fingerprint(parts)

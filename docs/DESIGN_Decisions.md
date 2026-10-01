@@ -392,7 +392,7 @@ hex 字符串**、纯函数、单遍、无环；`routers/protocol.py::_validate_
 它继续管第 0 层填洞）、D3（配方路径 `fit_policy` 缺省 `reject`，**主动偏离**「默认
 取现状零回归」—— 该约束只管存量槽与存量路径，配方无存量数据；多层下 append 的
 溢出字节会被下一层当正常载荷收下，错误被放大）、D6（序列封装帧 D6-B 与配方合流：
-外壳层 length/checksum 进 `plan` 重算区间，两批应合并设计）、D7（`definition_hash`
+外壳层 length/checksum 进 `plan` 重算区间，两批应合并设计 —— **已随 3c 合并落地**）、D7（`definition_hash`
 由批次三**提前**到配方首批 —— 配方是跨协议依赖，无失效徽标即静默错帧）、D9
 （传输层不进配方，配方只管线帧格式层）。
 
@@ -512,6 +512,11 @@ hex 字符串**、纯函数、单遍、无环；`routers/protocol.py::_validate_
 2. **D6-B 冻结口径**（配方下已扩为逐层区间，见 `DESIGN_CorePipeline.md` §9.7
    3c）：补一条 —— `recipe_id` 与配方 `definition_hash` 一并存进 `sequence_steps`，
    协议结构变了才亮徽标。**零争议，随 3c 落地**。
+   ✅ **已随 3c 实施（2026-10-01，提交 `<待提交>` / db `<待提交>`）**：落库形
+   `sequence_steps.wrap = {recipe_id, definition_hash}`（**新增单列，符合硬约束**），
+   读侧 `stale` 由 `recipe_compile.current_fingerprint` 比对 `stages_fingerprint`
+   （配方 stages 与其所引协议定义的复合 sha256）—— 配方或协议任一改动即点亮，
+   只提示不阻断（冻结帧仍可运行）。
 
 **实施注（2026-10-01 拍板 = A）**：`response_spec` **增 `stage` 维度**（`response_specs`
 仅加一列，符合硬约束）+ `response_match` 按 `stages` **逆序解包**逐层跑五要素；

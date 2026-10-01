@@ -191,6 +191,11 @@ class SequenceStep(Base):
     payload = Column(Text, nullable=False)  # 保存时编译的完整帧 hex（前端 encodeInstruction 产物）
     # 发送时重算计划 {"dynamic": [...TIME/COUNTER 补丁], "checksum": {regions 重算}}；None = 原样发送
     plan = Column(JSON, nullable=True)
+    # CP3 3c (D6-B) 序列封装帧：配方引用 {recipe_id, definition_hash(冻结期复合
+    # 指纹)}；None = 裸帧步骤。有值时 payload 是**冻结完整封装帧**、plan 带
+    # shell（外壳逐层 length/checksum 区间），发送期按配方重算（D6-B）。
+    # 存量库缺列由 database.ensure_sequence_step_columns 启动自愈。
+    wrap = Column(JSON, nullable=True)
 
 
 # 12. Dispatch Logs（P5: 通讯日志落库 — 三路写入（manual/transaction/sequence）

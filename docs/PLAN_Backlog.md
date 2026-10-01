@@ -36,7 +36,7 @@
 | CP1 | Core Pipeline 批次一：1a 绑定三列 DDL + 1b frame_builder + 1c 发送 wrap 接线 + 1d 文档（`DESIGN_CorePipeline.md` §7 首批） | **已提交 ✅ `31bc367`（代码+文档）/ `da91228`（db 同步），2026-09-24**——反馈 1（星标确认，§8.8）与反馈 2（协议卡面直填，§8.9）均已并入验收 |
 | CP2 | Core Pipeline 批次二（防错）：D3 `fit_policy=reject` 执行（**存量槽不迁移**）+ 槽契约 warning 徽标 + 新建槽 UI 默认 reject + D12 删除级联（**`sequence_steps` 失效标记不阻断**，活配置级联删 / 冻结快照留 / 日志留）+ **转义层位统一**（封装试发改带 `wrap` 下发）（`DESIGN_CorePipeline.md` §7 批次二） | **已提交 ✅ `5afe706`（代码+文档），2026-10-01**——**人工验证 5 项已通过**（STRICT 400 / 删指令三分弹窗 / 序列失效只读 / 试发 warnings 徽标 / 真实链路帧）：BE 426/426（基线 383 + 43）、FE 915/915（63 文件）、`vite build` EXIT=0、yorha-ui 校验器 13 文件 0 违规；**零 DDL**（`yorha.db` 未随本批提交）。明细见 §8.19。2026-10-01 起为 CP3 硬前置（CP3 的 3a 复用其 reject 分支） |
 | CP2b | D11 分段 ① **向量表共享 fixture 化**（两端测试读同一份 JSON 向量、新增向量只写一处；`DESIGN_Decisions.md` D11 实施注） | **已提交 ✅ `da0179d`（代码+文档），2026-10-01**——跨语言特殊值约定拍板 = **`$v` 包装对象**（`{"$v":"Infinity"}` / `"-Infinity"` / `"NaN"`，其余标量按 JSON 原型天然分型）；新增根目录 **`vectors/`（12 个 JSON 文件 / 15 张表 + 双端加载器 + README）**，13 个后端 / 6 个前端测试文件改读共享 JSON。终态：BE 426/426、FE 915/915（63 文件）、`npx vite build` EXIT=0、yorha-ui 校验器 7 文件 0 违规；**零 DDL**。明细见 §8.20。**不阻塞 CP3**（CP3 只硬前置 CP2 的 reject 分支） |
-| CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | 🔄 **3a 已提交 ✅ `e63d76f`（代码+文档）/ `438f3af`（db 同步）；3b 已提交 ✅ `c4b1f7f`（代码+文档，零 DDL），2026-10-01**，3c/3d 未开工——硬前置 CP2 ✅；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**，实施设计已写入 §9 与 §7。**3a 含 DDL**（`frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈）→ yorha.db 单独同步提交；**3a 提前并入了原属 3b 的 `dispatch` `wrap.recipe_id` 接线**（加工页预览/TRANSMIT/事务三路须同字节，缺接线则预览帧与出线帧不同）。3a 终态：BE 466/466（基线 426 + 40）、FE 920/920（63 文件，基线 915 + 5）、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、**真路由冒烟 25 项 PASS**；明细见 §8.21。**3b 终态**：**纯前端批、零 DDL**（未改 `models.py`/`database.py`，`yorha.db` 未随本批提交）—— FE **924/924（63 文件，基线 920 + 4）**、既有「属性面板四分区 select = 3」用例**零改全绿**（未建配方时编辑器不占 select）、BE 466/466、`npx vite build` EXIT=0、yorha-ui 校验器 3 文件 0 违规、**真 curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；明细见 §8.22 |
+| CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | 🔄 **3a 已提交 ✅ `e63d76f`（代码+文档）/ `438f3af`（db 同步）；3b 已提交 ✅ `c4b1f7f`（代码+文档，零 DDL），2026-10-01**，**3c 已提交 ✅ `<待提交>`（代码+文档）/ `<待提交>`（db 同步），2026-10-01**；3d 未开工——硬前置 CP2 ✅；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**，实施设计已写入 §9 与 §7。**3a 含 DDL**（`frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈）→ yorha.db 单独同步提交；**3a 提前并入了原属 3b 的 `dispatch` `wrap.recipe_id` 接线**（加工页预览/TRANSMIT/事务三路须同字节，缺接线则预览帧与出线帧不同）。3a 终态：BE 466/466（基线 426 + 40）、FE 920/920（63 文件，基线 915 + 5）、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、**真路由冒烟 25 项 PASS**；明细见 §8.21。**3b 终态**：**纯前端批、零 DDL**（未改 `models.py`/`database.py`，`yorha.db` 未随本批提交）—— FE **924/924（63 文件，基线 920 + 4）**、既有「属性面板四分区 select = 3」用例**零改全绿**（未建配方时编辑器不占 select）、BE 466/466、`npx vite build` EXIT=0、yorha-ui 校验器 3 文件 0 违规、**真 curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；明细见 §8.22。**3c 终态（2026-10-01）**：**含 DDL** —— `sequence_steps` 新增 `wrap JSON` 单列自愈（`database.ensure_sequence_step_columns`，镜像 3a `ensure_recipe_columns` 先例）→ yorha.db **单独同步提交**；BE **496/496（基线 466 + 30）**、FE **932/932（63 文件，基线 924 + 8）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**真路由冒烟 30 项 ALL PASS** + **真浏览器 UI 验证 6 项通过**；明细见 §8.23。**3d 未开工**（前置 D15-A 已拍板，实施口径见 §9.7 3d 行） |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -1918,6 +1918,102 @@ GET 往返 / 配方编译 `AA 01 02` / **dispatch 带 `recipe_id` 出线 = 预�
   本节、`PLAN_Backlog.md` §1 CP3 行、`PROJECT_HANDOVER.md` 条目 36、
   `DESIGN_Decisions.md` D13 实施注、`pageStatus.json` 编排页条目 +
   `node scripts/generate-page-status.mjs` 再生成 `docs/PAGE_STATUS.md`。
+
+### 8.23 Core Pipeline 批次三 · 3c（CP3-3c：序列封装帧 D6-B + curl/UI 双冒烟）
+
+（2026-10-01，**含 DDL** —— `models.py` 新增 `sequence_steps.wrap` 单列 +
+`database.ensure_sequence_step_columns` 补列自愈（镜像 3a `ensure_recipe_columns`
+四态模板，`main.py` lifespan 调用），故**有 `chore(db)` 提交**；未碰
+`processor.py` / `graph.py` / `Blueprint.jsx`；未封装步骤的序列发送路径与
+`/dispatch` 缺省口径由既有用例 + 冒烟**双钉**。）
+
+**范围（`DESIGN_CorePipeline.md` §9.7 3c 行 · D6-B「冻结 vs 重算分离」）**
+
+- **请求 / 响应形分野**：`SequenceStepSpec.wrap` 只收 **`{recipe_id}`**
+  （`_wrap_spec` 严格键集，未知键 400 `steps[i].wrap 未知字段: …`）；
+  `definition_hash` / `stale` 属**响应形**（`SequenceStepOut.wrap`），透传即 400。
+- **保存期冻结**（`routers/sequence.py` `_normalize_steps(db, steps)` / `_freeze_wrap`）：
+  入参先 `normalize_plan` 归一 → 有 `wrap` 即 `kernel_slice` 切内核 →
+  `compile_recipe` → `recipe_compile.shell_plan` 注入 **`plan.shell`** → 完整帧二次
+  归一后冻结进 `payload`，`wrap = {recipe_id, definition_hash}` 落库；配方不存在 /
+  编译异常一律降 **400**（`steps[i]: 配方不存在：…`）。**`plan` 无 shell** → 视
+  `payload` 为内核；**`plan` 有 shell 而 `wrap` 缺席/null** → 按旧区间切回内核 +
+  `core_plan` 剥 shell —— 两种形态均幂等，**前端只透传不计算**。
+- **`plan.shell` 几何（本帧绝对坐标）**：`head_i` = 该层 `payload_offset`、
+  `S_i = Σ_{j>i} head_j`，内核起点 = `Σ head_j`；`length`/`checksum` 平移为最终帧
+  绝对坐标。取数链 = `orchestrator.block_spans`（发射期每块真实区间，align 归前块、
+  pad_to 归后块）→ `frame_builder._collect_shell` → `shell_plan`。
+- **`_normalize_shell` 键集与不变量**（SSOT 在 `sequence_plan.py`）：`_PLAN_KEYS` 增
+  `shell`，**仅当输入存在才输出**（存量 `{dynamic, checksum}` 键集零回归）；严格键集
+  + 嵌套不变量 —— 层序 0..n-1 连续、offset 严格递减、**最外层恒 0**、内核落第 0 层
+  区间、字段不出层区间、层上限 **4**（与 `MAX_RECIPE_STAGES` 同值）。另拆
+  `core_plan(plan)`（剥 shell 的内核侧补丁）与 `kernel_slice(data, plan)`（按旧区间
+  切内核）。
+- **发送期重算**（`core/sequence_runner.py` `_frame_for_send`）：**无 shell** =
+  `apply_plan → 整帧转义`（**逐字节不变**）；**有 shell** = `kernel_slice →
+  内核侧 apply_plan → 内核转义 → `run.compile_wrap(recipe_id, kernel_hex)` 套壳 →
+  整帧出线（层位同 dispatch「先转内核再套壳」）。编译异常抛 `WrapError` → 记步
+  `WRAP: {原因}`，与 `PLAN:` / `TRANSPORT:` **三分类**；`_Run.claim/start` 增可选
+  `compile_wrap` 参，路由侧 `_compile_wrap_factory()` 每次自开 `SessionLocal`
+  （请求会话已关）。
+- **读侧失效徽标**：`_wrap_with_stale(db, wrap, seen)` 按 recipe_id 缓存
+  `recipe_compile.current_fingerprint`（配方 `stages` 与所引协议定义的复合 sha256）
+  比对冻结时 `definition_hash` → `wrap.stale`；配方/协议缺失也按 `stale=true`
+  （**只提示不阻断**，冻结帧仍可运行）。
+- **DDL 自愈四态**（`ensure_sequence_step_columns`，与 `ensure_recipe_columns`
+  用例同构、改一须对照另一处）：缺列补列且存量行回填 `NULL`（= 裸帧步骤，缺省路径）/
+  二次调用 no-op / `create_all` 已带列时 no-op / 表不存在 no-op。
+- **前端（仅 `frontend/`）**：步骤编辑器新增 `RECIPE（可选）` 选择器
+  （`data-testid="step-wrap-recipe"`，挂载期 `GET /recipes`，失败静默降级、引用已删
+  配方出「（配方缺失：id）」占位项）；卡片 + 编辑器头部 `WRAP :: <配方名>` 琥珀回显、
+  `wrap.stale` 点亮既有「失效」同款黄徽标；新纯函数 `utils/sequenceView.shellSummary`
+  渲染 `SHELL L1..LN · LN LEN@x CRC@y` 并回显进既有 `PLAN:` 面板。**`buildPlan`
+  输出键集一行未改**（shell 后端注入 = 单一真相源，另有用例钉死
+  `['checksum','dynamic']`）；`toDraft` 对 `wrap: null` **剥键** → 裸帧 PUT 请求形
+  逐字节不变，APPLY 用 `...('wrap' in s ? {wrap: s.wrap} : {})` 保证**内核 payload
+  与 wrap 同行**。
+
+**测试**：新建 `backend/tests/test_sequence_wrap.py` **30 例**（键集纪律 / 冻结与
+徽标 / 发送与往返 / 补列自愈四态），其余**零改**。
+
+**真路由冒烟 30 项 ALL PASS**（真 uvicorn + `curl.exe`，**不是 TestClient** —— 单测
+直调函数验不到真实 HTTP 栈；临时夹具脚本在 `Temp/opencode`，不入库）：冻结帧 =
+主向量 `three` 同字节 `C008B005A0020102E0E1E2` / `plan.shell` 层 offset `[4,2,0]`
+size `[5,8,11]` LEN `[5,3,1]`、内核 `{6,2}` / `wrap.stale=false` 且与
+`plan.shell.definition_hash` 同值 / 裸帧 `payload`+`plan=null`+`wrap=null` 零回归 /
+三类 400 定位 `steps[0]: `（脏 plan 字段 / 幽灵配方 / 脏 wrap 未知键）/ `GET`
+回读与 `PUT` **幂等同字节** / `POST /start` → `sent = C0 08 B0 05 A0 02 01 02 E0 E1
+E2`、`received` 同帧（过 `match_response` 语义）/ **改中间层协议 → `stale=true`
+且冻结字节与冻结 hash 不动** / 还原 → `stale` 清 / **残留清零**（16 指令 · 3 协议 ·
+0 配方 · 1 原有序列 `wrap` 全 null 原样）。
+
+**真浏览器 UI 验证 6 项**（真 vite + 真 uvicorn，抓真实 PUT 请求体）：① 请求体 =
+`{payload: 内核, plan: 无 shell, wrap:{recipe_id}}`，且**第 2 步不带 `wrap` 键**
+（裸帧形状守恒）；② 卡片字节数 **20B**（11B 内核 + 3×(2B 头 + 1B LEN) = 9B 头）；
+③ `WRAP :: 三层配方（3c 冒烟）` 卡片 + 编辑器头部两处回显；④ `PLAN` 摘要
+`SHELL L1..L3 · L1 LEN@5 · L2 LEN@3 · L3 LEN@1` —— 与后端 `shell_plan` 坐标一致；
+⑤ UI 点「启动序列」→ **2/2 OK**，第 1 步 `sent = C0 11 B0 0E A0 0B <11B> E0 E1 E2`
+（20B，`LEN` 绝对值 0x11/0x0E/0x0B 逐层自洽），第 2 步 `AUTO_COUNTER` 发送期重算
+（0x49 → 0x4A）；⑥ 传 `plan` 带 shell + `wrap:null` → 服务端切回内核、剥 `plan.shell`
+（回退路径实测）。
+
+**终态**：BE **496/496（基线 466 + 30）**、FE **932/932（63 文件，基线 924 + 8）**、
+`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 **0 违规**、真路由冒烟 30 项 +
+真浏览器 UI 6 项 ALL PASS。
+
+> **注**：冒烟夹具（3 层协议 + 配方）已删除、`序列 1` 已按回退路径还原为裸帧，
+> 冒烟改动的 SQLite 字节用 `git checkout -- backend/db/yorha.db` 还原后**手工只补
+> 一条 DDL**（`ALTER TABLE sequence_steps ADD COLUMN wrap JSON`）→ 本批 `yorha.db`
+> = **3a 提交态 + wrap 单列**，不含任何冒烟数据。
+
+**人工验证（§9.7 3c 段 = 上方「真路由冒烟 + 真浏览器 UI 验证」两组，已执行通过）**
+；§9.7 3a①②③ 与 3b①②③ 共 6 项亦已执行通过，见 §7 批次三 3a/3b 进度注。
+
+**文档同步**：`DESIGN_CorePipeline.md` §4 序列 Runner 行 + §5 封装帧行 + §7 批次三
+3c 进度注 + §9.7 排批表 3c 行 + 人工验证必查 ⑤、`PLAN_Backlog.md` §1 CP3 行 +
+本节、`DESIGN_Decisions.md` D6 关联与 D15 关联项 ② 实施注、`PROJECT_HANDOVER.md`
+条目 37、`pageStatus.json` 序列页条目 + `node scripts/generate-page-status.mjs`
+再生成 `docs/PAGE_STATUS.md`。
 
 ## 9. 保留勿动（非任务，勿清理）
 

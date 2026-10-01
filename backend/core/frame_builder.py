@@ -24,7 +24,7 @@
 
 import math
 import re
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from backend.core.orchestrator import Orchestrator
 from backend.schemas.block import Block
@@ -298,6 +298,36 @@ def _collect_logic(nodes) -> List[dict]:
     return out
 
 
+def _collect_shell(nodes, spans: Dict[str, List[Tuple[int, int]]]) -> dict:
+    """CP3 3c (D6-B): 发射期求**本层**外壳在本层帧内的绝对字节位置。
+
+    - `payload_offset`：注入载荷（id 恒 `i-payload-0`）的起点 = 本层外壳头部
+      字节数（找不到时 None —— 空载荷删槽 / 无槽追加根末尾）；
+    - `length` / `checksum`：本层 length·checksum 字段的 `{offset, byte_length}`
+      区间（内容口径：align 前置 pad 归前块、pad_to 后置 pad 归后块）。
+    均相对**本层帧**；配方把层 i 的区间平移到最终帧（见 recipe_compile.shell_plan）。
+    仅多一个键，既有消费方逐键取值 → 零影响。
+    """
+    out: dict = {"payload_offset": None, "length": [], "checksum": []}
+    hits = spans.get("i-payload-0")
+    if hits:
+        out["payload_offset"] = int(hits[0][0])
+
+    def walk(node_list) -> None:
+        for node in node_list or []:
+            if not isinstance(node, Block):
+                continue
+            ntype = str(node.type)
+            if ntype in ("length", "checksum"):
+                for start, end in spans.get(str(node.id)) or []:
+                    out[ntype].append({"offset": int(start), "byte_length": int(end - start)})
+            if node.children:
+                walk(node.children)
+
+    walk(nodes)
+    return out
+
+
 # 批次二 (D3)：槽契约读侧口径 —— 合法值集合与 §3 表一致；存量槽无
 # parameter_config / 无 fit_policy → 缺省 = 现状口径（append/zero_fill）。
 _OVERFLOW_DEFAULT, _UNDERFLOW_DEFAULT = "append", "zero_fill"
@@ -517,12 +547,17 @@ def build_wrapped(
     by_id: Dict[str, dict] = {}
     _index_nodes(roots, by_id)
     blocks = _to_blocks(roots, by_id)
-    raw_hex = Orchestrator(blocks).process()
+    orchestrator = Orchestrator(blocks)
+    raw_hex = orchestrator.process()
     compact = re.sub(r"\s+", "", raw_hex)
+    spans = getattr(orchestrator, "block_spans", {}) or {}
     return {
         "hex": _pretty(compact),
         "total_length": len(compact) // 2,
         "warnings": warnings,
         # CP3 3a: length/checksum 真值回显（分层预览卡面用；仅多一个键）
         "logic": _collect_logic(blocks),
+        # CP3 3c (D6-B): 发射期绝对字节区间（载荷注入点 + LEN/CRC 字段位置；
+        # 仅多一个键 → 预览/出线/配方三路既有消费方零影响）
+        "shell": _collect_shell(blocks, spans),
     }

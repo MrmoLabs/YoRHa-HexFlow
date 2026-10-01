@@ -110,3 +110,22 @@ def ensure_recipe_columns(bind):
                 "ALTER TABLE instructions ADD COLUMN default_recipe_id TEXT"
             )
             conn.commit()
+
+
+def ensure_sequence_step_columns(bind):
+    """CP3 3c (D6-B): sequence_steps.wrap 单列自愈。
+
+    main.py lifespan 在 create_all 后调用（镜像 ensure_recipe_columns：create_all
+    只建缺失的表、**不给既有表补列**）。缺列则 ALTER ADD COLUMN JSON NULL，
+    存量行回填 NULL = 裸帧步骤（D6-B 缺省路径，行为逐字节不变）。
+
+    幂等：已存在 → no-op；表尚不存在 → no-op（后者由 create_all 按 models 建全列，
+    新库同样先 create_all 再进来）。
+    """
+    with bind.connect() as conn:
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(sequence_steps)")}
+        if not columns:
+            return
+        if "wrap" not in columns:
+            conn.exec_driver_sql("ALTER TABLE sequence_steps ADD COLUMN wrap JSON")
+            conn.commit()

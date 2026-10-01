@@ -16,6 +16,11 @@
   字节，replay 不二次转义）→ transport.send（read_timeout_ms 取序列 config，
   None = 传输配置缺省）→ 记 OK/ERROR。stop_on_error=True（缺省）遇 ERROR
   中止 → result=failed；False 记错继续 → 跑完 result=completed。
+- CP3 3c (D6-B) 序列封装帧：步骤带 `plan.shell` 时**发送按配方重算** ——
+  冻结完整帧切内核 → 打内核补丁 → 内核先转义 → `run.compile_wrap(recipe_id,
+  kernel)` 按当前协议定义重算外壳（`compile_wrap` 由路由注入，自开会话）。
+  失败记步 `WRAP: {原因}`（与 `PLAN:` / `TRANSPORT:` 三分），不抛到 Runner 级。
+  无 shell 的步骤路径**逐字节不变**。
 
 快照字段是轮询契约（P4 序列页）：
 running / result(idle|running|completed|failed|stopped) / sequence_id /
@@ -33,19 +38,35 @@ from typing import Any, Dict, List, Optional
 
 from backend.core import transport
 from backend.core.escape import escape_bytes, table_from_config
-from backend.core.sequence_plan import apply_plan
+from backend.core.sequence_plan import apply_plan, core_plan, kernel_slice
 
 
 class SequenceBusy(Exception):
     """已有序列在运行（路由映射 409）。"""
 
 
+class WrapError(Exception):
+    """CP3 3c (D6-B): 序列封装步出线重算失败（配方/协议缺失、语义错误）。
+    独立异常类型 → 记步 `WRAP: {原因}`，与 `PLAN:`（补丁/计划脏数据）、
+    `TRANSPORT:`（链路）三分，便于操作员定位层。"""
+
+
 class _Run:
-    def __init__(self, sequence_id: str, sequence_name: str, steps: List[Dict[str, Any]], config: Dict[str, Any]):
+    def __init__(
+        self,
+        sequence_id: str,
+        sequence_name: str,
+        steps: List[Dict[str, Any]],
+        config: Dict[str, Any],
+        compile_wrap=None,
+    ):
         self.sequence_id = sequence_id
         self.sequence_name = sequence_name
         self.steps = steps
         self.config = config
+        # D6-B 发送期「按配方重算外壳」入口（routers/sequence 注入，自开会话；
+        # None = 无封装步可用，遇到封装步记步 WRAP 错误）
+        self.compile_wrap = compile_wrap
         self.stop = False
         self.running = True
         self.result = "running"
@@ -104,13 +125,19 @@ def is_running() -> bool:
         return _state is not None and _state.running
 
 
-def claim(sequence_id: str, sequence_name: str, steps: List[Dict[str, Any]], config: Dict[str, Any]) -> _Run:
+def claim(
+    sequence_id: str,
+    sequence_name: str,
+    steps: List[Dict[str, Any]],
+    config: Dict[str, Any],
+    compile_wrap=None,
+) -> _Run:
     """同步占用运行槽；已有运行 → SequenceBusy（路由 409）。"""
     global _state
     with _lock:
         if _state is not None and _state.running:
             raise SequenceBusy(f"序列运行中：{_state.sequence_name or _state.sequence_id}")
-        run = _Run(sequence_id, sequence_name, steps, config)
+        run = _Run(sequence_id, sequence_name, steps, config, compile_wrap)
         _state = run
         return run
 
@@ -136,9 +163,15 @@ def set_log_hook(fn) -> None:
     _log_hook = fn
 
 
-def start(sequence_id: str, sequence_name: str, steps: List[Dict[str, Any]], config: Dict[str, Any]) -> Dict[str, Any]:
+def start(
+    sequence_id: str,
+    sequence_name: str,
+    steps: List[Dict[str, Any]],
+    config: Dict[str, Any],
+    compile_wrap=None,
+) -> Dict[str, Any]:
     """claim + daemon 线程执行；返回初始快照（SequenceBusy 抛给路由）。"""
-    run = claim(sequence_id, sequence_name, steps, config)
+    run = claim(sequence_id, sequence_name, steps, config, compile_wrap)
     thread = threading.Thread(
         target=execute, args=(run,), daemon=True, name=f"seq-{sequence_id[:8]}"
     )
@@ -204,6 +237,39 @@ def _log_step(step: Dict[str, Any], n: int, record: Dict[str, Any], run: _Run) -
     )
 
 
+def _frame_for_send(step: Dict[str, Any], run: _Run, now_ms: float) -> bytes:
+    """步帧发送前重算 → **线上字节**（转义口径与记录一致，replay 不二次转义）。
+
+    - 无 `plan.shell`（存量与未选配方步骤）：`apply_plan` → 整帧转义，**逐字节
+      与 3c 之前一致**（§0 硬约束的序列侧对偶）。
+    - 有 `plan.shell`（D6-B 序列封装帧）：冻结完整帧切出内核 → 打内核补丁
+      （TIME/COUNTER/CRC 相对内核坐标）→ **内核先转义** → `compile_wrap` 按配方
+      现算外壳（LEN/CRC 由编排器按**当前协议定义**重算）。层位与 dispatch 的
+      「先转内核再套壳」（N4/D13）逐字一致；壳内 length/checksum 因此按线上字节计。
+    """
+    plan = step.get("plan")
+    payload = step["payload"]
+    if not (plan or {}).get("shell"):
+        data = apply_plan(payload, plan, now_ms)
+        return escape_bytes(data, table_from_config(transport.get_config()))
+
+    shell = plan["shell"]
+    table = table_from_config(transport.get_config())
+    kernel = apply_plan(kernel_slice(payload, plan), core_plan(plan), now_ms)
+    kernel = escape_bytes(kernel, table)
+    if run.compile_wrap is None:
+        raise WrapError("未提供配方编译入口（无法重算外壳）")
+    recipe_id = str(shell.get("recipe_id") or "")
+    try:
+        full = run.compile_wrap(recipe_id, kernel.hex().upper())
+    except Exception as e:  # 配方/协议被删、fit reject、无插槽 …
+        raise WrapError(str(getattr(e, "detail", None) or e)) from e
+    try:
+        return bytes.fromhex(str(full).replace(" ", "").replace("\n", ""))
+    except ValueError as e:
+        raise WrapError(f"配方产物不是合法 hex：{e}") from e
+
+
 def execute(run: _Run) -> None:
     """阻塞执行 claim 到的槽；任何路径都 finalize（running=False）并留终态。"""
     stop_on_error = bool((run.config or {}).get("stop_on_error", True))
@@ -225,14 +291,18 @@ def execute(run: _Run) -> None:
             record = _step_record(step, n, "OK")
             started = time.perf_counter()
             try:
-                data = apply_plan(step["payload"], step.get("plan"), time.time() * 1000)
+                # D6-B: 无 shell = 现状（补丁 → 整帧转义）；有 shell = 切内核 →
+                # 打内核补丁 → 内核先转义 → 按配方套外壳（见 _frame_for_send）
+                data = _frame_for_send(step, run, time.time() * 1000)
                 # N4 (G3): 出线前转义 —— 先转义再记 sent/存档（记录即线上字节）
-                data = escape_bytes(data, table_from_config(transport.get_config()))
                 record["sent"] = " ".join(f"{b:02X}" for b in data)
                 response = transport.send(data, read_timeout_ms=read_timeout_ms)
             except ValueError as e:
                 record["status"] = "ERROR"
                 record["error"] = f"PLAN: {e}"
+            except WrapError as e:
+                record["status"] = "ERROR"
+                record["error"] = f"WRAP: {e}"
             except transport.TransportError as e:
                 record["status"] = "ERROR"
                 record["error"] = f"TRANSPORT: {e}"

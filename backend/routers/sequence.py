@@ -1,13 +1,19 @@
 import uuid
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from backend.core import sequence_runner
-from backend.core.sequence_plan import normalize_plan
-from backend.db.database import get_db
-from backend.db.models import Instruction, Sequence, SequenceStep
+from backend.core.recipe_compile import (
+    compile_recipe,
+    current_fingerprint,
+    shell_plan,
+    stages_fingerprint,
+)
+from backend.core.sequence_plan import core_plan, kernel_slice, normalize_plan
+from backend.db.database import SessionLocal, get_db
+from backend.db.models import FrameRecipe, Instruction, Sequence, SequenceStep
 from backend.schemas.sequence_api import (
     SequenceOut,
     SequencePayload,
@@ -32,6 +38,11 @@ from backend.schemas.sequence_api import (
 #   中定义不打断运行（Runner 持内存副本），编辑入口由前端运行期自行禁用。
 # - 校验类错误 400（业务口径 detail 为 SSOT）；模型形状缺失 422（pydantic，
 #   同 P2 先例）。测试 stdlib unittest 直调本模块函数（临时库直连 Session）。
+# - CP3 3c (D6-B) 序列封装帧：步骤可选 `wrap={recipe_id}`，保存期由配方把内核
+#   套成**冻结完整帧**（payload）并在 plan 记 `shell`（外壳逐层 length/checksum
+#   区间）；发送期切内核打补丁 → 内核先转义 → 按配方重算外壳（sequence_runner）。
+#   `recipe_id` + 冻结期 `definition_hash` 复合指纹存 `sequence_steps.wrap`，
+#   读侧比对当前协议定义 → 协议结构变了才亮徽标（不阻断，D7-A）。
 
 router = APIRouter(prefix="/sequences", tags=["sequences"])
 
@@ -83,8 +94,64 @@ def _normalize_config(raw) -> dict:
     return {"stop_on_error": stop_on_error, "read_timeout_ms": read_timeout_ms}
 
 
-def _normalize_steps(steps: List[SequenceStepSpec]) -> List[dict]:
-    """步骤列表归一：边界 + normalize_plan（payload/plan 形态 SSOT）。"""
+def _wrap_spec(raw, where: str):
+    """CP3 3c (D6-B): 请求形 `wrap` 校验 —— 只收 {recipe_id}，未知键 400。"""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail=f"{where}.wrap 必须是对象或 null")
+    unknown = set(raw) - {"recipe_id"}
+    if unknown:
+        raise HTTPException(
+            status_code=400, detail=f"{where}.wrap 未知字段: {', '.join(sorted(unknown))}"
+        )
+    recipe_id = str(raw.get("recipe_id") or "").strip()
+    if not (1 <= len(recipe_id) <= 64):
+        raise HTTPException(
+            status_code=400, detail=f"{where}.wrap.recipe_id 必须是 1..64 字符"
+        )
+    return {"recipe_id": recipe_id}
+
+
+def _freeze_wrap(db: Session, where: str, recipe_id: str, data: bytes, plan):
+    """保存期「冻结完整帧」：内核 → 逐层套壳 → 注入 plan.shell 逐层区间。
+
+    返回 (完整帧 bytes, 注入 shell 的 plan)。协议/配方语义错误统一降为 400 并
+    带 `steps[i]:` 定位（与 payload/plan 归一同一报错口径，前端可直接指到步骤）。
+    """
+    recipe = db.query(FrameRecipe).filter(FrameRecipe.id == recipe_id).first()
+    if recipe is None:
+        raise HTTPException(status_code=400, detail=f"{where}: 配方不存在：{recipe_id}")
+    kernel = kernel_slice(data, plan).hex().upper()
+    try:
+        result = compile_recipe(db, recipe_id, [kernel])
+    except HTTPException as e:
+        raise HTTPException(status_code=400, detail=f"{where}: {e.detail}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"{where}: {e}")
+    fingerprint = stages_fingerprint(
+        [s.get("definition_hash") for s in (result.get("stages") or [])]
+    )
+    try:
+        shell = shell_plan(result, kernel, recipe_id, fingerprint)
+        # 内核侧补丁原样保留（plan 可能为 None → 空基座再挂 shell）
+        base = core_plan(plan) or {}
+        frozen, plan_with_shell = normalize_plan(result["hex"], {**base, "shell": shell})
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"{where}: {e}")
+    return frozen, plan_with_shell, fingerprint
+
+
+def _normalize_steps(db: Session, steps: List[SequenceStepSpec]) -> List[dict]:
+    """步骤列表归一：边界 + normalize_plan（payload/plan 形态 SSOT）。
+
+    CP3 3c (D6-B) 序列封装帧三形态（都先按入参归一，再按 wrap 决定去向）：
+    1. 无 wrap、plan 无 shell = 现状裸帧路径，**逐字节不变**；
+    2. 有 wrap → 切内核（无 shell 时入参 payload 即内核）→ 配方逐层套壳 →
+       冻结**完整帧**入 payload、`plan.shell` 记外壳逐层区间；
+    3. 无 wrap 但 plan 带 shell（配方被摘掉）→ 按旧区间切回内核、剥掉 shell，
+       退回裸帧形态（否则内核相对区间会错位打到整帧上）。
+    """
     if len(steps) > _MAX_STEPS:
         raise HTTPException(status_code=400, detail=f"步骤最多 {_MAX_STEPS} 步")
     normalized: List[dict] = []
@@ -106,10 +173,25 @@ def _normalize_steps(steps: List[SequenceStepSpec]) -> List[dict]:
             )
         if step.params is not None and not isinstance(step.params, dict):
             raise HTTPException(status_code=400, detail=f"{where}.params 必须是对象或 null")
+        wrap = _wrap_spec(step.wrap, where)
         try:
             data, plan = normalize_plan(step.payload, step.plan)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=f"{where}: {e}")
+
+        fingerprint = None
+        if wrap is not None:
+            data, plan, fingerprint = _freeze_wrap(
+                db, where, wrap["recipe_id"], data, plan
+            )
+        elif plan is not None and plan.get("shell"):
+            # 摘掉配方：冻结完整帧 → 切回内核、剥 shell（回到 3c 之前的形态）
+            try:
+                kernel = kernel_slice(data, plan)
+                data, plan = normalize_plan(kernel.hex().upper(), core_plan(plan))
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=f"{where}: {e}")
+
         normalized.append({
             "instruction_id": instruction_id,
             "label": label,
@@ -117,6 +199,11 @@ def _normalize_steps(steps: List[SequenceStepSpec]) -> List[dict]:
             "params": step.params,
             "payload": data.hex().upper(),
             "plan": plan,
+            "wrap": (
+                {"recipe_id": wrap["recipe_id"], "definition_hash": fingerprint}
+                if wrap is not None
+                else None
+            ),
         })
     return normalized
 
@@ -133,6 +220,7 @@ def _write_steps(db: Session, sequence_id: str, steps: List[dict]) -> None:
             params=spec["params"],
             payload=spec["payload"],
             plan=spec["plan"],
+            wrap=spec.get("wrap"),
         ))
 
 
@@ -162,8 +250,29 @@ def _missing_instruction_ids(db: Session, step_rows: List[SequenceStep]) -> set:
     return wanted - present
 
 
+def _wrap_with_stale(db: Session, wrap, seen: dict) -> Optional[dict]:
+    """读侧补 `stale`：冻结期复合指纹 vs **当前**协议定义重算值（D7-A 不阻断）。
+
+    每次请求按 recipe_id 缓存（同序列里多步引用同一配方时只查一次）；配方已被
+    删除或其任一层协议已删除 → 无法比对，按「已失效」处理（与 D14② 步骤失效
+    同语义：标记不阻断，冻结帧仍可发）。
+    """
+    if not wrap:
+        return None
+    out = dict(wrap)
+    recipe_id = out.get("recipe_id")
+    if recipe_id not in seen:
+        recipe = db.query(FrameRecipe).filter(FrameRecipe.id == recipe_id).first()
+        seen[recipe_id] = None if recipe is None else current_fingerprint(db, recipe)
+    current = seen[recipe_id]
+    recorded = out.get("definition_hash")
+    out["stale"] = (current is None) or (recorded is None) or (recorded != current)
+    return out
+
+
 def _to_out(db: Session, row: Sequence, step_rows: List[SequenceStep]) -> SequenceOut:
     missing = _missing_instruction_ids(db, step_rows)
+    seen: dict = {}
     return SequenceOut(
         id=row.id,
         name=row.name,
@@ -180,6 +289,7 @@ def _to_out(db: Session, row: Sequence, step_rows: List[SequenceStep]) -> Sequen
                 params=s.params,
                 payload=s.payload,
                 plan=s.plan,
+                wrap=_wrap_with_stale(db, getattr(s, "wrap", None), seen),
             )
             for s in step_rows
         ],
@@ -226,7 +336,7 @@ def list_sequences(db: Session = Depends(get_db)) -> List[SequenceOut]:
 def create_sequence(payload: SequencePayload, db: Session = Depends(get_db)) -> SequenceOut:
     name = _checked_name(db, payload.name)
     config = _normalize_config(payload.config)
-    steps = _normalize_steps(payload.steps)
+    steps = _normalize_steps(db, payload.steps)
     row = Sequence(
         id=str(uuid.uuid4()), name=name, description=payload.description, config=config
     )
@@ -254,7 +364,7 @@ def update_sequence(
         raise HTTPException(status_code=404, detail="Sequence not found")
     name = _checked_name(db, payload.name, exclude_id=row.id)
     config = _normalize_config(payload.config)
-    steps = _normalize_steps(payload.steps)
+    steps = _normalize_steps(db, payload.steps)
     # 整体替换：删旧步骤 + 改定义 + 写新步骤，单事务提交
     db.query(SequenceStep).filter(SequenceStep.sequence_id == row.id).delete(
         synchronize_session=False
@@ -282,6 +392,25 @@ def delete_sequence(sequence_id: str, db: Session = Depends(get_db)):
 
 
 # ---- 运行（单槽 + 互斥）----
+
+
+def _compile_wrap_factory():
+    """D6-B: Runner 发送期「按配方重算外壳」的编译入口。
+
+    请求作用域的 `db` 在 `start_sequence` 返回后即关闭，而 Runner 是后台线程、
+    到步执行时才编译 → 入口每次自开独立会话（同一 SessionLocal/engine），
+    不会持有已失效的请求会话。
+    """
+
+    def compile_wrap(recipe_id: str, kernel_hex: str) -> str:
+        session = SessionLocal()
+        try:
+            out = compile_recipe(session, recipe_id, [kernel_hex])
+            return str(out.get("hex") or "").replace(" ", "")
+        finally:
+            session.close()
+
+    return compile_wrap
 
 
 @router.post("/{sequence_id}/start", response_model=SequenceStatus)
@@ -316,7 +445,9 @@ def start_sequence(sequence_id: str, db: Session = Depends(get_db)) -> SequenceS
         })
     config = _normalize_config(row.config or {})
     try:
-        snap = sequence_runner.start(row.id, row.name, steps, config)
+        snap = sequence_runner.start(
+            row.id, row.name, steps, config, compile_wrap=_compile_wrap_factory()
+        )
     except sequence_runner.SequenceBusy as e:
         raise HTTPException(status_code=409, detail=str(e))
     return SequenceStatus(**snap)

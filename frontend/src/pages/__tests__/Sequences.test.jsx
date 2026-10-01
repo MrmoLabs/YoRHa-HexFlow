@@ -16,7 +16,8 @@ vi.mock('../../api', () => ({
         startSequence: vi.fn(),
         stopSequence: vi.fn(),
         getSequenceStatus: vi.fn(),
-        getInstructions: vi.fn()
+        getInstructions: vi.fn(),
+        getRecipes: vi.fn()
     }
 }));
 
@@ -60,10 +61,40 @@ const INSTR = {
     ]
 };
 
+// CP3 3c (D6-B): 配方行（GET /recipes 响应形）与封装步骤的 plan.shell ——
+// 最终帧绝对字节坐标，16 字节帧 3 层（由内到外 offset 递减、最外层 0，几何与
+// backend/core/recipe_compile.shell_plan 一致：S_i = Σ_{j>i} head_j）。
+const RECIPE = { id: 'rec-1', name: '三重壳', description: null, stages: [], version: 1 };
+
+const SHELL = {
+    recipe_id: 'rec-1',
+    definition_hash: 'sha256:deadbeef',
+    kernel: { offset: 6, length: 4 },
+    layers: [
+        { index: 0, offset: 5, size: 7, length: [{ offset: 5, byte_length: 1 }], checksum: [{ offset: 10, byte_length: 2 }] },
+        { index: 1, offset: 3, size: 11, length: [{ offset: 3, byte_length: 2 }], checksum: [{ offset: 12, byte_length: 2 }] },
+        { index: 2, offset: 0, size: 16, length: [{ offset: 0, byte_length: 2 }], checksum: [{ offset: 14, byte_length: 2 }] }
+    ]
+};
+
+// 单步序列：已封装（wrap 响应形 {recipe_id, definition_hash, stale}）+ 冻结的
+// 完整封装帧 payload + 带 shell 的 plan（extra 可覆盖 wrap 等字段）
+const wrappedRow = (extra = {}) => ({
+    ...SEQ_ROW,
+    steps: [{
+        id: 'st-w', step_order: 0, instruction_id: 'instr-1', label: '封装步', delay_ms: 0,
+        params: null, payload: '000102030405060708090A0B0C0D0E0F',
+        plan: { dynamic: [], checksum: null, shell: SHELL },
+        wrap: { recipe_id: 'rec-1', definition_hash: 'sha256:deadbeef', stale: false },
+        ...extra
+    }]
+});
+
 const baseMocks = () => {
     api.listSequences.mockResolvedValue([SEQ_ROW]);
     api.getSequenceStatus.mockResolvedValue(IDLE_SNAP);
     api.getInstructions.mockResolvedValue([INSTR]);
+    api.getRecipes.mockResolvedValue([]);
     // 页面生成名 = `序列 ${sequences.length + 1}`：现存 1 条 → 序列 2
     api.createSequence.mockResolvedValue({ ...SEQ_ROW, id: 'seq-new', name: '序列 2', steps: [] });
     api.updateSequence.mockResolvedValue(SEQ_ROW);
@@ -283,5 +314,121 @@ describe('Sequences Page', () => {
         }]);
         await renderPage();
         expect(screen.getByText('失效')).toBeTruthy();
+    });
+
+    // ---- CP3 3c (D6-B): 序列封装帧（步骤可选封装配方） ----------------------
+
+    it('recipe selector lands wrap.recipe_id on the draft and in the PUT body', async () => {
+        api.getRecipes.mockResolvedValue([RECIPE]);
+        await renderPage();
+        // 打开第 1 步编辑器 → RECIPE 选择器回填「无封装」（未选 → 无 wrap 键）
+        fireEvent.click(screen.getAllByTitle('编辑该步骤')[0]);
+        const select = await screen.findByTestId('step-wrap-recipe');
+        expect(select.value).toBe('');
+        fireEvent.change(select, { target: { value: 'rec-1' } });
+        // 选中即落草稿 → 卡片即时回显 WRAP :: 指示（本地新选无 stale → 徽标不亮）
+        await waitFor(() => {
+            expect(screen.getByTestId('step-wrap-0').textContent).toContain('WRAP :: 三重壳');
+        });
+        expect(screen.queryByTestId('step-wrap-stale-0')).toBeNull();
+        // 保存：请求形只收 {recipe_id}（响应形 definition_hash/stale 不透传 → 400 未知字段）
+        fireEvent.click(screen.getByRole('button', { name: /保存定义/ }));
+        await waitFor(() => expect(api.updateSequence).toHaveBeenCalledTimes(1));
+        const body = api.updateSequence.mock.calls[0][1];
+        expect(body.steps[0].wrap).toEqual({ recipe_id: 'rec-1' });
+        expect('definition_hash' in body.steps[0].wrap).toBe(false);
+        expect('stale' in body.steps[0].wrap).toBe(false);
+        // 未选配方的步骤不带 wrap 键（裸帧请求形与改前一致）
+        expect('wrap' in body.steps[1]).toBe(false);
+    });
+
+    it('APPLY keeps the selected recipe on the step (kernel payload + wrap travel together)', async () => {
+        api.getRecipes.mockResolvedValue([RECIPE]);
+        await renderPage();
+        fireEvent.click(screen.getByRole('button', { name: /\+ 添加步骤/ }));
+        await screen.findByText(/STEP 03 \/\/ 编辑器/);
+        fireEvent.change(await screen.findByTestId('step-wrap-recipe'), { target: { value: 'rec-1' } });
+        fireEvent.click(screen.getByRole('button', { name: /应用到步骤/ }));
+        await waitFor(() => expect(screen.getByText(/步骤 3 已应用（3 字节）/)).toBeTruthy());
+        fireEvent.click(screen.getByRole('button', { name: /保存定义/ }));
+        await waitFor(() => expect(api.updateSequence).toHaveBeenCalledTimes(1));
+        const body = api.updateSequence.mock.calls[0][1];
+        expect(body.steps).toHaveLength(3);
+        // APPLY 产物 = 内核帧 payload + buildPlan 计划（无 shell），wrap 同步入 PUT
+        expect(body.steps[2].payload).toBe('AABBCC');
+        expect(body.steps[2].plan).toBeNull();
+        expect(body.steps[2].wrap).toEqual({ recipe_id: 'rec-1' });
+        expect('wrap' in body.steps[0]).toBe(false);
+    });
+
+    it('wrapped step echoes WRAP :: on card + editor header and lights the stale badge', async () => {
+        api.getRecipes.mockResolvedValue([RECIPE]);
+        api.listSequences.mockResolvedValue([wrappedRow({
+            wrap: { recipe_id: 'rec-1', definition_hash: 'sha256:deadbeef', stale: true }
+        })]);
+        await renderPage();
+        // 卡片层：来源指示 + 失效徽标（stale 点亮、不阻断）
+        expect(screen.getByTestId('step-wrap-0').textContent).toContain('WRAP :: 三重壳');
+        expect(screen.getByTestId('step-wrap-stale-0').textContent).toContain('失效');
+        // 编辑器：下拉回填已选配方，头部同款指示 + 失效徽标
+        fireEvent.click(screen.getByTitle('编辑该步骤'));
+        const select = await screen.findByTestId('step-wrap-recipe');
+        expect(select.value).toBe('rec-1');
+        expect(screen.getByTestId('step-editor-wrap').textContent).toContain('WRAP :: 三重壳');
+        expect(screen.getByTestId('step-editor-wrap-stale').textContent).toContain('失效');
+    });
+
+    it('clearing the recipe hides WRAP :: and PUTs wrap: null', async () => {
+        api.getRecipes.mockResolvedValue([RECIPE]);
+        api.listSequences.mockResolvedValue([wrappedRow()]);
+        await renderPage();
+        expect(screen.getByTestId('step-wrap-0')).toBeTruthy(); // 回显在场
+        fireEvent.click(screen.getByTitle('编辑该步骤'));
+        const select = await screen.findByTestId('step-wrap-recipe');
+        expect(select.value).toBe('rec-1');
+        fireEvent.change(select, { target: { value: '' } });
+        // 指示即时消失（卡片与编辑器头部均不渲染 WRAP ::）
+        await waitFor(() => expect(screen.queryByTestId('step-wrap-0')).toBeNull());
+        expect(screen.queryByTestId('step-editor-wrap')).toBeNull();
+        // 保存 → 显式 wrap: null（后端按旧区间切回内核、剥 plan.shell）
+        fireEvent.click(screen.getByRole('button', { name: /保存定义/ }));
+        await waitFor(() => expect(api.updateSequence).toHaveBeenCalledTimes(1));
+        const step = api.updateSequence.mock.calls[0][1].steps[0];
+        expect('wrap' in step).toBe(true);
+        expect(step.wrap).toBeNull();
+    });
+
+    it('plan.shell layers summary renders in the plan summary panel', async () => {
+        api.listSequences.mockResolvedValue([wrappedRow()]);
+        await renderPage();
+        fireEvent.click(screen.getByTitle('编辑该步骤'));
+        const panel = await screen.findByTestId('step-plan-summary');
+        // 层数 + 每层 LEN/CRC 字段的最终帧绝对字节位（shellSummary）
+        expect(panel.textContent).toContain('SHELL L1..L3');
+        expect(panel.textContent).toContain('L1 LEN@5 CRC@10');
+        expect(panel.textContent).toContain('L2 LEN@3 CRC@12');
+        expect(panel.textContent).toContain('L3 LEN@0 CRC@14');
+    });
+
+    it('steps served with wrap: null keep the bare request shape (no wrap key in PUT)', async () => {
+        // 真实 GET /sequences 响应里未封装步骤恒带 wrap:null —— 草稿须剥键，
+        // 保存体才与 CP3-3c 之前逐字节一致（零回归锚）
+        api.listSequences.mockResolvedValue([{
+            ...SEQ_ROW,
+            steps: SEQ_ROW.steps.map((s) => ({ ...s, wrap: null }))
+        }]);
+        await renderPage();
+        expect(screen.queryByTestId('step-wrap-0')).toBeNull(); // wrap null → 不渲染 WRAP ::
+        fireEvent.click(screen.getByRole('button', { name: /保存定义/ }));
+        await waitFor(() => expect(api.updateSequence).toHaveBeenCalledTimes(1));
+        const body = api.updateSequence.mock.calls[0][1];
+        expect(body.steps).toHaveLength(2);
+        expect('wrap' in body.steps[0]).toBe(false);
+        expect('wrap' in body.steps[1]).toBe(false);
+        // 既有裸帧字段逐字节保持
+        expect(body.steps[0]).toEqual({
+            instruction_id: 'instr-1', label: '第一步', delay_ms: 0,
+            params: null, payload: 'A5010B', plan: null
+        });
     });
 });
