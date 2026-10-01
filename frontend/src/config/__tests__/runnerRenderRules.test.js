@@ -7,7 +7,11 @@ import {
     formatTimeDisplay,
     resolveFieldDisplay,
     collectSemanticItems,
-    computeFieldInputLimits
+    computeFieldInputLimits,
+    resolveRunnerKind,
+    computeStringUsage,
+    parseBcdInput,
+    parseFloatInput
 } from '../runnerRenderRules';
 
 // C6 加工页参数渲染下沉：渲染规则抽为可测试配置后的回归锁。
@@ -212,9 +216,9 @@ describe('resolveFieldDisplay（显示值解析）', () => {
         const field = leaf({ byte_len: 2, parameter_config: { type: 'number', input_base: 'dec' } });
         expect(resolveFieldDisplay(field, { inputs: { f1: 255 } }))
             .toMatchObject({ displayValue: 255, inputType: 'decimal' });
-        // 无输入态：原值 undefined（不塞 0），placeholder 用 0 便于对齐习惯
+        // 无输入态：原值 undefined（不塞 0），placeholder 给字段数值域 0..65535（第 14 单：占位即域）
         expect(resolveFieldDisplay(field, {}))
-            .toMatchObject({ displayValue: undefined, inputType: 'decimal', placeholder: '0' });
+            .toMatchObject({ displayValue: undefined, inputType: 'decimal', placeholder: '0..65535' });
     });
 
     it('input_base=dec：仅影响 hex 语义 type；string/text/decimal/float 通道原样透传', () => {
@@ -456,5 +460,161 @@ describe('优化批 1：BIN 二进制通道（input_base=bin）', () => {
             .toEqual({ byteLen: 1, maxLength: 8 });
         // 枚举/非整数类型仍不设限
         expect(computeFieldInputLimits(leaf({ parameter_config: { options: ['A'], input_base: 'bin' } }))).toBeNull();
+    });
+});
+
+// ===== 第 14 单（加工页字段种类感知 · 红测先行）=====
+// 种类章的 lane 判定必须与 resolveFieldDisplay 同源 —— 章说的种类就是输入
+// 实际走的通道，杜绝「章 F32、输入却是 hex 通道」的错位。
+
+describe('第 14 单：resolveRunnerKind 种类章', () => {
+    const kindOf = (f) => resolveRunnerKind(f);
+
+    it('只读/固定 → FIX；时间 → TIME；计算族按算子细分 LEN/CKSUM/CALC', () => {
+        expect(kindOf(leaf({ op_code: 'HEX_RAW', byte_len: 1, parameter_config: {} })))
+            .toMatchObject({ key: 'FIX', label: 'FIX' });
+        expect(kindOf(leaf({ op_code: 'TIME_CUMULATIVE', byte_len: undefined, parameter_config: {} })))
+            .toMatchObject({ key: 'TIME', label: 'TIME' });
+        expect(kindOf(leaf({ op_code: 'LENGTH_CALC', byte_len: undefined, parameter_config: {} })))
+            .toMatchObject({ key: 'LEN', label: 'LEN' });
+        expect(kindOf(leaf({ op_code: 'CHECKSUM_CRC', byte_len: undefined, parameter_config: {} })))
+            .toMatchObject({ key: 'CKSUM', label: 'CKSUM' });
+        expect(kindOf(leaf({ op_code: 'INPUT', parameter_config: { formula: 'auto' } })))
+            .toMatchObject({ key: 'CALC', label: 'CALC' });
+    });
+
+    it('数值/编码族：F32 / BCD / SCALE / TEXT / SINT / UINT', () => {
+        expect(kindOf(leaf({ op_code: 'FLOAT_IEEE', byte_len: 4, parameter_config: {} }))).toMatchObject({ key: 'F32' });
+        expect(kindOf(leaf({ op_code: 'BCD_CODE', byte_len: 2, parameter_config: {} }))).toMatchObject({ key: 'BCD' });
+        expect(kindOf(leaf({ op_code: 'SCALED_DECIMAL', byte_len: 4, parameter_config: { factor: 2 } }))).toMatchObject({ key: 'SCALE' });
+        expect(kindOf(leaf({ op_code: 'STRING', byte_len: 8, parameter_config: { type: 'string' } }))).toMatchObject({ key: 'TEXT' });
+        // 存量 INPUT + type=string 同样按文本种类出章
+        expect(kindOf(leaf({ byte_len: 8, parameter_config: { type: 'string' } }))).toMatchObject({ key: 'TEXT' });
+        expect(kindOf(leaf({ op_code: 'INT_SIGNED', byte_len: 1, parameter_config: {} }))).toMatchObject({ key: 'SINT' });
+        expect(kindOf(leaf({ op_code: 'INT_UNSIGNED', byte_len: 1, parameter_config: {} }))).toMatchObject({ key: 'UINT' });
+    });
+
+    it('枚举 → MAP；位域 → BIT；计数 → CNT；组 → STRUCT/ARRAY；旧算子/兜底 → IN/HDR/VAR', () => {
+        expect(kindOf(leaf({ op_code: 'MAPPING', parameter_config: { options: { A: 1 } } }))).toMatchObject({ key: 'MAP' });
+        expect(kindOf(leaf({ op_code: 'INPUT', parameter_config: { options: [1, 2] } }))).toMatchObject({ key: 'MAP' });
+        expect(kindOf(leaf({ op_code: 'BITFIELD', byte_len: 1, parameter_config: {} }))).toMatchObject({ key: 'BIT' });
+        expect(kindOf(leaf({ op_code: 'AUTO_COUNTER', byte_len: 1, parameter_config: {} }))).toMatchObject({ key: 'CNT' });
+        expect(kindOf(leaf({ op_code: 'STRUCT', byte_len: 0, parameter_config: {} }))).toMatchObject({ key: 'STRUCT' });
+        expect(kindOf(leaf({ op_code: 'ARRAY_GROUP', byte_len: 0, parameter_config: {} }))).toMatchObject({ key: 'ARRAY' });
+        expect(kindOf(leaf({ op_code: 'INPUT', byte_len: 2, parameter_config: {} }))).toMatchObject({ key: 'IN' });
+        expect(kindOf(leaf({ op_code: 'HEADER', byte_len: 2, parameter_config: {} }))).toMatchObject({ key: 'HDR' });
+        expect(kindOf(leaf({ op_code: 'WEIRD_OP', byte_len: 2, parameter_config: {} }))).toMatchObject({ key: 'VAR' });
+    });
+
+    it('title 全部非空（tooltip 说明编码特性）', () => {
+        ['HEX_RAW', 'FLOAT_IEEE', 'BCD_CODE', 'STRING', 'INT_SIGNED'].forEach((op) => {
+            const k = kindOf(leaf({
+                op_code: op, byte_len: 2,
+                parameter_config: op === 'STRING' ? { type: 'string' } : {}
+            }));
+            expect(typeof k.title).toBe('string');
+            expect(k.title.length).toBeGreaterThan(0);
+        });
+    });
+});
+
+describe('第 14 单：FLOAT_IEEE / BCD_CODE 通道贴合（修复 hex 通道错位）', () => {
+    it('FLOAT_IEEE（type 缺省/number）强制十进制小数通道，input_base 覆盖无效', () => {
+        expect(resolveFieldDisplay(
+            leaf({ op_code: 'FLOAT_IEEE', byte_len: 4, parameter_config: {} }),
+            { inputs: { f1: 1.5 } }
+        )).toMatchObject({ displayValue: 1.5, inputType: 'float', placeholder: '0.0' });
+
+        // 定义侧 input_base=hex 也不切通道 —— 编码端 float32 分支只认数值/十进制小数串
+        expect(resolveFieldDisplay(
+            leaf({ op_code: 'FLOAT_IEEE', byte_len: 4, parameter_config: { input_base: 'hex' } }),
+            { inputs: { f1: 2.25 } }
+        )).toMatchObject({ displayValue: 2.25, inputType: 'float' });
+
+        // 无输入态：undefined + 小数占位（不塞 0、不 hex 补零）
+        expect(resolveFieldDisplay(
+            leaf({ op_code: 'FLOAT_IEEE', byte_len: 4, parameter_config: {} }), {}
+        )).toMatchObject({ displayValue: undefined, inputType: 'float', placeholder: '0.0' });
+    });
+
+    it('BCD_CODE 强制十进制数字通道：十进制回显（非 hex）+ 数字域占位', () => {
+        expect(resolveFieldDisplay(
+            leaf({ op_code: 'BCD_CODE', byte_len: 2, parameter_config: {} }),
+            { inputs: { f1: 1234 } }
+        )).toMatchObject({ displayValue: 1234, inputType: 'bcd', placeholder: '0..9999' });
+
+        // 定义侧静态值存成纯数字串 → 按十进制解读（BCD 语义），不误走 hex
+        expect(resolveFieldDisplay(
+            leaf({ op_code: 'BCD_CODE', byte_len: 2, parameter_config: {} }),
+            { inputs: { f1: '1234' } }
+        )).toMatchObject({ displayValue: 1234, inputType: 'bcd' });
+
+        expect(resolveFieldDisplay(
+            leaf({ op_code: 'BCD_CODE', byte_len: 1, parameter_config: {} }), {}
+        )).toMatchObject({ displayValue: undefined, inputType: 'bcd', placeholder: '0..99' });
+    });
+});
+
+describe('第 14 单：dec 通道占位即域', () => {
+    it('无符号/有符号字段占位显示数值域', () => {
+        expect(resolveFieldDisplay(
+            leaf({ byte_len: 2, parameter_config: { type: 'number', input_base: 'dec' } }), {}
+        )).toMatchObject({ inputType: 'decimal', placeholder: '0..65535' });
+        expect(resolveFieldDisplay(
+            leaf({ op_code: 'INT_SIGNED', byte_len: 1, parameter_config: { input_base: 'dec' } }), {}
+        )).toMatchObject({ inputType: 'decimal', placeholder: '-128..127' });
+    });
+});
+
+describe('第 14 单：computeFieldInputLimits 种类域', () => {
+    it('FLOAT_IEEE 不设限（f32 小数；NaN/溢出由编码端兜底 → 0 / IEEE 溢出）', () => {
+        expect(computeFieldInputLimits(leaf({ op_code: 'FLOAT_IEEE', byte_len: 4, parameter_config: {} }))).toBeNull();
+        expect(computeFieldInputLimits(leaf({ op_code: 'FLOAT_IEEE', byte_len: 4, parameter_config: { input_base: 'dec' } }))).toBeNull();
+    });
+
+    it('BCD 数字域：nibble 数定上限（每位 0..9）+ 字符数上限', () => {
+        expect(computeFieldInputLimits(leaf({ op_code: 'BCD_CODE', byte_len: 2, parameter_config: {} })))
+            .toMatchObject({ byteLen: 2, maxLength: 4, min: 0, max: 9999 });
+        expect(computeFieldInputLimits(leaf({ op_code: 'BCD_CODE', byte_len: 1, parameter_config: {} })))
+            .toMatchObject({ maxLength: 2, min: 0, max: 99 });
+    });
+});
+
+describe('第 14 单：computeStringUsage 文本用量徽标', () => {
+    it('ascii：字符数即字节数；超定长 → over（截断警示）', () => {
+        const f = leaf({ op_code: 'STRING', byte_len: 8, parameter_config: { type: 'string', encoding: 'ascii' } });
+        expect(computeStringUsage(f, 'HELLO')).toEqual({ used: 5, total: 8, unit: 'CHARS', over: false });
+        expect(computeStringUsage(f, 'HELLO_123456')).toEqual({ used: 12, total: 8, unit: 'CHARS', over: true });
+    });
+
+    it('utf8：TextEncoder 字节数 + BYTES 单位', () => {
+        const f = leaf({ op_code: 'STRING', byte_len: 8, parameter_config: { type: 'string', encoding: 'utf8' } });
+        expect(computeStringUsage(f, '中A')).toEqual({ used: 4, total: 8, unit: 'BYTES', over: false });
+    });
+
+    it('无有效 byte_len → null（徽标退回通用形态）', () => {
+        expect(computeStringUsage(leaf({ op_code: 'STRING', byte_len: 0, parameter_config: { type: 'string' } }), 'A')).toBeNull();
+        expect(computeStringUsage(leaf({ op_code: 'STRING', byte_len: undefined, parameter_config: { type: 'string' } }), 'A')).toBeNull();
+    });
+});
+
+describe('第 14 单：SmartInput 解析助手（纯函数，组件只接线）', () => {
+    it('parseBcdInput：仅数字入缓冲 + 按 nibble 数限宽', () => {
+        expect(parseBcdInput('12a34', 4)).toEqual({ text: '1234', value: 1234 });
+        expect(parseBcdInput('999999', 4)).toEqual({ text: '9999', value: 9999 });
+        expect(parseBcdInput('', 4)).toEqual({ text: '', value: null });
+        expect(parseBcdInput('77', null)).toEqual({ text: '77', value: 77 });
+    });
+
+    it('parseFloatInput：严格十进制小数语法（与编码端 float32 分支同口径，指数不吞）', () => {
+        expect(parseFloatInput('3.14')).toEqual({ text: '3.14', value: 3.14 });
+        expect(parseFloatInput('1.')).toEqual({ text: '1.', value: 1 });
+        expect(parseFloatInput('.5')).toEqual({ text: '.5', value: 0.5 });
+        expect(parseFloatInput('-2.5')).toEqual({ text: '-2.5', value: -2.5 });
+        expect(parseFloatInput('-').value).toBeNull();
+        expect(parseFloatInput('').value).toBeNull();
+        expect(parseFloatInput('abc').value).toBeNull();
+        // 指数形式在 FLOAT_IEEE 编码分支会被静默置 0 —— 宁可不发值
+        expect(parseFloatInput('1e5').value).toBeNull();
     });
 });

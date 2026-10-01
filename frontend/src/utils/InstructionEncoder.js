@@ -42,9 +42,12 @@ export const InstructionEncoder = {
             const isInput = op === 'INPUT' || params.variable || op === 'STRING';
 
             if (isInput) {
-                if (op === 'STRING') {
+                if (op === 'STRING' || type === 'string') {
                     // N2 (G2): 文本字段初始录入值 = 静态 value（与编码兜底同源）——
                     // 加工页回显与实发字节一致，可继续键入修改；无值 → 空串。
+                    // 第 14 单：normalize 把可编辑 STRING 的 op 摊平为 INPUT（行 61
+                    // 白名单未收 STRING）——按 type='string' 兜底，初值契约不因归一化
+                    // 丢失（真机 CMD-632 曾因此回显空串）。
                     initialInputs[field.id] = params.value ?? params.default ?? '';
                 } else if (params.default !== undefined) {
                     initialInputs[field.id] = params.default;

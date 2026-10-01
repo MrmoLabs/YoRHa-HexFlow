@@ -747,6 +747,19 @@ describe('N2 定长字符串 STRING（G2 · 双端 byte-equal 锚点）', () => 
         expect(without.x).toBe('');
     });
 
+    it('第 14 单：normalize 摊平后的 STRING（op=INPUT + type=string）初值仍 = 静态 value', () => {
+        // normalizeRunnerInstruction 把可编辑 STRING 的 op 重写为 INPUT（白名单未
+        // 收 STRING）——初值契约按 type 兜底，不因归一化丢失（N2 契约第 14 单补口）。
+        const withValue = InstructionEncoder.getInitialValues({
+            fields: [fld('INPUT', 8, { type: 'string', encoding: 'ascii', value: 'HI', variable: true })],
+        });
+        expect(withValue.x).toBe('HI');
+        const noValue = InstructionEncoder.getInitialValues({
+            fields: [fld('INPUT', 8, { type: 'string', value: '', variable: true })],
+        });
+        expect(noValue.x).toBe('');
+    });
+
     it('LENGTH_CALC 引用 STRING：fieldSizes 按 byte_len 定长（不按字符数）', () => {
         const instr = {
             fields: [

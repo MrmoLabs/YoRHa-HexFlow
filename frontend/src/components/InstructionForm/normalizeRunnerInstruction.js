@@ -51,14 +51,30 @@ const processFields = (items) => {
 
                 // Advanced Recognition: Inputs
                 // FIX: Broaden Fixed detection. "Raw HEX" might be 'HEX' or just have a value.
-                const hasFixedValue = (f.parameter_config?.hex || f.parameter_config?.value) !== undefined && !f.parameter_config?.variable;
+                // 第 14 单（N2 契约对齐）：STRING 的静态 value 是「初值」不是「静态
+                // 载荷」—— 加工页初始值 = 静态 value 且可继续键入（pageStatus N2
+                // 行），带值即判死会让 CMD-632 这类文本字段整行只读（真机坐实）。
+                // 仅 TEXT 种类豁免；其余算子 value→FIXED 存量契约不动。
+                const isStringField = op === 'STRING' || type === 'string';
+                const hasFixedValue = !isStringField
+                    && (f.parameter_config?.hex || f.parameter_config?.value) !== undefined
+                    && !f.parameter_config?.variable;
                 const isFixed = op === 'FIXED' || op === 'HEX_RAW' || op === 'HEX' || op === 'BITFIELD' || type === 'fixed' || type === 'hex_raw' || f.parameter_config?.readOnly || hasFixedValue;
                 const isInput = !isCalculated && !isFixed;
 
+                // 第 14 单：种类算子身份保留 —— 可编辑时 FLOAT_IEEE/BCD_CODE/
+                // INT_SIGNED/SCALED_DECIMAL/AUTO_COUNTER 原样进编码器：encode 的
+                // f32/打包 BCD/两补码/定标/计数分支按 op 门控（InstructionEncoder
+                // 行 173/205/302/318/340），摊平成 INPUT 即全部死亡（真机实锤：
+                // FLOAT 3.14 → 00 00 00 03、BCD 1234 → 04 D2）。带静态 value
+                // （isFixed）不保留 → 仍走 FIXED 存量语义；MAPPING/INT_UNSIGNED
+                // 编码字节等价、TIME_* 手动选时刻覆盖语义、组结构 —— 维持摊平。
+                const keepKindOp = isInput
+                    && ['FLOAT_IEEE', 'BCD_CODE', 'INT_SIGNED', 'SCALED_DECIMAL', 'AUTO_COUNTER'].includes(op);
                 return {
                     id: f.id,
                     name: f.name || f.label,
-                    op_code: (['LENGTH_CALC', 'CHECKSUM_CRC', 'HEX_RAW', 'BITFIELD', 'TIME_CUMULATIVE', 'TIME_ACCUMULATOR'].includes(op) || type === 'time_cumulative') ? (['LENGTH_CALC', 'CHECKSUM_CRC', 'HEX_RAW', 'BITFIELD'].includes(op) ? op : 'TIME_CUMULATIVE') : (isInput ? 'INPUT' : (isCalculated ? 'CALCULATED' : 'FIXED')),
+                    op_code: (keepKindOp || ['LENGTH_CALC', 'CHECKSUM_CRC', 'HEX_RAW', 'BITFIELD', 'TIME_CUMULATIVE', 'TIME_ACCUMULATOR'].includes(op) || type === 'time_cumulative') ? ((keepKindOp || ['LENGTH_CALC', 'CHECKSUM_CRC', 'HEX_RAW', 'BITFIELD'].includes(op)) ? op : 'TIME_CUMULATIVE') : (isInput ? 'INPUT' : (isCalculated ? 'CALCULATED' : 'FIXED')),
                     original_op_code: f.op_code, // Preserve original for render logic fallback
                     bits: Array.isArray(f.bits) ? f.bits : [], // Bit layout for BITFIELD packing
                     parameter_config: {

@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { parseBcdInput, parseFloatInput } from '../../config/runnerRenderRules';
 
 /**
  * A mission-grade HUD input component following NieR aesthetics.
  * Features a local buffer state to prevent "Input Lock" during typing.
  * Supports standard inputs and dropdown selections (Enum).
+ * 第 14 单：新增 kind 章（字段种类徽标 + tooltip）、float/bcd 专属通道
+ * （解析助手在 config/runnerRenderRules.js，纯函数单测）、usage 用量徽标。
  */
 export const SmartInput = ({
     label,
     value,
     onChange,
-    type = 'text', // 'text', 'number', 'hex', 'decimal', 'select'
+    type = 'text', // 'text' | 'number' | 'hex' | 'decimal' | 'binary' | 'float' | 'bcd' | 'select'
     options = [], // [{ label: 'Name', value: 0x01 }]
     readOnly = false,
     highlight = false,
@@ -21,10 +24,14 @@ export const SmartInput = ({
     // 第 4 批：TIME 字段取值形态 + 定长限制 + 字节定位联动
     pickerMode = false,      // readOnly + pickerMode → 日期选择器取值形态（非锁定板）
     onSelect = null,         // 点击行 → 通知上层选中字段（BYTE_STREAM 高亮联动）
-    maxLength = null,        // hex 通道字符数上限（= byte_len×2）
+    maxLength = null,        // hex/bcd 通道字符数上限（hex=byte_len×2 / bcd=nibble 数）
     min = undefined,         // number 通道数值下限
     max = undefined,         // number 通道数值上限
-    byteLen = null           // 定长字节数（驱动 n/N BYTES / [nB] 徽标）
+    byteLen = null,          // 定长字节数（驱动 n/N BYTES / [nB] 徽标）
+    // 第 14 单：字段种类章（label 前小徽标）+ 文本用量徽标（n/N CHARS|BYTES）
+    kindLabel = null,
+    kindTitle = null,
+    usage = null             // { used, total, unit, over } | null
 }) => {
     // Local buffer to allow unnatural typing (e.g. "05", "0x", or ".") without immediate state correction
     const [localValue, setLocalValue] = useState(String(value ?? ''));
@@ -72,6 +79,18 @@ export const SmartInput = ({
                 if (out !== num) setLocalValue(String(out));
                 onChange(out);
             }
+        } else if (type === 'float') {
+            // 第 14 单：十进制小数通道 —— 与编码端 float32 分支同语法（严格十进制
+            // 小数、不吃指数）；半截（'-'/'.'/'1.'）与非法字符保留缓冲不发半截值。
+            const res = parseFloatInput(raw);
+            setLocalValue(res.text);
+            if (res.value !== null) onChange(res.value);
+        } else if (type === 'bcd') {
+            // 第 14 单：BCD 数字通道 —— 只进 0-9，按 nibble 数限宽（不移位），
+            // 发十进制数值（逐 nibble 打包由编码端完成）。空缓冲不发值。
+            const res = parseBcdInput(raw, maxLength);
+            setLocalValue(res.text);
+            if (res.value !== null) onChange(res.value);
         } else if (type === 'binary') {
             // 优化批 1：二进制通道 —— 0b 前缀（输入糖）→ 纯 [01] → 按位宽
             // 截断 → 二进制解析发**数值**（与 dec 同：值存储恒数值，encoder 无感）。
@@ -149,6 +168,15 @@ export const SmartInput = ({
                     <div className="flex items-center gap-2 mr-3 min-w-[140px] shrink-0">
                         {/* accent bar: full-contrast when editable, ghosted when locked */}
                         <div className={`w-1 h-4 ${readOnly && !pickerActive ? 'bg-[#4a4a4a]/25' : 'bg-[#4a4a4a]/80'}`}></div>
+                        {/* 第 14 单：字段种类章（算子语义 tooltip；右徽标继续承载状态/长度） */}
+                        {kindLabel && (
+                            <span
+                                title={kindTitle}
+                                className={`text-[8px] font-black font-mono leading-none border px-1 py-[2px] uppercase tracking-tighter shrink-0 select-none cursor-help ${readOnly && !pickerActive ? 'text-[#4a4a4a]/40 border-[#4a4a4a]/25' : 'text-[#4a4a4a]/85 border-[#4a4a4a]/45'}`}
+                            >
+                                {kindLabel}
+                            </span>
+                        )}
                         <span className={`text-[11px] font-black uppercase tracking-widest truncate ${readOnly && !pickerActive ? 'text-[#4a4a4a]/40' : 'text-[#4a4a4a]'}`}>
                             {label}
                         </span>
@@ -210,6 +238,17 @@ export const SmartInput = ({
                             title="READ_ONLY // 由固定/计算块生成，不可直接编辑"
                         >
                             [READ_ONLY]
+                        </span>
+                    ) : usage ? (
+                        // 第 14 单：定长文本用量徽标（n/N CHARS|BYTES；超定长 =
+                        // 编码端截断 → 琥珀警示，优先于通用长度徽标）
+                        <span
+                            className={`text-[9px] font-black uppercase tracking-tighter whitespace-nowrap select-none ${usage.over ? 'text-[#E58D28]' : 'text-[#4a4a4a]/60'}`}
+                            title={usage.over
+                                ? `超定长 ${usage.total}（${usage.unit === 'BYTES' ? '字节' : '字符'}）：编码端截断到 ${usage.total}，当前 ${usage.used}`
+                                : `定长 ${usage.total} ${usage.unit === 'BYTES' ? '字节' : '字符'}，已用 ${usage.used}`}
+                        >
+                            {usage.used}/{usage.total} {usage.unit}
                         </span>
                     ) : usedBytes != null && type === 'hex' ? (
                         // 第 4 批 #4：定长 hex 长度徽标（n/N BYTES，n = 已用字节）

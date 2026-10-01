@@ -7,7 +7,9 @@ import {
     resolveFieldDisplay,
     collectSemanticItems,
     getFieldEpoch,
-    computeFieldInputLimits
+    computeFieldInputLimits,
+    resolveRunnerKind,
+    computeStringUsage
 } from '../../config/runnerRenderRules';
 
 // Recursive renderer for the dynamic send form's field tree.
@@ -36,6 +38,11 @@ export default function RunnerFieldTree({
         const subFields = field.fields || [];
 
         if (subFields.length > 0) {
+            // 第 14 单：组头也出种类章（STRUCT/ARRAY…；身份归一 VAR/IN → GROUP）
+            const gk = resolveRunnerKind(field);
+            const groupKind = (gk.key === 'VAR' || gk.key === 'IN')
+                ? { label: 'GROUP', title: 'GROUP // 字段组：子字段顺序打包' }
+                : gk;
             return (
                 <div key={field.id} className={`${depth > 0 ? 'ml-6' : ''}`}>
                     <div
@@ -49,6 +56,12 @@ export default function RunnerFieldTree({
                     >
                         <div className="flex items-center gap-2 mb-2 opacity-60">
                             <div className="w-2 h-2 bg-nier-light/30"></div>
+                            <span
+                                title={groupKind.title}
+                                className="text-[8px] font-black font-mono leading-none border border-nier-light/30 px-1 py-[2px] uppercase tracking-tighter text-nier-light/70 select-none cursor-help"
+                            >
+                                {groupKind.label}
+                            </span>
                             <span className="text-[10px] font-black uppercase tracking-widest text-nier-light">
                                 {field.name || field.label || 'BLOCK'}
                             </span>
@@ -123,6 +136,12 @@ export default function RunnerFieldTree({
         const readOnly = !isEditable || isTimeCumulative;
         // 第 4 批 #4：定长限制（指令管理 byte_len 定死 → 截断/钳制 + 长度徽标）
         const limits = computeFieldInputLimits(field);
+        // 第 14 单：种类章（label 前小徽标，tooltip 讲算子特性）+ 定长文本用量
+        // 徽标（TEXT 且可编辑才算；右徽标状态优先级高于用量 —— READ_ONLY 赢）。
+        const kind = resolveRunnerKind(field);
+        const usage = (kind.key === 'TEXT' && !readOnly)
+            ? computeStringUsage(field, inputs[field.id] ?? params.value ?? params.default ?? '')
+            : null;
         // 第 4 批 #2：选中态导轨（amber 定位轨优先于 hover 轨，互斥分支防撞类）
         const railCls = isSelected
             ? 'border-[#E58D28]'
@@ -156,6 +175,9 @@ export default function RunnerFieldTree({
                         highlight={isCalculated || isTimeCumulative}
                         suffix={params.unit || (isTimeCumulative ? `${getFieldEpoch(params).getFullYear()}` : '')}
                         placeholder={placeholder}
+                        kindLabel={kind.label}
+                        kindTitle={kind.title}
+                        usage={usage}
                     />
                     {/* 批 3：BITFIELD 子位录入（与上方整包输入并存；单一真源 = 字段整数） */}
                     {isEditable && field.op_code === 'BITFIELD' && Array.isArray(field.bits) && field.bits.length > 0 && (

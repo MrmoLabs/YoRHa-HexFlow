@@ -134,6 +134,17 @@ export const formatTimeDisplay = (params, seconds) => {
         + `${pad(current.getHours())}:${pad(current.getMinutes())}:${pad(current.getSeconds())}`;
 };
 
+// 第 14 单：BCD 回显 —— 存量值可能是 number（hex/dec 通道时期已存数值）或
+// 定义侧静态字符串。纯数字串按十进制解读（BCD 语义），其余走 toDecimalValue
+// 兜底（hex 串等历史形态）。
+const toBcdNumber = (v) => {
+    if (v === undefined || v === null || v === '') return undefined;
+    if (typeof v === 'number') return v;
+    const s = String(v).trim();
+    if (/^[0-9]+$/.test(s)) return parseInt(s, 10);
+    return toDecimalValue(v);
+};
+
 // Resolve the final controlled-input triple for a leaf field.
 // Returns { displayValue, placeholder, inputType, options }.
 export const resolveFieldDisplay = (field, { inputs = {}, computedValues = {} } = {}) => {
@@ -189,7 +200,22 @@ export const resolveFieldDisplay = (field, { inputs = {}, computedValues = {} } 
         if (rawValue === undefined && field.op_code === 'BITFIELD') {
             rawValue = packBitfieldDefault(field.bits, field.byte_len || 1);
         }
-        if (field.byte_len && field.byte_len > 0) {
+        // 第 14 单：种类通道贴合 —— FLOAT_IEEE / BCD_CODE 强制专属通道。
+        // 两者编码端只认「数值 / 十进制小数串」（float32 分支严格正则、BCD 逐
+        // 十进制数字打包），默认 hex 通道会把 '3.14' 剥成 '314'、把 1234 显示成
+        // '4D2' —— 输入语义错位。input_base 在这两类上让位（定义侧选了也无效）。
+        const kindOps = [field.original_op_code, field.op_code]
+            .filter(Boolean).map(v => String(v).toUpperCase());
+        if (kindOps.includes('FLOAT_IEEE')) {
+            inputType = 'float';
+            displayValue = rawValue;
+            placeholder = '0.0';
+        } else if (kindOps.includes('BCD_CODE')) {
+            inputType = 'bcd';
+            displayValue = toBcdNumber(rawValue);
+            const bcdLimits = computeFieldInputLimits(field);
+            placeholder = bcdLimits && bcdLimits.max != null ? `0..${bcdLimits.max}` : '0';
+        } else if (field.byte_len && field.byte_len > 0) {
             const currentVal = rawValue ?? 0;
             if (!params.type || params.type === 'number' || params.type === 'hex') {
                 // 批 1：字段级录入进制（定义侧 parameter_config.input_base）。
@@ -197,7 +223,10 @@ export const resolveFieldDisplay = (field, { inputs = {}, computedValues = {} } 
                 if (isDecimalEntry(params)) {
                     inputType = 'decimal';
                     displayValue = toDecimalValue(rawValue);
-                    placeholder = '0';
+                    // 第 14 单：占位即域 —— 十进制通道空态直接亮出字段数值域
+                    const decLimits = computeFieldInputLimits(field);
+                    placeholder = decLimits && decLimits.min != null && decLimits.max != null
+                        ? `${decLimits.min}..${decLimits.max}` : '0';
                 } else if (isBinaryEntry(params)) {
                     // 优化批 1：二进制位模式回显（按位宽补零）。
                     inputType = 'binary';
@@ -265,6 +294,29 @@ export const computeFieldInputLimits = (field = {}) => {
     const byteLen = Number(field.byte_len ?? field.byte_length);
     if (!Number.isFinite(byteLen) || byteLen <= 0) return null;
 
+    // 第 14 单：FLOAT_IEEE 不设限 —— f32 小数域（NaN/±Inf/超范围由编码端兜底
+    // → 0 / IEEE 溢出），整数域对小数录入只会误钳。type=float/decimal 已在上方
+    // ptype 名单；这里补 op 级（type 缺省/number 正是编码端 float32 分支要求的
+    // 组合，也正是会落进整数域的那批）。
+    const opU14 = String(field.original_op_code || field.op_code || '').toUpperCase();
+    if (opU14 === 'FLOAT_IEEE') return null;
+
+    // 第 14 单：BCD 数字域 —— 2n 个 nibble 每位 0..9 → 0..(10^(2n)-1)，与编码端
+    // 逐 nibble 打包口径一致；输入端按位宽限幅（maxLength = 2n 位数，SmartInput
+    // bcd 分支消费）。超 16 位十进制（> MAX_SAFE）直接封顶，同整数域口径。
+    if (opU14 === 'BCD_CODE') {
+        const digits = byteLen * 2;
+        const MAX_SAFE14 = BigInt(Number.MAX_SAFE_INTEGER);
+        let bcdMax;
+        if (digits > 16) {
+            bcdMax = Number.MAX_SAFE_INTEGER;
+        } else {
+            const full = 10n ** BigInt(digits);
+            bcdMax = (full - 1n) > MAX_SAFE14 ? Number.MAX_SAFE_INTEGER : Number(full - 1n);
+        }
+        return { byteLen, maxLength: digits, min: 0, max: bcdMax };
+    }
+
     // 整数位域（BigInt 精确，超安全整数封顶）
     const MAX_SAFE = BigInt(Number.MAX_SAFE_INTEGER);
     const bits = BigInt(byteLen * 8);
@@ -308,4 +360,79 @@ export const computeFieldInputLimits = (field = {}) => {
         if (min !== null) { out.min = min; out.max = max; }
     }
     return out;
+};
+
+// ===== 第 14 单（加工页字段种类感知）=====
+
+// 字段算子（含 normalizeRunnerInstruction 保留的 original_op_code），全大写。
+const runnerOpOf = (field = {}) =>
+    [field.original_op_code, field.op_code]
+        .filter(Boolean)
+        .map(v => String(v).toUpperCase());
+
+// 种类章：label 前的小徽标（SmartInput kindLabel/kindTitle）。右徽标继续承载
+// 状态/长度语义（READ_ONLY / n·N BYTES / TIME_PICKER），种类章独立回答「这是
+// 什么算子的字段」。lane 判定复用 classifyRunnerField —— 章说的种类就是输入
+// 实际走的通道，杜绝「章 F32、输入却是 hex 通道」的错位。
+export const resolveRunnerKind = (field = {}) => {
+    const { params, isTimeCumulative, isCalculated, isFixed, isEnum } = classifyRunnerField(field);
+    const ops = runnerOpOf(field);
+    const isOp = (...names) => names.some(n => ops.includes(n));
+
+    if (isFixed) return { key: 'FIX', label: 'FIX', title: 'FIX // 固定字节（定义侧静态值），不可编辑' };
+    if (isTimeCumulative) return { key: 'TIME', label: 'TIME', title: 'TIME // 累计时间：base_time + 秒数，点击输入框选时刻' };
+    if (isCalculated) {
+        if (isOp('LENGTH_CALC') || params.type === 'length') return { key: 'LEN', label: 'LEN', title: 'LEN // 长度字段：引用字段合计自动计算' };
+        if (isOp('CHECKSUM_CRC') || params.type === 'checksum') return { key: 'CKSUM', label: 'CKSUM', title: 'CKSUM // 校验和：按算法与引用集自动计算' };
+        return { key: 'CALC', label: 'CALC', title: 'CALC // 公式/计算字段：自动求值，不可编辑' };
+    }
+    if (isEnum) return { key: 'MAP', label: 'MAP', title: 'MAP // 枚举映射：从选项表取值' };
+    if (isOp('FLOAT_IEEE')) return { key: 'F32', label: 'F32', title: 'F32 // IEEE754 float32 大端（恒 4B）：十进制小数录入' };
+    if (isOp('BCD_CODE')) return { key: 'BCD', label: 'BCD', title: 'BCD // 压缩 BCD：十进制数字逐 nibble 打包（每位 0-9）' };
+    if (isOp('SCALED_DECIMAL')) return { key: 'SCALE', label: 'SCALE', title: 'SCALE // 定标整数：编码 =（输入 + OFFSET）× FACTOR' };
+    if (isOp('STRING') || params.type === 'string' || params.type === 'text') return { key: 'TEXT', label: 'TEXT', title: 'TEXT // 定长文本：ascii|utf8 编码，pad/截断到 byte_len' };
+    if (isOp('INT_SIGNED')) return { key: 'SINT', label: 'SINT', title: 'SINT // 有符号整数（两补码域）' };
+    if (isOp('INT_UNSIGNED')) return { key: 'UINT', label: 'UINT', title: 'UINT // 无符号整数（0 .. 2^8n − 1）' };
+    if (isOp('BITFIELD')) return { key: 'BIT', label: 'BIT', title: 'BIT // 位域：下方位图按位录入，整包按字节打包' };
+    if (isOp('AUTO_COUNTER')) return { key: 'CNT', label: 'CNT', title: 'CNT // 自动计数器：START/STEP/MAX 语义见下' };
+    if (isOp('STRUCT')) return { key: 'STRUCT', label: 'STRUCT', title: 'STRUCT // 结构组：子字段顺序打包' };
+    if (isOp('ARRAY_GROUP')) return { key: 'ARRAY', label: 'ARRAY', title: 'ARRAY // 数组组：repeat 展开' };
+    if (isOp('INPUT')) return { key: 'IN', label: 'IN', title: 'IN // 通用输入字段' };
+    if (isOp('HEADER')) return { key: 'HDR', label: 'HDR', title: 'HDR // 帧头字段（旧版算子）' };
+    return { key: 'VAR', label: 'VAR', title: 'VAR // 通用可编辑字段' };
+};
+
+// 第 14 单：定长文本用量徽标（n/N CHARS|BYTES）。ascii：1 code point = 1 字节
+// （编码端 codePointAt &0xFF）；utf8：TextEncoder 字节数。over = 超定长（编码端
+// pad/截断）→ UI 琥珀警示。无有效 byte_len → null（徽标退回通用形态）。
+export const computeStringUsage = (field = {}, value) => {
+    const params = field.parameter_config || {};
+    const byteLen = Number(field.byte_len ?? field.byte_length);
+    if (!Number.isFinite(byteLen) || byteLen <= 0) return null;
+    const s = String(value ?? '');
+    const utf8 = String(params.encoding ?? 'ascii').toLowerCase() === 'utf8';
+    const used = utf8 ? new TextEncoder().encode(s).length : [...s].length;
+    return { used, total: byteLen, unit: utf8 ? 'BYTES' : 'CHARS', over: used > byteLen };
+};
+
+// 第 14 单：SmartInput 新通道解析助手（纯函数单测，组件只接线）。
+// BCD：仅十进制数字入缓冲，按 nibble 数（maxLength = 2n 位数）限宽 —— 输入端
+// 不移位（限宽后永不触达编码端「截高位保低位」分支）。value = null 表示空
+// 缓冲，组件保留缓冲不发半截值（与 dec 通道同款行为）。
+export const parseBcdInput = (raw, maxLength) => {
+    const cap = (maxLength === null || maxLength === undefined || !Number.isFinite(Number(maxLength)))
+        ? undefined : Number(maxLength);
+    const clean = String(raw ?? '').replace(/[^0-9]/g, '').slice(0, cap);
+    return { text: clean, value: clean === '' ? null : Number(clean) };
+};
+
+// float：与编码端 float32 分支同口径的严格十进制小数语法（不含指数 —— '1e5'
+// 在 FLOAT_IEEE 分支会被静默置 0，宁可不发值也不静默丢精度）。半截形态
+// （'' / '-' / '.' / '-.'）与非法字符 → value = null，组件保留缓冲。
+const FLOAT_STRICT = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
+export const parseFloatInput = (raw) => {
+    const text = String(raw ?? '');
+    if (!FLOAT_STRICT.test(text.trim())) return { text, value: null };
+    const n = Number(text.trim());
+    return { text, value: Number.isFinite(n) ? n : null };
 };

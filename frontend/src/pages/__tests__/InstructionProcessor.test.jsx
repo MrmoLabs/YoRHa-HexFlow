@@ -352,8 +352,9 @@ describe('批 1：字段级十进制录入', () => {
         fireEvent.click(await sidebar().findByText('十进制指令'));
         await screen.findByText('BYTE_STREAM_OUTPUT');
 
-        // 2 字节 dec 字段：无输入态显示 placeholder「0」，不显示 0000 这类 hex 占位
-        const speed = screen.getByPlaceholderText('0');
+        // 2 字节 dec 字段：无输入态显示 placeholder「0..65535」（第 14 单：占位即域），
+        // 不显示 0000 这类 hex 占位
+        const speed = screen.getByPlaceholderText('0..65535');
         expect(screen.queryByPlaceholderText('0000')).toBeNull();
         expect(screen.getByText('[2B]')).toBeTruthy(); // 非 hex 通道徽标 = 字节上限
 
@@ -368,7 +369,7 @@ describe('批 1：字段级十进制录入', () => {
         await screen.findByText('BYTE_STREAM_OUTPUT');
 
         // 录入 258 = 0x0102 → 字节流 01 02（hex 通道下「258」是非法字符会被清空）
-        fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '258' } });
+        fireEvent.change(screen.getByPlaceholderText('0..65535'), { target: { value: '258' } });
 
         await waitFor(() => {
             const segs = [...document.querySelectorAll('[data-byte-segment]')].map(s => s.textContent);
@@ -381,7 +382,7 @@ describe('批 1：字段级十进制录入', () => {
         fireEvent.click(await sidebar().findByText('十进制指令'));
         await screen.findByText('BYTE_STREAM_OUTPUT');
 
-        const speed = screen.getByPlaceholderText('0');
+        const speed = screen.getByPlaceholderText('0..65535');
         fireEvent.change(speed, { target: { value: '99999' } });
         expect(speed.value).toBe('65535');
 
