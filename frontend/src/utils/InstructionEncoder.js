@@ -1,4 +1,4 @@
-import { evaluateFormula, formatToHex, formatFloatToHex, calculateChecksum, ChecksumAlgo } from './formula';
+import { evaluateFormula, calculateChecksum, ChecksumAlgo } from './formula';
 import { alignPadLen, padHex, padSpec, padToPadLen } from './padSpec';
 
 /**

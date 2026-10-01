@@ -1,6 +1,6 @@
 from enum import Enum
-from typing import List, Optional, Dict, Any, Union
-from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Union
+from pydantic import BaseModel
 from backend.schemas.block import Block
 
 class LayerType(str, Enum):

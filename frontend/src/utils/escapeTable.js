@@ -11,8 +11,6 @@ const HEX_CLEANER = /[\s,_-]/g;
 const HEX2 = /^[0-9A-Fa-f]{2}$/;
 const HEX_STRICT = /^[0-9A-Fa-f]+$/;
 
-export const EMPTY_ESCAPE = { enabled: false, pairs: [] };
-
 /** 传输配置的 escape 段 → 面板草稿（缺段 / 脏段一律回落默认关闭）。 */
 export function toEscapeDraft(config) {
     if (!config || typeof config !== 'object') {

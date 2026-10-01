@@ -1,5 +1,4 @@
 import pymysql
-from urllib.parse import quote_plus
 
 db_config = {
     "host": "localhost",

@@ -11,7 +11,7 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
-from backend.db.models import BitField, Instruction, InstructionField
+from backend.db.models import Instruction, InstructionField
 from backend.routers.datahub import (
     build_bundle,
     compile_blocks,

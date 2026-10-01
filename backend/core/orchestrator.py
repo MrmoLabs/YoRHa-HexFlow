@@ -2,10 +2,8 @@ import math
 import re
 import struct
 from datetime import datetime
-from typing import List, Tuple, Dict
+from typing import List, Tuple
 from backend.schemas.block import Block, BlockType
-from backend.schemas.template import Layer
-from backend.core.graph import GraphEngine
 from backend.handlers.length import LengthHandler
 from backend.handlers.checksum import ChecksumHandler
 from backend.handlers.bitfield import BitfieldHandler
@@ -17,7 +15,9 @@ from backend.core.pad import (
     pad_hex,
     pad_to_pad_len,
 )
-# from backend.handlers.escape import EscapeHandler (To be implemented)
+# 帧转义不在编排器（旧占位 `backend.handlers.escape` 已随本批清掉）：N4 拍板
+# 「传输层 · 内核转义后套壳」—— 编排器只出逻辑字节（内容口径），出线时由
+# dispatch / sequence 调 backend/core/escape.py 转义（escape_hex / escape_bytes）。
 
 
 def _reverse_hex_pairs(hex_str: str) -> str:
@@ -135,7 +135,8 @@ class Orchestrator:
                 # happens in the getFieldBytes wrapper at emit time.
                 if str(getattr(b, "endianness", None) or "BIG").upper() == "LITTLE":
                     val = _reverse_hex_pairs(val)
-                # ESCAPING LOGIC (Placeholder): val = self.escape_handler.process(val)
+                # 转义不在此层（N4 定案：传输层 · 内核转义后套壳）——本函数输出
+                # 逻辑字节；线上转义见 backend/core/escape.py（dispatch/sequence 调用）。
                 final_hex.append(val)
                 cursor += len(re.sub(r"\s+", "", val)) // 2
                 if pad_to:

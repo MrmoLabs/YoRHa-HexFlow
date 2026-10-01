@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Enum, JSON, Boolean, Float
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Enum, JSON, Float
 from sqlalchemy.orm import relationship, backref
 from backend.db.database import Base
 import enum
