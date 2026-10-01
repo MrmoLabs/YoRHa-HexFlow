@@ -139,7 +139,7 @@ graph TD
 /frontend
     /src
         /components
-            /ui         # 通用 UI（NieRModal、NieRDatePicker、FeaturePlaceholder）
+            /ui         # 通用 UI（NieRModal、NieRDatePicker）
             /editor     # 编辑器域组件（Canvas、Block、BlockPropertiesPanel、ComponentPalette 等）
             /InstructionForm  # 动态发送表单（InstructionRunner + 拆出的字段树/日志）
         /hooks           # 业务逻辑 Hooks（useInstructionData、useInstructionForm 等）

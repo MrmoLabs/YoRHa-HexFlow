@@ -142,7 +142,7 @@ For detailed technical specifications, please refer to: [SPECIFICATION.md](./SPE
 /frontend
     /src
         /components
-            /ui         # Generic UI (NieRModal, NieRDatePicker, FeaturePlaceholder)
+            /ui         # Generic UI (NieRModal, NieRDatePicker)
             /editor     # Editor domain (Canvas, Block, BlockPropertiesPanel, ComponentPalette, ...)
             /InstructionForm  # Dynamic send form (InstructionRunner + extracted field tree/log)
         /hooks           # Business logic hooks (useInstructionData + instructionDataOptions contract, useInstructionForm, ...)

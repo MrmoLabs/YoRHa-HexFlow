@@ -284,7 +284,8 @@
 - 验收：`pageStatus.json` `terminal.implemented` → true，人工验证清单过
 
 > **E3 进度（2026-09-23，整批完成，随 E3 整批提交 · 待人工验证 · 验收字段已翻）**：
-> 页面 `Terminal.jsx` 全量重写（弃 FeaturePlaceholder 占位，组件保留未删——仅此一
+> 页面 `Terminal.jsx` 全量重写（弃 FeaturePlaceholder 占位，组件保留未删——第 13 单
+> 死代码清理批已删，仅此一
 > 个使用方已迁走）：① 通讯配置面板 —— 三模式切换（loopback 默认，反白填充选中
 > 态）+ 按模式显隐字段（TCP host/port/连接读取超时；串口 COM/波特率/数据位/校验
 > 位/停止位，select 取值字符串 → `toPatch` 数字化，空串原样交后端 400 校验为

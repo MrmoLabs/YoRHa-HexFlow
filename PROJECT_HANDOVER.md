@@ -582,6 +582,28 @@
     第 6 单 `3ff0f69`、第 7 单 `7d50484`、第 8 单 `848e248`、第 9 单
     `8e9612f`、第 10 单 `b7f9fa7`、第 11 单 `d8f0d65`、第 12 单 `b715e2b`）→
     **G1–G7 全集七项全部已结**。
+28. **死代码清理批（第 13 单 · 维护批，行为不变）**（2026-10-01）：全仓三层
+    AST 扫描（未用 import / 无外部引用 export / 整文件孤儿）→ 逐项人工核验 →
+    清除，§9 保留名单不动（processor.py / graph.py / Blueprint.jsx）。BE 11 文件
+    无用 import：orchestrator 删 `Dict·Layer·GraphEngine`（活文件自此不再 import
+    §9 遗留 graph.py）、models `Boolean`、debug_db `quote_plus`、handlers
+    `Dict·Any·binascii`、operator `HTTPException`、schemas `Union·Any·Field`、
+    test_datahub `BitField`；orchestrator 两条过时注释改 N4 定案指针 —— 旧占位
+    `# from backend.handlers.escape import EscapeHandler (To be implemented)`
+    （模块从未存在）与 `ESCAPING LOGIC (Placeholder)` →「传输层 · 内核转义后套壳」，
+    编排器只出逻辑字节、出线转义在 `backend/core/escape.py`（dispatch/sequence
+    调用）。FE：`EMPTY_ESCAPE` 判死（全仓零引用）、InstructionEncoder 无用 import
+    `formatToHex·formatFloatToHex`、GlitchEffect 无用 `motion` → framer-motion
+    全仓零引用连根卸依赖（package.json −1、lock −3 包）；整文件孤儿 2 个：
+    `visuals/ProtocolOnion.jsx`（仅自引）、`ui/FeaturePlaceholder.jsx`（PLAN §E3
+    曾记「组件保留未删」，Terminal 重写后无任何入口，本批清除，README/文件地图
+    同步）。红绿依据（清理批口径：删除若为活代码既有测试即红）：BE 383/383 ·
+    FE 867/867（62 文件，依赖卸除后复跑）双绿 · py_compile 0 · build 0 ·
+    pageStatus 0 · 校验器 3 文件 0 违规 · SCHEMA_IDENTICAL 28。真机冒烟（uvicorn
+    重启载清理后代码 + vite:5173）：指令页 22 卡零崩溃 · error 章 0；加工页
+    TRANSMIT → `TX_SUCCESS (LOOPBACK)`；`GET /datahub/export/bundle` 200 ZIP、
+    16 指令 × 16 帧、CMD - 632 = 16B（N5 口径原样；11 个 0 字节帧 = 0 字段指令
+    存量行为，有字段 5 条 = 37 字段与 sweep 一致）。→ 第 13 单已提交 `5310260`。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
@@ -632,7 +654,7 @@
 | `src/utils/download.js` | `triggerBlobDownload`（.hex / .bin 下载共用） | ✅ 新增 |
 | `src/hooks/useInstructionData.js` | 指令数据加载/保存/CRUD（归一化逻辑在 `utils/normalizeInstruction.js`，此处 re-export） | ✅ |
 | `src/hooks/useInstructionForm.js` | 表单输入 + 编码 memo | ✅ |
-| `src/components/ui/` | `NieRModal` / `NieRDatePicker` / `FeaturePlaceholder` 通用 UI | ✅ |
+| `src/components/ui/` | `NieRModal` / `NieRDatePicker` 通用 UI（FeaturePlaceholder 已随第 13 单死代码清理批删除） | ✅ |
 | `src/components/editor/` | 编辑器域组件：`Canvas` / `Block` / `BlockPropertiesPanel` / `ComponentPalette` / `BitFieldEditor` / `ParamConfigForm`（参数编辑器拆至 `editor/paramConfig/`）/ `InstructionListSidebar` / `ProtocolListSidebar` / `ProtocolPropertiesPanel` | ✅ |
 | `src/components/InstructionForm/InstructionRunner.jsx` | 动态表单 + 发送/导出按钮（已拆：`normalizeRunnerInstruction.js` 归一化、`RunnerFieldTree.jsx` 字段树、`TransmissionLog.jsx` 日志） | ✅ |
 | `src/pages/InstructionProcessor.jsx` | 指令加工页，`handleSend` 走 `/dispatch` | ✅ |
