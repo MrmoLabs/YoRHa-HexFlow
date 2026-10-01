@@ -14,6 +14,7 @@ import {
     formatByteRanges,
     findFieldLabel
 } from '../../utils/byteHighlight';
+import { advanceAutoCounter } from '../../config/runnerRenderRules';
 
 // 第 4 批 #3：右栏分区标题（en 轨 + 中文 + 用途释义）——让 BYTE_STREAM /
 // WRAP / TRANSMIT 各自的数据用途一眼可读。
@@ -169,6 +170,20 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                 await onSend(payload, activeWrap);
             }
             setLogs(prev => prev.map(l => l.id === entryId ? { ...l, status: 'SENT' } : l));
+            // 第 15 单：CNT 自动推进 —— 发送成功后 Current=(Current+Step)%Max（与编码
+            // 端 E1-6 / advanceAutoCounter 同口径），回写输入态；NEXT 语义 chip 与字节
+            // 流预览随 inputs 实时刷新。事务面板（同 payload 多 attempt）不推进。
+            setInputs(prev => {
+                const next = { ...prev };
+                let touched = false;
+                const walk = (nodes) => (nodes || []).forEach(f => {
+                    const advanced = advanceAutoCounter(f, prev[f.id]);
+                    if (advanced !== null) { next[f.id] = advanced; touched = true; }
+                    walk(f.fields);
+                });
+                walk(normalizedInstruction.fields);
+                return touched ? next : prev;
+            });
         } catch (err) {
             setLogs(prev => prev.map(l => l.id === entryId
                 ? { ...l, status: 'FAILED', error: err?.message || 'UNKNOWN ERROR' }

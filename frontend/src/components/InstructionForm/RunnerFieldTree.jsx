@@ -89,7 +89,9 @@ export default function RunnerFieldTree({
 
         // A6: surface semantic params (scale factor/offset, counter step/max,
         // checksum algo, ...) the send form would otherwise hide from the operator.
-        const semanticItems = collectSemanticItems(field);
+        // 第 15 单：传入 inputs → AUTO_COUNTER 亮 NEXT 预览；无选项枚举出琥珀
+        // NO OPTIONS 提示（collectSemanticItems 内按身份判定）。
+        const semanticItems = collectSemanticItems(field, { inputs });
 
         const handleChange = (val) => {
             // FIX: Enum handling for HEX strings
@@ -194,10 +196,10 @@ export default function RunnerFieldTree({
                                 <React.Fragment key={`${it.text}-${i}`}>
                                     {i > 0 && ' · '}
                                     <span
-                                        title={it.ref ? ENCODER_LIMITS[it.ref] : undefined}
-                                        className={it.ref ? 'text-[#E58D28] font-bold cursor-help' : undefined}
+                                        title={it.ref ? ENCODER_LIMITS[it.ref] : it.title}
+                                        className={it.ref || it.warn ? 'text-[#E58D28] font-bold cursor-help' : undefined}
                                     >
-                                        {it.text}{it.ref ? ' ⚠' : ''}
+                                        {it.text}{(it.ref || it.warn) ? ' ⚠' : ''}
                                     </span>
                                 </React.Fragment>
                             ))}

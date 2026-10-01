@@ -11,7 +11,8 @@ import {
     resolveRunnerKind,
     computeStringUsage,
     parseBcdInput,
-    parseFloatInput
+    parseFloatInput,
+    advanceAutoCounter
 } from '../runnerRenderRules';
 
 // C6 加工页参数渲染下沉：渲染规则抽为可测试配置后的回归锁。
@@ -616,5 +617,163 @@ describe('第 14 单：SmartInput 解析助手（纯函数，组件只接线）'
         expect(parseFloatInput('abc').value).toBeNull();
         // 指数形式在 FLOAT_IEEE 编码分支会被静默置 0 —— 宁可不发值
         expect(parseFloatInput('1e5').value).toBeNull();
+    });
+});
+
+// ===== 第 15 单（加工页全种类控件矩阵 · 红测先行）=====
+// 矩阵缺口①：MAPPING 被 normalize 摊平成 INPUT 后，无选项的存量字段丢掉枚举
+// 身份（章掉 IN、无提示）。控件矩阵口径：身份判定用 isEnum（含 original_op），
+// 控件判定用 hasOptions —— 有选项出下拉，无选项走普通通道（字节钳制保留）+
+// MAP 身份 + 琥珀 NO OPTIONS 提示。
+
+describe('第 15 单：无选项 MAPPING —— 枚举身份不因摊平丢失', () => {
+    const optless = leaf({
+        op_code: 'INPUT', original_op_code: 'MAPPING',
+        byte_len: 1, parameter_config: {}
+    });
+
+    it('classify：original MAPPING → isEnum=true / hasOptions=false', () => {
+        const c = classifyRunnerField(optless);
+        expect(c.isEnum).toBe(true);
+        expect(c.hasOptions).toBe(false);
+        // 有选项：两者同真（既有行为回归）
+        const withOpts = classifyRunnerField(leaf({
+            op_code: 'INPUT', original_op_code: 'MAPPING',
+            parameter_config: { options: { A: '01' } }
+        }));
+        expect(withOpts.isEnum).toBe(true);
+        expect(withOpts.hasOptions).toBe(true);
+    });
+
+    it('种类章 MAP 不掉 IN；无选项 title 讲明「未配置选项」', () => {
+        const k = resolveRunnerKind(optless);
+        expect(k).toMatchObject({ key: 'MAP', label: 'MAP' });
+        expect(k.title).toContain('未配置');
+        // 有选项 → MAP 照旧，不带「未配置」字样
+        const withOpts = resolveRunnerKind(leaf({
+            op_code: 'INPUT', original_op_code: 'MAPPING',
+            parameter_config: { options: { A: '01' } }
+        }));
+        expect(withOpts).toMatchObject({ key: 'MAP' });
+        expect(withOpts.title).not.toContain('未配置');
+    });
+
+    it('控件走通道（不出 select）：hex 回显 + inputs 源 + 字节占位；有选项仍 select', () => {
+        const d = resolveFieldDisplay(optless, { inputs: { f1: 7 } });
+        expect(d.inputType).not.toBe('select');
+        expect(d.inputType).toBe('hex');
+        expect(d.displayValue).toBe('07');
+        expect(d.placeholder).toBe('00');
+        // 有选项 → 回归 select
+        expect(resolveFieldDisplay(leaf({
+            op_code: 'INPUT', original_op_code: 'MAPPING',
+            parameter_config: { options: { A: '01' } }
+        }), { inputs: { f1: 1 } }).inputType).toBe('select');
+    });
+
+    it('定长钳制不因枚举身份丢失；有选项仍不设限（选项即约束）', () => {
+        expect(computeFieldInputLimits(optless)).toEqual({ byteLen: 1, maxLength: 2, min: 0, max: 255 });
+        expect(computeFieldInputLimits(leaf({
+            op_code: 'INPUT', parameter_config: { options: { A: '01' } }
+        }))).toBeNull();
+    });
+
+    it('语义行出琥珀 NO OPTIONS 提示（warn + title 指引），有选项不出', () => {
+        const warn = collectSemanticItems(optless).find(i => i.warn);
+        expect(warn).toBeDefined();
+        expect(warn.text).toContain('NO OPTIONS');
+        expect(String(warn.title || '').length).toBeGreaterThan(0);
+        expect(collectSemanticItems(leaf({
+            op_code: 'INPUT', parameter_config: { options: { A: '01' } }
+        })).some(i => i.warn)).toBe(false);
+    });
+});
+
+describe('第 15 单：HEADER/TAIL 只读加固 + HDR 身份（矩阵缺口③）', () => {
+    it('original/字面 HEADER·TAIL 判固定只读 —— 编码端直读 params.hex，可编辑即欺骗', () => {
+        ['HEADER', 'TAIL'].forEach((op) => {
+            const byOriginal = classifyRunnerField(leaf({
+                op_code: 'INPUT', original_op_code: op, parameter_config: {}
+            }));
+            expect(byOriginal.isFixed).toBe(true);
+            expect(byOriginal.isEditable).toBe(false);
+            expect(classifyRunnerField(leaf({ op_code: op, parameter_config: {} })).isFixed).toBe(true);
+        });
+        // 时间优先于固定的既有次序不回退
+        expect(classifyRunnerField(leaf({
+            op_code: 'TIME_CUMULATIVE', parameter_config: {}
+        })).isFixed).toBe(false);
+    });
+
+    it('normalize 后（INPUT/FIXED + original HEADER·TAIL）种类章出 HDR 身份', () => {
+        expect(resolveRunnerKind(leaf({
+            op_code: 'INPUT', original_op_code: 'HEADER', byte_len: 2, parameter_config: {}
+        }))).toMatchObject({ key: 'HDR', label: 'HDR' });
+        expect(resolveRunnerKind(leaf({
+            op_code: 'INPUT', original_op_code: 'TAIL', byte_len: 1, parameter_config: {}
+        }))).toMatchObject({ key: 'HDR' });
+        expect(resolveRunnerKind(leaf({
+            op_code: 'FIXED', original_op_code: 'HEADER', byte_len: 2, parameter_config: { hex: 'AA55' }
+        }))).toMatchObject({ key: 'HDR' });
+        // 回归：无 original 的 FIXED → FIX
+        expect(resolveRunnerKind(leaf({ op_code: 'FIXED', parameter_config: {} }))).toMatchObject({ key: 'FIX' });
+    });
+
+    it('无 hex 的存量 header：回显 = 编码端 0 填充字节（只读，非 NO DATA）', () => {
+        expect(resolveFieldDisplay(leaf({
+            op_code: 'INPUT', original_op_code: 'HEADER', byte_len: 2, parameter_config: {}
+        }))).toMatchObject({ displayValue: '0000' });
+    });
+});
+
+describe('第 15 单：advanceAutoCounter —— CNT 发送成功后自动推进（镜像编码端 E1-6）', () => {
+    const cnt = (pc, over = {}) => leaf({ op_code: 'AUTO_COUNTER', byte_len: 1, parameter_config: pc, ...over });
+
+    it('推进 = floor(Current) + floor(step)，max 双重取模（负步长也落 0..max-1）', () => {
+        expect(advanceAutoCounter(cnt({ start_val: 1, step: 2, max: 10 }), 5)).toBe(7);
+        expect(advanceAutoCounter(cnt({ step: 2, max: 10 }), 9)).toBe(1);
+        expect(advanceAutoCounter(cnt({ step: -3, max: 10 }), 2)).toBe(9);
+        // max 缺省/非法/≤0 → 不回绕（同编码端）
+        expect(advanceAutoCounter(cnt({ step: 2 }), 9)).toBe(11);
+        expect(advanceAutoCounter(cnt({ step: 2, max: 0 }), 9)).toBe(11);
+        expect(advanceAutoCounter(cnt({ step: 2, max: 'x' }), 9)).toBe(11);
+    });
+
+    it('Current 缺省口径与编码端 rawCur 同源：input > 静态 value > start_val；floor 口径', () => {
+        const withValue = cnt({ start_val: 3, step: 1, max: 100, value: 7 });
+        expect(advanceAutoCounter(withValue, 5)).toBe(6);        // 输入优先
+        expect(advanceAutoCounter(withValue, undefined)).toBe(8); // 静态 value 次之
+        const startOnly = cnt({ start_val: 3, step: 1, max: 100 });
+        expect(advanceAutoCounter(startOnly, undefined)).toBe(4); // start_val 兜底
+        expect(advanceAutoCounter(startOnly, '7')).toBe(8);       // 数字串 floor
+        expect(advanceAutoCounter(startOnly, 5.9)).toBe(6);       // 小数 floor
+        expect(advanceAutoCounter(startOnly, '')).toBe(1);        // ''是已定义输入 → floor 0
+    });
+
+    it('type 闸与编码端同款；非计数字段返回 null（不误推进）', () => {
+        expect(advanceAutoCounter(cnt({ step: 1, max: 10, type: 'string' }), 5)).toBeNull();
+        expect(advanceAutoCounter(leaf({ op_code: 'INT_UNSIGNED', parameter_config: { step: 1 } }), 5)).toBeNull();
+        expect(advanceAutoCounter(leaf({ op_code: 'MAPPING', parameter_config: {} }), 5)).toBeNull();
+        // original AUTO_COUNTER 身份（摊平变化也认）
+        expect(advanceAutoCounter(
+            leaf({ op_code: 'INPUT', original_op_code: 'AUTO_COUNTER', parameter_config: { step: 1, max: 10 } }),
+            4
+        )).toBe(5);
+    });
+});
+
+describe('第 15 单：AUTO_COUNTER NEXT 预览 chip（语义行亮出下帧编码值）', () => {
+    it('出 NEXT=；输入优先、回绕同口径；非计数字段不出', () => {
+        const f = leaf({ op_code: 'AUTO_COUNTER', byte_len: 1, parameter_config: { start_val: 1, step: 2, max: 10 } });
+        expect(collectSemanticItems(f).find(i => i.text.startsWith('NEXT=')))
+            .toMatchObject({ text: 'NEXT=3' }); // 无输入 → start_val 1 + step 2
+        expect(collectSemanticItems(f, { inputs: { f1: 5 } }).find(i => i.text.startsWith('NEXT=')))
+            .toMatchObject({ text: 'NEXT=7' }); // 输入 5 + step 2
+        expect(collectSemanticItems(
+            leaf({ op_code: 'AUTO_COUNTER', byte_len: 1, parameter_config: { step: 2, max: 10 } }),
+            { inputs: { f1: 9 } }
+        ).find(i => i.text.startsWith('NEXT='))).toMatchObject({ text: 'NEXT=1' }); // (9+2)%10 回绕
+        expect(collectSemanticItems(leaf({ parameter_config: { step: 1 } }))
+            .some(i => i.text.startsWith('NEXT='))).toBe(false);
     });
 });

@@ -86,10 +86,16 @@ export const classifyRunnerField = (field = {}) => {
 
     // Boolean(): the || chain ends in params.readOnly which may be undefined
     // (original code relied on falsy — coerce so the flag is always a boolean).
+    // 第 15 单：HEADER/TAIL 是固定字节 —— 编码端直读 params.hex（或走 FIXED 分支），
+    // 任何可编辑输入都不会改变出帧，「能改但无效」即欺骗 → 一律判只读固定。
     const isFixed = Boolean(field.op_code === 'FIXED'
         || originalOp === 'HEX_RAW'
         || originalOp === 'FIXED'
         || field.op_code === 'HEX_RAW'
+        || originalOp === 'HEADER'
+        || originalOp === 'TAIL'
+        || field.op_code === 'HEADER'
+        || field.op_code === 'TAIL'
         || params.readOnly)
         && !isTimeCumulative;
 
@@ -99,7 +105,10 @@ export const classifyRunnerField = (field = {}) => {
     const hasOptions = Boolean(rawOptions && (Array.isArray(rawOptions)
         ? rawOptions.length > 0
         : Object.keys(rawOptions).length > 0));
-    const isEnum = hasOptions || field.op_code === 'MAPPING';
+    // 第 15 单：枚举身份认 original_op_code —— normalize 把 MAPPING 摊平成 INPUT
+    // （编码字节等价），但「这是枚举映射」的身份不能丢。下拉控件由 hasOptions
+    // 另行把闸（无选项造不出下拉），身份（种类章/提示）走 isEnum。
+    const isEnum = hasOptions || field.op_code === 'MAPPING' || originalOp === 'MAPPING';
 
     return { params, originalOp, isCalculated, isTimeCumulative, isFixed, isEditable, hasOptions, isEnum };
 };
@@ -158,7 +167,9 @@ export const resolveFieldDisplay = (field, { inputs = {}, computedValues = {} } 
 
     if (isFixed) {
         // 1. Fixed / ReadOnly Fields: Show the exact HEX or Value
-        const isExplicitHex = originalOp === 'HEX_RAW' || field.op_code === 'HEX_RAW';
+        const isExplicitHex = originalOp === 'HEX_RAW' || field.op_code === 'HEX_RAW'
+            || originalOp === 'HEADER' || field.op_code === 'HEADER'
+            || originalOp === 'TAIL' || field.op_code === 'TAIL';
         let rawVal = params.hex || params.value;
 
         if (!rawVal && isExplicitHex) {
@@ -175,8 +186,10 @@ export const resolveFieldDisplay = (field, { inputs = {}, computedValues = {} } 
         // 2. TIME CUMULATIVE: seconds since base_time, shown formatted/read-only
         displayValue = formatTimeDisplay(params, inputs[field.id] || 0);
         inputType = 'text';
-    } else if (isCalculated || isEnum) {
+    } else if (isCalculated || (isEnum && options.length > 0)) {
         // 3a. Calculated: computedValues is source of truth, hex-formatted
+        // 第 15 单：enum 分支按 hasOptions（options.length）把闸 —— 无选项的
+        // 枚举落到 4（普通通道 + 字节钳制），身份提示由语义行 NO OPTIONS 承接。
         if (isCalculated) {
             displayValue = computedValues[field.id] !== undefined ? computedValues[field.id] : 0;
             inputType = 'hex';
@@ -257,9 +270,10 @@ export const resolveFieldDisplay = (field, { inputs = {}, computedValues = {} } 
 // A6: surface semantic params (scale factor/offset, counter step/max,
 // checksum algo, ...) the send form would otherwise hide from the operator.
 // Each item may carry an encoder-limit ref (B4/B7/B8...) -> ⚠ badge in UI.
-export const collectSemanticItems = (field = {}) => {
+// 第 15 单：ctx.inputs 可选 —— 在场时 AUTO_COUNTER 追加 NEXT 预览（下帧编码值）。
+export const collectSemanticItems = (field = {}, ctx = {}) => {
     const params = field.parameter_config || {};
-    return [
+    const items = [
         ['factor', 'FACTOR'], ['offset', 'OFFSET'], ['step', 'STEP'], ['max', 'MAX'],
         ['start_val', 'START'], ['bytes', 'BYTES'], ['max_count', 'MAX LOOP'],
         ['algorithm', 'ALGO'], ['algo', 'ALGO']
@@ -271,6 +285,23 @@ export const collectSemanticItems = (field = {}) => {
         acc.push({ text: `${label}=${shown}`, ref: getParamKeyLimitRef(k, field.op_code) });
         return acc;
     }, []);
+
+    // 第 15 单：CNT 下帧预览 —— NEXT = 推进后的编码值，与 advanceAutoCounter /
+    // 编码端 E1-6 同口径（发送成功后 inputs 被推进，这里实时亮出下一帧会发什么）。
+    const next = advanceAutoCounter(field, ctx.inputs ? ctx.inputs[field.id] : undefined);
+    if (next !== null) items.push({ text: `NEXT=${next}`, ref: null });
+
+    // 第 15 单：枚举身份在场但选项表缺失（存量 MAPPING 摊平/复制丢参）—— 无选项
+    // 造不出下拉，但身份和配置指引必须露出：琥珀警示 + title 指向指令管理。
+    const cls = classifyRunnerField(field);
+    if (cls.isEnum && !cls.hasOptions) {
+        items.push({
+            text: 'NO OPTIONS',
+            warn: true,
+            title: '枚举映射未配置选项表：手动录入数值；到「指令管理」为该字段配置 options 后自动出下拉'
+        });
+    }
+    return items;
 };
 
 // 第 4 批 #4：定长字段输入限制 —— 指令管理里 byte_len 定死的字段，加工页
@@ -284,9 +315,11 @@ export const collectSemanticItems = (field = {}) => {
 //   任意输入合法、不设域；factor<0 不等式反向）。钳制发生在 SmartInput，
 //   编码端 InstructionEncoder 口径不变。
 export const computeFieldInputLimits = (field = {}) => {
-    const { params, isCalculated, isTimeCumulative, isFixed, isEditable, isEnum }
+    const { params, isCalculated, isTimeCumulative, isFixed, isEditable, isEnum, hasOptions }
         = classifyRunnerField(field);
-    if (!isEditable || isCalculated || isFixed || isTimeCumulative || isEnum) return null;
+    // 第 15 单：枚举「不设限」的前提是选项在场（选项即约束）—— 无选项 MAPPING
+    // 落普通通道，字节钳制必须保留（否则 01/FF 这类代码字段可敲出溢出域）。
+    if (!isEditable || isCalculated || isFixed || isTimeCumulative || (isEnum && hasOptions)) return null;
 
     const ptype = String(params.type || '').toLowerCase();
     if (['string', 'text', 'float', 'decimal'].includes(ptype)) return null;
@@ -370,15 +403,47 @@ const runnerOpOf = (field = {}) =>
         .filter(Boolean)
         .map(v => String(v).toUpperCase());
 
+// 第 15 单：CNT 自动推进 —— 编码器是纯函数，「跨帧状态机在调用方」（E1-6 注释）。
+// 发送成功后加工页把 Current 推进为 (Current+Step)%Max，与编码端分支逐句同口径：
+// type 闸 / floor 解析 / input > 静态 value > start_val / max 双重取模。非计数
+// 字段或闸外 type → null（不推进）。跨帧状态由 UI 输入态承载，序列页仍走后端重算。
+export const advanceAutoCounter = (field = {}, current) => {
+    if (!runnerOpOf(field).includes('AUTO_COUNTER')) return null;
+    const params = field.parameter_config || {};
+    const ptype = String(params.type ?? '').toLowerCase();
+    if (!['', 'number'].includes(ptype)) return null;
+    const floorNum = (x) => {
+        if (typeof x === 'number') { const f = Math.floor(x); return Number.isFinite(f) ? f : 0; }
+        if (typeof x === 'string' && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(x.trim())) {
+            const f = Math.floor(Number(x.trim())); return Number.isFinite(f) ? f : 0;
+        }
+        return 0;
+    };
+    const hasCur = params.value !== undefined && params.value !== null && params.value !== '';
+    const rawCur = current !== undefined ? current : (hasCur ? params.value : params.start_val);
+    let n = floorNum(rawCur) + floorNum(params.step);
+    const mxRaw = params.max;
+    const mx = typeof mxRaw === 'number' ? mxRaw
+        : (typeof mxRaw === 'string' && /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(mxRaw.trim())
+            ? Number(mxRaw.trim()) : NaN);
+    if (Number.isFinite(mx) && mx > 0) n = ((n % mx) + mx) % mx;
+    return n;
+};
+
 // 种类章：label 前的小徽标（SmartInput kindLabel/kindTitle）。右徽标继续承载
 // 状态/长度语义（READ_ONLY / n·N BYTES / TIME_PICKER），种类章独立回答「这是
 // 什么算子的字段」。lane 判定复用 classifyRunnerField —— 章说的种类就是输入
 // 实际走的通道，杜绝「章 F32、输入却是 hex 通道」的错位。
 export const resolveRunnerKind = (field = {}) => {
-    const { params, isTimeCumulative, isCalculated, isFixed, isEnum } = classifyRunnerField(field);
+    const { params, isTimeCumulative, isCalculated, isFixed, isEnum, hasOptions }
+        = classifyRunnerField(field);
     const ops = runnerOpOf(field);
     const isOp = (...names) => names.some(n => ops.includes(n));
 
+    // 第 15 单：HDR 身份先于 isFixed —— 帧头/帧尾本质是固定字节（isFixed 管只读），
+    // 但 normalize 会把 op 改成 FIXED/INPUT，不先认 original 算子就掉 FIX/IN，
+    // 帧头语义（对齐/包络锚点）从章上消失。
+    if (isOp('HEADER', 'TAIL')) return { key: 'HDR', label: 'HDR', title: 'HDR // 帧头/帧尾：固定字节，只读回显（对齐/包络锚点）' };
     if (isFixed) return { key: 'FIX', label: 'FIX', title: 'FIX // 固定字节（定义侧静态值），不可编辑' };
     if (isTimeCumulative) return { key: 'TIME', label: 'TIME', title: 'TIME // 累计时间：base_time + 秒数，点击输入框选时刻' };
     if (isCalculated) {
@@ -386,7 +451,9 @@ export const resolveRunnerKind = (field = {}) => {
         if (isOp('CHECKSUM_CRC') || params.type === 'checksum') return { key: 'CKSUM', label: 'CKSUM', title: 'CKSUM // 校验和：按算法与引用集自动计算' };
         return { key: 'CALC', label: 'CALC', title: 'CALC // 公式/计算字段：自动求值，不可编辑' };
     }
-    if (isEnum) return { key: 'MAP', label: 'MAP', title: 'MAP // 枚举映射：从选项表取值' };
+    if (isEnum) return hasOptions
+        ? { key: 'MAP', label: 'MAP', title: 'MAP // 枚举映射：从选项表取值' }
+        : { key: 'MAP', label: 'MAP', title: 'MAP // 枚举映射（未配置选项表）：手动录入数值，配置 options 后自动出下拉' };
     if (isOp('FLOAT_IEEE')) return { key: 'F32', label: 'F32', title: 'F32 // IEEE754 float32 大端（恒 4B）：十进制小数录入' };
     if (isOp('BCD_CODE')) return { key: 'BCD', label: 'BCD', title: 'BCD // 压缩 BCD：十进制数字逐 nibble 打包（每位 0-9）' };
     if (isOp('SCALED_DECIMAL')) return { key: 'SCALE', label: 'SCALE', title: 'SCALE // 定标整数：编码 =（输入 + OFFSET）× FACTOR' };
@@ -398,7 +465,6 @@ export const resolveRunnerKind = (field = {}) => {
     if (isOp('STRUCT')) return { key: 'STRUCT', label: 'STRUCT', title: 'STRUCT // 结构组：子字段顺序打包' };
     if (isOp('ARRAY_GROUP')) return { key: 'ARRAY', label: 'ARRAY', title: 'ARRAY // 数组组：repeat 展开' };
     if (isOp('INPUT')) return { key: 'IN', label: 'IN', title: 'IN // 通用输入字段' };
-    if (isOp('HEADER')) return { key: 'HDR', label: 'HDR', title: 'HDR // 帧头字段（旧版算子）' };
     return { key: 'VAR', label: 'VAR', title: 'VAR // 通用可编辑字段' };
 };
 
