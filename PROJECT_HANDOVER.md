@@ -793,7 +793,7 @@
     - **文档同步**：`PLAN_Backlog.md` §1 CP2b 行与新 §8.20、`DESIGN_Decisions.md`
       D11 实施注、`DESIGN_CorePipeline.md` §1/§7 拆批注状态、`vectors/README.md`
       新增；**无 UI 改动 → `pageStatus.json` / `PAGE_STATUS.md` 不动**。
-      → **已提交 待回填（2026-10-01，代码+文档，零 DDL 未提交 `yorha.db`）
+      → **已提交 `da0179d`（2026-10-01，代码+文档，零 DDL 未提交 `yorha.db`）
       → 待办：CP3（3a 含 DDL：`frame_recipes` 新表 + `instructions.
       default_recipe_id`，`yorha.db` 单独同步提交）。**
 
