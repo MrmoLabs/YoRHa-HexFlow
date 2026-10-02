@@ -42,7 +42,7 @@
 `ensure_binding_columns` 扩列自愈，lifespan 接线）→ yorha.db 沿先例
 **手工只跑 3 条 ALTER 后单独同步提交**；BE **537/537（基线 496 + 41）**、
 FE **944/944（63 文件，基线 932 + 12）**、`npx vite build` EXIT=0、yorha-ui
-校验器 8 文件 0 违规、**真路由冒烟 43 项 ALL PASS**；明细见 §8.24 |
+校验器 8 文件 0 违规、**真路由冒烟 43 项 ALL PASS**；明细见 §8.24。**§9.7 人工验证收口（2026-10-02）**：3a①②③ + 3b①②③ + 编排页「洞位填装 → 封装试发」**8 项真浏览器 + `/dispatch/history` 对账复跑全过**（含 400 逐槽拦截与「未选配方 = 建配方前基线 28B 逐字节相同」），三处文档（§9.7 / `pageStatus.json` / HANDOVER 35·36 待办①）口径已统一，明细 §8.27 |
 
 | CP4 | Core Pipeline 批次四（治理）：**4a** 关系数据导入导出（`bindings` + `response_specs` 并入 DataHub ZIP `relations.json` + `POST /datahub/import/relations`）/ **4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 回执」+ D9/D10 划界落 README/PAGE_STATUS / **4c** D8 校验表全量核对（逐行销项，纯文档）（明细 `DESIGN_CorePipeline.md` §7 批次四） | 🔄 **4a 已提交 ✅ `54620ab`（代码+文档，零 DDL），2026-10-02**：导出 ZIP 增 `relations.json`（`manifest` 增 `relations` 计数、`/status` 增 `protocolBindings`/`responseSpecs` 两行计数）+ 回灌端点按 `id` upsert、逐行报告（父缺失 → `skipped` 带 reason、槽悬空 → 置 NULL + warning、默认唯一冲突清旧行、`spec` 过 `normalize_spec` / `stage` 重算镜像 / 出处原样回填）、**部分成功即部分落库不整批回滚**；前端 DataHub 增「关系数据」面板（选文件 → 解析校验 → 确认弹窗 → 回显 新增/更新/跳过/警告 计数 + 刷新）。终态 BE **549/549**（基线 537 + 12）、FE **948/948**（63 文件，基线 944 + 4）、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**；明细见 §8.25。**4b+4c 已提交 ✅ `03b25d3`（代码+文档，零 DDL），2026-10-02**：**4b** 绑定矩阵只读面板（`utils/bindingMatrix.js` 纯函数 + DataHub 页六列表 + 摘要八项计数；孤儿不静默 —— 协议已删 / 槽悬空 / `stale===true` 琥珀标出；三读与状态面板同拍、单读失败互不拖垮）+ D9/D10 划界落 `README.md` §6 Scope Boundaries 与 `pageStatus.json` 四页条目（`PAGE_STATUS.md` 再生）；**4c** 全量核对新增 `DESIGN_CorePipeline.md` §6.3 销项表 —— 8 行**全「已有」、0 待补**，§6.2 槽节点行复核为批次二已落地（`dangling_slots_cleared`）→ **本批零后端改动**（BE 用例数持平），`DESIGN_Decisions.md` D8/D9/D10 三表行 + 三处实施注（D9-B/D10-B 重开条件已具备**仍取 A**）。终态 BE **549/549**（持平）、FE **958/958（64 文件，基线 948 + 10）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**人工验证 3 项通过**；明细见 §8.26。**批次四三子批（4a/4b/4c）全数完成** |
 
@@ -2245,6 +2245,72 @@ DDL 三列落真库、无链 400 / 不存在 404、三层协议 + 配方挂默�
 §6.3 新表、`DESIGN_Decisions.md` D8/D9/D10 表行与三处实施注、`README.md` §6、
 `pageStatus.json` 四页条目 + `PAGE_STATUS.md` 再生、`PLAN_Backlog.md` §1 CP4 行 +
 本节、`PROJECT_HANDOVER.md` 条目 40。
+
+### 8.27 CP3 人工验证复跑收口（3a①②③ + 3b①②③ + 洞位填装试发，零代码改动）
+
+**背景**：§9.7 排批表曾记「3a①②③ / 3b①②③ / 3c⑤ 已执行通过（2026-10-01）」，但
+`PROJECT_HANDOVER.md` 条目 35/36 的「待办：人工验证必查 3 项」与 `pageStatus.json`
+编排页三条 `nextSteps`（洞位填装试发 / 3a 三项 / 3b 三项）一直挂着「待补」——**文档
+互相矛盾**。本节在批次四收口后**真浏览器重跑一遍**，以实际证据为准统一三处文档口径。
+
+**执行方式**（2026-10-02，`uvicorn :8000` + `vite :5173` 真机）：
+
+- 临时在库里建两个无槽外壳协议 `verify-shell-3`（固定块 `CC`）/ `verify-shell-outer`
+  （固定块 `DD`）当配方 L2/L3，配方挂到 `sample-inst-status`；验证完**从库备份
+  `yorha.db.bak_4bv` 整库还原** —— 还原后基线逐项一致（instructions 16 / protocols 3 /
+  bindings 1 · `slot_order=0` / response_specs 0 / frame_recipes 0），`yorha.db` 不入提交。
+- 所有「出线帧」结论**以后端 `GET /dispatch/history` 记录为据**（UI 回显 + 服务端记录
+  双向对账），不靠肉眼孤证。
+
+**8 项全部通过**：
+
+1. **3a① 三层真实链路帧目视核对**：加工页点 `TRANSMIT` → history 记录
+   `DD CC FA FA ED 00 FA FA 00 00 00 00 00 05 01 08 ED`（**17B**，`byte_count=17`），
+   与 `WRAPPED_LAYERS` L3 汇总行**逐字节一致**（预览/出线同字节）。载荷内含定界字节
+   `FA FA`、L1 带 `LEN` —— D13「有 LEN = 不需要转义」的观察对象；**真实设备是否异常
+   仍待硬件**（与 §9.7 ④ 同性质，不阻塞）。
+2. **3a② 分层堆叠视图逐层字节与协议页卡面一致**：L1 `FA FA`（帧头 2B@00）+ `ED`
+   （帧尾 1B@02）+ 设计期 `??` → 运行期 `LEN 长度 (LEN)=00` + 载荷插槽 `??B` → 运行期
+   注入 11B 内核（Δ+4B）；L2 固定块 `CC` 1B@00 → 改定义后 `EE`（协议页卡面同步显示
+   `EE 1B @00`，Δ+1B）；L3 外层标记 `DD` 1B（Δ+1B）；三层累进 15/16/17B 与
+   `POST /compile/wrapped {protocol_id: sample-protocol-root}` 单协议编译结果**byte-equal**
+   （串行编译首层不改字节）。
+3. **3a③ 改中间层协议 → RECIPE STALE**：`PUT /protocols/verify-shell-3`（与协议页
+   SAVE 同端点同 payload 形状，`children` 变更 → `definition_hash` 变）改固定块 `CC → EE`
+   （version 1→2）后重载加工页 → `⚠ RECIPE STALE — 配方已失效：协议定义已变更，请重新
+   保存配方`（`data-testid="wrap-stale"`）点亮、L2 行标 `DEF STALE · 16B`、L2 字节已换
+   `EE`，**三层预览仍完整渲染**（warning 不阻断，符合口径）。
+4. **3b① 建配方闭环**：`新建 (recipe-new)` → 立即 POST 落库 `已新建 (CREATED) v1` →
+   改名「三层壳 (TRI-LAYER)」→ `+ 层` 加到 `层数 3 / 4` → 每层选协议 → 点
+   `第 3 层上移` 换序 → L1 点槽位片（`aria-pressed=true`，位次 `#1 载荷插槽 (SLOT)`）→
+   `recipe-link` 关联 `示例状态包` → SAVE（`已保存 (SAVED) v2`）→ **整页刷新回读**：
+   名称 / `层数 3 / 4` / 层序（示例协议壳 → 三层验证壳 → 外层壳）/ 槽片带位次按下 /
+   关联 `示例状态包` **逐项一致**，状态 `配方已同步`。
+5. **3b② 出线与基线**：选中配方点「封装试发」→ 头部 `WRAP :: 配方 三层壳 (TRI-LAYER)` +
+   `SENT: DD CC FA FA ED 00 FA FA 00 00 00 00 00 05 00 08 ED`（17B，与 history
+   02:49:20 记录一致）；**刷新取消选中**后头部回 `WRAP :: 组协议`，`SENT` 28B
+   `00 00 00 00 00 FA FA … BF 66 EB` —— 与**建配方前的基线帧（history 02:41:52 与
+   02:50:27 两条）逐字节相同**（`equalsBaseline=true`）。
+6. **3b③ 脏稿闸**：把配方名改成「… · 改名未保存」→ `配方未保存`、
+   **封装试发按钮 `disabled=true`**、头部即时跟随草稿名（显示名优先取草稿）；改回原名
+   SAVE（`已保存 (SAVED) v3`）→ `配方已同步` + 试发 `disabled=false`。
+7. **附加拦截（§6.1 值校验在配方期生效）**：首次拿含 2 个 `underflow=reject` 空槽的富
+   协议当 L3 试发 → **400**，detail 逐槽透出「插槽 p-… 欠载：实际 0 字节 / 允许 1 字节
+   （underflow=reject）」，UI 出 `SEND FAILED` 不出线；改用无槽外层壳后成功。
+8. **洞位填装 → 封装试发链路**：组内补第 2 条绑定（`sample-inst-heartbeat` → 同协议，
+   `slot_order=1`）→ 洞位下拉 `0 · 本绑定 → 1 · 本绑定` 换位 → 装配预览
+   `HEX STREAM SIMULATION` 的 `[状态块]` 标记同步移位 → `保存更改 (SAVE)`（`2 条未保存
+   → 0 条未保存`，history 侧 `slot_order` 对调为 heartbeat 0 / status 1）→ 两次试发出线
+   52B 帧**载荷顺序互换**（`FA FA <状态块>` 在前 ↔ `AA 55 <心跳块>` 在前），
+   `⚠ 空洞：1 个洞未被载荷填充` 告警照常透出。
+
+**文档同步（本节）**：`DESIGN_CorePipeline.md` §9.7 复跑补记 8 条、`pageStatus.json`
+编排页 `nextSteps` 删 3 条已销项（`PAGE_STATUS.md` 再生）、`PLAN_Backlog.md` §1 CP3 行
+补人工验证态、`PROJECT_HANDOVER.md` 条目 35/36 待办①销项 + 新条目 41。
+
+**残留（不阻塞，仍开放）**：`pageStatus.json` 协议页 2 条（跨泳道拖拽目视 / slot refs
+新语义复测）与 `DESIGN_CorePipeline.md` §9.7 ④（应答是否带转义字节 —— 需真实设备帧或
+单独拍板）。
 
 ## 9. 保留勿动（非任务，勿清理）
 
