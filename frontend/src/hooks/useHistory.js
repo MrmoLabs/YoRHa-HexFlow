@@ -22,6 +22,9 @@ export function useHistory(limit = 50) {
         cap(undoStackRef.current);
         redoStackRef.current = [];
         bump();
+        // 不列 cap：它是每次渲染重建的普通函数，列入会让 push 身份每次渲染都变 →
+        // 下游 memo 全线失效；cap 实际只读 limit，limit 已在 deps 里。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [limit]);
 
     // currentEntry = the live snapshot at undo time, parked on redo.
@@ -34,6 +37,8 @@ export function useHistory(limit = 50) {
         }
         bump();
         return prev;
+        // 同上：cap 只读 limit，已列在 deps 里。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [limit]);
 
     const redo = useCallback((currentEntry) => {
@@ -45,6 +50,8 @@ export function useHistory(limit = 50) {
         }
         bump();
         return next;
+        // 同上：cap 只读 limit，已列在 deps 里。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [limit]);
 
     const clear = useCallback(() => {
@@ -53,6 +60,8 @@ export function useHistory(limit = 50) {
         bump();
     }, []);
 
+    // canUndo/canRedo 是**渲染期快照**：每次 mutate 都 bump() 触发重渲染，此刻读
+    // ref 拿到的就是最新长度（读 ref 不写、且只在渲染期算一次，不参与缓存键）。
     const canUndo = undoStackRef.current.length > 0;
     const canRedo = redoStackRef.current.length > 0;
 

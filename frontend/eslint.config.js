@@ -23,7 +23,9 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // ignoreRestSiblings: 省略式解构 `(({ a, b, ...rest }) => rest)(obj)` 里的
+      // a/b 是**故意**丢掉的，不算未用变量（ESLint 官方为这个惯单开的开关）。
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', ignoreRestSiblings: true }],
     },
   },
 ])

@@ -56,6 +56,9 @@ export default function InstructionProcessor({
     const protocolList = protocols || EMPTY_PROTOCOLS;
     useEffect(() => {
         let alive = true;
+        // 拉取前把 wrap 区置回 loading（旧值残留会误导）——「异步结果驱动本地状态」
+        // 的标准写法；改派生 state 要动 loading/success/error 三态的整套时序。
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setWrapInfo({ status: 'loading', wrap: null });
         if (!activeInstructionId) return () => { alive = false; };
         (async () => {

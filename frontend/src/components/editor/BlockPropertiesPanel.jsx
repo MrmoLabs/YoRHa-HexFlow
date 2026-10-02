@@ -23,7 +23,6 @@ export default function BlockPropertiesPanel({
     // Picking Props
     pickingMode,
     setPickingMode,
-    onPickBlock,
     onTempChange, // (tempBlockConfig | null) => void — live canvas preview
     validationIssues, // { errors, warnings } — P0-2 structure validation (page-level)
     onLocateBlock // (blockId) => void — select the offending block on the canvas
@@ -37,6 +36,9 @@ export default function BlockPropertiesPanel({
     // selected card in real time (display only — APPLY/SAVE still persists).
     useEffect(() => {
         onTempChange?.(tempBlockConfig);
+        // 不列 onTempChange：它是父组件每次渲染重建的回调，列入后 effect 每次渲染都
+        // 触发 → 画布预览反复推送；真正需要的触发条件只有 tempBlockConfig 本身。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tempBlockConfig]);
 
     // Semantic signature of the selected block: detects EXTERNAL changes
@@ -91,6 +93,8 @@ export default function BlockPropertiesPanel({
                 initialParams.algorithm = initialParams.algo;
             }
 
+            // 选块 → 本地草稿的**单向同步**（属性面板的编辑基准）：草稿必须在
+            // 「外部选块变化」这一时机重建，早一步会盖掉正在改的值，晚一步 APPLY 会写穿。
             setTempBlockConfig({
                 ...selectedBlock,
                 parameter_config: initialParams
@@ -98,6 +102,9 @@ export default function BlockPropertiesPanel({
         } else {
             setTempBlockConfig(null);
         }
+        // deps 只认「外部内容变化」这一件事（语义签名已含 operatorTemplates 变化），
+        // 补全 selectedBlock 会让用户每次键入都把未保存的草稿冲掉。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedBlock?.id, selectedBlockSignature]); // Semantic signature: rebuild on EXTERNAL content changes so APPLY cannot overwrite them with a stale copy; structural drags keep dirty edits alive.
 
     const handleTempUpdate = (updates) => {
@@ -572,7 +579,7 @@ export default function BlockPropertiesPanel({
                                                 newHex = input.toUpperCase().replace(/[^0-9A-F]/g, '');
                                             }
                                             handleTempUpdate({ parameter_config: { ...tempBlockConfig.parameter_config, hex: newHex } });
-                                        } catch (err) { }
+                                        } catch { /* 非法 hex → 忽略，输入框保持原值 */ }
                                     }}
                                     className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono tracking-wide"
                                 />

@@ -288,6 +288,9 @@ export function useInstructionData(options = {}) {
                 setIsLoading(false);
             }
         }
+        // 不列 clearHistory：它在本 hook 内部定义且身份随编辑变化，列入会让这个刷新
+        // 回调每次编辑都换身份 → 上游 memo 连锁失效。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [fetchInstructions, onWebUpdate, reconcileActiveInstruction, setExternalInstructions, setInstructionsState, showStatus]);
 
     // P4-1: every working-copy edit funnels through here → snapshot the
@@ -419,7 +422,7 @@ export function useInstructionData(options = {}) {
             let refs = null;
             try {
                 refs = await api.getInstructionReferences(id);
-            } catch (e) {
+            } catch {
                 refs = null;
             }
             return openConfirmCallback(describeReferences(refs), doDelete);

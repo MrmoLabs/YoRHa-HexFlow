@@ -400,7 +400,7 @@ describe('批 1：字段级十进制录入', () => {
 
         // 2 字节 dec 字段：无输入态显示 placeholder「0..65535」（第 14 单：占位即域），
         // 不显示 0000 这类 hex 占位
-        const speed = screen.getByPlaceholderText('0..65535');
+        expect(screen.getByPlaceholderText('0..65535'));
         expect(screen.queryByPlaceholderText('0000')).toBeNull();
         expect(screen.getByText('[2B]')).toBeTruthy(); // 非 hex 通道徽标 = 字节上限
 

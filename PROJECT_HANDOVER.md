@@ -1390,6 +1390,51 @@
     - **状态**：**R1 ✅ R2 ✅**，余 **R3 ESLint（60 problems，本批起加 `npm run lint`
       门槛）→ R4 拖拽 → R5 float64 → R6 软删除（13 表加 `deleted_at`）→ R7/R8 → R9/R10**。
 
+49. **R3 · ESLint 存量清零，`npm run lint` 自本批起成为验收门槛（PLAN §8.40）**
+    （2026-10-02，**纯 FE + 1 处 lint 配置** —— 未碰 `backend/`、`models.py`、
+    `processor.py`/`graph.py`/`Blueprint.jsx`，`/dispatch` 缺省口径不变，零 DDL）：
+    - **起因**：§8.34 B2-8（原「1 error 2 warnings」已于 2026-10-02 复测纠正为
+      **60 problems / 42 errors / 18 warnings / 26 文件**）→ §8.37 **R3**。
+    - **结果**：`npm run lint` **EXIT=0、0 problems / 0 文件**（60 → 0，涉 27 文件，
+      `git diff --stat` = 27 files / +120 / −48）。
+    - **处置分布**：`no-unused-vars` 23 → 删未用绑定（`catch (_) {}` → `catch { 理由 }`、
+      未用 prop 解构）；`exhaustive-deps` 17 → **逐条带理由 disable**；`no-useless-escape`
+      3 → 正则字符类内去掉多余 `\\-`（语义不变）；`no-empty` 2 → `catch { 中文理由 }`；
+      `no-undef` 1 → 测试补 `import { …, beforeEach } from 'vitest'`；
+      `no-extra-boolean-cast` 1 → `!Boolean(x)` → `!x`；`no-control-regex` 1 →
+      **故意的**控字符校验，注释 disable；旧的无人报告 disable 指令 1 → 删。
+    - **React Compiler 规则 11 条的处置（关键）**：先加定点 disable → 被
+      `reportUnusedDisableDirectives` 判「没盖住任何问题」→ **逐条删/留做实验**
+      （删掉 disable 重跑确认 0 报告）才定稿，最终只留 **2 条真被用上的
+      `set-state-in-effect`**（`SmartInput`、`InstructionProcessor`）。
+      **最终全仓定点 disable = 20 条**：`exhaustive-deps` 16 / `set-state-in-effect` 2 /
+      `no-unused-vars` 1 / `no-control-regex` 1。
+    - **顺手修掉 2 处真问题（等价修，非改行为）**：
+      ① `ParamConfigForm.jsx` **conditional hook** —— `if (!template) return null` 写在
+      `useEffect` **之前**，`op_code` 切到无模板指令时**钩子数跳变**会抛错；改成
+      「无模板判断进 effect 体内短路 + 早退挪到钩子之后」，渲染输出与 effect 触发条件
+      逐条等价。② `NieRDatePicker.jsx` **先用后声明** —— `initDate` 声明在 effect 之后，
+      改成 `syncState` → `initDate` → `useEffect` → 早退的纯重排。
+    - **yorha-ui 校验器**：`NieRModal.jsx` **4 条违规是 HEAD 存量**
+      （`backdrop-blur-[2px]` / `rounded-full` / `p-8` / `px-6`×2）—— R3 改到该文件就必须
+      过校验器 → 顺手清（去 blur 去圆角、`p-8`→`p-4`、`px-6`→`px-4`，密度对齐页内既有值）。
+    - **⚠️ 工具坑（必记）**：**PowerShell 5.1 的 `>` 默认写 UTF-16LE** ——
+      `git show HEAD:... > f.jsx` 交给校验器会得到**假的「0 违规」**（按 UTF-8 读出乱码
+      什么也匹配不到）。比对 HEAD 版本必须用 `cmd /c "git show ... > f.jsx"` 或 Python 写字节。
+    - **验收**：`npm run lint` **EXIT=0 / 0 problems**、**BE 644/644**、
+      **FE 976/976（66 文件）**、`npx vite build` EXIT=0、yorha-ui 校验器
+      **18 个改动 `.jsx` 全部 0 违规**。
+    - **边界**：**只清欠账不改行为** —— 除上述两处「等价修 + 纯重排」外全是删除与注释；
+      `exhaustive-deps` 一律定点放行而**没**顺手补 deps（补 deps 会改变 effect/memo 触发
+      时机 = 行为变更，须单独排批；`useInstructionLanes.allFields` 那 4 条同理，正解
+      （空数组收成模块级常量 / `useMemo` 固定引用）已写在注释里）。
+    - **文档同步**：PLAN 新 **§8.40** + §8.37 R3 行已办 + §1 `R1–R10`（R1 ✅ R2 ✅
+      R3 ✅ + lint 门槛生效）+ §8.34 **B2-8 标清零**、本条。
+    - **状态**：**R1 ✅ R2 ✅ R3 ✅**，余 **R4 拖拽（已拍：拖完只改展示序、点保存才改
+      持久序）→ R5 float64 → R6 软删除（13 表加 `deleted_at`）→ R7/R8 → R9/R10**。
+      自本批起每批验收项固定为：BE 全量 + FE 全量 + `npx vite build` +
+      **`npm run lint` EXIT=0** + yorha-ui 校验器 0 违规。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useCanvasConnections } from '../useCanvasConnections';
 
@@ -40,7 +40,6 @@ describe('useCanvasConnections', () => {
         const lanes = [
             { items: [{ id: '1', parameter_config: { refs: [] } }] }
         ];
-        const pickingMode = { isActive: true, currentRefs: ['2'] }; // Pick '2' from '1'? No, logic uses selectedId as source.
 
         // Setup: Selected Source = block-1, Target = block-2
         // pickingMode.currentRefs = ['block-2'] (simulating ID)

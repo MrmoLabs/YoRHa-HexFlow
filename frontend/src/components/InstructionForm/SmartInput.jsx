@@ -42,6 +42,9 @@ export const SmartInput = ({
     // Sync from parent ONLY when not focused to avoid fighting the user
     useEffect(() => {
         if (!isFocused.current) {
+            // 外部 value → 本地草稿的**单向同步**（失焦期才写回）。改成派生 state 会
+            // 动受控/非受控边界，行为风险大于收益 —— R3 存量定点放行（§8.40）。
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setLocalValue(String(value ?? ''));
         }
     }, [value]);

@@ -25,10 +25,14 @@ export default function ParamConfigForm({
     pickingMode // { isActive, fieldKey, ... }
 }) {
     const template = operatorTemplates[blockState.op_code];
-    if (!template || !template.param_template) return null;
 
     // AUTO-RECONCILE SQL IMPORTS (Name-based formula to UUID refs)
+    // 规则：钩子必须**无条件**调用（rules-of-hooks）—— 原实现把
+    // `if (!template) return null` 写在本 effect 之前，op_code 切到无模板的指令时
+    // 钩子数会跳变 → React 内部报错。改法 = 「无模板」判断挪进 effect 体内短路，
+    // 渲染侧的早退挪到钩子之后 —— 渲染输出与 effect 触发条件与原实现逐条等价。
     React.useEffect(() => {
+        if (!template || !template.param_template) return;
         const formula = blockState.parameter_config?.formula;
         const refs = blockState.parameter_config?.refs || [];
         if (typeof formula === 'string' && formula.includes('[') && refs.length === 0) {
@@ -44,7 +48,13 @@ export default function ParamConfigForm({
                 onUpdateParam('refs', [...new Set(resolvedRefs)]);
             }
         }
+        // deps 只认「块被换掉 / 公式被改」这两个真正需要重算的时机；补全
+        // blockState.name、refs、instructionFields 会让 effect 每次输入都重跑 →
+        // 自动 resolve 反复调 onUpdateParam。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [blockState.id, blockState.parameter_config?.formula]);
+
+    if (!template || !template.param_template) return null;
 
     return Object.entries(template.param_template).map(([key, rawConfig]) => {
         const val = blockState.parameter_config?.[key];

@@ -116,7 +116,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
         expect(screen.getAllByText(/TCP 连接 127\.0\.0\.1:18899 失败/).length).toBeGreaterThanOrEqual(1);
         // 历史两行 + 预览截断标记
         expect(screen.getByText('DE AD BE EF')).toBeDefined();
-        expect(screen.getByText(/\…\+2/)).toBeDefined();
+        expect(screen.getByText(/…\+2/)).toBeDefined();
     });
 
     it('点击历史行切换原始报文与错误详情', async () => {

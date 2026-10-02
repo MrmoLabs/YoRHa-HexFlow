@@ -39,7 +39,7 @@
 | CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | **已提交 ✅ 3a `e63d76f`（代码+文档）/ `438f3af`（db 同步）、3b `c4b1f7f`（代码+文档，零 DDL）、3c `fbad083`（代码+文档）/ `17c6830`（db 同步）、3d `77dd389`（代码+文档）/ `bb7a0ba`（db 同步），2026-10-01 —— CP3 四个子批全数完成**。硬前置 CP2 ✅；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**。**3a 含 DDL**（`frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈）→ yorha.db 单独同步提交；**3a 提前并入了原属 3b 的 `dispatch` `wrap.recipe_id` 接线**（加工页预览/TRANSMIT/事务三路须同字节，缺接线则预览帧与出线帧不同）。3a 终态：BE 466/466（基线 426 + 40）、FE 920/920（63 文件，基线 915 + 5）、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、**真路由冒烟 25 项 PASS**；明细见 §8.21。**3b 终态**：**纯前端批、零 DDL**（未改 `models.py`/`database.py`，`yorha.db` 未随本批提交）—— FE **924/924（63 文件，基线 920 + 4）**、既有「属性面板四分区 select = 3」用例**零改全绿**（未建配方时编辑器不占 select）、BE 466/466、`npx vite build` EXIT=0、yorha-ui 校验器 3 文件 0 违规、**真 curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；明细见 §8.22。**3c 终态（2026-10-01）**：**含 DDL** —— `sequence_steps` 新增 `wrap JSON` 单列自愈（`database.ensure_sequence_step_columns`，镜像 3a `ensure_recipe_columns` 先例）→ yorha.db **单独同步提交**；BE **496/496（基线 466 + 30）**、FE **932/932（63 文件，基线 924 + 8）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**真路由冒烟 30 项 ALL PASS** + **真浏览器 UI 验证 6 项通过**；明细见 §8.23。**3d 终态（2026-10-01）**：**含 DDL** —— **3 列仅新增**<br>（`response_specs.stage` / `response_specs.definition_hash` /<br>`protocol_bindings.definition_hash`，`ensure_response_spec_columns` 新建 +<br>`ensure_binding_columns` 扩列自愈，lifespan 接线）→ yorha.db 沿先例<br>**手工只跑 3 条 ALTER 后单独同步提交**；BE **537/537（基线 496 + 41）**、<br>FE **944/944（63 文件，基线 932 + 12）**、`npx vite build` EXIT=0、yorha-ui<br>校验器 8 文件 0 违规、**真路由冒烟 43 项 ALL PASS**；明细见 §8.24。**§9.7 人工验证收口（2026-10-02）**：3a①②③ + 3b①②③ + 编排页「洞位填装 → 封装试发」**8 项真浏览器 + `/dispatch/history` 对账复跑全过**（含 400 逐槽拦截与「未选配方 = 建配方前基线 28B 逐字节相同」），三处文档（§9.7 / `pageStatus.json` / HANDOVER 35·36 待办①）口径已统一，明细 §8.27 |
 | CP4 | Core Pipeline 批次四（治理）：**4a** 关系数据导入导出（`bindings` + `response_specs` 并入 DataHub ZIP `relations.json` + `POST /datahub/import/relations`）/ **4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 回执」+ D9/D10 划界落 README/PAGE_STATUS / **4c** D8 校验表全量核对（逐行销项，纯文档）（明细 `DESIGN_CorePipeline.md` §7 批次四） | 🔄 **4a 已提交 ✅ `54620ab`（代码+文档，零 DDL），2026-10-02**：导出 ZIP 增 `relations.json`（`manifest` 增 `relations` 计数、`/status` 增 `protocolBindings`/`responseSpecs` 两行计数）+ 回灌端点按 `id` upsert、逐行报告（父缺失 → `skipped` 带 reason、槽悬空 → 置 NULL + warning、默认唯一冲突清旧行、`spec` 过 `normalize_spec` / `stage` 重算镜像 / 出处原样回填）、**部分成功即部分落库不整批回滚**；前端 DataHub 增「关系数据」面板（选文件 → 解析校验 → 确认弹窗 → 回显 新增/更新/跳过/警告 计数 + 刷新）。终态 BE **549/549**（基线 537 + 12）、FE **948/948**（63 文件，基线 944 + 4）、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**；明细见 §8.25。**4b+4c 已提交 ✅ `03b25d3`（代码+文档，零 DDL），2026-10-02**：**4b** 绑定矩阵只读面板（`utils/bindingMatrix.js` 纯函数 + DataHub 页六列表 + 摘要八项计数；孤儿不静默 —— 协议已删 / 槽悬空 / `stale===true` 琥珀标出；三读与状态面板同拍、单读失败互不拖垮）+ D9/D10 划界落 `README.md` §6 Scope Boundaries 与 `pageStatus.json` 四页条目（`PAGE_STATUS.md` 再生）；**4c** 全量核对新增 `DESIGN_CorePipeline.md` §6.3 销项表 —— 8 行**全「已有」、0 待补**，§6.2 槽节点行复核为批次二已落地（`dangling_slots_cleared`）→ **本批零后端改动**（BE 用例数持平），`DESIGN_Decisions.md` D8/D9/D10 三表行 + 三处实施注（D9-B/D10-B 重开条件已具备**仍取 A**）。终态 BE **549/549**（持平）、FE **958/958（64 文件，基线 948 + 10）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**人工验证 3 项通过**；明细见 §8.26。**批次四三子批（4a/4b/4c）全数完成** |
 | C 已拍 | **5 项拍板已收齐**（§8.36 拍板结果表：C-1 自动选指令路由 / C-2 响应解码为字段 / C-3 全量项目包迁移 / C-4 应答带转义 / C-5 三项暂缓；另含 R6 方案） | ✅ **2026-10-02 全部拍定**：C-1=**A 不立项** / C-2=**C** / C-3=**C** / C-4=**确认接受** / C-5=**①② 触发式、③ 不做** / R6=**13 表加 `deleted_at`** → 编入 **R7–R10** |
-| R1–R10 | **B2 六项功能缺口 + 拍板选中项排期**（导入 pre-import 快照 / 传输配置上一配置回退 / ESLint 存量 / 编排页绑定拖拽 / float64 双端 / 软删除回收站 + C-3 补域 2 批 + C-2 解码 2 批）—— 顺序 = 先安全网 → 清欠账 → 体验 → 正确性 → 最后动 DDL | 🔄 **R1 ✅ §8.38 / R2 ✅ §8.39 已完成（2026-10-02）**，余 R3–R10 未开始（**R4 已拍**：拖完只改展示序、点保存按钮才改持久序；§8.37；R1–R6 = 7–8 批 + R7–R10 = 4 批 → 合计 **11–12 批**，R6/R10 含 DDL 仅新增列） |
+| R1–R10 | **B2 六项功能缺口 + 拍板选中项排期**（导入 pre-import 快照 / 传输配置上一配置回退 / ESLint 存量 / 编排页绑定拖拽 / float64 双端 / 软删除回收站 + C-3 补域 2 批 + C-2 解码 2 批）—— 顺序 = 先安全网 → 清欠账 → 体验 → 正确性 → 最后动 DDL | 🔄 **R1 ✅ §8.38 / R2 ✅ §8.39 / R3 ✅ §8.40 已完成（2026-10-02）**，余 R4–R10 未开始（**R4 已拍**：拖完只改展示序、点保存按钮才改持久序；**自 R3 起 `npm run lint` EXIT=0 进验收门槛**；§8.37；R1–R6 = 7–8 批 + R7–R10 = 4 批 → 合计 **11–12 批**，R6/R10 含 DDL 仅新增列） |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -2632,7 +2632,7 @@ hash + 本批）。
      `no-extra-boolean-cast` 1 / `no-control-regex` 1 + 各文件告警。原小数字系早期批次
      口径（§8.7 记录里 `Protocol.jsx` **单文件**即 1 error 2 warnings），此后代码变多
      未复测。「各批不计入验收」的处置**属实且维持**；清理排 **§8.37 批 R3**，自 R3 起
-     才把 `npm run lint` 变成验收门槛。
+     才把 `npm run lint` 变成验收门槛。→ **✅ R3 已清零（§8.40，2026-10-02）**：`npm run lint` **EXIT=0、0 problems / 0 文件**（原 60 → 0，涉 27 文件）。
 - **B3 已立暂缓 / 挂账（只列名，不重复排期）**：§8.14 四项暂缓（CRC 多算法 CCITT /
   CRC32 / LRC、长度域 BE/LE、varint/COBS 组帧、解码回程 bytes→fields）；
   `BUSINESS_SCENARIOS.md` 挂账三项（epoch 模板、加扰 / 混淆、创建后切 op）。
@@ -2966,7 +2966,7 @@ R9–R10（C-2，2 批）—— 明细与追加理由见 §8.37。
 |---|---|---|---|---|---|
 | ~~**R1**~~ ✅ | 5 · 数据导入无 **pre-import 自动快照** → **已落地（§8.38）** | BE | 小（1 批） | 否 | ✅ **2026-10-02 完成**：镜像 `pre-restore` 先例，新增 `safety_snapshot()` 收口「先快照、失败即中止」；顺序 = 校验 → 快照 → 回灌（**400 不落垃圾快照**、快照失败 500 且一行未写）；响应加 `preImportSnapshot`（只做加法）；`pre-import-*` 与 `pre-restore-*` 同打 `[快照]` 徽标。**与 §8.36 C-3 选 C 的前置是同一件事** → R7/R8 可直接复用 |
 | **R2** | 7 · 传输配置无**上一配置回退** → **已落地（§8.39）** | BE+FE | 小（1 批） | 否 | ✅ **2026-10-02 完成**：`transport.set_config` 每次真变更压栈（有界 20）+ `revert_config()` 弹栈 + `POST /transport/config/revert`（无历史 → 400）+ `status.configHistoryDepth`（0 → 按钮置灰）+ 通讯调试页 REVERT 按钮；生效语义与 APPLY 一致（断连 + 落库 + 留痕），**回退本身不入栈**（可连退多版、退空即止），**启动装载不入栈**（`record_history=False`，否则一开机点回退就被重置回默认）；零 DDL → 栈重启即空 |
-| **R3** | 8 · **ESLint 存量**清理 | FE | 中（1 批，**60 problems / 26 文件**） | 否 | **先纠正 §8.34 的失实数字**（原文「1 error 2 warnings」，实测 `npm run lint` = **60 problems（42 errors / 18 warnings）**，见下方分布）；纪律 = **只删未用变量 / 加带理由的 disable，不改行为**；`no-control-regex` 是**有意的**（控字符校验）→ 注释 disable；`rules-of-hooks` 1 条**需人工看**（可能是真 bug）。**验收自本批起加 `npm run lint` EXIT=0** |
+| ~~**R3**~~ ✅ | 8 · **ESLint 存量**清理 → **已清零（§8.40）** | FE | 中（1 批，**60 problems / 26 文件**） | 否 | ✅ **2026-10-02 完成**：`npm run lint` **EXIT=0、0 problems / 0 文件**（60 → 0，涉 27 文件）。**纪律落地 = 只删未用变量 + 加带理由的 disable，不改行为**；过程中撞出 **2 处真问题并顺手修掉**：`ParamConfigForm` 的 **conditional hook**（`if (!template) return null` 写在 `useEffect` 之前 → op_code 切到无模板指令时**钩子数跳变**，已改成「无模板判断进 effect 体内 + 早退挪到钩子之后」）、`NieRDatePicker` 的 **先用后声明**（`initDate` 声明在 effect 之后，已重排）。`no-control-regex` = **有意的**控字符校验 → 注释 disable。**自本批起 `npm run lint` EXIT=0 进验收门槛** |
 | **R4** | 3 · 编排页**绑定拖拽排序** | FE | 中（1 批） | 否 | ✅ **已拍（2026-10-02，用户原话）**：**拖完只改展示序，点保存按钮才改持久序** —— 即拖拽 = 本地草稿态，「保存」时调**同一个** PUT 回写 `slot_order`（与现有下拉回写语义一致，**零 BE 改动**）；未保存切换协议/刷新要有丢弃提示（与协议页草稿口径对齐）。现状 = 上移/下移按钮 + `slot_order` 洞位下拉回写**已落地**，只缺拖拽手势 |
 | **R5** | 4 · **float64 编码**双端不一致 | BE+FE+向量 | 中（1–2 批） | 否 | 现状 = N1 摘静默 → `FLOAT64_UNSUPPORTED` 提醒、G7「提醒而非改模板」；真正修复 = `formula.js` + BE 编解码 + **`vectors/float_ieee.json` 扩 float64 组（双端同一期望）** + **`response_match` 解码侧同步**（否则能发不能判）；**动编码器 → 必须证明缺省逐字节不变** |
 | **R6** | 6 · **软删除 / 回收站** | BE+FE | 大（2 批：DDL + FE） | **是（仅新增列/表）** | **先拍「列 vs 表」**：① 13 张表统一加 `deleted_at`（**仅新增列，合 §0**，读端点过滤）—— 省、但每张表都要动；② 新表 `trash_bin(id, entity_type, entity_id, payload_json, deleted_at, purged_at)` —— 集中、但写路径要双写。引用检查与前端确认**沿用现成**，DataHub 备份仍是最终兜底 |
@@ -3135,6 +3135,73 @@ R1 的快照函数。**排期合计 R1–R10 = 11–12 批**。
 再生、本节 §8.39、§8.37 **R2 行标已办** + **R4 行记录拍板**（用户原话：拖完只改展示序、
 点保存按钮才改持久序）、§1 `R1–R10` 行状态、§8.34 B2-7 标已办、§8.33「不改 backlog」
 项销号、`PROJECT_HANDOVER.md` 条目 48。
+
+### 8.40 R3 · ESLint 存量清零（`npm run lint` 自本批起成为验收门槛）
+
+**批次**：2026-10-02 · **纯 FE + 1 处 lint 配置**（未碰 `backend/`、`models.py`、
+`processor.py` / `graph.py` / `Blueprint.jsx`；`/dispatch` 缺省口径不变）。
+
+**背景**：§8.34 B2-8（原记录「1 error 2 warnings」→ 2026-10-02 复测纠正为
+**60 problems / 42 errors / 18 warnings / 26 文件**）→ §8.37 **R3**。纪律 =
+**只删未用变量 + 加带理由的 disable，不改行为**；**自本批起 `npm run lint` EXIT=0
+进验收门槛**。
+
+**结果**：`npm run lint` **EXIT=0、0 problems / 0 文件**（60 → 0，涉 27 文件；
+`git diff --stat` = **27 files / +120 / −48**）。
+
+**分布 → 处置**
+
+| 规则 | 原条数 | 处置 |
+|---|---|---|
+| `no-unused-vars` | 23 | 删未用绑定（含 `catch (_) {}` → `catch { /* 中文理由 */ }`、未用 prop 解构、未用局部量）。**唯一例外** = `encoderLimits.getParamKeyLimitRef(key, opCode)` 的**占位签名**（调用方已按两参在用）→ 带理由 disable |
+| `react-hooks/exhaustive-deps` | 17 | 全部**带理由 disable**：逐条写清「为什么不列这个 dep」（多为「回调每次渲染重建 → 列入会让 effect / memo 每次渲染都重跑」） |
+| `no-useless-escape` | 3 | `/[^\w.\-]+/g` → `/[^\w.-]+/g`（字符类内 `\-` 无需转义）等，**正则语义逐字节不变** |
+| `no-empty` | 2 | 空 `catch` → `catch { /* 中文理由 */ }`（注释使块非空，同时删掉未用的 `err` 绑定） |
+| `no-undef` | 1 | 测试文件补 `import { …, beforeEach } from 'vitest'`（与仓内其它测试一致，非 ESLint 配置放水） |
+| `no-extra-boolean-cast` | 1 | `!Boolean(x)` → `!x` |
+| `no-control-regex` | 1 | `/[^\u0000-\u00FF]/` **是故意写的控制字符**（Latin-1 越界校验）→ 注释 disable + 说明 |
+| 未使用的旧 disable 指令 | 1 | `Sequences.jsx` 里一条没人报告的旧 `exhaustive-deps` disable → 删 |
+| React Compiler 规则（`set-state-in-effect` 6 / `refs` 2 / `immutability` 1 / `rules-of-hooks` 1 / `preserve-manual-memoization` 1） | 11 | **先加定点 disable → `reportUnusedDisableDirectives` 判定「没盖住任何问题」→ 逐条删回**，最终只保留 **2 条真被用上的 `set-state-in-effect`**（`SmartInput`、`InstructionProcessor`）。**最终全仓定点 disable = 20 条**（`exhaustive-deps` 16 / `set-state-in-effect` 2 / `no-unused-vars` 1 / `no-control-regex` 1） |
+
+> **过程中的坑（值得记）**：这些 compiler 规则一度全部报错，加完 disable 却被判
+> 「unused」。逐条做删/留实验（删掉 disable → 重跑 → 确认 0 条报告）后才动手，
+> **没有靠猜**；这也是为什么最终只留下 20 条而不是 20+ 条「以防万一」的放行。
+
+**顺手修掉的 2 处真问题**（本该单独立批，但正好撞在 lint 上，改动等价且有测试覆盖）：
+
+1. **`ParamConfigForm.jsx` · `react-hooks/rules-of-hooks`（条件调用 hook）** ——
+   `if (!template || !template.param_template) return null;` 原本写在 `React.useEffect`
+   **之前**：`op_code` 切到「无模板」的指令时**钩子调用数会跳变**，React 直接抛错。
+   改法 = 「无模板」判断**挪进 effect 体内短路**，渲染侧早退**挪到钩子之后** ——
+   渲染输出与 effect 触发条件与原实现逐条等价（无模板时 effect 照样立即 `return`）。
+2. **`NieRDatePicker.jsx` · `react-hooks/immutability`（先用后声明）** ——
+   `initDate` 声明在使用它的 `useEffect` **之后**（且在 `if (!isOpen) return null`
+   之后），运行时靠「effect 回调要等渲染函数跑完才执行」侥幸可用。
+   改法 = `syncState` → `initDate` → `useEffect` → 早退，**纯重排、语义不变**。
+
+**另一处存量（yorha-ui 校验器）**：`NieRModal.jsx` **4 条违规**
+（`backdrop-blur-[2px]` / `rounded-full` / `p-8` / `px-6` ×2）—— **HEAD 就有**。
+R3 改到该文件就必须过校验器 → 顺手清：去掉 blur 与圆角、`p-8`→`p-4`、
+`px-6`→`px-4`（密度对齐页内既有的 `p-4` / `px-4`）。
+
+> **比对 HEAD 的坑（必须记）**：PowerShell 5.1 的 `>` 重定向**默认写 UTF-16LE**。
+> 第一次用 `git show HEAD:... > f.jsx` 去校验，得到的是**假的「0 违规」**
+> （校验器按 UTF-8 读，读出乱码当然什么也匹配不到）。改用
+> `cmd /c "git show ... > f.jsx"` 或 Python 写字节后才复核出**HEAD 同样 4 条**。
+
+**验收**：`npm run lint` **EXIT=0 / 0 problems**、**BE 644/644**、
+**FE 976/976（66 文件）**、`npx vite build` EXIT=0、yorha-ui 校验器
+**18 个改动 `.jsx` 全部 0 违规**；零 DDL（未碰 `models.py` / `database.py`）。
+
+**边界（写清免得以后误读）**：本批**只清欠账、不改行为** —— 除了上面两处
+「等价修 + 纯重排」，其余全是删除与注释；`exhaustive-deps` 一律定点放行而**没有**
+顺手补 deps，因为补 deps 会让 effect/memo 的触发时机变化，那是**行为变更**，
+必须单独排批（`useInstructionLanes.allFields` 那 4 条同理，注释里已写明正解是
+把空数组收成模块级常量 / `useMemo` 固定引用，留到真正动那些 memo 的批次）。
+
+**文档同步（同批）**：本节 §8.40、§8.37 **R3 行标已办**、§1 `R1–R10` 行
+（R1 ✅ R2 ✅ R3 ✅ + lint 门槛生效）、§8.34 **B2-8 标清零**、
+`PROJECT_HANDOVER.md` 条目 49。
 
 ## 9. 保留勿动（非任务，勿清理）
 

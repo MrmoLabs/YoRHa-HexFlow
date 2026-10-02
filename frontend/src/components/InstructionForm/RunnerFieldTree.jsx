@@ -98,7 +98,6 @@ export default function RunnerFieldTree({
             if (isEnum) {
                 // If the value looks like a hex string (e.g. "AA"), parse it as base 16
                 // But if it's already a number, just use it.
-                const strVal = String(val);
                 // Check if option value was intended as hex
                 // We can try to match it against options to see the original type?
                 // Or just generic "Auto Detect" approach:

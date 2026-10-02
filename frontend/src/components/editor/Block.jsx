@@ -7,7 +7,7 @@ import { formatUnknown } from '../../utils/formula';
 import { packBits } from '../../utils/bitGrid';
 import { padSpec } from '../../utils/padSpec';
 
-export default function Block({ id, label, name, byte_length, byte_len, type, op_code, hex_value, parameter_config, bits, children, isSelected, isPickMode, isPickRef, isGroupActive, offsetMeta, issue = null, onClick }) {
+export default function Block({ id, label, name, byte_length, byte_len, type, op_code, hex_value, parameter_config, bits, isSelected, isPickMode, isPickRef, isGroupActive, offsetMeta, issue = null, onClick }) {
     // Normalize Props (Backend v4 vs v3)
     const displayLabel = name || label || 'BLOCK';
     const length = byte_len || byte_length || 1;
@@ -185,6 +185,7 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
     // 卡面取值口径：能确定 → 直接显示（组/容器=嵌套内容拼接串，长度=十进制，
     // HEX=字面 hex）；不确定 → 按字节数出等量 "??"（1B→"??"、2B→"?? ??"），
     // 不再用固定 "??" 或误导性 "00"。
+    // deps 按「真正参与计算的字段」手动收敛（只用 offsetMeta.size，不是整个 offsetMeta）。
     const displayValue = React.useMemo(() => {
         // 1. Injected computed value wins: group/container content concat
         //    (lanes 注入的嵌套内容串) or formula engine result.
@@ -238,6 +239,9 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
         // 3. Default: 未配置/不确定 → 按字节数出等量 ??（反馈 #1：不再用
         // 误导性 "00" 填充冒充取值）。
         return formatUnknown(length);
+        // deps 已按「真正参与计算的字段」手动收敛（只用到 offsetMeta.size，不是整个
+        // offsetMeta）；补成全量会让卡面 memo 每次渲染失效 → 渲染数上升。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [type, effectiveHex, length, parameter_config?.computedValue, op_code, isGroupCard, offsetMeta?.size, bits, parameter_config?.value, parameter_config?.default]);
 
     return (

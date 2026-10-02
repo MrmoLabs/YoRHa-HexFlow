@@ -151,6 +151,9 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
+        // deps 故意不列 handleSend：它是每次渲染重建的闭包，列入会让快捷键监听器
+        // 每次渲染都拆了重建；handleSend 用到的值已全在下面的 deps 里。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [inputs, hexPreview, isSending, activeWrap]);
 
     const handleSend = async () => {
@@ -214,7 +217,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
         try {
             const hexString = hexPreview.replace(/\s/g, '');
             const safeName = (instruction.code || instruction.name || 'yorha-frame')
-                .replace(/[^\w.\-]+/g, '_');
+                .replace(/[^\w.-]+/g, '_');
             const blob = await api.exportHexFile(hexString, `${safeName}.hex`);
             triggerBlobDownload(blob, `${safeName}.hex`);
             setExportMsg('EXPORT OK');

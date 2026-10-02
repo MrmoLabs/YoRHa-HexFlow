@@ -42,7 +42,6 @@ export default function Instruction({ instructions: initialInstructions, setInst
         deleteInstruction,
         saveChanges,
         revertChanges,
-        setInstructions, // exposed for functional updates
         setHasUnsavedChanges
     } = useInstructionData({
         instructions: initialInstructions,
@@ -453,7 +452,7 @@ export default function Instruction({ instructions: initialInstructions, setInst
                     failed.push(`「${p.name}」: ${err?.response?.data?.detail || err?.message || '未知错误'}`);
                 }
             }
-            try { await loadInstructions(); } catch (_) { /* 列表刷新尽力而为 */ }
+            try { await loadInstructions(); } catch { /* 列表刷新尽力而为 */ }
             openConfirm(
                 [`导入完成：成功 ${ok} ／ 失败 ${failed.length}`, ...failed.slice(0, 6)].join('\n'),
                 () => {}

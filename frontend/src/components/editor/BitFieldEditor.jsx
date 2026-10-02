@@ -49,7 +49,6 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
     const [armedBit, setArmedBit] = useState(null);
     const [selectedIndex, setSelectedIndex] = useState(null);
     const grid = buildBitGrid(list, byteLen);
-    const conflictSet = new Set(grid.conflictBits);
 
     const update = (index, patch) => {
         const next = list.map((b, i) => (i === index ? { ...b, ...patch } : b));

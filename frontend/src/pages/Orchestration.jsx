@@ -596,7 +596,7 @@ export default function Orchestration({ protocols, instructions }) {
         setIsExporting(true);
         setExportMsg('');
         try {
-            const bindingLabel = (currentBinding?.label || 'binding').replace(/[^\w.\-]+/g, '_');
+            const bindingLabel = (currentBinding?.label || 'binding').replace(/[^\w.-]+/g, '_');
             const blob = await api.exportBinaryFromBlocks(toFrameBlocks(mergedBlocks), `${bindingLabel}.bin`);
             triggerBlobDownload(blob, `${bindingLabel}.bin`);
             setExportMsg('EXPORT OK');

@@ -90,7 +90,7 @@ export default function KvPairListParam({
                                     const newArray = [...kvArray];
                                     newArray[idx].val = newHex;
                                     onUpdateParam('_kvArray', newArray);
-                                } catch (err) { }
+                                } catch { /* 非法 hex → 忽略，输入框保持原值 */ }
                             }}
                             className="w-1/3 bg-transparent border-b border-nier-light/30 text-xs font-mono text-nier-light focus:border-nier-light focus:outline-none text-center"
                         />

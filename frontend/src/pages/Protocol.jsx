@@ -139,6 +139,9 @@ export default function Protocol({ protocols, setProtocols }) {
         setSelectedId(null);
         clearHistory(); // 批次二: 切协议 = 新基线（历史条目按协议 id 存，跨协议不可回）
         lastPersistedSignatureRef.current = serializeProtocol(currentProtocol);
+        // deps 只认「切协议 / 清历史」这一时机；补全 currentProtocol 会让 effect 每次
+        // 编辑都重跑 → 基线签名被就地覆盖，撤销基线失真。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeProtocolId, currentProtocol?.id, clearHistory]);
 
     const currentLanes = useMemo(

@@ -8,6 +8,10 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
     const [expandedGroupIds, setExpandedGroupIds] = useState([]);
     // focusedParentId: The 'parentId' of the lane currently in focus. null = Root.
     const [focusedParentId, setFocusedParentId] = useState(null);
+    // `|| []` 每次渲染都是新数组字面量 —— 4 处 useMemo 若直接把它当 dep 会「每次
+    // 渲染都失效」。正解是把这份空数组收成模块级常量或 useMemo 固定引用；R3 只清欠
+    // 账不改行为（§8.40），故此处定点放行，改法留到真正动这些 memo 的批次。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     const allFields = currentInstruction?.fields || [];
 
     const fieldById = useMemo(() => {
@@ -48,8 +52,13 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
 
     // Reset Group Path when switching instructions & Default Expand All
     useEffect(() => {
+        // 切指令 → 展开状态与焦点归位，是「外部 id 驱动本地 UI 状态」的标准同步：
+        // 这一次重建必须紧跟 activeInstructionId，不能跟着 groupIds 的每次变化走。
         setExpandedGroupIds(groupIds);
         setFocusedParentId(null);
+        // 不列 groupIds：本 effect 只想在「切指令」时跑一次；列出 groupIds 会让每次
+        // 字段增删都把展开状态冲回全开。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeInstructionId]); // Reset only when switching instruction
 
     // Self-heal: clear focus once the focused group disappears (deleted) or the
@@ -59,6 +68,8 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
         if (!focusedParentId) return;
         const parent = fieldById.get(focusedParentId);
         if (!parent || parent.op_code !== 'ARRAY_GROUP') {
+            // 自愈：焦点指向的组没了/不是组 → 收回焦点，否则新字段会挂上死 parent_id。
+            // 这是「派生数据变化 → 修本地指针」的补偿同步，去掉会让字段变成隐形孤儿。
             setFocusedParentId(null);
         }
     }, [focusedParentId, fieldById]);
@@ -177,7 +188,7 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
                         // 长度是"数量"不是字节内容 → 十进制直出 `${result}B`（hex `05`
                         // 会被读成字节值）。卡片宽度/页脚另由 byte_len 与偏移标尺承担。
                         return { ...f, parameter_config: { ...f.parameter_config, computedValue: `${result}B` } };
-                    } catch (e) {
+                    } catch {
                         return { ...f, parameter_config: { ...f.parameter_config, computedValue: formatUnknown(f.byte_len || 1) } };
                     }
                 }

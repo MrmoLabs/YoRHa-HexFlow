@@ -33,6 +33,8 @@ export function getBlockLimitRefs(block) {
 // Param-key level limits (per op_code) — drives the ⚠ badges next to labels
 // in ParamConfigForm / RunnerFieldTree. Empty while every known limit is
 // resolved; future entries go here (e.g. `if (key === 'k' && op === 'X') return 'B9'`).
+// 占位签名：未来按 (key, opCode) 返回限值，现在恒返 null；参数故意留在签名上，调用方已按两个实参在用。
+// eslint-disable-next-line no-unused-vars
 export function getParamKeyLimitRef(key, opCode) {
     return null;
 }

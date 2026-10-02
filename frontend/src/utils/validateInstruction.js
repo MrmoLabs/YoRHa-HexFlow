@@ -163,6 +163,9 @@ export function validateInstruction(instruction) {
             && String(params.encoding ?? 'ascii').toLowerCase() !== 'utf8') {
             const text = [params.value, params.default]
                 .filter((v) => typeof v === 'string').join('');
+            // 非 Latin-1（含 NUL）→ 越界告警。正则里 \u0000 是**故意**写的控制字符，
+            // 换成等价写法反而不直观，故定点放行本行。
+            // eslint-disable-next-line no-control-regex
             if (/[^\u0000-\u00FF]/.test(text)) {
                 warnings.push({
                     blockId: f.id,

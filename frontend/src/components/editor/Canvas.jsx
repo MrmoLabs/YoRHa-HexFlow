@@ -22,7 +22,7 @@ import { computeFinalPlacement } from '../../utils/computePlacement';
 import { computeInsertionSide } from '../../utils/computeInsertionSide';
 
 // Lane Component to handle Droppable logic cleanly
-function LaneContainer({ lane, index, children, isActiveLane, onNavigateGroup, onSetFocusedLane }) {
+function LaneContainer({ lane, index, children, isActiveLane, onSetFocusedLane }) {
     const { setNodeRef } = useDroppable({
         id: `lane-container-${index}`,
         data: { laneIndex: index, parentId: lane.parentId }
@@ -50,7 +50,6 @@ export default function Canvas({
     onMoveItem, // (itemId, newParentId, newIndex) => void
     selectedId,
     onSelect,
-    isReadOnly,
     pickingMode,
     onPickBlock,
     onCancelPick,
@@ -97,7 +96,7 @@ export default function Canvas({
                 if (canvasRef.current?.hasPointerCapture?.(pan.pointerId)) {
                     canvasRef.current.releasePointerCapture(pan.pointerId);
                 }
-            } catch (_) { /* capture already released */ }
+            } catch { /* capture already released */ }
             panRef.current = null;
             canvasRef.current?.classList.remove('cursor-grabbing');
         };
@@ -112,7 +111,7 @@ export default function Canvas({
                 if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return; // still a click candidate
                 pan.moved = true;
                 canvasRef.current?.classList.add('cursor-grabbing');
-                try { canvasRef.current?.setPointerCapture?.(pan.pointerId); } catch (_) { /* ok */ }
+                try { canvasRef.current?.setPointerCapture?.(pan.pointerId); } catch { /* ok */ }
             }
             canvasRef.current.scrollLeft = pan.startScrollLeft - dx;
             canvasRef.current.scrollTop = pan.startScrollTop - dy;
@@ -450,7 +449,7 @@ export default function Canvas({
                         e.preventDefault();
                     }
                 }}
-                onClick={(e) => {
+                onClick={() => {
                     // Background click reset/cancel
                     // We rely on child elements (Blocks/Lanes) calling e.stopPropagation()
                     if (pickingMode?.isActive) {

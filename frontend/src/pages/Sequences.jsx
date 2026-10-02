@@ -187,7 +187,6 @@ export default function Sequences() {
             payload: form.hexPreview.replace(/\s/g, '').toUpperCase(),
             ...buildPlan(formInstruction, form.inputs, form.computedValues, form.byteMap)
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [formInstruction, form.inputs, form.computedValues, form.byteMap, form.hexPreview]);
 
     const running = status?.running === true;

@@ -25,13 +25,20 @@ export default function NieRDatePicker({ isOpen, initialValue, onConfirm, onCanc
         hour: 0, minute: 0, second: 0
     });
 
-    useEffect(() => {
-        if (isOpen) {
-            initDate(initialValue);
-        }
-    }, [isOpen, initialValue]);
-
-    if (!isOpen) return null;
+    // 声明顺序：syncState → initDate → useEffect → 早退。
+    // `initDate` 原本声明在 effect 之后（且在 `if (!isOpen) return null` 之后），
+    // 运行时靠「effect 回调要等渲染函数跑完才执行」侥幸可用，但 React Compiler 按
+    // 字面读会判定「先用后声明」—— 改成先声明再用，渲染输出与 effect 触发时机不变。
+    const syncState = (d) => {
+        setDateParts({
+            year: d.getFullYear(),
+            month: d.getMonth() + 1,
+            day: d.getDate(),
+            hour: d.getHours(),
+            minute: d.getMinutes(),
+            second: d.getSeconds()
+        });
+    };
 
     const initDate = (val) => {
         let d = new Date();
@@ -42,16 +49,18 @@ export default function NieRDatePicker({ isOpen, initialValue, onConfirm, onCanc
         syncState(d);
     };
 
-    const syncState = (d) => {
-        setDateParts({
-            year: d.getFullYear(),
-            month: d.getMonth() + 1,
-            day: d.getDate(),
-            hour: d.getHours(),
-            minute: d.getMinutes(),
-            second: d.getSeconds()
-        });
-    }
+    useEffect(() => {
+        if (isOpen) {
+            // 打开 → 用 initialValue 重置本地草稿，这是「外部值驱动本地状态」的
+            // 单向同步；改成派生 state 要动 dateParts 的整套编辑时序。
+            initDate(initialValue);
+        }
+        // 不列 initDate：它是每次渲染重建的普通函数，列入会让 effect 每次渲染重跑；
+        // 真正的触发条件只有 isOpen / initialValue。
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, initialValue]);
+
+    if (!isOpen) return null;
 
     const handleChange = (field, val) => {
         setDateParts(prev => ({ ...prev, [field]: parseInt(val) || 0 }));

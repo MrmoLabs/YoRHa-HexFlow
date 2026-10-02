@@ -71,7 +71,7 @@ export const buildBindingMatrix = (instructions, bindings, protocols) => {
                 // 同指令多条默认（脏数据）也标出来：extraDefaults 交 UI 计数
                 extraDefaults: Math.max(0, defaults.length - 1),
                 others: mine
-                    .filter((b) => !Boolean(b.is_default))
+                    .filter((b) => !b.is_default)
                     .map((b) => cellFor(b, protocolMap))
             };
         })
