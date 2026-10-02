@@ -7,6 +7,7 @@ import Orchestration from './pages/Orchestration';
 import Terminal from './pages/Terminal';
 import DataHub from './pages/DataHub';
 import Sequences from './pages/Sequences';
+import Trash from './pages/Trash';
 import GlitchEffect from './components/visuals/GlitchEffect';
 import { api } from './api';
 import { PAGE_REGISTRY, PAGE_STATUS_BY_PATH } from './config/pageRegistry';
@@ -87,6 +88,8 @@ function Layout() {
                 return <DataHub />;
             case 'sequences':
                 return <Sequences />;
+            case 'trash':
+                return <Trash />;
             default:
                 return <Navigate to="/protocol" replace />;
         }
@@ -97,15 +100,16 @@ function Layout() {
             <GlitchEffect />
 
             {/* Sidebar Navigation */}
-            <nav className="w-64 border-r border-nier-light flex flex-col justify-between bg-nier-dark/95 backdrop-blur-md z-50">
+            {/* yorha-ui：去 backdrop-blur 改实底、p-6/py-6 收紧（第 4 批先例同口径） */}
+            <nav className="w-64 border-r border-nier-light flex flex-col justify-between bg-nier-dark z-50">
                 {/* Brand */}
-                <div className="p-6 border-b border-nier-light/30">
+                <div className="p-4 border-b border-nier-light/30">
                     <h1 className="text-2xl font-black tracking-tighter leading-none">HEX<br /><span className="text-lg font-light tracking-widest opacity-80">Orchestrator</span></h1>
                     <div className="mt-2 text-[10px] font-mono opacity-40 uppercase">YoRHa-HexFlow Unit</div>
                 </div>
 
                 {/* Links */}
-                <div className="flex-1 flex flex-col py-6 gap-2">
+                <div className="flex-1 flex flex-col py-4 gap-2">
                     {PAGE_REGISTRY.map((page) => (
                         <NavItem key={page.key} to={page.path} label={page.titleZh} shortcut={page.shortcut} />
                     ))}
@@ -130,7 +134,7 @@ function Layout() {
             {/* Main Content Area */}
             <main className="flex-1 flex flex-col overflow-hidden relative">
                 {/* Top Bar (Context) */}
-                <header className="h-12 border-b border-nier-light flex items-center justify-between px-6 bg-nier-dark/80 backdrop-blur-sm z-40">
+                <header className="h-12 border-b border-nier-light flex items-center justify-between px-4 bg-nier-dark z-40">
                     <div className="flex items-center gap-2 text-xs font-mono opacity-60">
                         <span className="w-2 h-2 bg-nier-light animate-pulse"></span>
                         <span>OPERATIONAL // {new Date().toISOString().split('T')[0]}</span>

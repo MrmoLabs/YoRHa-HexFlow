@@ -914,7 +914,7 @@ export default function Sequences() {
 
             <NieRModal
                 isOpen={confirmDelete}
-                message={`删除序列「${draft?.name || ''}」？步骤行一并删除，不可恢复。`}
+                message={`删除序列「${draft?.name || ''}」？\n\n· 序列与其步骤行一并移入回收站\n· 可在「回收站」页恢复（步骤随序列一并回来）\n· 彻底删除后才不可恢复`}
                 onConfirm={handleDeleteConfirm}
                 onCancel={() => setConfirmDelete(false)}
             />

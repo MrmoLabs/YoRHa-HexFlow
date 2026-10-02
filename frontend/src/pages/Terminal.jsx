@@ -360,7 +360,7 @@ export default function Terminal() {
             />
             <NieRModal
                 isOpen={confirmDeleteProfile}
-                message={`确认删除档案「${selectedProfile?.label || '—'}」？\n\n· 仅删除档案快照\n· 当前生效传输配置不受影响`}
+                message={`确认删除档案「${selectedProfile?.label || '—'}」？\n\n· 仅删除档案快照，移入回收站可恢复\n· 当前生效传输配置不受影响\n· 恢复后需重新激活该档案（激活指针不回填）`}
                 onConfirm={handleProfileDelete}
                 onCancel={() => setConfirmDeleteProfile(false)}
             />

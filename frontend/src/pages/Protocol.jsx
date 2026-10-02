@@ -441,15 +441,15 @@ export default function Protocol({ protocols, setProtocols }) {
 
     const performDeleteProtocol = async (id) => {
         try {
-            showStatus('删除协议...');
+            showStatus('移入回收站...');
             const result = await api.deleteProtocol(id);
             const remaining = protocols.filter(p => p.id !== id);
             setProtocols(prev => prev.filter(protocol => protocol.id !== id));
             if (activeProtocolId === id) setActiveProtocolId(remaining[0]?.id || null);
             const cascade = result?.deleted_bindings > 0
-                ? `（连带清理 ${result.deleted_bindings} 条绑定）`
+                ? `（连带清理 ${result.deleted_bindings} 条绑定 · 一并入回收站）`
                 : '';
-            showStatus(`协议已删除${cascade}`, 1500);
+            showStatus(`协议已移入回收站${cascade}，可在「回收站」页恢复`, 2500);
         } catch (error) {
             console.error('Failed to delete protocol', error);
             showStatus(`协议删除失败：${error.message}`, 2500);
@@ -958,7 +958,7 @@ export default function Protocol({ protocols, setProtocols }) {
             <NieRModal
                 isOpen={Boolean(deleteTarget)}
                 message={deleteTarget
-                    ? `协议「${deleteTarget.label}」被 ${deleteTarget.bindingCount} 条编排绑定引用，删除将连带清理这些绑定。`
+                    ? `协议「${deleteTarget.label}」被 ${deleteTarget.bindingCount} 条编排绑定引用，删除将把这些绑定一并移入回收站（随协议恢复一并回来）。`
                     : ''}
                 onConfirm={async () => {
                     const target = deleteTarget;

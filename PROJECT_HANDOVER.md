@@ -1580,6 +1580,52 @@
       BE 全量 + FE 全量 + `npx vite build` + **`npm run lint` EXIT=0** + yorha-ui
       校验器 0 违规。
 
+53. **R6-2 · 软删除 / 回收站 —— FE（回收站页 + 删除文案口径）—— PLAN §8.44**
+    （2026-10-02，**零 DDL、零后端改动**，纯 FE —— 未碰 `processor.py` /
+    `graph.py` / `Blueprint.jsx`，`/dispatch` 缺省口径逐字节不变）：
+    - **它是什么问题**：R6 的 FE 半 —— 拍板 §8.36「R6 方案」里的「**回收站页**」与
+      §8.43 结尾留的「待办 R6-2」。R6-1 已把删除改成软删，但**前端仍吓唬用户**
+      （「永久删除 / 不可撤销 / 须重新新建」），且删掉的东西**没有找回入口**。
+      两批合计 = R6 ✅（13 列 + 读侧过滤 + 回收站页），**DDL 只有 13 列、未加表**。
+    - **新增回收站页 `/trash`（第 8 页，快捷键 `G`）**：新文件
+      `frontend/src/pages/Trash.jsx`，骨架照 `DataHub.jsx`。三段 = **口径面板常驻**
+      （唯一键仍占用、配方/档案指针恢复后需重新指定与激活、日志不进站 —— **宁可写
+      「恢复后要重做一步」，也不许暗示恢复即完全回到删除前**）+ **条目列表**
+      （`GET /trash`，7 类中文映射 / 名称 / **秒级 `UTC` 删除时间**、最近删的在前，
+      空态与错态各有版式）+ **刷新**。每行 `恢复 RESTORE` **直调**（可逆，不弹）、
+      `彻底删除 PURGE` **必过 `NieRModal`**（写明不可恢复 + 提示改点「恢复」）。
+      忙态按行（`restore:<id>` / `purge:<id>`），成功回拉、失败不回拉。
+    - **接线三处**：`App.jsx` `case 'trash'`；`pageStatus.json` 追加第 8 页（A/B/C/D/E/
+      F/R 已占 → 取 **G**）；`npm run sync:page-status` **重生成 `docs/PAGE_STATUS.md`**
+      （§8.31）。同批改准该 JSON 里两处过期删除口径（协议「级联删」、指令「随删清理」）。
+    - **API 层**：新文件 `frontend/src/api/trash.js` 三端点进 barrel —— `listTrash()` /
+      `restoreTrashItem(kind, id)` / `purgeTrashItem(kind, id)`，`kind`、`id` 走
+      `encodeURIComponent`。**FE 不兜白名单第二层**：白名单外 404
+      `Unknown trash kind:` 与活行 400 `该条目不在回收站` 一律让后端 detail 原样透出
+      （避免两处口径分叉）。
+    - **五处删除确认与回执文案改口径（本批真正目的）**：指令
+      `describeReferences` / `describeDeletion`、协议弹窗与状态条、序列、配方、档案 ——
+      由「永久删除 / 不可撤销 / 须重新新建」改为「移入回收站、可在『回收站』页恢复」，
+      并补上指针不回填的后果；**不可逆警告只保留在 `PURGE` 确认里**。
+      **各弹窗首句前缀一律不改** → `Terminal` / `Sequences` / `Protocol` 既有断言
+      **零改动即通过**，`useInstructionData.test.js` 因该模块自带「改文案必改测试」
+      约定而改 **7 处**断言。
+    - **同批收口**：`App.jsx` 存量 **5 处** yorha-ui 违规清零（`backdrop-blur-md` /
+      `backdrop-blur-sm` 去模糊改实底、品牌区 `p-6`、导航 `py-6`、顶栏 `px-6` 收紧为
+      `p-4`）—— **改动前用 `git stash` 证明这 5 处在 HEAD 上同样存在**（本批新增
+      违规 = 0）；先例 = 第 4 批 `NieRDatePicker` 注释「清既有校验器违规」。
+    - **测试**：新增 `api/__tests__/trash.test.js`（5 例：三端点 URL/method 逐字对齐 +
+      404/400 detail 原样透出）+ `pages/__tests__/Trash.test.jsx`（8 例：列条目 /
+      中文映射 / 空态 / 错态重试 / 恢复 / 恢复失败不重拉 / **取消不调·确认才 DELETE** /
+      口径面板）→ **FE 1020 → 1033（+13，69 文件）**；BE **668/668**（零改动）。
+    - **文档同步（同批）**：PLAN 新 **§8.44** + §8.37 R6 行（两批均标已办）+ §1 `R1–R10`
+      状态 + §8.34 B2 缺口第 6 条（**全量收口**）+ `docs/PAGE_STATUS.md`（重生成）；
+      本条。
+    - **状态**：**R1 ✅ R2 ✅ R3 ✅ R4 ✅ R5 ✅ R6 ✅**，余 **R7 导出补域 → R8 导入补
+      端点 → R9 解码展示面板 → R10 `fields_json` 入库（DDL）**。每批验收项固定为：
+      BE 全量 + FE 全量 + `npx vite build` + **`npm run lint` EXIT=0** + yorha-ui
+      校验器改动文件 0 违规。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

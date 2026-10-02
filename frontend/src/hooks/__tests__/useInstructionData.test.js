@@ -131,8 +131,8 @@ describe('useInstructionData', () => {
 
         expect(api.getInstructionReferences).toHaveBeenCalledWith('inst-1');
         expect(message).toContain('本指令被 10 处引用');
-        expect(message).toContain('协议绑定 2 条 → 随删清理');
-        expect(message).toContain('应答规格 1 条 → 随删清理');
+        expect(message).toContain('协议绑定 2 条 → 随删入站');
+        expect(message).toContain('应答规格 1 条 → 随删入站');
         expect(message).toContain('序列步骤 3 条 → 保留');
         expect(message).toContain('通讯日志 4 条 → 只读保留');
         // 确认前不删
@@ -160,7 +160,7 @@ describe('useInstructionData', () => {
                 action = cb;
             });
         });
-        expect(message).toContain('警告：确认永久删除此指令？');
+        expect(message).toContain('警告：确认将此指令移入回收站？');
         await act(async () => { await action(); });
         expect(api.deleteInstruction).toHaveBeenCalledWith('inst-1');
     });
@@ -505,7 +505,7 @@ describe('useInstructionData', () => {
 describe('describeReferences / describeDeletion 三分口径', () => {
     it('无引用：原文案 + 无引用说明', () => {
         const msg = describeReferences({ total: 0, bindings: 0, response_specs: 0, sequence_steps: 0, dispatch_logs: 0 });
-        expect(msg).toContain('警告：确认永久删除此指令？');
+        expect(msg).toContain('警告：确认将此指令移入回收站？');
         expect(msg).toContain('无引用');
     });
 
@@ -516,8 +516,8 @@ describe('describeReferences / describeDeletion 三分口径', () => {
 
     it('四表分别标注：活配置级联 / 冻结快照保留 / 日志只读', () => {
         const msg = describeReferences({ bindings: 1, response_specs: 2, sequence_steps: 3, dispatch_logs: 4, total: 10 });
-        expect(msg).toMatch(/协议绑定 1 条 → 随删清理/);
-        expect(msg).toMatch(/应答规格 2 条 → 随删清理/);
+        expect(msg).toMatch(/协议绑定 1 条 → 随删入站/);
+        expect(msg).toMatch(/应答规格 2 条 → 随删入站/);
         expect(msg).toMatch(/序列步骤 3 条 → 保留/);
         expect(msg).toMatch(/通讯日志 4 条 → 只读保留/);
     });
@@ -529,8 +529,8 @@ describe('describeReferences / describeDeletion 三分口径', () => {
     });
 
     it('describeDeletion：回执并入状态条，空回执退回原文案', () => {
-        expect(describeDeletion(undefined)).toBe('已删除指令');
-        expect(describeDeletion({ deleted_bindings: 0, deleted_response_specs: 0, orphaned_sequence_steps: 0 })).toBe('已删除指令');
+        expect(describeDeletion(undefined)).toBe('已移入回收站（指令）');
+        expect(describeDeletion({ deleted_bindings: 0, deleted_response_specs: 0, orphaned_sequence_steps: 0 })).toBe('已移入回收站（指令）');
         const msg = describeDeletion({ deleted_bindings: 2, deleted_response_specs: 1, orphaned_sequence_steps: 3 });
         expect(msg).toContain('绑定 2 条级联');
         expect(msg).toContain('应答规格 1 条级联');

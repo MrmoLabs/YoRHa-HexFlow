@@ -974,7 +974,7 @@ export default function Orchestration({ protocols, instructions }) {
             {recipeDeleteId && (
                 <NieRModal
                     isOpen={Boolean(recipeDeleteId)}
-                    message={`确认删除配方「${recipes.find(r => r.id === recipeDeleteId)?.name || ''}」？\n\n· 指向该配方的指令关联将被解除（加工页回落到默认协议或裸发）\n· 该操作不可撤销，须重新新建配方`}
+                    message={`确认删除配方「${recipes.find(r => r.id === recipeDeleteId)?.name || ''}」？\n\n· 指向该配方的指令关联将被解除（加工页回落到默认协议或裸发）\n· 配方移入回收站，可在「回收站」页恢复\n· 恢复后需重新指定默认配方（指针不回填）`}
                     onConfirm={() => handleDeleteRecipe(recipeDeleteId)}
                     onCancel={() => setRecipeDeleteId(null)}
                 />

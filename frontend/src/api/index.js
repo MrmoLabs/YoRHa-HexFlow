@@ -24,6 +24,8 @@ import { getBindings, createBinding, updateBinding, deleteBinding } from './bind
 import { getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './recipes';
 import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle, importRelations } from './datahub';
 import { getProfiles, createProfile, updateProfile, deleteProfile, activateProfile } from './profiles';
+// R6（PLAN §8.43）：软删除 / 回收站 —— 列条目 / 恢复 / 彻底删除
+import { listTrash, restoreTrashItem, purgeTrashItem } from './trash';
 import { getResponseSpec, saveResponseSpec, deleteResponseSpec, getResponseSpecTargets, generateResponseSpec, sendTransaction } from './responseSpecs';
 import {
     listSequences,
@@ -102,6 +104,11 @@ export const api = {
     updateProfile,
     deleteProfile,
     activateProfile,
+
+    // Trash (R6 · PLAN §8.43: 软删除回收站 —— 列条目 / 恢复 / 彻底删除)
+    listTrash,
+    restoreTrashItem,
+    purgeTrashItem,
 
     // Response specs / transaction (P2: 应答规格按指令持久化 + /dispatch/transaction)
     getResponseSpec,
