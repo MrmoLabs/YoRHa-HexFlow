@@ -253,6 +253,14 @@ def run_pending_migrations(
         ensure_migrations_table(conn)
         version = current_version(conn)
 
+    if version > target:
+        # 恢复了「更高版本程序」产出的备份 / 库被外部升过级：schema 里有本程序
+        # 不认识的结构，继续跑只会拿旧代码盖新库 → 一律拒绝（不备份、不改一列）。
+        raise MigrationError(
+            f"库版本 v{version} 高于当前程序目标 v{target}：拒绝执行迁移。"
+            "请升级程序到对应版本，或用备份回退到匹配的库。"
+        )
+
     pending = [m for m in items if m.version > version]
     report = {
         "from_version": version,

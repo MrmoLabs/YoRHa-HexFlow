@@ -2462,9 +2462,115 @@ DDL 三列落真库、无链 400 / 不存在 404、三层协议 + 配方挂默�
 
 ### 8.32 关键链路可诊断反馈（组帧 / 发送 / 应答匹配 / 序列执行）
 
-**诉求**：人工操作失败时只有一句 string `detail`（「Invalid payload: …」），说不出**卡在哪一层、\n对应哪个字段或步骤、字节有没有真的出去** —— 硬件联调与问题复现全靠猜。四条链路统一成\n「`detail` 人话（逐字不变） + `diagnostic` 结构定位」两份并存，互不替代。
+**诉求**：人工操作失败时只有一句 string `detail`（「Invalid payload: …」），说不出**卡在哪一层、
+对应哪个字段或步骤、字节有没有真的出去** —— 硬件联调与问题复现全靠猜。四条链路统一成
+「`detail` 人话（逐字不变） + `diagnostic` 结构定位」两份并存，互不替代。
 
-- **形状（只做加法）**：新增 `backend/core/diagnostics.py` ——\n  - `Diagnostic(stage, code, message, target?, layer?, step?, data_sent?, byte_count?)`，\n    `to_dict()` 丢 None 键；未知 `stage` 直接拒收（九个枚举：plan / encode / escape /\n    wrap / transport / match / spec / sequence / param）。\n  - `DiagHTTPException`（HTTPException 子类）+ `install(app)`（`main.py` 启动时注册）→\n    响应体 `{"detail": 原文, "diagnostic": {...}}`；**普通 HTTPException 仍走 FastAPI\n    默认 handler，形状不变**；`detail` 恒为字符串（`client.js` 与既有断言零改）。\n  - `DiagError(ValueError 子类)`：领域层抛它，既有 `except ValueError` / `detail=str(e)`\n    一行不改；四个工具函数 `http()`（message 直接取 detail，两份文案同源）、\n    `http_from()`（DiagError 保留自身层号，普通 ValueError 走兜底）、\n    `with_detail()`（重写文案但保留层号/定位）、`diagnostic_of()`。\n  - **`data_sent` 语义**：完整交给传输层才算 True —— 前置拦截（encode/escape/wrap/spec/\n    sequence/param）= False；传输抛错 = False（可能已部分写入，见 message 与 byte_count）；\n    **应答匹配失败 = True**（帧确实出线了，只是对不上）。\n- **接线（四条链路）**：\n  1. **组帧**：`dispatch.py` 原先一整块 `except ValueError` 拆成**转义 / 封装 / hex 解析**三段\n     —— 文案与操作顺序逐字不变，只是 400 现在能分清是 escape 还是 wrap 拒的\n     （escape 关闭时坏 hex 一路到 hex 解析 = `encode`，开启时先被转义层拒 = `escape`）；\n     `recipe_compile.py` 逐层 `build_wrapped` 失败 → `DiagError` 带 `layer=N`（与\n     「第 N 层（协议）：」文案同序，1 = stage 0）、协议缺失 404 带 `layer` + `target`；\n     `compile.py` 三个入口同口径（`ENCODE_REJECTED` / `ENCODE_ERROR` / `WRAP_*`）。\n  2. **发送**：传输失败 502 → `stage=transport, data_sent=false, byte_count=尝试字节`；\n     序列互斥 409（dispatch 两路 + `/sequences/{id}/start`）→ `stage=sequence,\n     data_sent=false`；序列启动空步骤 / 步骤数据非法 → `stage=sequence|plan` + `target` + `step`。\n  3. **应答匹配**：内联 / 持久化 spec 解析 400 → `stage=spec`（`target=response_spec` /\n     instruction_id）；事务参数 → `stage=param`（`target=参数名`）；**失败事务新增\n     `TransactionRecord.diagnostic`（成功 = null）三态**：transport 错 `data_sent=false` /\n     NO_RESPONSE `data_sent=true` / MATCH_FAILED `data_sent=true` 且 `layer` 由\n     `STAGE[i]` reason 翻译（与配方 stage 同序）、`target=首条 reason`。\n  4. **序列执行**：**ERROR 步必带 `diagnostic`**（`{stage, code, message, step, target,\n     data_sent, [layer], [byte_count]}`）—— `PLAN:` → plan、`WRAP:` → wrap（`WrapError`\n     可携带来源诊断，层号不丢）、`TRANSPORT:` → transport（带 `byte_count`）；\n     `step` = 1-based 步号、`target` = 步 id。`record.sent`（尝试出线帧）与\n     `diagnostic.data_sent=false` 同时存在，正是「发过但没送达」的澄清对；\n     **成功步不加键**（形状零改）。`sequence.py::_freeze_wrap` 把内层错误包成\n     `steps[i]: <原文>` 时用 `with_detail` 保住层号。\n- **前端**：`client.js::handleResponse` 把 `error.diagnostic` 挂上，并在消息前压一行摘要 ——\n  `[封装 · 第 2 层 · 未发送 · WRAP_LAYER_REJECT] 原文`（`formatDiagnostic` 导出可测，\n  缺字段逐段跳过；无 diagnostic 的错误消息逐字不变）。\n- **测试**：新 `backend/tests/test_diagnostics.py` **33 例**（诊断对象纪律 / handler 形状含\n  「普通 HTTPException 仍只回单键 detail」/ 组帧三态 stage 与文案逐字不变 / 发送 502 + 409 /\n  匹配三态含 `STAGE[1]` → layer 2 翻译 / 配方层号两处透传到 `_freeze_wrap` / 序列 ERROR\n  步三类 + OK 步不加键）；新 `frontend/src/api/__tests__/client.test.js` **10 例**\n  （摘要拼装、错误挂载、向后兼容、`formatApiErrorDetail` 不回归）。全部直调，无 TestClient。\n- **终态**：BE **605/605**（572 + 33）、FE **973/973（66 文件）**（963 + 10）、\n  `npx vite build` EXIT=0、yorha-ui 校验器 0 违规；**`/dispatch` 缺省裸帧口径逐字节不变**\n  （§0，既有向量与字节断言全绿）。
+- **形状（只做加法）**：新增 `backend/core/diagnostics.py` ——
+  - `Diagnostic(stage, code, message, target?, layer?, step?, data_sent?, byte_count?)`，
+    `to_dict()` 丢 None 键；未知 `stage` 直接拒收（九个枚举：plan / encode / escape /
+    wrap / transport / match / spec / sequence / param）。
+  - `DiagHTTPException`（HTTPException 子类）+ `install(app)`（`main.py` 启动时注册）→
+    响应体 `{"detail": 原文, "diagnostic": {...}}`；**普通 HTTPException 仍走 FastAPI
+    默认 handler，形状不变**；`detail` 恒为字符串（`client.js` 与既有断言零改）。
+  - `DiagError(ValueError 子类)`：领域层抛它，既有 `except ValueError` / `detail=str(e)`
+    一行不改；四个工具函数 `http()`（message 直接取 detail，两份文案同源）、
+    `http_from()`（DiagError 保留自身层号，普通 ValueError 走兜底）、
+    `with_detail()`（重写文案但保留层号/定位）、`diagnostic_of()`。
+  - **`data_sent` 语义**：完整交给传输层才算 True —— 前置拦截（encode/escape/wrap/spec/
+    sequence/param）= False；传输抛错 = False（可能已部分写入，见 message 与 byte_count）；
+    **应答匹配失败 = True**（帧确实出线了，只是对不上）。
+- **接线（四条链路）**：
+  1. **组帧**：`dispatch.py` 原先一整块 `except ValueError` 拆成**转义 / 封装 / hex 解析**三段
+     —— 文案与操作顺序逐字不变，只是 400 现在能分清是 escape 还是 wrap 拒的
+     （escape 关闭时坏 hex 一路到 hex 解析 = `encode`，开启时先被转义层拒 = `escape`）；
+     `recipe_compile.py` 逐层 `build_wrapped` 失败 → `DiagError` 带 `layer=N`（与
+     「第 N 层（协议）：」文案同序，1 = stage 0）、协议缺失 404 带 `layer` + `target`；
+     `compile.py` 三个入口同口径（`ENCODE_REJECTED` / `ENCODE_ERROR` / `WRAP_*`）。
+  2. **发送**：传输失败 502 → `stage=transport, data_sent=false, byte_count=尝试字节`；
+     序列互斥 409（dispatch 两路 + `/sequences/{id}/start`）→ `stage=sequence,
+     data_sent=false`；序列启动空步骤 / 步骤数据非法 → `stage=sequence|plan` + `target` + `step`。
+  3. **应答匹配**：内联 / 持久化 spec 解析 400 → `stage=spec`（`target=response_spec` /
+     instruction_id）；事务参数 → `stage=param`（`target=参数名`）；**失败事务新增
+     `TransactionRecord.diagnostic`（成功 = null）三态**：transport 错 `data_sent=false` /
+     NO_RESPONSE `data_sent=true` / MATCH_FAILED `data_sent=true` 且 `layer` 由
+     `STAGE[i]` reason 翻译（与配方 stage 同序）、`target=首条 reason`。
+  4. **序列执行**：**ERROR 步必带 `diagnostic`**（`{stage, code, message, step, target,
+     data_sent, [layer], [byte_count]}`）—— `PLAN:` → plan、`WRAP:` → wrap（`WrapError`
+     可携带来源诊断，层号不丢）、`TRANSPORT:` → transport（带 `byte_count`）；
+     `step` = 1-based 步号、`target` = 步 id。`record.sent`（尝试出线帧）与
+     `diagnostic.data_sent=false` 同时存在，正是「发过但没送达」的澄清对；
+     **成功步不加键**（形状零改）。`sequence.py::_freeze_wrap` 把内层错误包成
+     `steps[i]: <原文>` 时用 `with_detail` 保住层号。
+- **前端**：`client.js::handleResponse` 把 `error.diagnostic` 挂上，并在消息前压一行摘要 ——
+  `[封装 · 第 2 层 · 未发送 · WRAP_LAYER_REJECT] 原文`（`formatDiagnostic` 导出可测，
+  缺字段逐段跳过；无 diagnostic 的错误消息逐字不变）。
+- **测试**：新 `backend/tests/test_diagnostics.py` **33 例**（诊断对象纪律 / handler 形状含
+  「普通 HTTPException 仍只回单键 detail」/ 组帧三态 stage 与文案逐字不变 / 发送 502 + 409 /
+  匹配三态含 `STAGE[1]` → layer 2 翻译 / 配方层号两处透传到 `_freeze_wrap` / 序列 ERROR
+  步三类 + OK 步不加键）；新 `frontend/src/api/__tests__/client.test.js` **10 例**
+  （摘要拼装、错误挂载、向后兼容、`formatApiErrorDetail` 不回归）。全部直调，无 TestClient。
+- **终态**：BE **605/605**（572 + 33）、FE **973/973（66 文件）**（963 + 10）、
+  `npx vite build` EXIT=0、yorha-ui 校验器 0 违规；**`/dispatch` 缺省裸帧口径逐字节不变**
+  （§0，既有向量与字节断言全绿）。
+
+### 8.33 危险操作可恢复性针对性审视（备份恢复 / 数据库改动 / 串口·TCP 配置 / 序列停止）
+
+**方法**：先逐项盘「操作 → 现有护栏 → 缺口 → 要不要改码」，再动代码。结论：**5 处缺口
+全部修掉（backend only）**，其余判定为可接受 / 登记 backlog（§8.34）。前端侧先核实了一遍：
+恢复、清发送历史、删序列**均已有确认弹窗**且文案写明「不可恢复」/ 快照位置 ✓，无前端改动。
+
+**① 备份恢复（`POST /datahub/restore`）**
+- 已有护栏：文件名校验防穿越（`validate_backup_name`）、恢复前 `pre-restore` 安全快照、
+  `dispose` + 清 `-wal/-shm/-journal` + 临时文件原子替换、前端确认弹窗与 notice。
+- **缺口 1（已修）：恢复后不自愈** —— 老备份缺列、没有版本表，而 `create_all`/`ensure_*`/
+  迁移只在启动期跑 → **进程重启前的每一次写入都可能撞缺列报错**。现在恢复当场跑
+  「启动期同一套」`create_all` + 5 个 `ensure_*` + 版本化迁移（`do_backup=False`，
+  pre-restore 快照就是回退路径）+ `integrity_check`；**只补结构不补数据**（种子交给下次
+  启动的幂等播种，避免把用户删掉的数据又种回来）。失败 → 500 且消息**带快照文件名**；
+  成功 → 响应新增 `schema{applied, version, integrity}`（只做加法）。
+- **缺口 2（已修）：序列运行中可恢复** —— Runner 还在往旧库写。现在直接 409
+  （`stage=sequence, data_sent=false`，§8.32 诊断口径）。
+- **缺口 3（已修）：恢复出的传输配置要等重启才生效**，且若不摘持久化钩子，
+  `persist_hook` 的回写会把 `active_profile_id` 清成 `None`（钩子固定写 None）。现在
+  「先摘钩 → 交回配置 → 挂回钩」（沿用 `transport_store` 的启动纪律），响应新增
+  `transportConfigRestored`，**激活档案指针原样保留**（有断言）。
+- 不改（判定可接受 / 登记）：恢复窗口内并发写 —— notice + 前端弹窗已提示；
+  数据导入接口无自动 pre-import 快照 → 登记 §8.34。
+
+**② 数据库改动（schema 与数据）**
+- schema：§8.30 已闭环（升级前备份 / 单事务 apply+verify / 版本不前进 / 终检）。
+- **缺口 4（已修）：恢复了「更高版本程序」的备份 → 旧程序会拿旧代码盖新库**。
+  `run_pending_migrations` 现在在**动任何一列之前**发现 `version > target` 就抛
+  `MigrationError`（不备份、不记版本、零改动），提示升级程序或用备份回退。
+- 数据：删除类端点均已带引用检查（instruction / protocol / recipe / binding /
+  profile / sequence），前端确认弹窗齐全；但**没有软删除/回收站**，误删只能靠 DataHub
+  备份回退 → 登记 §8.34。`DELETE /logs` 无前端入口（不可达）✓。
+
+**③ 串口 / TCP 配置（`POST /transport/config`）**
+- 已有护栏：整体校验（未知字段 / 超时范围拒绝）、锁内「变更即断开既有连接」原子生效、
+  持久化到 `transport_settings` + 启动恢复、`GET /transport/status` 有界状态事件。
+- **缺口 5（已修）：持久化失败被 `except: pass` 吞掉** —— 配置内存生效但没落库，
+  重启回默认且无人知晓。现在仍「尽力而为不回滚」（语义不变），但记一条 `error` 事件
+  「配置持久化失败（重启后可能回默认）：…」，`GET /transport/status` 可见。
+- 不改（backlog）：无「上一配置」一键回退；config 期不做预连（连接失败在**发送期**以
+  502 + `stage=transport` 诊断暴露，§8.32 已覆盖）。
+
+**④ 序列停止**
+- 已有护栏：协作式停止（分片睡眠逐片查停止位）、剩余步补 `SKIPPED`、停止端点恒 200
+  幂等、运行态在内存（重启即 idle、定义持久化）、手动发送 ↔ 序列**双向 409 互斥**。
+- 判定：**无缺口**。已发出的帧物理上不可撤回（设备侧事实，非缺陷）；停止需等当前
+  `transport.send` 在短超时内自然结束 —— 文档已注明，不改。
+
+**改码清单**（零 DDL）：`routers/datahub.py`（restore 三处 + `_heal_schema_after_restore` /
+`_reload_transport_after_restore` 两个私有助手）、`core/transport.py`（`get_persist_hook` +
+持久化失败留痕）、`db/migrate.py`（版本高于目标即拒绝）。
+**测试**：新增 `backend/tests/test_recoverability.py` **7 例**（老备份当场自愈并断言补列+
+记版本 / 激活指针不被抹 + 配置当场生效 / 自愈失败报错带 `pre-restore` 快照名 / 序列运行中
+409 含 diagnostic / 坏文件名 400×4 / 持久化失败留痕且配置仍生效 / 钩子读写往返），
+`test_migrate.py` **+1**（`NewerDbTest`：v2 库拒绝、零备份、版本行原样）。全部临时库。
+**终态**：BE **613/613**（605 + 8）、FE **973/973（66 文件）** 不变（本批零前端改动，
+FE 相关断言全部复跑通过）、`npx vite build` EXIT=0；**零 DDL → 无 `chore(db)` 提交**。
 
 ## 9. 保留勿动（非任务，勿清理）
 

@@ -34,9 +34,23 @@ from sqlalchemy.orm import Session
 
 import math
 
+from backend.core import diagnostics as diag
+from backend.core import sequence_runner, transport
 from backend.core.orchestrator import Orchestrator, encode_int_signed, encode_bcd, encode_scaled, encode_float_ieee, encode_time_accumulator, encode_auto_counter, encode_string, _floor_numeric
 from backend.core.response_match import normalize_spec
-from backend.db.database import DB_PATH, SessionLocal, engine, get_db
+from backend.db.database import (
+    Base,
+    DB_PATH,
+    SessionLocal,
+    ensure_binding_columns,
+    ensure_protocol_version_column,
+    ensure_recipe_columns,
+    ensure_response_spec_columns,
+    ensure_sequence_step_columns,
+    engine,
+    get_db,
+)
+from backend.db.migrate import MigrationError, run_pending_migrations
 from backend.db.models import (
     BitField,
     Instruction,
@@ -46,6 +60,7 @@ from backend.db.models import (
     ProtocolTemplate,
     ResponseSpec,
 )
+from backend.db.transport_store import restore_transport_config
 from backend.routers.binding import find_slot_node
 from backend.routers.instruction import serialize_instruction
 from backend.routers.response_spec import _stage_mirror
@@ -740,16 +755,75 @@ def create_db_backup():
     return {"created": _backup_entry(dest)}
 
 
+def _heal_schema_after_restore(safety):
+    """恢复后立即跑「启动期同一套」schema 自愈（PLAN §8.33）。
+
+    老备份可能缺表 / 缺列 / 没有版本表 —— 不自愈的话，进程重启前的**每一次写入**
+    都可能撞上缺列报错。迁移一律 `do_backup=False`：上面刚留的 pre-restore 快照
+    就是回退路径，失败时把它写进错误消息。**只补结构、不补数据**（种子交给下次
+    启动的幂等播种，避免把用户删掉的数据又种回来）。
+    """
+    try:
+        Base.metadata.create_all(bind=engine)
+        ensure_protocol_version_column(engine)
+        ensure_binding_columns(engine)
+        ensure_recipe_columns(engine)
+        ensure_sequence_step_columns(engine)
+        ensure_response_spec_columns(engine)
+        report = run_pending_migrations(engine, do_backup=False, backups_dir=BACKUP_DIR)
+    except MigrationError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"恢复后 schema 校验失败：{exc}"
+                f"（恢复前快照 {safety or '无'}，可用它回退）"
+            ),
+        )
+    return {
+        "applied": report["applied"],
+        "version": report["to_version"],
+        "integrity": report["integrity"],
+    }
+
+
+def _reload_transport_after_restore() -> bool:
+    """恢复后把内存里的传输配置对齐到恢复出的库（否则要等重启才生效）。
+
+    先摘持久化钩子再交回配置 —— 沿用 `transport_store` 的启动纪律「先恢复、后挂钩」：
+    否则 `set_config` 生效时的回写会走 `persist_hook`（固定写 `active_profile_id=None`），
+    把恢复出来的激活档案指针清掉。
+    """
+    hook = transport.get_persist_hook()
+    transport.set_persist_hook(None)
+    try:
+        db = SessionLocal()
+        try:
+            return restore_transport_config(db)
+        finally:
+            db.close()
+    finally:
+        transport.set_persist_hook(hook)
+
+
 @router.post("/restore")
 def restore_db(request: RestoreRequest):
     """D2 从备份恢复数据库。
 
-    步骤：校验文件名（防穿越）→ 当前库先留 pre-restore 安全快照 →
-    engine.dispose() 释放连接池空闲连接 → 清理 -wal/-shm/-journal 残留 →
-    临时文件 + 原子 rename 替换。运行中换库风险：dispose 只影响池内空闲
-    连接，已被请求 checkout 的旧连接仍指向旧文件，恢复窗口内的并发写入
-    可能失败或写入即将被替换的文件——恢复期间前端应暂停其它写操作。
+    步骤：**序列运行中拒绝（409，Runner 还在往旧库写）** → 校验文件名（防穿越）→
+    当前库先留 pre-restore 安全快照 → engine.dispose() 释放连接池空闲连接 →
+    清理 -wal/-shm/-journal 残留 → 临时文件 + 原子 rename 替换 →
+    **立即跑启动期同一套 schema 自愈 + 版本化迁移 + integrity_check 终检**
+    （§8.33：老备份缺列不自愈的话，重启前每次写都可能炸）→ 把内存传输配置对齐到
+    恢复出的库。响应新增 `schema` / `transportConfigRestored` 两个字段（只做加法）。
+    运行中换库风险：dispose 只影响池内空闲连接，已被请求 checkout 的旧连接仍指向
+    旧文件，恢复窗口内的并发写入可能失败或写入即将被替换的文件——恢复期间前端应
+    暂停其它写操作（前端有确认弹窗，notice 亦有提示）。
     """
+    if sequence_runner.is_running():
+        raise diag.http(
+            409, "序列运行中，禁止恢复数据库（先停止序列）",
+            "sequence", "SEQUENCE_RUNNING", data_sent=False,
+        )
     try:
         source = validate_backup_name(request.name, BACKUP_DIR)
     except ValueError as exc:
@@ -768,8 +842,13 @@ def restore_db(request: RestoreRequest):
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"替换数据库文件失败：{exc}")
 
+    schema = _heal_schema_after_restore(safety)
+    transport_restored = _reload_transport_after_restore()
+
     return {
         "restored": source.name,
         "safetySnapshot": safety,
+        "schema": schema,
+        "transportConfigRestored": transport_restored,
         "notice": "已释放连接池并清理 WAL/SHM 残留；恢复期间请避免并发写入，建议刷新页面重新加载数据。",
     }

@@ -157,6 +157,11 @@ def set_persist_hook(hook) -> None:
     _persist_hook = hook
 
 
+def get_persist_hook():
+    """取当前钩子 —— 供「恢复期临时摘钩再交回」用（见 datahub.restore 与 transport_store 启动纪律）。"""
+    return _persist_hook
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -231,11 +236,13 @@ def set_config(patch: Dict[str, Any]) -> Dict[str, Any]:
             _last_error = None
             changed = True
     if changed and _persist_hook is not None:
-        # 持久化尽力而为：钩子失败不回滚已生效的配置（下次变更重试落库）
+        # 持久化尽力而为：钩子失败不回滚已生效的配置（下次变更重试落库），
+        # 但必须**留痕**（§8.33）—— 否则用户以为存了、重启后配置悄悄回默认，
+        # 排查时完全无从下手。记进有界状态事件，GET /transport/status 可见。
         try:
             _persist_hook(deepcopy(normalized))
-        except Exception:
-            pass
+        except Exception as exc:
+            _record_event("error", f"配置持久化失败（重启后可能回默认）：{exc}")
     return get_config()
 
 

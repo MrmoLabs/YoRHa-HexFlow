@@ -26,6 +26,7 @@ from backend.db.migrate import (
     Migration,
     MigrationError,
     current_version,
+    ensure_migrations_table,
     run_pending_migrations,
     status,
     validate_registry,
@@ -286,6 +287,34 @@ class RegistryDisciplineTest(unittest.TestCase):
         validate_registry(REGISTRY)
         self.assertEqual(REGISTRY[0].version, 1)
         self.assertEqual(REGISTRY[-1].version, TARGET_VERSION)
+
+
+class NewerDbTest(_MigrateCase):
+    def test_newer_db_refused_before_touching_anything(self):
+        """恢复了更高版本程序的备份（库 v2 / 本程序目标 v1）→ 一律拒绝。
+
+        PLAN §8.33：**不做备份、不记版本、不动一列** —— 拿旧代码盖新库比失败更糟。
+        """
+        Base.metadata.create_all(bind=self.engine)
+        with self.engine.begin() as conn:
+            ensure_migrations_table(conn)
+            conn.exec_driver_sql(
+                "INSERT INTO schema_migrations (version, name, applied_at) "
+                "VALUES (2, 'future', '2030-01-01T00:00:00')"
+            )
+
+        with self.assertRaises(MigrationError) as ctx:
+            run_pending_migrations(
+                self.engine, do_backup=True, backups_dir=self.backups
+            )
+
+        message = str(ctx.exception)
+        self.assertIn("高于", message)
+        self.assertIn("v2", message)
+        self.assertIn(f"v{TARGET_VERSION}", message)
+        self.assertFalse(self.backups.exists())      # 连快照都没建：根本没打算动库
+        with self.engine.connect() as conn:
+            self.assertEqual(current_version(conn), 2)  # 版本行原样
 
 
 class StatusTest(_MigrateCase):
