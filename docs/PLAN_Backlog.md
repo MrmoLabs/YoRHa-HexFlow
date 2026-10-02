@@ -36,15 +36,10 @@
 | CP1 | Core Pipeline 批次一：1a 绑定三列 DDL + 1b frame_builder + 1c 发送 wrap 接线 + 1d 文档（`DESIGN_CorePipeline.md` §7 首批） | **已提交 ✅ `31bc367`（代码+文档）/ `da91228`（db 同步），2026-09-24**——反馈 1（星标确认，§8.8）与反馈 2（协议卡面直填，§8.9）均已并入验收 |
 | CP2 | Core Pipeline 批次二（防错）：D3 `fit_policy=reject` 执行（**存量槽不迁移**）+ 槽契约 warning 徽标 + 新建槽 UI 默认 reject + D12 删除级联（**`sequence_steps` 失效标记不阻断**，活配置级联删 / 冻结快照留 / 日志留）+ **转义层位统一**（封装试发改带 `wrap` 下发）（`DESIGN_CorePipeline.md` §7 批次二） | **已提交 ✅ `5afe706`（代码+文档），2026-10-01**——**人工验证 5 项已通过**（STRICT 400 / 删指令三分弹窗 / 序列失效只读 / 试发 warnings 徽标 / 真实链路帧）：BE 426/426（基线 383 + 43）、FE 915/915（63 文件）、`vite build` EXIT=0、yorha-ui 校验器 13 文件 0 违规；**零 DDL**（`yorha.db` 未随本批提交）。明细见 §8.19。2026-10-01 起为 CP3 硬前置（CP3 的 3a 复用其 reject 分支） |
 | CP2b | D11 分段 ① **向量表共享 fixture 化**（两端测试读同一份 JSON 向量、新增向量只写一处；`DESIGN_Decisions.md` D11 实施注） | **已提交 ✅ `da0179d`（代码+文档），2026-10-01**——跨语言特殊值约定拍板 = **`$v` 包装对象**（`{"$v":"Infinity"}` / `"-Infinity"` / `"NaN"`，其余标量按 JSON 原型天然分型）；新增根目录 **`vectors/`（12 个 JSON 文件 / 15 张表 + 双端加载器 + README）**，13 个后端 / 6 个前端测试文件改读共享 JSON。终态：BE 426/426、FE 915/915（63 文件）、`npx vite build` EXIT=0、yorha-ui 校验器 7 文件 0 违规；**零 DDL**。明细见 §8.20。**不阻塞 CP3**（CP3 只硬前置 CP2 的 reject 分支） |
-| CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | **已提交 ✅ 3a `e63d76f`（代码+文档）/ `438f3af`（db 同步）、3b `c4b1f7f`（代码+文档，零 DDL）、3c `fbad083`（代码+文档）/ `17c6830`（db 同步）、3d `77dd389`（代码+文档）/ `bb7a0ba`（db 同步），2026-10-01 —— CP3 四个子批全数完成**。硬前置 CP2 ✅；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**。**3a 含 DDL**（`frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈）→ yorha.db 单独同步提交；**3a 提前并入了原属 3b 的 `dispatch` `wrap.recipe_id` 接线**（加工页预览/TRANSMIT/事务三路须同字节，缺接线则预览帧与出线帧不同）。3a 终态：BE 466/466（基线 426 + 40）、FE 920/920（63 文件，基线 915 + 5）、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、**真路由冒烟 25 项 PASS**；明细见 §8.21。**3b 终态**：**纯前端批、零 DDL**（未改 `models.py`/`database.py`，`yorha.db` 未随本批提交）—— FE **924/924（63 文件，基线 920 + 4）**、既有「属性面板四分区 select = 3」用例**零改全绿**（未建配方时编辑器不占 select）、BE 466/466、`npx vite build` EXIT=0、yorha-ui 校验器 3 文件 0 违规、**真 curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；明细见 §8.22。**3c 终态（2026-10-01）**：**含 DDL** —— `sequence_steps` 新增 `wrap JSON` 单列自愈（`database.ensure_sequence_step_columns`，镜像 3a `ensure_recipe_columns` 先例）→ yorha.db **单独同步提交**；BE **496/496（基线 466 + 30）**、FE **932/932（63 文件，基线 924 + 8）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**真路由冒烟 30 项 ALL PASS** + **真浏览器 UI 验证 6 项通过**；明细见 §8.23。**3d 终态（2026-10-01）**：**含 DDL** —— **3 列仅新增**
-（`response_specs.stage` / `response_specs.definition_hash` /
-`protocol_bindings.definition_hash`，`ensure_response_spec_columns` 新建 +
-`ensure_binding_columns` 扩列自愈，lifespan 接线）→ yorha.db 沿先例
-**手工只跑 3 条 ALTER 后单独同步提交**；BE **537/537（基线 496 + 41）**、
-FE **944/944（63 文件，基线 932 + 12）**、`npx vite build` EXIT=0、yorha-ui
-校验器 8 文件 0 违规、**真路由冒烟 43 项 ALL PASS**；明细见 §8.24。**§9.7 人工验证收口（2026-10-02）**：3a①②③ + 3b①②③ + 编排页「洞位填装 → 封装试发」**8 项真浏览器 + `/dispatch/history` 对账复跑全过**（含 400 逐槽拦截与「未选配方 = 建配方前基线 28B 逐字节相同」），三处文档（§9.7 / `pageStatus.json` / HANDOVER 35·36 待办①）口径已统一，明细 §8.27 |
-
+| CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | **已提交 ✅ 3a `e63d76f`（代码+文档）/ `438f3af`（db 同步）、3b `c4b1f7f`（代码+文档，零 DDL）、3c `fbad083`（代码+文档）/ `17c6830`（db 同步）、3d `77dd389`（代码+文档）/ `bb7a0ba`（db 同步），2026-10-01 —— CP3 四个子批全数完成**。硬前置 CP2 ✅；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**。**3a 含 DDL**（`frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈）→ yorha.db 单独同步提交；**3a 提前并入了原属 3b 的 `dispatch` `wrap.recipe_id` 接线**（加工页预览/TRANSMIT/事务三路须同字节，缺接线则预览帧与出线帧不同）。3a 终态：BE 466/466（基线 426 + 40）、FE 920/920（63 文件，基线 915 + 5）、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、**真路由冒烟 25 项 PASS**；明细见 §8.21。**3b 终态**：**纯前端批、零 DDL**（未改 `models.py`/`database.py`，`yorha.db` 未随本批提交）—— FE **924/924（63 文件，基线 920 + 4）**、既有「属性面板四分区 select = 3」用例**零改全绿**（未建配方时编辑器不占 select）、BE 466/466、`npx vite build` EXIT=0、yorha-ui 校验器 3 文件 0 违规、**真 curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；明细见 §8.22。**3c 终态（2026-10-01）**：**含 DDL** —— `sequence_steps` 新增 `wrap JSON` 单列自愈（`database.ensure_sequence_step_columns`，镜像 3a `ensure_recipe_columns` 先例）→ yorha.db **单独同步提交**；BE **496/496（基线 466 + 30）**、FE **932/932（63 文件，基线 924 + 8）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**真路由冒烟 30 项 ALL PASS** + **真浏览器 UI 验证 6 项通过**；明细见 §8.23。**3d 终态（2026-10-01）**：**含 DDL** —— **3 列仅新增**<br>（`response_specs.stage` / `response_specs.definition_hash` /<br>`protocol_bindings.definition_hash`，`ensure_response_spec_columns` 新建 +<br>`ensure_binding_columns` 扩列自愈，lifespan 接线）→ yorha.db 沿先例<br>**手工只跑 3 条 ALTER 后单独同步提交**；BE **537/537（基线 496 + 41）**、<br>FE **944/944（63 文件，基线 932 + 12）**、`npx vite build` EXIT=0、yorha-ui<br>校验器 8 文件 0 违规、**真路由冒烟 43 项 ALL PASS**；明细见 §8.24。**§9.7 人工验证收口（2026-10-02）**：3a①②③ + 3b①②③ + 编排页「洞位填装 → 封装试发」**8 项真浏览器 + `/dispatch/history` 对账复跑全过**（含 400 逐槽拦截与「未选配方 = 建配方前基线 28B 逐字节相同」），三处文档（§9.7 / `pageStatus.json` / HANDOVER 35·36 待办①）口径已统一，明细 §8.27 |
 | CP4 | Core Pipeline 批次四（治理）：**4a** 关系数据导入导出（`bindings` + `response_specs` 并入 DataHub ZIP `relations.json` + `POST /datahub/import/relations`）/ **4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 回执」+ D9/D10 划界落 README/PAGE_STATUS / **4c** D8 校验表全量核对（逐行销项，纯文档）（明细 `DESIGN_CorePipeline.md` §7 批次四） | 🔄 **4a 已提交 ✅ `54620ab`（代码+文档，零 DDL），2026-10-02**：导出 ZIP 增 `relations.json`（`manifest` 增 `relations` 计数、`/status` 增 `protocolBindings`/`responseSpecs` 两行计数）+ 回灌端点按 `id` upsert、逐行报告（父缺失 → `skipped` 带 reason、槽悬空 → 置 NULL + warning、默认唯一冲突清旧行、`spec` 过 `normalize_spec` / `stage` 重算镜像 / 出处原样回填）、**部分成功即部分落库不整批回滚**；前端 DataHub 增「关系数据」面板（选文件 → 解析校验 → 确认弹窗 → 回显 新增/更新/跳过/警告 计数 + 刷新）。终态 BE **549/549**（基线 537 + 12）、FE **948/948**（63 文件，基线 944 + 4）、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**；明细见 §8.25。**4b+4c 已提交 ✅ `03b25d3`（代码+文档，零 DDL），2026-10-02**：**4b** 绑定矩阵只读面板（`utils/bindingMatrix.js` 纯函数 + DataHub 页六列表 + 摘要八项计数；孤儿不静默 —— 协议已删 / 槽悬空 / `stale===true` 琥珀标出；三读与状态面板同拍、单读失败互不拖垮）+ D9/D10 划界落 `README.md` §6 Scope Boundaries 与 `pageStatus.json` 四页条目（`PAGE_STATUS.md` 再生）；**4c** 全量核对新增 `DESIGN_CorePipeline.md` §6.3 销项表 —— 8 行**全「已有」、0 待补**，§6.2 槽节点行复核为批次二已落地（`dangling_slots_cleared`）→ **本批零后端改动**（BE 用例数持平），`DESIGN_Decisions.md` D8/D9/D10 三表行 + 三处实施注（D9-B/D10-B 重开条件已具备**仍取 A**）。终态 BE **549/549**（持平）、FE **958/958（64 文件，基线 948 + 10）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**人工验证 3 项通过**；明细见 §8.26。**批次四三子批（4a/4b/4c）全数完成** |
+| C 待拍 | **4 项待用户拍板**（§8.36 详版：C-1 自动选指令路由 / C-2 响应解码为字段 / C-3 全量项目包迁移 / C-5 三项暂缓是否重启；**C-4 已由 §8.35 解决**） | ⏸ **等拍板**（拍后编 **R7+**） |
+| R1–R6 | **B2 六项功能缺口排期**（导入 pre-import 快照 / 传输配置上一配置回退 / ESLint 存量 / 编排页绑定拖拽 / float64 双端 / 软删除回收站）—— 顺序 = 先安全网 → 清欠账 → 体验 → 正确性 → 最后动 DDL | 📅 **已排期未开始**（§8.37，2026-10-02 授权；合计 **7–8 批**，R6 含 DDL 仅新增列/表） |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -2613,7 +2608,7 @@ hash + 本批）。
   2. D13「有 LEN = 不需要转义」是经验判定 → 载荷含定界字节时真实设备是否异常，
      需真机帧目视（§9.7 ① 的观察对象）—— **仍开放**（出线方向，与 §8.35 的应答
      方向不是一回事）。
-- **B2 纯功能缺口（可排期，尚未排）**：
+- **B2 纯功能缺口（✅ 已排期 → §8.37 批 R1–R6，2026-10-02 用户授权）**：
   3. 编排页「绑定拖拽排序」**拖拽交互未实现**（现状 = 上移 / 下移按钮；§8.28 标为
      功能项而非验证项）；
   4. **float64 编码仍不可用**（FE 走整数路径 / BE 保持 zeros，两端不一致；N1 已摘
@@ -2625,24 +2620,38 @@ hash + 本批）。
      备份回退）；
   7. 传输配置**无「上一配置」一键回退**（改错手动改回；持久化失败已可从
      `GET /transport/status` 的 error 事件看到，§8.33 批修）；
-  8. ESLint **存量 1 error 2 warnings**（HEAD 存量，各批不计入验收）→ 要清需单独批。
+  8. ~~ESLint **存量 1 error 2 warnings**（HEAD 存量，各批不计入验收）~~ → **数字过期，
+     2026-10-02 复测纠正**：当前 HEAD 全仓 `npm run lint` = **60 problems（42 errors /
+     18 warnings）、26 文件** —— `no-unused-vars` 23 / `react-hooks/exhaustive-deps` 17 /
+     `no-useless-escape` 3 / `no-empty` 2 / `react-hooks/rules-of-hooks` 1 / `no-undef` 1 /
+     `no-extra-boolean-cast` 1 / `no-control-regex` 1 + 各文件告警。原小数字系早期批次
+     口径（§8.7 记录里 `Protocol.jsx` **单文件**即 1 error 2 warnings），此后代码变多
+     未复测。「各批不计入验收」的处置**属实且维持**；清理排 **§8.37 批 R3**，自 R3 起
+     才把 `npm run lint` 变成验收门槛。
 - **B3 已立暂缓 / 挂账（只列名，不重复排期）**：§8.14 四项暂缓（CRC 多算法 CCITT /
   CRC32 / LRC、长度域 BE/LE、varint/COBS 组帧、解码回程 bytes→fields）；
   `BUSINESS_SCENARIOS.md` 挂账三项（epoch 模板、加扰 / 混淆、创建后切 op）。
 
 **C 组 · 需用户拍板（不实现，只登记 —— 自主推进到此为止）**
 
+> **五项详版（现状代码证据 + 举例 + 选项成本 + 建议 + 不做的后果）已备好 → §8.36**，
+> 下面只留一句式索引；C-4 已由 §8.35 解决，实质待拍 = 1 / 2 / 3 / 5 四项。
+
 1. **自动选指令路由**：按输入值选指令 / 报文（G1 运行期形态；N3 已明确「多指令
-   自动路由为 N3 范围外」）→ 是否立项？
+   自动路由为 N3 范围外」）→ 是否立项？**→ 详版 §8.36 C-1**（B 序列级分支 vs
+   C 输入值规则表，两个能力、成本差一倍，不可合并拍）
 2. **响应报文解码为字段**：bytes→fields 回程（encode-only 既有边界，§8.14 暂缓）
-   → 是否立项？
+   → 是否立项？**→ 详版 §8.36 C-2**（B 仅展示零 DDL / C 入库回写；**C 是 C-1 选 C
+   的硬前置**）
 3. **全量项目包迁移**：DataHub 现只出 `instructions + relations + frames`，
-   整库 / 全量工程包是否立项？
+   整库 / 全量工程包是否立项？**→ 详版 §8.36 C-3**（注意：整库 backup/restore
+   已能搬机，缺的是可读可部分导入 —— 建议 C 补域折中，第一件事 = pre-import 快照）
 4. **应答是否带转义字节**（B1-1）→ **✅ 已拍板 = A「应答带转义字节」并已实施**
    （详版见 §8.35：按公开规范定「先线上、后逻辑」双口径，销 §9.7 ④ 与 D15 关联
    项 1；`escape` 关闭时判定路径与存量逐字节一致）—— **本项无需再拍**；
 5. **三项暂缓是否重启**：CRC 多算法 / 长度域 BE/LE / varint-COBS → **详版（含举例、
-   现状证据、成本、建议）见 §8.36 第 5 条**，待拍。
+   现状证据、成本、建议）见 §8.36 第 5 条**，待拍（**建议：①② 转「触发式」、
+   ③ 明确不做**）。
 
 **终态**：纯文档批（零代码、零 DDL、`pageStatus.json` 未动 → `PAGE_STATUS.md` 不重生成）；
 同批 `PROJECT_HANDOVER.md` 新增条目 43（本会话**五实现批** hash：`f76d406` /
@@ -2724,6 +2733,249 @@ RFC 的转义样例 `0x7D→0x7D5D`、`0x11→0x7D31` **正是本仓转义表的
 **仍开放（不是 ④，别混淆）**：D13「有 LEN = 不需要转义」在**载荷含定界字节**时真实
 设备是否异常 —— 这是**出线方向**的观察对象（§9.7 ①），与应答方向无关，仍需真机帧；
 §8.34 C 组余下 4 项与 B2 功能缺口见 §8.36 / §8.37。
+
+### 8.36 五项待拍板详版（每项：现状代码证据 → 到底决断什么 → 举例 → 成本 → 建议）
+
+**批次**：2026-10-02 · **纯文档、零代码改动** —— 把 §8.34 C 组从「一句话登记」展开成
+**能直接拍板的详版**：每项给 ① 现状代码证据（文件 + 行为 + grep 结论）、② 要决断的
+到底是哪个问题、③ 两个具体例子（一个「选 B/C 才能解」、一个「不做也能过」）、
+④ A/B/C 各自成本量级与前置依赖、⑤ 建议与**不做的后果**。
+
+**阅读约定**：成本按本仓既有节奏折算 —— 「1 批」= 实现 → BE/FE 全量测试 →
+`npx vite build` → yorha-ui 校验器 → 文档同步 → **一批一提交**；「小 / 中 / 大」指
+改动面（文件数 + 是否动判定路径 + 是否 DDL）。**C-4 已由 §8.35 解决**，本节实质
+待拍的是 C-1 / C-2 / C-3 / C-5 四项 + C-4 的一句「请确认」。
+
+---
+
+#### C-1 自动选指令路由（G1 的运行期形态）
+
+**现状（代码证据）**
+
+- `TransactionRequest`（`backend/routers/dispatch.py`）只有单条 `hex_string` +
+  可选 `instruction_id` —— **发什么由调用方先选好**，没有「按条件选」的入口。
+- `sequence_steps` 字段 = `step_order / instruction_id / delay_ms / params /
+  payload / plan / wrap` —— **没有 condition / branch / route 字段**；全 backend
+  grep `condition|branch|route|jump|skip_to` **零命中** → 序列执行是**严格线性**。
+- 设计期已有 N3「组级 presence 三态」：`BUSINESS_SCENARIOS.md` 记「设计期双支并列
+  建模 + 运行期 inputs 翻转（**多指令自动路由为 N3 范围外**）」；`PLAN_Backlog.md`
+  范围外清单明写「运行期按值自动选指令（多指令路由）、条件表达式」。
+- `BUSINESS_SCENARIOS.md`「按输入值选指令模板 / 报文」= 🔴 **未解**，归 G1。
+
+**要决断的问题（一句话）**：要不要让系统**替人选指令**，以及依据是「序列执行到中间
+的状态」还是「用户输入的值」—— 这是**两个不同能力**，成本差一倍，**不能合并拍**。
+
+**举例**
+
+- 例 A（**序列级分支**才解得了 → 对应选项 B）：序列「① 读固件版本 → ② 依版本号发
+  **A 指令**或 **B 指令**→ ③ 读结果」。现状只能**固定发 3 步**，或把两条路径**拆成
+  两条序列**人工切换。加条件后第 ② 步写 `fw_version >= 0x1200 → 执行，否则跳过`，
+  一条序列覆盖两代设备。
+- 例 B（**发前路由**才解得了 → 只有选项 C 能做，B 做不到）：同一个「执行」按钮，
+  输入 `meter_id = 0001` 时该发**指令 X**、`= 0002` 时该发**指令 Y** —— 这发生在
+  **进入序列之前**；序列分支只在「已选定的指令链内部」跳转，**结构上解不了**。
+- 例 C（**不做也能过**的反例）：设备族只有 2–3 个时，人工在下拉里选指令十秒搞定，
+  路由规则表反而多一处要维护的映射（改了指令还得同步改规则）。
+
+**选项与成本**
+
+| 选项 | 内容 | 成本 | 风险 / 前置 |
+|---|---|---|---|
+| **A 不立项** | 维持「人工选 + N3 设计期双支并列」 | **0** | 无 |
+| **B 序列级分支** | `sequence_steps` 加 1 列 `condition`（**仅新增列，合 §0**）+ runner 判后执行/跳过 + 序列页步骤条件 UI + **受限表达式**（只认 `== != > < in`，**无 eval**） | **1–2 批** | 须证「无条件步骤行为逐字节不变」（存量序列全是无条件） |
+| **C 输入值 → 指令规则表** | 新表 `routing_rules`（DDL 仅新增表）+ 匹配器 + 规则编辑 UI | **2–3 批** | **撞 §0 硬约束**：`/dispatch` 缺省口径不能变 → 规则匹配只能做成**独立端点**（如 `/dispatch/routed`），不得塞进 `/dispatch` 缺省路径 |
+
+**建议**：本轮 **A（不立项）**；确有跨代设备需求时**只上 B**，C 的「发前路由」留到
+真出现「多设备族共用一个入口」再议（且要单独论证 §0 冲突）。**不做的后果**：人工选
+指令；多设备族时序列复制多份（维护性下降）—— **功能不缺，缺的是省事**。
+
+---
+
+#### C-2 响应报文解码为字段（bytes → fields）
+
+**现状（代码证据）**
+
+- **编码是单向的**：全仓 grep `bytes→fields / decodeFields / decodeResponse /
+  parseResponse` **0 命中**；`response_match` 只输出 **pass/fail + reasons**（字节
+  差异），**从不回填字段值**。
+- `vectors/float_ieee.json` 有 21 组编码向量（`3.14 → 4048F5C3`），**反方向
+  `4048F5C3 → 3.14` 没有任何实现**。
+
+**要决断的问题**：命中应答之后，要不要把报文**还原成「字段 = 值」给人看**，
+以及要不要**存下来**（展示是瞬时的，入库才能追溯/对账）。
+
+**举例**
+
+- 现状：发「读电压」→ 应答 `4048F5C3 …` → 页面只给 **MATCH OK + raw hex**；人要
+  自己对照协议把 `4048F5C3` 心算成 `3.14`。排「发对了但值不对」时每条都要手工换算。
+- 选 **B（仅展示）**：历史行直接显示 `voltage = 3.14 V` —— **零 DDL**。
+- 选 **C（入库回写）**：`/dispatch/history` 每条带 `fields`，可直接做「上一次 vs
+  这一次」对比与趋势。**C 还是 C-1 选项 C 的硬前置**：规则表要按「温度 > 80 再切
+  指令」路由，**前提就是先把应答解成值**。
+
+**选项与成本**
+
+| 选项 | 内容 | 成本 | DDL |
+|---|---|---|---|
+| **A 不做** | 保持 pass/fail + hex | **0** | — |
+| **B 仅展示面板** | 命中时按 `stages` / 字段规格**逆向取值**（int / bcd / float / string / bool / time_counter，**与编码器对偶**，可直接拿共享向量做双向验证）+ 发送历史展示 | **1 批**（纯 FE + 只读返回） | **否** |
+| **C 入库回写** | B + `dispatch_logs` 加 1 列 `fields_json`（**仅新增列，合 §0**）+ 查询回填 | **2 批** | **是（仅新增列）** |
+
+**建议**：**B 起步**（零 DDL、共享向量天然可反向验证、立刻让「值」可见）；C 等真有
+「按应答值决策 / 追溯对账」需求再加。**依赖提醒**：若 C-1 将来选 C，**必须先做 C-2
+（至少 B）**，否则规则表没有输入值可匹配。
+
+---
+
+#### C-3 全量项目包迁移（换机 / 跨项目）
+
+**现状（三条路径，均已核对代码）**
+
+1. **整库**：`POST /datahub/backup` = `shutil.copy2` 拷 sqlite 文件 →
+   `backend/db/backups/`；`/restore` 回放 + **schema 自愈**（§8.33）。**能搬机**，
+   但文件**不可读、不可 diff、schema 版本绑定**。
+2. **工程包导出**：`GET /datahub/export/bundle` → `manifest.json + instructions.json
+   + relations.json + frames/*`（指令树 + 绑定/应答规格 + 编译骨架帧）。
+3. **导入端点**：关系 = `POST /datahub/import/relations`（数据中心页）；**指令** =
+   指令页 IMPORT（前端 `analyzeImport` 预览冲突后**逐条 POST**，冲突跳过不覆盖）；
+   **协议** = 协议页 IMPORT。
+
+**不进任何包**（13 张表里除 `dispatch_logs` 外还缺 5 张）：`frame_recipes`（配方）、
+`sequences` + `sequence_steps`（序列）、`transport_settings`（传输配置）、
+`device_profiles`（设备档案）、`operator_templates`（算子模板）。
+
+**要决断的问题**：换机 / 跨项目时**哪一份东西算「项目」** —— 整库（backup 就够）、
+可读可部分导入的工程定义（要补域）、还是介于两者之间。
+
+**举例**
+
+- 现状痛点：把源机上做好的 **3 个配方 + 5 条序列 + 传输配置**搬到新电脑 ——
+  `bundle` 里**没有它们**；只剩两条路：① 整库 `restore`（**会覆盖新机已有数据**，
+  跨 schema 版本靠 §8.33 自愈兜底）；② 在源机**逐条手工重建**。
+- 选 **A 的实际含义**：不是「不能迁」—— 整库 backup/restore **确实能搬**，只是
+  不可读、不可合并、不可部分导入；三域包解决「读和合并」，其余靠人工。
+- 选 **C**：`bundle` 扩成 8 域 + `manifest` 写每域 `domainVersion`，导入仍按域端点
+  （复用 CP4-4a 的「upsert / 跳过 / 逐行报告」口径）+ **导入前自动 pre-restore
+  快照**（= 与 B2-5「导入快照」**同一个需求**，应同批做）。
+
+**选项与成本**
+
+| 选项 | 内容 | 成本 | 备注 |
+|---|---|---|---|
+| **A 维持现状** | 整库靠 backup/restore，工程域靠三域包 + 指令页/协议页逐条导入 | **0** | 配方/序列/传输配置换机要重建 |
+| **B 整库 ZIP 工程化** | 把 backup 升级成带 manifest 的**全表**导出 | **2 批** | **与既有 backup/restore 重叠**；导入语义（同名覆盖还是跳过）等于自造 mini-backup，风险高 |
+| **C 补域 + manifest 折中** | 缺的 5 张表补进 bundle + 配套**按域导入端点** + manifest 域清单 + **pre-import 快照** | **2–3 批**（拆 2 批：先「导出补域」后「导入补端点」） | 整机/跨版本迁移**继续用 backup/restore**（唯一保证 schema 一致的路径） |
+
+**建议**：**C**，且**第一件事就是配 pre-import 快照**（= §8.37 R1，合并推进）；
+**不建议 B**（重复造 backup）。
+
+---
+
+#### C-4 应答是否带转义字节 —— **已解决，请确认接受**
+
+§8.35 已拍板 **A「应答带转义字节」**并实现「先线上、后逻辑」双口径，销 §9.7 ④ 与
+D15 关联项 1（17 例 + BE 630/630）。**本项无需再拍**，此处只留一句**请确认**接受该
+口径 —— 确认后，真机帧只剩 §9.7 ①（载荷含定界字节的**出线**方向）一个用途。
+
+---
+
+#### C-5 三项暂缓是否重启（CRC 多算法 / 长度域 BE-LE / varint-COBS）
+
+**要决断的问题**：这三项当初按「无真实设备需求」暂缓，**逐项复核代码证据**后判断
+是否已出现重启理由 —— 结论是 **①② 转「触发式」、③ 明确不做**（详见下）。
+
+**① CRC 多算法**（sum / xor / crc16_modbus 之外，如 CRC16-CCITT、CRC32）
+
+- 现状证据：BE `ChecksumHandler` 只有 `sum / xor / crc16_modbus`（CRC16 反射 poly
+  `0xA001` / init `0xFFFF`）；FE `formula.js` 的 `ChecksumAlgo` 枚举**声明了 4 个含
+  `CRC_32`，但 `calculateChecksum` 无该 case** → 落 default `console.warn` 返回 0。
+  已有三道护栏把 CRC_32 挡在外面：`blockTypes.js` 算法下拉**只列 3 项**（注释明写
+  「CRC_32 无实现，不列入」）、`validateProtocol.VALID_ALGOS` 3 值、
+  `toFrameBlocks.BACKEND_ALGO` 只映射 3 项；`mapChecksumAlgo` 把
+  `CRC16_CCITT / CRC32 / unknown / empty` **静默归一成 `CRC_16_MODBUS`**。
+- 举例（何时必须重启）：接一台用 **CRC16-CCITT(0x1021)** 的设备 → 现在**连协议树
+  都存不进去**（`VALID_ALGOS` 拒），只能改协议迁就算法。
+- 成本 ≈ **1 批**：BE 算法白名单 + FE enum / switch / 下拉 / `VALID_ALGOS` 同步 +
+  **共享向量补 2–3 组标准 CRC 向量**（双端读同一份 JSON 比期望值）+
+  **`response_match._normalize_checksum.VALID_ALGOS` 必须同批改**（否则「发得出去、
+  应答判不了」—— 这是**出线/收侧两处白名单成对改动**，必须加用例钉住）。
+- 建议：**维持暂缓，改「触发式」** —— 第一台真实设备提出即做，且两处白名单一次改完。
+
+**② 长度域 BE / LE**
+
+- 现状证据：`backend/handlers/length.py` 出线长度域**恒 big-endian**
+  （`f"{total:0{n}X}"`，**无 `byte_order` 配置**）；而**应答侧**
+  `response_match._normalize_length` **已支持 `VALID_BYTE_ORDERS`（big / little）**
+  → **能判不能发**的不对称。
+- 举例：设备要求「长度域小端」→ 现在**发不出去**（帧里长度域反了，真机按 LEN 找不到
+  帧尾）；反之别人发来小端应答，我们**判得对**。
+- 成本 ≈ **1 批**：length 卡加 `byte_order`（`blockTypes.js` 的 `fields` + 出线
+  handler + 校验；**收侧已就绪**）+ 2–4 组共享向量（`vectors/little_endian.json`
+  现有 674B 可扩）+ 双端测试；**动编码路径 → 必须证明缺省（big）逐字节不变**。
+- 建议：**与 ① 同批做或先做**（同属「补齐已判不能发的」，且更小）；触发条件 = 真机
+  确认存在小端长度设备。
+
+**③ varint / COBS（变长前缀与定界编码）**
+
+- 现状证据：组帧元素全集 = `container / fixed / bitfield / length / checksum /
+  slot`（`frontend/src/config/blockTypes.js`）—— **无变长前缀、无 COBS/HDLC 定界**；
+  长度只有「定宽十六进制 LEN」一种。
+- 举例：遇到 **Modbus-RTU 那类无长度域**（靠超时分帧）或 **COBS / 0x7E 定界** 的设备
+  → 现在表达不了，只能 `fixed` 硬编长度或靠传输层超时兜。
+- 成本 ≈ **3–4 批**：新 block 类型（FE 面板 + BE handler + 编码 PASS 顺序 +
+  **`stages` 逆向解包** + 应答匹配解包）—— **凡动解包都可能影响现有 stages 判定**，
+  属本仓**风险最高一档**。
+- 建议：**明确维持暂缓**；真出现时**先只做出线**（不碰解包）单独立项，解包再单独一批。
+
+**C-5 汇总**：①② = **触发式**（真机提出即做，②可先于③之前的任何时点）；③ = **不做**，
+若必须做则分「出线 / 解包」两批。
+
+---
+
+**拍板方式**：C-1 / C-2 / C-3 各给一个字母（A/B/C，或「暂不」），C-5 三项各给
+「触发 / 不做」，C-4 给一句「确认」；我按 §8.37 把选中的编进 **R7+** 继续推进。
+
+### 8.37 B2 六项功能缺口排期（用户授权「可以进行排期」）
+
+**批次**：2026-10-02 · **纯排期文档、零代码改动** —— §8.34 B2 组 6 项排队；排序原则
+= **先补安全网 → 再清欠账 → 再体验 → 再正确性 → 最后动 DDL 的大件**。每批仍走既定
+节奏：**实现 → BE/FE 全量 → `npx vite build` → yorha-ui 校验器 → 文档同步 → 一批一
+提交**；涉及 DDL 的单独 `chore(db)` 提交。
+
+| 批 | 缺口（§8.34 B2 编号） | 层 | 量级 | DDL | 关键纪律 / 依赖 |
+|---|---|---|---|---|---|
+| **R1** | 5 · 数据导入无 **pre-import 自动快照** | BE | 小（1 批） | 否 | 镜像 `pre-restore` 先例（§8.33）：导入前 `create_backup` → 响应加 `preImportSnapshot`（**只做加法**）；补「恢复有快照、导入没有」的风险不对称；**与 §8.36 C-3 选 C 的前置是同一件事** |
+| **R2** | 7 · 传输配置无**上一配置回退** | BE+FE | 小（1 批） | 否 | 复用 `transport_store` 存取钩子；保留最近 N 版 + 回退端点 + 通讯调试页按钮；口径对齐 §8.33 的 `transportConfigRestored` |
+| **R3** | 8 · **ESLint 存量**清理 | FE | 中（1 批，**60 problems / 26 文件**） | 否 | **先纠正 §8.34 的失实数字**（原文「1 error 2 warnings」，实测 `npm run lint` = **60 problems（42 errors / 18 warnings）**，见下方分布）；纪律 = **只删未用变量 / 加带理由的 disable，不改行为**；`no-control-regex` 是**有意的**（控字符校验）→ 注释 disable；`rules-of-hooks` 1 条**需人工看**（可能是真 bug）。**验收自本批起加 `npm run lint` EXIT=0** |
+| **R4** | 3 · 编排页**绑定拖拽排序** | FE | 中（1 批） | 否 | 现状 = 上移/下移按钮 + `slot_order` 洞位下拉回写**已落地**，只缺拖拽手势；**先拍「拖完改展示序还是持久序」**（建议 = 拖完调同一个 PUT，语义与现有下拉一致，**零 BE 改动**） |
+| **R5** | 4 · **float64 编码**双端不一致 | BE+FE+向量 | 中（1–2 批） | 否 | 现状 = N1 摘静默 → `FLOAT64_UNSUPPORTED` 提醒、G7「提醒而非改模板」；真正修复 = `formula.js` + BE 编解码 + **`vectors/float_ieee.json` 扩 float64 组（双端同一期望）** + **`response_match` 解码侧同步**（否则能发不能判）；**动编码器 → 必须证明缺省逐字节不变** |
+| **R6** | 6 · **软删除 / 回收站** | BE+FE | 大（2 批：DDL + FE） | **是（仅新增列/表）** | **先拍「列 vs 表」**：① 13 张表统一加 `deleted_at`（**仅新增列，合 §0**，读端点过滤）—— 省、但每张表都要动；② 新表 `trash_bin(id, entity_type, entity_id, payload_json, deleted_at, purged_at)` —— 集中、但写路径要双写。引用检查与前端确认**沿用现成**，DataHub 备份仍是最终兜底 |
+
+**R3 实测分布**（`npm run lint`，HEAD 实测，用作排期依据）：`no-unused-vars` **23** /
+`react-hooks/exhaustive-deps` **17** / `no-useless-escape` 3 / `no-empty` 2 /
+`react-hooks/rules-of-hooks` **1** / `no-undef` 1 / `no-extra-boolean-cast` 1 /
+`no-control-regex` 1，余下为各文件告警 —— 合计 **60（42 errors / 18 warnings）、26 文件**。
+
+**合计 7–8 批**（R1/R2/R3/R4 各 1、R5 1–2、R6 2）。
+
+**为什么是这个顺序**
+
+1. **R1/R2 先行**：两项都是「出事了能回退」的**安全网**；R1 还与 C-3 选 C 同源，
+   先做可被 C-3 复用；
+2. **R3 次之**：清存量欠账要在**大量改代码之前**做，否则后续每批都绕着 60 条噪声走
+   （各批**不计 lint 入验收**正是为此 —— 先还债，再把 lint 变成门槛）；
+3. **R4 再次**：纯 FE、零 BE 风险的体验补齐；
+4. **R5 靠后**：动**编码器**（两端）+ 向量表，必须带「缺省逐字节不变」证明；
+   现有 `FLOAT64_UNSUPPORTED` 提醒让它可以安全排队；
+5. **R6 最后**：唯一要动 DDL 的、面最广（13 张表），放其余五项落地后再动。
+
+**验收口径（每批）**：BE `python -m unittest discover -s backend/tests -t backend/tests`
+全绿、FE `npx vitest run` 全绿、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、
+`pageStatus.json` 有改动则重生成 `PAGE_STATUS.md`；**自 R3 起加 `npm run lint`
+EXIT=0**（R1/R2/R4/R5 不提前引入 lint 门槛，避免把存量债转嫁到功能批）。
+
+**排期外（明确不在 R1–R6）**：§8.34 C 组 4 项待拍板（§8.36）—— 拍板后编 **R7+**；
+§8.34 B1 组 2 项仍需真机（D13 载荷含定界字节的出线方向 / §9.7 ①）。
 
 ## 9. 保留勿动（非任务，勿清理）
 
