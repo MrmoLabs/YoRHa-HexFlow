@@ -1039,11 +1039,14 @@
       导出回显补 `relations.json`。
     - **验收**：BE **549/549（基线 537 + 12）**、FE **948/948（63 文件，基线 944 + 4）**、
       `npx vite build` EXIT=0、yorha-ui 校验器 4 文件 **0 违规**；**零 DDL**。
+    - **人工验证 6 项通过**（真浏览器：两行计数 0/0 → 1/1、导出回显 + manifest 条数
+      一致、确认前不发请求、导入回显四段计数 + 服务端 id/出处/stale 回读、二次导入
+      upsert 覆盖、非法 JSON 与严格 400 三态），明细见 `PLAN_Backlog.md` §8.25。
     - **文档同步**：`DESIGN_CorePipeline.md` §7 批次四 4a 进度注、`README.md`
       Data Hub 一段（+ `relations.json` 与导入端点、状态面板改「七表行数」）、
       `PLAN_Backlog.md` §1 新 CP4 行 + 新 §8.25、`pageStatus.json` 数据中心页条目 +
       `PAGE_STATUS.md` 再生成、本条。
-    - **提交**：→ **`PENDING_FEAT4A`（代码+文档），2026-10-02**。
+    - **提交**：→ **`54620ab`（代码+文档），2026-10-02**。
     - **待办**：**4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 →
       `slot_id` 悬空置 NULL 并回执」+ D9/D10 划界落 README/PAGE_STATUS；**4c** D8
       校验表全量核对（纯文档，随 4b 提交）。

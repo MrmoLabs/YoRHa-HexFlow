@@ -349,7 +349,7 @@ def build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) -> Wrap
   （指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 并回执」；
 - **4c D8 校验表全量核对**：§6.1 / §6.2 逐行「已有/已补」销项（纯文档）。
 
-  > ✅ **4a 已提交 `PENDING_FEAT4A`（代码+文档），2026-10-02**：
+  > ✅ **4a 已提交 `54620ab`（代码+文档），2026-10-02**：
   > **导出** —— `GET /datahub/export/bundle` 增 `relations.json`
   > （`{schemaVersion, bindings[], responseSpecs[]}`，行字段与列一一对应，
   > `definition_hash` 原样带出），`manifest.json` 增 `relations` 计数，
@@ -366,6 +366,10 @@ def build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) -> Wrap
   > 环境面板增两行计数、导出回显补 `relations.json`。
   > 终态：BE **549/549**（基线 537 + 12）、FE **948/948**（63 文件，基线 944 + 4）、
   > `npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**。
+  > **人工验证 6 项通过**（真浏览器：计数两行 0/0 → 1/1、导出回显含 `relations.json`
+  > 且 manifest 条数逐项一致、确认前不发请求、导入回显四段计数 + 服务端 id/出处/stale
+  > 逐字回读、二次导入 upsert 覆盖、非法 JSON 与严格 400 三态），明细见
+  > `PLAN_Backlog.md` §8.25。
 
 ## 8. 明确不做（本次拍板范围外）
 

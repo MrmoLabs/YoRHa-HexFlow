@@ -44,7 +44,7 @@
 FE **944/944（63 文件，基线 932 + 12）**、`npx vite build` EXIT=0、yorha-ui
 校验器 8 文件 0 违规、**真路由冒烟 43 项 ALL PASS**；明细见 §8.24 |
 
-| CP4 | Core Pipeline 批次四（治理）：**4a** 关系数据导入导出（`bindings` + `response_specs` 并入 DataHub ZIP `relations.json` + `POST /datahub/import/relations`）/ **4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 回执」+ D9/D10 划界落 README/PAGE_STATUS / **4c** D8 校验表全量核对（逐行销项，纯文档）（明细 `DESIGN_CorePipeline.md` §7 批次四） | 🔄 **4a 已提交 ✅ `PENDING_FEAT4A`（代码+文档，零 DDL），2026-10-02**：导出 ZIP 增 `relations.json`（`manifest` 增 `relations` 计数、`/status` 增 `protocolBindings`/`responseSpecs` 两行计数）+ 回灌端点按 `id` upsert、逐行报告（父缺失 → `skipped` 带 reason、槽悬空 → 置 NULL + warning、默认唯一冲突清旧行、`spec` 过 `normalize_spec` / `stage` 重算镜像 / 出处原样回填）、**部分成功即部分落库不整批回滚**；前端 DataHub 增「关系数据」面板（选文件 → 解析校验 → 确认弹窗 → 回显 新增/更新/跳过/警告 计数 + 刷新）。终态 BE **549/549**（基线 537 + 12）、FE **948/948**（63 文件，基线 944 + 4）、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**；明细见 §8.25。**4b/4c 未开工**（4b 含 1 处后端级联回执 + 绑定矩阵视图，4c 纯文档随 4b 提交） |
+| CP4 | Core Pipeline 批次四（治理）：**4a** 关系数据导入导出（`bindings` + `response_specs` 并入 DataHub ZIP `relations.json` + `POST /datahub/import/relations`）/ **4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 回执」+ D9/D10 划界落 README/PAGE_STATUS / **4c** D8 校验表全量核对（逐行销项，纯文档）（明细 `DESIGN_CorePipeline.md` §7 批次四） | 🔄 **4a 已提交 ✅ `54620ab`（代码+文档，零 DDL），2026-10-02**：导出 ZIP 增 `relations.json`（`manifest` 增 `relations` 计数、`/status` 增 `protocolBindings`/`responseSpecs` 两行计数）+ 回灌端点按 `id` upsert、逐行报告（父缺失 → `skipped` 带 reason、槽悬空 → 置 NULL + warning、默认唯一冲突清旧行、`spec` 过 `normalize_spec` / `stage` 重算镜像 / 出处原样回填）、**部分成功即部分落库不整批回滚**；前端 DataHub 增「关系数据」面板（选文件 → 解析校验 → 确认弹窗 → 回显 新增/更新/跳过/警告 计数 + 刷新）。终态 BE **549/549**（基线 537 + 12）、FE **948/948**（63 文件，基线 944 + 4）、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**；明细见 §8.25。**4b/4c 未开工**（4b 含 1 处后端级联回执 + 绑定矩阵视图，4c 纯文档随 4b 提交） |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -2148,6 +2148,26 @@ DDL 三列落真库、无链 400 / 不存在 404、三层协议 + 配方挂默�
 一段（+ `relations.json` 与导入端点）、`PLAN_Backlog.md` §1 新 CP4 行 + 本节、
 `PROJECT_HANDOVER.md` 条目 39、`pageStatus.json` 数据中心页条目 +
 `node scripts/generate-page-status.mjs` 再生 `PAGE_STATUS.md`。
+
+**人工验证**（2026-10-02，`uvicorn :8000` + `vite :5173` + 真浏览器；
+`Temp\opencode\seed_4a.py` 造 1 绑定 + 1 应答规格 → 导出 → 删两者制造差异 →
+浏览器导入复原 → 从 `yorha.db.bak_4a` 还原）**6 项通过**：
+
+1. 环境面板七表行数含新增两行：删后 `绑定 BINDINGS 0 / 应答规格 SPECS 0`，
+   导入后 `1 / 1`（截图存证）。
+2. **导出**：点「下载 ZIP (EXPORT)」→ `SYS: 导出完成：7.7 KB（instructions.json +
+   relations.json + manifest.json + frames/*.bin|hex）`；ZIP 实含 `relations.json`，
+   `manifest.relations` 与该文件条数逐项一致（1 绑定 / 1 规格）。
+3. **导入**：选 `relations_4a.json` → 弹窗列「绑定 1 条 · 应答规格 1 条」与 upsert
+   语义，**确认前计数仍 0/0（未发请求）** → 确认 →
+   `SYS: 导入完成（relations_4a.json）：绑定 新增 1 / 更新 0 / 跳过 0；应答规格
+   新增 1 / 更新 0 / 跳过 0；警告 0 条。` → 面板刷新 1/1；服务端回读两行 `id` 与
+   导出逐字一致、`definition_hash` 原样、`stale=false`。
+4. **同文件二次导入** → 「绑定 新增 0 / 更新 1；应答规格 新增 0 / 更新 1」
+   （按 `id` upsert 覆盖，不产生重复行）。
+5. **非法 JSON** 文件 → `SYS: 导入失败：文件不是合法 JSON（…）`，不出弹窗、不发请求。
+6. **HTTP 层严格 400**：未知字段 `extra` / `schemaVersion:99` / `bindings:{}` → 400
+   （各带 detail），空载荷 `{bindings:[],responseSpecs:[]}` → 200。
 
 ## 9. 保留勿动（非任务，勿清理）
 
