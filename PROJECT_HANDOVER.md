@@ -1355,6 +1355,41 @@
       R4 拖拽 → R5 float64 → R6 软删除（13 表加 `deleted_at`）→ R7/R8 C-3 补域 →
       R9/R10 C-2 解码入库）。
 
+48. **R2 传输配置「上一配置」一键回退落地（PLAN §8.39）**（2026-10-02，**零 DDL、
+    BE+FE** —— 未改 `models.py`/`database.py`，`transport_settings` 结构不变；未碰
+    `processor.py`/`graph.py`/`Blueprint.jsx`；`/dispatch` 缺省口径不变）：
+    - **起因**：§8.33「不改 backlog」/ §8.34 B2-7 → §8.37 **R2** —— 改错配置只能手动
+      改回来；§8.33 的持久化失败留痕是**事后**从 error 事件看见的，缺一个**当场**动作。
+    - **实现**：`transport.set_config` 新增 `record_history`（缺省 `True`，只做加法），
+      真变更时把被替换的旧版压进 `_config_history = deque(maxlen=20)`；新
+      `revert_config()` 弹栈 → 校验 → 断连 → 落库 → `_record_event("config", …)`，
+      返回 `{config, historyDepth}`，栈空 `ValueError` → **400**；
+      `POST /transport/config/revert`；`get_status()` 新增 **`configHistoryDepth`**
+      （只做加法）；`reset()` 一并清栈；`_persist_best_effort()` 从 `set_config` 抽出
+      供两条路径共用。FE：`api/transport.js::revertTransportConfig` + barrel 导出 +
+      通讯配置区 `回退上一配置 (REVERT)`（`disabled = !depth`，0 置灰）+ 回填生效配置
+      并 `refreshStatus/refreshProfiles`。
+    - **两条一改就错的语义**：**回退本身不入栈**（否则能无限「回退回退」振荡，退不到空）；
+      **启动装载不入栈**（`restore_transport_config` 传 `record_history=False`，否则一开机
+      栈里躺一份默认配置，什么都没改点回退就被重置回默认）—— 档案激活属用户动作照常入栈。
+    - **测试**：BE 新 `test_transport_revert.py` **8 例**（含**有界 20 挤掉最老一版**、
+      **连退三版再 400**、**端到端走 `restore_transport_config` 验装载不入栈**）；
+      `test_transport.py` 的**精确键集**断言加入 `configHistoryDepth`（全仓唯一一处
+      `get_status()` 形状断言 —— 本批的**主动形变**，非漏改）。FE `Terminal.test.jsx`
+      **+3 例**（置灰 / 成功回填 / 400 detail 展示）。
+    - **验收**：**BE 644/644**（基线 636 + 8）、**FE 976/976（66 文件）**（基线 973 + 3）、
+      `npx vite build` EXIT=0、yorha-ui 校验器 `Terminal.jsx` **0 违规**；零 DDL → 无
+      `chore(db)` 提交。
+    - **边界**：回退栈**进程内**、**重启即空**（R2 定为零 DDL）；跨重启回退需给
+      `transport_settings` 加列 → 归 R6 那档 DDL 批。
+    - **同批拍板记录（R4）**：编排页绑定拖拽 —— **拖完只改展示序，点保存按钮才改持久序**
+      （拖拽 = 本地草稿态，「保存」调同一个 PUT 回写 `slot_order`，零 BE 改动）。
+    - **文档同步**：`pageStatus.json` 通讯调试页 + `PAGE_STATUS.md` 再生、PLAN 新
+      **§8.39** + §8.37 R2 行已办 / R4 行拍板 + §1 `R1–R10` 状态 + §8.34 B2-7 已办 +
+      §8.33 backlog 项销号、本条。
+    - **状态**：**R1 ✅ R2 ✅**，余 **R3 ESLint（60 problems，本批起加 `npm run lint`
+      门槛）→ R4 拖拽 → R5 float64 → R6 软删除（13 表加 `deleted_at`）→ R7/R8 → R9/R10**。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

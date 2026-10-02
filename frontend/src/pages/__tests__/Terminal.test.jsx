@@ -9,6 +9,7 @@ vi.mock('../../api', () => ({
         getTransportConfig: vi.fn(),
         setTransportConfig: vi.fn(),
         getTransportStatus: vi.fn(),
+        revertTransportConfig: vi.fn(),
         getDispatchHistory: vi.fn(),
         clearDispatchHistory: vi.fn(),
         dispatchPayload: vi.fn(),
@@ -422,4 +423,53 @@ describe('Terminal Page（E3 通讯调试）', () => {
         render(<Terminal />);
         await waitFor(() => expect(screen.getByText(/未列入受保护字节/)).toBeDefined());
     });
+    // R2（PLAN §8.37）：回退上一配置 —— 按钮由 status.configHistoryDepth 决定是否置灰，
+    // 成功后拿生效配置回填表单（同 APPLY 口径）并刷新状态与档案（配置变更会清激活指针）。
+    it('R2 回退上一配置：调 /config/revert 并回填生效配置', async () => {
+        api.getTransportStatus.mockResolvedValue({ ...STATUS, configHistoryDepth: 1 });
+        api.revertTransportConfig.mockResolvedValue({
+            config: { ...CONFIG, mode: 'tcp', tcp: { ...CONFIG.tcp, host: '10.0.0.9' } },
+            historyDepth: 0
+        });
+
+        render(<Terminal />);
+        await waitFor(() => expect(api.getTransportConfig).toHaveBeenCalledTimes(1));
+
+        const button = screen.getByRole('button', { name: /回退上一配置/ });
+        expect(button.disabled).toBe(false);
+        expect(screen.getByText('可回退 1 版')).toBeDefined();
+
+        fireEvent.click(button);
+
+        await waitFor(() => expect(api.revertTransportConfig).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(screen.getByText(/已回退到上一配置：模式 TCP/)).toBeDefined());
+        expect(screen.getByText(/还可回退 0 版/)).toBeDefined();
+        expect(api.getTransportStatus).toHaveBeenCalledTimes(2); // 挂载 1 + 回退后刷新
+        expect(screen.getByDisplayValue('10.0.0.9')).toBeDefined(); // 草稿回填生效配置
+    });
+
+    it('R2 无可回退历史时按钮置灰', async () => {
+        api.getTransportStatus.mockResolvedValue({ ...STATUS, configHistoryDepth: 0 });
+
+        render(<Terminal />);
+        await waitFor(() => expect(api.getTransportConfig).toHaveBeenCalledTimes(1));
+
+        expect(screen.getByRole('button', { name: /回退上一配置/ }).disabled).toBe(true);
+        expect(screen.getByText('暂无可回退配置')).toBeDefined();
+        expect(api.revertTransportConfig).not.toHaveBeenCalled();
+    });
+
+    it('R2 回退被后端拒（400）时把 detail 显示在配置区', async () => {
+        api.getTransportStatus.mockResolvedValue({ ...STATUS, configHistoryDepth: 1 });
+        api.revertTransportConfig.mockRejectedValue(new Error('没有可回退的上一配置'));
+
+        render(<Terminal />);
+        await waitFor(() => expect(api.getTransportConfig).toHaveBeenCalledTimes(1));
+
+        fireEvent.click(screen.getByRole('button', { name: /回退上一配置/ }));
+
+        await waitFor(() => expect(screen.getByText(/没有可回退的上一配置/)).toBeDefined());
+        expect(api.revertTransportConfig).toHaveBeenCalledTimes(1);
+    });
+
 });

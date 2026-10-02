@@ -19,7 +19,7 @@ import { getOperatorTemplates } from './operators';
 import { exportHexFile, exportBinaryFromBlocks } from './export';
 import { compileWrapped } from './compile';
 import { dispatchPayload, dispatchWrappedGroup, getDispatchHistory, clearDispatchHistory } from './dispatch';
-import { getTransportConfig, setTransportConfig, getTransportStatus } from './transport';
+import { getTransportConfig, setTransportConfig, getTransportStatus, revertTransportConfig } from './transport';
 import { getBindings, createBinding, updateBinding, deleteBinding } from './bindings';
 import { getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './recipes';
 import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle, importRelations } from './datahub';
@@ -72,6 +72,8 @@ export const api = {
     getTransportConfig,
     setTransportConfig,
     getTransportStatus,
+    // R2（PLAN §8.37）：一键回退到上一配置（进程内回退栈，零 DDL）
+    revertTransportConfig,
 
     // Bindings (E4: 编排绑定持久化 → /bindings CRUD, 槽序 slot_order 由后端分配)
     getBindings,

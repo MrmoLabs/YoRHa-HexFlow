@@ -190,11 +190,15 @@ class TransportConfigTests(TransportTestBase):
 
     def test_status_shape_and_loopback_always_connected(self):
         status = get_transport_status()
-        self.assertEqual(set(status), {"mode", "connected", "last_error", "events"})
+        # configHistoryDepth = R2 新增键（§8.37 上一配置回退），只做加法
+        self.assertEqual(
+            set(status), {"mode", "connected", "last_error", "events", "configHistoryDepth"}
+        )
         self.assertEqual(status["mode"], "loopback")
         self.assertTrue(status["connected"])
         self.assertIsNone(status["last_error"])
         self.assertEqual(status["events"], [])
+        self.assertEqual(status["configHistoryDepth"], 0)
 
 
 class LoopbackDispatchTests(TransportTestBase):

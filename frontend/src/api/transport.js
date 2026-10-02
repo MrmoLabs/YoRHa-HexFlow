@@ -19,3 +19,11 @@ export const getTransportStatus = async () => {
     const response = await fetch(`${API_BASE}/transport/status`);
     return handleResponse(response);
 };
+
+// R2（PLAN §8.37）：一键回退到上一配置 → {config, historyDepth}；无历史 → 400。
+export const revertTransportConfig = async () => {
+    const response = await fetch(`${API_BASE}/transport/config/revert`, {
+        method: 'POST'
+    });
+    return handleResponse(response);
+};

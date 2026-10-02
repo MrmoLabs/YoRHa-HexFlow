@@ -46,7 +46,9 @@ def restore_transport_config(db: Session) -> bool:
     if row is None or not row.config:
         return False
     try:
-        transport.set_config(row.config)
+        # record_history=False：这是**装载**不是用户改配置 —— 记了的话一开机栈里就躺
+        # 一份默认配置，用户什么都没改点「回退」会莫名被重置回默认（R2，§8.37）。
+        transport.set_config(row.config, record_history=False)
     except ValueError:
         return False
     return True

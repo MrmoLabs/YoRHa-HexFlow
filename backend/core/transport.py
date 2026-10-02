@@ -7,11 +7,16 @@
 连接状态事件（connected/disconnected/error）保存在有界列表，由
 ``GET /transport/status`` 暴露；发送历史三类事件（raw/response/error）
 由 /dispatch 路由在 send 结果上落库（E2-T4）。
+
+R2（PLAN §8.37）：配置每次真的变更都把被替换的旧版本压进**进程内**有界回退栈，
+``POST /transport/config/revert`` 可一键退回（可连退多版，回退本身不入栈）；
+启动恢复属「装载」不入栈。零 DDL → 栈重启即空，跨重启回退需新增列（归 R6 那档）。
 """
 
 import socket
 import threading
 import time
+from collections import deque
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -25,6 +30,9 @@ VALID_BYTESIZES = (5, 6, 7, 8)
 _TIMEOUT_MIN_MS = 1
 _TIMEOUT_MAX_MS = 60000
 _MAX_STATE_EVENTS = 50
+# R2（§8.37）「上一配置」回退栈深度。**进程内**有界栈 —— 零 DDL 口径：不给
+# transport_settings 加列，所以重启即空；跨重启回退需新增列，归 R6 那档 DDL 批。
+_MAX_CONFIG_HISTORY = 20
 # 收包节拍：每 25ms 轮询一次；数据到齐后静默 50ms 即视为响应结束，
 # 避免每次都等满 read_timeout。
 _POLL_S = 0.025
@@ -146,6 +154,9 @@ _tcp_sock: Optional[socket.socket] = None
 _serial_inst: Any = None
 _state_events: List[Dict[str, Any]] = []
 _last_error: Optional[str] = None
+# R2：被 set_config 替换掉的**上一版**配置（右端 = 最近一次，回退即弹栈）。
+# 有界 deque，超长自动丢最老一版 —— 手改配置十几次不会把内存撑住。
+_config_history: deque = deque(maxlen=_MAX_CONFIG_HISTORY)
 # P1 连接持久化：配置变更钩子（main.py lifespan 注册后，每次 set_config 生效且
 # 有变化时回调新配置；测试不挂钩 → 零落库，test_transport 行为不变）。
 _persist_hook: Optional[Any] = None
@@ -171,6 +182,22 @@ def _record_event(event: str, detail: Optional[str] = None) -> None:
     _state_events.append({"ts": _now_iso(), "event": event, "detail": detail})
     if len(_state_events) > _MAX_STATE_EVENTS:
         _state_events = _state_events[-_MAX_STATE_EVENTS:]
+
+
+def _persist_best_effort(config: Dict[str, Any]) -> None:
+    """配置生效后的持久化：尽力而为 + **失败留痕**（§8.33）。
+
+    钩子失败**不回滚**已生效的配置（下次变更重试落库），但必须留痕 —— 否则用户以为
+    存了、重启后配置悄悄回默认，排查时完全无从下手；记进有界状态事件，
+    `GET /transport/status` 可见。`set_config` / `revert_config` 共用（R2 抽出，
+    否则回退路径会把这段 try/except 再抄一遍，将来改留痕文案就漏一处）。
+    """
+    if _persist_hook is None:
+        return
+    try:
+        _persist_hook(deepcopy(config))
+    except Exception as exc:
+        _record_event("error", f"配置持久化失败（重启后可能回默认）：{exc}")
 
 
 def _fail(message: str) -> "TransportError":
@@ -218,10 +245,13 @@ def get_config() -> Dict[str, Any]:
         return deepcopy(_config)
 
 
-def set_config(patch: Dict[str, Any]) -> Dict[str, Any]:
+def set_config(patch: Dict[str, Any], record_history: bool = True) -> Dict[str, Any]:
     """把 patch 深合并到当前配置，整体校验后生效；生效时断开既有真实连接。
 
     P1：配置有变化时触发持久化钩子（lifespan 注册；测试不挂钩行为不变）。
+    R2（§8.37）：`record_history` 缺省 True —— 配置**真的变了**时把被替换掉的上一版
+    压进回退栈，供 `revert_config()` 一键退回。启动恢复 / DB 恢复那类「装载」传
+    False，否则一开机栈里就躺一份默认配置，用户什么都没改点回退会莫名被重置。
     """
     global _config, _last_error
     if not isinstance(patch, dict):
@@ -230,20 +260,51 @@ def set_config(patch: Dict[str, Any]) -> Dict[str, Any]:
     changed = False
     with _lock:
         if normalized != _config:
+            if record_history:
+                _config_history.append(deepcopy(_config))
             if _tcp_sock is not None or _serial_inst is not None:
                 _close_all("配置变更")
             _config = normalized
             _last_error = None
             changed = True
-    if changed and _persist_hook is not None:
-        # 持久化尽力而为：钩子失败不回滚已生效的配置（下次变更重试落库），
-        # 但必须**留痕**（§8.33）—— 否则用户以为存了、重启后配置悄悄回默认，
-        # 排查时完全无从下手。记进有界状态事件，GET /transport/status 可见。
-        try:
-            _persist_hook(deepcopy(normalized))
-        except Exception as exc:
-            _record_event("error", f"配置持久化失败（重启后可能回默认）：{exc}")
+    if changed:
+        _persist_best_effort(normalized)
     return get_config()
+
+
+def get_config_history_depth() -> int:
+    """可回退的「上一配置」条数（R2）—— 进程内栈，重启即空。"""
+    with _lock:
+        return len(_config_history)
+
+
+def revert_config() -> Dict[str, Any]:
+    """一键回退到最近一次变更**之前**的配置（R2，§8.37）。
+
+    弹栈语义：`set_config` 每次**真的生效**就把被替换的旧配置压入（有界
+    `_MAX_CONFIG_HISTORY`），回退 = 弹出并应用 —— 因此可连续回退多版 A→B→C 回
+    B 再回 A。**回退本身不入栈**：否则退完一步立刻又能「回退回退」地振荡回去，
+    栈也永远退不到空。无历史 → `ValueError`（路由转 400）。
+
+    生效语义与 APPLY 完全一致：断开既有真实连接 + 走持久化钩子 + 留一条状态事件。
+    返回 `{"config": 生效配置, "historyDepth": 剩余可回退条数}`。
+    """
+    global _config, _last_error
+    with _lock:
+        if not _config_history:
+            raise ValueError("没有可回退的上一配置")
+        target = validate_config(_config_history.pop())
+        changed = target != _config
+        if changed:
+            if _tcp_sock is not None or _serial_inst is not None:
+                _close_all("回退配置")
+            _config = target
+            _last_error = None
+    if changed:
+        _persist_best_effort(target)
+        # 留痕（§8.33）：配置动了却没人知道是最难查的一类问题。
+        _record_event("config", "已回退到上一配置")
+    return {"config": get_config(), "historyDepth": get_config_history_depth()}
 
 
 def get_status() -> Dict[str, Any]:
@@ -260,17 +321,24 @@ def get_status() -> Dict[str, Any]:
             "connected": connected,
             "last_error": _last_error,
             "events": list(_state_events),
+            # R2：前端据此决定「回退上一配置」按钮是否可用（0 → 置灰）。
+            "configHistoryDepth": len(_config_history),
         }
 
 
 def reset() -> None:
-    """恢复默认 loopback 配置并清空连接与状态（测试/进程重置用）；持久化钩子一并清空。"""
+    """恢复默认 loopback 配置并清空连接与状态（测试/进程重置用）；持久化钩子一并清空。
+
+    R2：回退栈同样清 —— 否则上一轮测试/上一个进程留下的「上一配置」会让 reset 后
+    依然回得去，等于状态没真清干净。
+    """
     global _config, _last_error, _state_events, _persist_hook
     with _lock:
         _close_all(None)
         _config = default_config()
         _last_error = None
         _state_events = []
+        _config_history.clear()
         _persist_hook = None
 
 

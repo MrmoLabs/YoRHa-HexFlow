@@ -111,7 +111,7 @@ export default function Terminal() {
     const [statusError, setStatusError] = useState('');
     const [historyError, setHistoryError] = useState('');
     const [sendHex, setSendHex] = useState('');
-    const [busy, setBusy] = useState(''); // 'config' | 'send' | 'clear' | 'profile'
+    const [busy, setBusy] = useState(''); // 'config' | 'revert' | 'send' | 'clear' | 'profile'
     const [confirmClear, setConfirmClear] = useState(false);
     // P1 设备档案：列表 / 选中 / 新档名 / 区内错误 / 删除确认
     const [profiles, setProfiles] = useState([]);
@@ -178,6 +178,26 @@ export default function Terminal() {
             await Promise.all([refreshStatus(), refreshProfiles()]); // 手工改配置会清激活指针
         } catch (err) {
             setConfigError(err?.message || '配置应用失败');
+        } finally {
+            setBusy('');
+        }
+    };
+
+    // R2（PLAN §8.37）：一键回退到「上一配置」。后端弹栈 → 这里直接拿生效配置回填
+    // 表单（同 APPLY 的回填口径），并刷新状态与档案 —— 配置变更会清激活指针。
+    const handleRevertConfig = async () => {
+        setBusy('revert');
+        setSysMsg('');
+        try {
+            const result = await api.revertTransportConfig();
+            setConfig(result.config);
+            setDraft(toDraft(result.config));
+            setConfigError('');
+            setSysMsg(`已回退到上一配置：模式 ${String(result.config.mode).toUpperCase()}`
+                + ` · 还可回退 ${result.historyDepth} 版`);
+            await Promise.all([refreshStatus(), refreshProfiles()]);
+        } catch (err) {
+            setConfigError(err?.message || '回退失败');
         } finally {
             setBusy('');
         }
@@ -552,7 +572,21 @@ export default function Terminal() {
                                         <ActionButton onClick={handleApplyConfig} busy={busy === 'config'}>
                                             应用配置 (APPLY)
                                         </ActionButton>
+                                        {/* R2：depth 由 GET /transport/status 给出，0 → 置灰
+                                            （否则点了必 400，白等一次往返） */}
+                                        <ActionButton
+                                            onClick={handleRevertConfig}
+                                            busy={busy === 'revert'}
+                                            disabled={!status?.configHistoryDepth}
+                                        >
+                                            回退上一配置 (REVERT)
+                                        </ActionButton>
                                         <span className="text-[10px] opacity-50">生效时断开既有真实连接</span>
+                                        <span className="text-[10px] opacity-50">
+                                            {status?.configHistoryDepth
+                                                ? `可回退 ${status.configHistoryDepth} 版`
+                                                : '暂无可回退配置'}
+                                        </span>
                                     </div>
                                 </>
                             )}

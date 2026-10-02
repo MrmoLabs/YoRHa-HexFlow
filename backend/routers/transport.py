@@ -23,6 +23,19 @@ def set_transport_config(patch: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.post("/config/revert")
+def revert_transport_config() -> Dict[str, Any]:
+    """一键回退到「上一配置」（R2，PLAN §8.37）→ `{config, historyDepth}`。
+
+    没有可回退的历史 → 400（前端把 detail 显示在配置区，按钮由 status 的
+    `configHistoryDepth` 决定是否置灰，所以正常走不到这条）。
+    """
+    try:
+        return transport.revert_config()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/status")
 def get_transport_status() -> Dict[str, Any]:
     return transport.get_status()

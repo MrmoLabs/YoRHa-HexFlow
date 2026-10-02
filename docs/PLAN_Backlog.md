@@ -39,7 +39,7 @@
 | CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | **已提交 ✅ 3a `e63d76f`（代码+文档）/ `438f3af`（db 同步）、3b `c4b1f7f`（代码+文档，零 DDL）、3c `fbad083`（代码+文档）/ `17c6830`（db 同步）、3d `77dd389`（代码+文档）/ `bb7a0ba`（db 同步），2026-10-01 —— CP3 四个子批全数完成**。硬前置 CP2 ✅；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**。**3a 含 DDL**（`frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈）→ yorha.db 单独同步提交；**3a 提前并入了原属 3b 的 `dispatch` `wrap.recipe_id` 接线**（加工页预览/TRANSMIT/事务三路须同字节，缺接线则预览帧与出线帧不同）。3a 终态：BE 466/466（基线 426 + 40）、FE 920/920（63 文件，基线 915 + 5）、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、**真路由冒烟 25 项 PASS**；明细见 §8.21。**3b 终态**：**纯前端批、零 DDL**（未改 `models.py`/`database.py`，`yorha.db` 未随本批提交）—— FE **924/924（63 文件，基线 920 + 4）**、既有「属性面板四分区 select = 3」用例**零改全绿**（未建配方时编辑器不占 select）、BE 466/466、`npx vite build` EXIT=0、yorha-ui 校验器 3 文件 0 违规、**真 curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；明细见 §8.22。**3c 终态（2026-10-01）**：**含 DDL** —— `sequence_steps` 新增 `wrap JSON` 单列自愈（`database.ensure_sequence_step_columns`，镜像 3a `ensure_recipe_columns` 先例）→ yorha.db **单独同步提交**；BE **496/496（基线 466 + 30）**、FE **932/932（63 文件，基线 924 + 8）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**真路由冒烟 30 项 ALL PASS** + **真浏览器 UI 验证 6 项通过**；明细见 §8.23。**3d 终态（2026-10-01）**：**含 DDL** —— **3 列仅新增**<br>（`response_specs.stage` / `response_specs.definition_hash` /<br>`protocol_bindings.definition_hash`，`ensure_response_spec_columns` 新建 +<br>`ensure_binding_columns` 扩列自愈，lifespan 接线）→ yorha.db 沿先例<br>**手工只跑 3 条 ALTER 后单独同步提交**；BE **537/537（基线 496 + 41）**、<br>FE **944/944（63 文件，基线 932 + 12）**、`npx vite build` EXIT=0、yorha-ui<br>校验器 8 文件 0 违规、**真路由冒烟 43 项 ALL PASS**；明细见 §8.24。**§9.7 人工验证收口（2026-10-02）**：3a①②③ + 3b①②③ + 编排页「洞位填装 → 封装试发」**8 项真浏览器 + `/dispatch/history` 对账复跑全过**（含 400 逐槽拦截与「未选配方 = 建配方前基线 28B 逐字节相同」），三处文档（§9.7 / `pageStatus.json` / HANDOVER 35·36 待办①）口径已统一，明细 §8.27 |
 | CP4 | Core Pipeline 批次四（治理）：**4a** 关系数据导入导出（`bindings` + `response_specs` 并入 DataHub ZIP `relations.json` + `POST /datahub/import/relations`）/ **4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 回执」+ D9/D10 划界落 README/PAGE_STATUS / **4c** D8 校验表全量核对（逐行销项，纯文档）（明细 `DESIGN_CorePipeline.md` §7 批次四） | 🔄 **4a 已提交 ✅ `54620ab`（代码+文档，零 DDL），2026-10-02**：导出 ZIP 增 `relations.json`（`manifest` 增 `relations` 计数、`/status` 增 `protocolBindings`/`responseSpecs` 两行计数）+ 回灌端点按 `id` upsert、逐行报告（父缺失 → `skipped` 带 reason、槽悬空 → 置 NULL + warning、默认唯一冲突清旧行、`spec` 过 `normalize_spec` / `stage` 重算镜像 / 出处原样回填）、**部分成功即部分落库不整批回滚**；前端 DataHub 增「关系数据」面板（选文件 → 解析校验 → 确认弹窗 → 回显 新增/更新/跳过/警告 计数 + 刷新）。终态 BE **549/549**（基线 537 + 12）、FE **948/948**（63 文件，基线 944 + 4）、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**；明细见 §8.25。**4b+4c 已提交 ✅ `03b25d3`（代码+文档，零 DDL），2026-10-02**：**4b** 绑定矩阵只读面板（`utils/bindingMatrix.js` 纯函数 + DataHub 页六列表 + 摘要八项计数；孤儿不静默 —— 协议已删 / 槽悬空 / `stale===true` 琥珀标出；三读与状态面板同拍、单读失败互不拖垮）+ D9/D10 划界落 `README.md` §6 Scope Boundaries 与 `pageStatus.json` 四页条目（`PAGE_STATUS.md` 再生）；**4c** 全量核对新增 `DESIGN_CorePipeline.md` §6.3 销项表 —— 8 行**全「已有」、0 待补**，§6.2 槽节点行复核为批次二已落地（`dangling_slots_cleared`）→ **本批零后端改动**（BE 用例数持平），`DESIGN_Decisions.md` D8/D9/D10 三表行 + 三处实施注（D9-B/D10-B 重开条件已具备**仍取 A**）。终态 BE **549/549**（持平）、FE **958/958（64 文件，基线 948 + 10）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**人工验证 3 项通过**；明细见 §8.26。**批次四三子批（4a/4b/4c）全数完成** |
 | C 已拍 | **5 项拍板已收齐**（§8.36 拍板结果表：C-1 自动选指令路由 / C-2 响应解码为字段 / C-3 全量项目包迁移 / C-4 应答带转义 / C-5 三项暂缓；另含 R6 方案） | ✅ **2026-10-02 全部拍定**：C-1=**A 不立项** / C-2=**C** / C-3=**C** / C-4=**确认接受** / C-5=**①② 触发式、③ 不做** / R6=**13 表加 `deleted_at`** → 编入 **R7–R10** |
-| R1–R10 | **B2 六项功能缺口 + 拍板选中项排期**（导入 pre-import 快照 / 传输配置上一配置回退 / ESLint 存量 / 编排页绑定拖拽 / float64 双端 / 软删除回收站 + C-3 补域 2 批 + C-2 解码 2 批）—— 顺序 = 先安全网 → 清欠账 → 体验 → 正确性 → 最后动 DDL | 🔄 **R1 ✅ 已完成（§8.38，2026-10-02）**，余 R2–R10 未开始（§8.37；R1–R6 = 7–8 批 + R7–R10 = 4 批 → 合计 **11–12 批**，R6/R10 含 DDL 仅新增列） |
+| R1–R10 | **B2 六项功能缺口 + 拍板选中项排期**（导入 pre-import 快照 / 传输配置上一配置回退 / ESLint 存量 / 编排页绑定拖拽 / float64 双端 / 软删除回收站 + C-3 补域 2 批 + C-2 解码 2 批）—— 顺序 = 先安全网 → 清欠账 → 体验 → 正确性 → 最后动 DDL | 🔄 **R1 ✅ §8.38 / R2 ✅ §8.39 已完成（2026-10-02）**，余 R3–R10 未开始（**R4 已拍**：拖完只改展示序、点保存按钮才改持久序；§8.37；R1–R6 = 7–8 批 + R7–R10 = 4 批 → 合计 **11–12 批**，R6/R10 含 DDL 仅新增列） |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -2550,8 +2550,9 @@ DDL 三列落真库、无链 400 / 不存在 404、三层协议 + 配方挂默�
 - **缺口 5（已修）：持久化失败被 `except: pass` 吞掉** —— 配置内存生效但没落库，
   重启回默认且无人知晓。现在仍「尽力而为不回滚」（语义不变），但记一条 `error` 事件
   「配置持久化失败（重启后可能回默认）：…」，`GET /transport/status` 可见。
-- 不改（backlog）：无「上一配置」一键回退；config 期不做预连（连接失败在**发送期**以
-  502 + `stage=transport` 诊断暴露，§8.32 已覆盖）。
+- 不改（backlog，2026-10-02）：~~无「上一配置」一键回退~~ → **已由 §8.39（R2）补上**；
+  config 期不做预连（连接失败在**发送期**以 502 + `stage=transport` 诊断暴露，§8.32
+  已覆盖）。
 
 **④ 序列停止**
 - 已有护栏：协作式停止（分片睡眠逐片查停止位）、剩余步补 `SKIPPED`、停止端点恒 200
@@ -2620,8 +2621,10 @@ hash + 本批）。
      `pre-import-*` 打 `[快照]` 徽标）；
   6. 删除类操作**无软删除 / 回收站**（引用检查 + 前端确认齐全，误删只能靠 DataHub
      备份回退）；
-  7. 传输配置**无「上一配置」一键回退**（改错手动改回；持久化失败已可从
-     `GET /transport/status` 的 error 事件看到，§8.33 批修）；
+  7. ~~传输配置**无「上一配置」一键回退**（改错手动改回；持久化失败已可从
+     `GET /transport/status` 的 error 事件看到，§8.33 批修）~~ → **✅ 已由 §8.39
+     （R2）收口**（2026-10-02：进程内回退栈 + `POST /transport/config/revert` +
+     通讯调试页 REVERT 按钮 + `status.configHistoryDepth` 置灰）；
   8. ~~ESLint **存量 1 error 2 warnings**（HEAD 存量，各批不计入验收）~~ → **数字过期，
      2026-10-02 复测纠正**：当前 HEAD 全仓 `npm run lint` = **60 problems（42 errors /
      18 warnings）、26 文件** —— `no-unused-vars` 23 / `react-hooks/exhaustive-deps` 17 /
@@ -2962,9 +2965,9 @@ R9–R10（C-2，2 批）—— 明细与追加理由见 §8.37。
 | 批 | 缺口（§8.34 B2 编号） | 层 | 量级 | DDL | 关键纪律 / 依赖 |
 |---|---|---|---|---|---|
 | ~~**R1**~~ ✅ | 5 · 数据导入无 **pre-import 自动快照** → **已落地（§8.38）** | BE | 小（1 批） | 否 | ✅ **2026-10-02 完成**：镜像 `pre-restore` 先例，新增 `safety_snapshot()` 收口「先快照、失败即中止」；顺序 = 校验 → 快照 → 回灌（**400 不落垃圾快照**、快照失败 500 且一行未写）；响应加 `preImportSnapshot`（只做加法）；`pre-import-*` 与 `pre-restore-*` 同打 `[快照]` 徽标。**与 §8.36 C-3 选 C 的前置是同一件事** → R7/R8 可直接复用 |
-| **R2** | 7 · 传输配置无**上一配置回退** | BE+FE | 小（1 批） | 否 | 复用 `transport_store` 存取钩子；保留最近 N 版 + 回退端点 + 通讯调试页按钮；口径对齐 §8.33 的 `transportConfigRestored` |
+| **R2** | 7 · 传输配置无**上一配置回退** → **已落地（§8.39）** | BE+FE | 小（1 批） | 否 | ✅ **2026-10-02 完成**：`transport.set_config` 每次真变更压栈（有界 20）+ `revert_config()` 弹栈 + `POST /transport/config/revert`（无历史 → 400）+ `status.configHistoryDepth`（0 → 按钮置灰）+ 通讯调试页 REVERT 按钮；生效语义与 APPLY 一致（断连 + 落库 + 留痕），**回退本身不入栈**（可连退多版、退空即止），**启动装载不入栈**（`record_history=False`，否则一开机点回退就被重置回默认）；零 DDL → 栈重启即空 |
 | **R3** | 8 · **ESLint 存量**清理 | FE | 中（1 批，**60 problems / 26 文件**） | 否 | **先纠正 §8.34 的失实数字**（原文「1 error 2 warnings」，实测 `npm run lint` = **60 problems（42 errors / 18 warnings）**，见下方分布）；纪律 = **只删未用变量 / 加带理由的 disable，不改行为**；`no-control-regex` 是**有意的**（控字符校验）→ 注释 disable；`rules-of-hooks` 1 条**需人工看**（可能是真 bug）。**验收自本批起加 `npm run lint` EXIT=0** |
-| **R4** | 3 · 编排页**绑定拖拽排序** | FE | 中（1 批） | 否 | 现状 = 上移/下移按钮 + `slot_order` 洞位下拉回写**已落地**，只缺拖拽手势；**先拍「拖完改展示序还是持久序」**（建议 = 拖完调同一个 PUT，语义与现有下拉一致，**零 BE 改动**） |
+| **R4** | 3 · 编排页**绑定拖拽排序** | FE | 中（1 批） | 否 | ✅ **已拍（2026-10-02，用户原话）**：**拖完只改展示序，点保存按钮才改持久序** —— 即拖拽 = 本地草稿态，「保存」时调**同一个** PUT 回写 `slot_order`（与现有下拉回写语义一致，**零 BE 改动**）；未保存切换协议/刷新要有丢弃提示（与协议页草稿口径对齐）。现状 = 上移/下移按钮 + `slot_order` 洞位下拉回写**已落地**，只缺拖拽手势 |
 | **R5** | 4 · **float64 编码**双端不一致 | BE+FE+向量 | 中（1–2 批） | 否 | 现状 = N1 摘静默 → `FLOAT64_UNSUPPORTED` 提醒、G7「提醒而非改模板」；真正修复 = `formula.js` + BE 编解码 + **`vectors/float_ieee.json` 扩 float64 组（双端同一期望）** + **`response_match` 解码侧同步**（否则能发不能判）；**动编码器 → 必须证明缺省逐字节不变** |
 | **R6** | 6 · **软删除 / 回收站** | BE+FE | 大（2 批：DDL + FE） | **是（仅新增列/表）** | **先拍「列 vs 表」**：① 13 张表统一加 `deleted_at`（**仅新增列，合 §0**，读端点过滤）—— 省、但每张表都要动；② 新表 `trash_bin(id, entity_type, entity_id, payload_json, deleted_at, purged_at)` —— 集中、但写路径要双写。引用检查与前端确认**沿用现成**，DataHub 备份仍是最终兜底 |
 
@@ -3061,6 +3064,77 @@ R1 的快照函数。**排期合计 R1–R10 = 11–12 批**。
 口径）—— 该前缀下当前只有 `relations` 一个端点。**指令页 / 协议页的逐条 JSON 导入走
 `POST /instructions/` 等端点，不在本批**：它们是逐条 create + 唯一冲突跳过，语义与
 「整包回灌」不同；需要同等快照时另立批次。
+
+### 8.39 R2 · 传输配置「上一配置」一键回退（进程内回退栈 · 零 DDL）
+
+**批次**：2026-10-02 · **零 DDL**（不动 `models.py` / `database.py`，`transport_settings`
+单行表结构不变）；未碰 `processor.py` / `graph.py` / `Blueprint.jsx`；`/dispatch` 缺省
+口径不变；**BE + FE**。
+
+**背景**：§8.33「不改 backlog」/ §8.34 B2-7 → §8.37 **R2** —— 改错配置只能手动改回来。
+§8.33 修好的「持久化失败留痕」是**事后**从 error 事件里看见的，缺一个**当场**回退的动作。
+
+**实现（3 个文件 + 1 个 FE 页）**
+
+1. **`backend/core/transport.py` —— 回退栈本体**
+   - `_config_history = deque(maxlen=_MAX_CONFIG_HISTORY)`（**20**）：`set_config` 里
+     配置**真的变了**时把被替换掉的旧版本压入；新增 `record_history` 参数（缺省 `True`，
+     只做加法）。
+   - `revert_config()`：**弹栈** → `validate_config` → 断开真实连接 → 持久化 →
+     `_record_event("config", "已回退到上一配置")`；返回 `{config, historyDepth}`；
+     栈空 → `ValueError("没有可回退的上一配置")`。
+   - `get_config_history_depth()`；`get_status()` 新增 **`configHistoryDepth`**（只做
+     加法）；`reset()` 一并清栈（否则上一轮测试留下的栈让 reset 后**还回得去**）。
+   - `_persist_best_effort(config)` 从 `set_config` 里**抽出**（原为内联 try/except），
+     `set_config` / `revert_config` 共用 —— 否则回退路径会把「失败仍生效但要留痕」那段
+     再抄一遍，将来改留痕文案就漏一处。
+
+2. **两条关键语义**（写在 docstring 里，属于一改就错的那种）：
+   - **回退本身不入栈** —— 否则退完一步立刻又能「回退回退」振荡回去，栈永远退不到空；
+   - **启动装载不入栈**（`transport_store.restore_transport_config` 传
+     `record_history=False`）—— 否则一开机栈里就躺一份**默认配置**，用户什么都没改点
+     回退会被莫名重置回默认。档案激活属用户动作，**照常入栈**。
+
+3. **`backend/routers/transport.py`**：`POST /transport/config/revert` →
+   `{config, historyDepth}`；`ValueError` → **400**（前端按钮本就由 depth 置灰，正常
+   走不到这条）。
+
+4. **`frontend/src/pages/Terminal.jsx`**：通讯配置区新增 `回退上一配置 (REVERT)`，
+   `disabled = !status?.configHistoryDepth`（0 → 置灰，免得点了必 400 白等一次往返）；
+   成功后拿 `result.config` 回填表单（**与 APPLY 同回填口径**）+ `refreshStatus()` +
+   `refreshProfiles()`（配置变更会清激活指针）。`api/transport.js` 新
+   `revertTransportConfig` + barrel 导出。
+
+**测试**
+
+| 层 | 用例 | 钉住 |
+|---|---|---|
+| BE | `test_change_then_revert_restores_previous` | 改了才入栈，回退回到**变更前**那一版 |
+| BE | `test_revert_without_history_is_400` | 栈空 → 400 + 精确 detail 文案 |
+| BE | `test_revert_is_a_stack_and_drains_to_400` | 连退三版 A→B→C 回 B 再回 A，**退空即止** |
+| BE | `test_no_op_change_does_not_record_history` | `set_config({})` 与重复同值 → 不入栈 |
+| BE | `test_history_is_bounded_at_twenty` | 30 次变更 → depth 20，**最老一版被挤掉** |
+| BE | `test_revert_persists_and_records_event` | 回退也落库（否则重启回到改错那版）+ 留 `config` 事件 |
+| BE | `test_persist_failure_on_revert_still_applies_but_is_recorded` | 钩子炸了仍生效，但必须留痕 |
+| BE | `test_startup_restore_does_not_record_history` | **端到端走 `restore_transport_config`**：装载生效不入栈 → 栈空 400 → 真改一次才有得退 |
+| FE | 回退成功 / 无可回退置灰 / 后端 400 detail 展示 | 按钮可用性、回填、错误可见 |
+
+`test_transport.py::test_status_shape_and_loopback_always_connected` 的**精确键集**
+断言加入 `configHistoryDepth` —— 这是全仓唯一一处 `get_status()` 形状断言，改它是本批的
+**主动形变**（有意加字段），不是漏改；同用例补 `depth == 0`。
+
+**验收**：BE **644/644**（基线 636 + 8）、FE **976/976（66 文件）**（基线 973 + 3）、
+`npx vite build` EXIT=0、yorha-ui 校验器 `Terminal.jsx` **0 违规**；零 DDL → 无
+`chore(db)` 提交。
+
+**边界（写清免得以后误读）**：回退栈是**进程内**的 —— §8.37 R2 定为零 DDL，故
+**重启即空**；要跨重启回退就得给 `transport_settings` 加一列，那属于 R6 那档的 DDL 批，
+本批不碰。
+
+**文档同步（同批）**：`pageStatus.json` 通讯调试页「上一配置一键回退」+ `PAGE_STATUS.md`
+再生、本节 §8.39、§8.37 **R2 行标已办** + **R4 行记录拍板**（用户原话：拖完只改展示序、
+点保存按钮才改持久序）、§1 `R1–R10` 行状态、§8.34 B2-7 标已办、§8.33「不改 backlog」
+项销号、`PROJECT_HANDOVER.md` 条目 48。
 
 ## 9. 保留勿动（非任务，勿清理）
 
