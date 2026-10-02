@@ -36,6 +36,13 @@ async def lifespan(app: FastAPI):
     from backend.db.seed import seed_sample_instructions, seed_sample_protocols
     from backend.routers.operator import seed_operator_templates
 
+    # DB 升级机制（PLAN §8.30）：先判「全新库 / 既有库」——create_all 会把全新库
+    # 从无到有建出，此时无需快照；既有库下面 apply 任何迁移前必须先备份。
+    from pathlib import Path as _Path
+
+    _db_file = engine.url.database
+    _fresh_db = not (_db_file and _Path(_db_file).is_file())
+
     Base.metadata.create_all(bind=engine)
     # 批次五: create_all 不给既有表补列 → protocols 缺 version 列先自愈
     # （幂等；新库已带列则 no-op），种子/路由再进场。
@@ -48,6 +55,22 @@ async def lifespan(app: FastAPI):
     ensure_sequence_step_columns(engine)
     # CP3 3d: response_specs.stage + definition_hash 双列自愈（同上口径）。
     ensure_response_spec_columns(engine)
+    # DB 升级机制收口：ensure_* 只补列不记版本 → 这里按 schema_migrations 版本表
+    # 顺序升级（既有库先整库快照、单事务 apply+verify、失败整体回滚不记版本），
+    # 收尾 PRAGMA integrity_check 终检。幂等：已到目标版本则只读态校验。
+    # 明细见 backend/db/migrate.py 与 PLAN §8.30。
+    from backend.db.migrate import run_pending_migrations as _run_migrations
+
+    _migration_report = _run_migrations(engine, do_backup=not _fresh_db)
+    if _migration_report["applied"]:
+        import logging as _logging
+
+        _logging.getLogger("yorha.migrate").info(
+            "schema upgraded: %s (backup=%s, integrity=%s)",
+            _migration_report["applied"],
+            _migration_report["backup"],
+            _migration_report["integrity"],
+        )
     db = SessionLocal()
     try:
         seed_operator_templates(db)

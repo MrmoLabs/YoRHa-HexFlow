@@ -2392,6 +2392,50 @@ DDL 三列落真库、无链 400 / 不存在 404、三层协议 + 配方挂默�
 - **终态**：BE **554/554**（基线 549 + 5）、FE **963/963（65 文件，基线 958 + 5）**、
   `npx vite build` EXIT=0、yorha-ui 校验器 0 违规；**零 DDL** → 无 db 提交。
 
+### 8.30 SQLite 轻量版本化升级机制（DB 升级机制 · 无 Alembic）
+
+**诉求**：表越来越多，单靠 lifespan 里 `create_all`（**只建缺失的表、不给既有表补列**）
++ 手写 `database.ensure_*` 补列自愈 —— 每次加列都要有人记得写、还要兼容旧库，且
+`backend/db/migrations/README.md` 直说「没有迁移框架」，**没有可查的版本号、没有升级前
+备份、没有升级结果检查**。本节补一个轻量版本化闭环，**不引入 Alembic**。
+
+- **版本表** `schema_migrations(version PK, name, applied_at)`：在 `migrate.py` 里裸 SQL
+  `CREATE TABLE IF NOT EXISTS` 建，**不碰 `models.py`**（§0「仅新增表/列」之外的零改动）。
+- **顺序注册表** `backend/db/migrate.py::REGISTRY`：`Migration(version, name, apply, verify)`。
+  版本号必须从 1 起**连续**升序、名字唯一（断号/重号/重名/空表 → `MigrationError`，
+  因为断号意味着中间那条永远不会跑）。当前一条：`0001_baseline`（无 DDL，由 `verify`
+  背书「models 全表在位 + 五处 `ensure_*` 自愈列在位」—— 顺带把历史自愈层做一次结果检查）。
+- **升级前备份**：既有库（启动前文件已存在）在 apply 任何迁移前整库快照到
+  `backend/db/backups/pre-migration-v{a}-to-v{b}-{ts}.bak`（目录已 gitignore；
+  快照前 `PRAGMA wal_checkpoint(TRUNCATE)`；同秒重名补序号）。全新库（`create_all`
+  刚建出）无存量可毁 → 不备份（`do_backup=not fresh`）。
+- **升级结果检查**：每条迁移的 `apply`、`verify`、版本写入是**同一事务**，`verify` 不过
+  → 整条回滚、版本不前进；全部执行完再跑 `PRAGMA integrity_check` 终检 + 对**本次**
+  执行的 `verify` 复跑一遍（历史检查不随每次启动重放，避免未来 schema 合法演进反而卡启动）。
+- **失败可恢复**：`MigrationError` 消息带「已整体回滚 / 库仍为 vX / 升级前快照路径」；
+  启动随之失败，**不带半套 schema 服务**。
+- **关键技术点 —— 事务化 DDL**：pysqlite 默认「非 DML 语句前隐式 COMMIT」→
+  `CREATE TABLE` 落在事务之外，`rollback()` 撤不掉它（实测：默认引擎失败后 `probe` 表
+  残留）。用 SQLAlchemy 官方 recipe（连接时 `isolation_level=None` + `BEGIN` 事件显式
+  `BEGIN`）建**迁移专用引擎**（`NullPool`，跑完即 dispose），只作用于迁移连接 ——
+  **应用侧主 engine 语义一行不动**（实测：专用引擎失败后 `probe` 表被干净撤掉，
+  正常 DML 提交与 `integrity_check` 均正常）。
+- **职责边界**：表结构权威仍是 `models.py`；既有 `ensure_*` 继续负责存量库补列
+  （幂等、先于本模块）；本模块只管**版本记录 / 顺序升级 / 备份 / 结果校验**。
+  新库 = 建表 + 记基线；旧库 = 备份 + 记基线；下次字段变更 = 追加一条 `Migration`。
+- **调用点**：`main.py` lifespan（`create_all` + 五个 `ensure_*` 之后，升级动作打
+  `yorha.migrate` INFO 日志）；手动 `python -m backend.db.migrate status|up`。
+- **测试**：新 `backend/tests/test_migrate.py` **18 例**：新库记基线且不备份 / 既有库
+  先备份且用独立 `sqlite3` 打开快照读回升级前数据 / 二次运行幂等（不再备份、不再记版本）/
+  `apply` 抛错与 `verify` 不过都整体回滚 + 版本不前进 + DDL 撤销 / 错误消息带快照路径、
+  新库失败不误报快照 / 基线抓出「缺表」「缺自愈列」两种坏 schema / 注册表纪律四例 /
+  `status` 前后态 / 完整性失败必报错（打桩喂坏结果，真写坏文件会在更早读阶段抛）/
+  备份目录已 gitignore。**全部跑临时库，不碰 `yorha.db`**。
+- **终态**：BE **572/572**（基线 549 + 向量验收 5 + 迁移 18）、FE **963/963** 不变
+  （本批零前端改动）、`npx vite build` EXIT=0；**含 DDL → `chore(db)` 单独同步提交**
+  （版本表 + 基线行）。`migrations/README.md` 同步改写（原「没有迁移框架」→ 现机制 +
+  新增表/列固定动作）。
+
 ## 9. 保留勿动（非任务，勿清理）
 
 - `backend/core/processor.py` / `graph.py` 未接线（Phase-2 遗留，保留勿删，
