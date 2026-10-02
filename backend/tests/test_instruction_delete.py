@@ -8,6 +8,10 @@
   - **日志** dispatch_logs → 只读保留
 此前 `delete_instruction` 只 `db.delete(db_inst)`，四表全留脏行（逻辑外键无 FK，
 不报错只静默错）。
+
+R6（PLAN §8.43）起「级联删」= **级联软删**：行留库、打同一个 `deleted_at`
+时间戳（恢复时据此一并捞回），读侧 `alive()` 过滤；回执形状与计数键不变。
+三分处置的**数据性质**结论不变 —— 活配置跟着走、冻结快照留、日志只读留。
 """
 
 import tempfile
@@ -119,11 +123,20 @@ class InstructionDeleteTest(unittest.TestCase):
         self.assertEqual(result["deleted_response_specs"], 1)
         self.assertEqual(result["orphaned_sequence_steps"], 1)
 
-        # 活配置级联删：i-1 的绑定与规格没了；i-2 的原样保留（同表不同宿主）
-        self.assertEqual(
-            [b.id for b in self._rows(ProtocolBinding)], ["b-2"]
-        )
-        self.assertEqual([r.id for r in self._rows(ResponseSpec)], ["rs-2"])
+        # R6（§8.43）：活配置**级联软删** —— 行留库、与宿主共用同一时间戳；
+        # i-2 的原样保留（同表不同宿主）。读侧 alive() 过滤 → 列表里只看得到 b-2。
+        marks = {b.id: b.deleted_at for b in self._rows(ProtocolBinding)}
+        self.assertEqual(set(marks), {"b-1", "b-2"})
+        self.assertIsNotNone(marks["b-1"])
+        self.assertIsNone(marks["b-2"])
+        specs = {r.id: r.deleted_at for r in self._rows(ResponseSpec)}
+        self.assertEqual(set(specs), {"rs-1", "rs-2"})
+        self.assertIsNotNone(specs["rs-1"])
+        self.assertIsNone(specs["rs-2"])
+        # 级联共用同一时间戳 = 恢复时把子行一并捞回的判据
+        host = self.db.query(Instruction).filter(Instruction.id == "i-1").first()
+        self.assertEqual(host.deleted_at, marks["b-1"])
+        self.assertEqual(host.deleted_at, specs["rs-1"])
 
         # 冻结快照保留（不改写已保存序列的步骤构成）
         steps = self._rows(SequenceStep)
@@ -135,6 +148,11 @@ class InstructionDeleteTest(unittest.TestCase):
         logs = self._rows(DispatchLog)
         self.assertEqual(len(logs), 1)
         self.assertEqual(logs[0].instruction_id, "i-1")
+
+        # 读侧：宿主已入回收站 → 单查 404（同改前硬删后的 404 口径）
+        with self.assertRaises(HTTPException) as ctx:
+            get_instruction_references("i-1", db=self.db)
+        self.assertEqual(ctx.exception.status_code, 404)
 
     def test_delete_unreferenced_returns_zero_counts(self):
         self.db.add(Instruction(id="i-3", device_code="01", code="C3", name="孤指令"))

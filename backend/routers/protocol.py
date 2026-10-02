@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 # 测试导入 protocol 路由无副作用）。
 from backend.db.database import get_db
 from backend.db.models import ProtocolBinding, ProtocolTemplate
+from backend.db.soft_delete import alive, mark_deleted, mark_related, now_iso
 from backend.schemas.protocol_api import ProtocolCreate, ProtocolResponse, ProtocolUpdate
 
 router = APIRouter(
@@ -164,12 +165,21 @@ def _validate_slot_contracts(children) -> None:
 
 @router.get("/", response_model=List[ProtocolResponse])
 def get_protocols(db: Session = Depends(get_db)):
-    return db.query(ProtocolTemplate).order_by(ProtocolTemplate.label.asc()).all()
+    # R6: 回收站行不进列表（alive = deleted_at IS NULL）
+    return (
+        alive(db.query(ProtocolTemplate), ProtocolTemplate)
+        .order_by(ProtocolTemplate.label.asc())
+        .all()
+    )
 
 
 @router.get("/{protocol_id}", response_model=ProtocolResponse)
 def get_protocol(protocol_id: str, db: Session = Depends(get_db)):
-    protocol = db.query(ProtocolTemplate).filter(ProtocolTemplate.id == protocol_id).first()
+    protocol = (
+        alive(db.query(ProtocolTemplate), ProtocolTemplate)
+        .filter(ProtocolTemplate.id == protocol_id)
+        .first()
+    )
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
     return protocol
@@ -199,7 +209,11 @@ def create_protocol(payload: ProtocolCreate, db: Session = Depends(get_db)):
 
 @router.put("/{protocol_id}", response_model=ProtocolResponse)
 def update_protocol(protocol_id: str, payload: ProtocolUpdate, db: Session = Depends(get_db)):
-    protocol = db.query(ProtocolTemplate).filter(ProtocolTemplate.id == protocol_id).first()
+    protocol = (
+        alive(db.query(ProtocolTemplate), ProtocolTemplate)
+        .filter(ProtocolTemplate.id == protocol_id)
+        .first()
+    )
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
@@ -252,18 +266,27 @@ def update_protocol(protocol_id: str, payload: ProtocolUpdate, db: Session = Dep
 
 @router.delete("/{protocol_id}")
 def delete_protocol(protocol_id: str, db: Session = Depends(get_db)):
-    protocol = db.query(ProtocolTemplate).filter(ProtocolTemplate.id == protocol_id).first()
+    # R6（§8.43）：删除 = 打标记进回收站（读侧 alive 过滤，二次删 404 不变）
+    protocol = (
+        alive(db.query(ProtocolTemplate), ProtocolTemplate)
+        .filter(ProtocolTemplate.id == protocol_id)
+        .first()
+    )
     if not protocol:
         raise HTTPException(status_code=404, detail="Protocol not found")
 
     # 批次一 P0-1：级联清理引用该协议的编排绑定 —— protocol_bindings 是
     # 逻辑外键（models 无 FK/ON DELETE），不清则编排页 protocols.find 落空、
-    # DB 残留脏行。同事务一并删除，返回计数供前端提示"连带清理 N 条"。
-    deleted_bindings = (
-        db.query(ProtocolBinding)
-        .filter(ProtocolBinding.protocol_id == protocol_id)
-        .delete(synchronize_session=False)
+    # DB 残留脏行。R6 起改为**级联软删**：绑定与协议**共用同一时间戳**，恢复
+    # 时按同戳把绑定一并捞回（db/soft_delete.py）；回执计数口径不变，前端
+    # "连带清理 N 条" 提示照旧。
+    ts = now_iso()
+    deleted_bindings = mark_related(
+        db.query(ProtocolBinding),
+        ProtocolBinding,
+        [ProtocolBinding.protocol_id == protocol_id],
+        ts,
     )
-    db.delete(protocol)
+    mark_deleted(protocol, ts)
     db.commit()
     return {"status": "deleted", "id": protocol_id, "deleted_bindings": deleted_bindings}

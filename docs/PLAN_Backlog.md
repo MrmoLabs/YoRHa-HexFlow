@@ -39,7 +39,7 @@
 | CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | **已提交 ✅ 3a `e63d76f`（代码+文档）/ `438f3af`（db 同步）、3b `c4b1f7f`（代码+文档，零 DDL）、3c `fbad083`（代码+文档）/ `17c6830`（db 同步）、3d `77dd389`（代码+文档）/ `bb7a0ba`（db 同步），2026-10-01 —— CP3 四个子批全数完成**。硬前置 CP2 ✅；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**。**3a 含 DDL**（`frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈）→ yorha.db 单独同步提交；**3a 提前并入了原属 3b 的 `dispatch` `wrap.recipe_id` 接线**（加工页预览/TRANSMIT/事务三路须同字节，缺接线则预览帧与出线帧不同）。3a 终态：BE 466/466（基线 426 + 40）、FE 920/920（63 文件，基线 915 + 5）、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、**真路由冒烟 25 项 PASS**；明细见 §8.21。**3b 终态**：**纯前端批、零 DDL**（未改 `models.py`/`database.py`，`yorha.db` 未随本批提交）—— FE **924/924（63 文件，基线 920 + 4）**、既有「属性面板四分区 select = 3」用例**零改全绿**（未建配方时编辑器不占 select）、BE 466/466、`npx vite build` EXIT=0、yorha-ui 校验器 3 文件 0 违规、**真 curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；明细见 §8.22。**3c 终态（2026-10-01）**：**含 DDL** —— `sequence_steps` 新增 `wrap JSON` 单列自愈（`database.ensure_sequence_step_columns`，镜像 3a `ensure_recipe_columns` 先例）→ yorha.db **单独同步提交**；BE **496/496（基线 466 + 30）**、FE **932/932（63 文件，基线 924 + 8）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**真路由冒烟 30 项 ALL PASS** + **真浏览器 UI 验证 6 项通过**；明细见 §8.23。**3d 终态（2026-10-01）**：**含 DDL** —— **3 列仅新增**<br>（`response_specs.stage` / `response_specs.definition_hash` /<br>`protocol_bindings.definition_hash`，`ensure_response_spec_columns` 新建 +<br>`ensure_binding_columns` 扩列自愈，lifespan 接线）→ yorha.db 沿先例<br>**手工只跑 3 条 ALTER 后单独同步提交**；BE **537/537（基线 496 + 41）**、<br>FE **944/944（63 文件，基线 932 + 12）**、`npx vite build` EXIT=0、yorha-ui<br>校验器 8 文件 0 违规、**真路由冒烟 43 项 ALL PASS**；明细见 §8.24。**§9.7 人工验证收口（2026-10-02）**：3a①②③ + 3b①②③ + 编排页「洞位填装 → 封装试发」**8 项真浏览器 + `/dispatch/history` 对账复跑全过**（含 400 逐槽拦截与「未选配方 = 建配方前基线 28B 逐字节相同」），三处文档（§9.7 / `pageStatus.json` / HANDOVER 35·36 待办①）口径已统一，明细 §8.27 |
 | CP4 | Core Pipeline 批次四（治理）：**4a** 关系数据导入导出（`bindings` + `response_specs` 并入 DataHub ZIP `relations.json` + `POST /datahub/import/relations`）/ **4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 回执」+ D9/D10 划界落 README/PAGE_STATUS / **4c** D8 校验表全量核对（逐行销项，纯文档）（明细 `DESIGN_CorePipeline.md` §7 批次四） | 🔄 **4a 已提交 ✅ `54620ab`（代码+文档，零 DDL），2026-10-02**：导出 ZIP 增 `relations.json`（`manifest` 增 `relations` 计数、`/status` 增 `protocolBindings`/`responseSpecs` 两行计数）+ 回灌端点按 `id` upsert、逐行报告（父缺失 → `skipped` 带 reason、槽悬空 → 置 NULL + warning、默认唯一冲突清旧行、`spec` 过 `normalize_spec` / `stage` 重算镜像 / 出处原样回填）、**部分成功即部分落库不整批回滚**；前端 DataHub 增「关系数据」面板（选文件 → 解析校验 → 确认弹窗 → 回显 新增/更新/跳过/警告 计数 + 刷新）。终态 BE **549/549**（基线 537 + 12）、FE **948/948**（63 文件，基线 944 + 4）、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**；明细见 §8.25。**4b+4c 已提交 ✅ `03b25d3`（代码+文档，零 DDL），2026-10-02**：**4b** 绑定矩阵只读面板（`utils/bindingMatrix.js` 纯函数 + DataHub 页六列表 + 摘要八项计数；孤儿不静默 —— 协议已删 / 槽悬空 / `stale===true` 琥珀标出；三读与状态面板同拍、单读失败互不拖垮）+ D9/D10 划界落 `README.md` §6 Scope Boundaries 与 `pageStatus.json` 四页条目（`PAGE_STATUS.md` 再生）；**4c** 全量核对新增 `DESIGN_CorePipeline.md` §6.3 销项表 —— 8 行**全「已有」、0 待补**，§6.2 槽节点行复核为批次二已落地（`dangling_slots_cleared`）→ **本批零后端改动**（BE 用例数持平），`DESIGN_Decisions.md` D8/D9/D10 三表行 + 三处实施注（D9-B/D10-B 重开条件已具备**仍取 A**）。终态 BE **549/549**（持平）、FE **958/958（64 文件，基线 948 + 10）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**人工验证 3 项通过**；明细见 §8.26。**批次四三子批（4a/4b/4c）全数完成** |
 | C 已拍 | **5 项拍板已收齐**（§8.36 拍板结果表：C-1 自动选指令路由 / C-2 响应解码为字段 / C-3 全量项目包迁移 / C-4 应答带转义 / C-5 三项暂缓；另含 R6 方案） | ✅ **2026-10-02 全部拍定**：C-1=**A 不立项** / C-2=**C** / C-3=**C** / C-4=**确认接受** / C-5=**①② 触发式、③ 不做** / R6=**13 表加 `deleted_at`** → 编入 **R7–R10** |
-| R1–R10 | **B2 六项功能缺口 + 拍板选中项排期**（导入 pre-import 快照 / 传输配置上一配置回退 / ESLint 存量 / 编排页绑定拖拽 / float64 双端 / 软删除回收站 + C-3 补域 2 批 + C-2 解码 2 批）—— 顺序 = 先安全网 → 清欠账 → 体验 → 正确性 → 最后动 DDL | 🔄 **R1 ✅ §8.38 / R2 ✅ §8.39 / R3 ✅ §8.40 / R4 ✅ §8.41 / R5 ✅ §8.42 已完成（2026-10-02）**，余 R6–R10 未开始（**R4 ✅ 已按拍板落地**：拖完只改展示序、点保存按钮才改持久序；**R5 ✅ 已落地**：float64 双端 + 向量 `f64` 组、缺省 `f32` 逐字节不变（§8.42）；**自 R3 起 `npm run lint` EXIT=0 进验收门槛**；§8.37；R1–R6 = 7–8 批 + R7–R10 = 4 批 → 合计 **11–12 批**，R6/R10 含 DDL 仅新增列） |
+| R1–R10 | **B2 六项功能缺口 + 拍板选中项排期**（导入 pre-import 快照 / 传输配置上一配置回退 / ESLint 存量 / 编排页绑定拖拽 / float64 双端 / 软删除回收站 + C-3 补域 2 批 + C-2 解码 2 批）—— 顺序 = 先安全网 → 清欠账 → 体验 → 正确性 → 最后动 DDL | 🔄 **R1 ✅ §8.38 / R2 ✅ §8.39 / R3 ✅ §8.40 / R4 ✅ §8.41 / R5 ✅ §8.42 / R6-1 ✅ §8.43 已完成（2026-10-02）**，余 **R6-2 + R7–R10** 未开始（**R4 ✅ 已按拍板落地**：拖完只改展示序、点保存按钮才改持久序；**R5 ✅ 已落地**：float64 双端 + 向量 `f64` 组、缺省 `f32` 逐字节不变（§8.42）；**R6-1 ✅ 已落地**：13 表统一 `deleted_at`（仅新增列）+ 软删/恢复/彻底删除 + `/trash` 统一入口，R6-2 = FE 回收站 UI（§8.43）；**自 R3 起 `npm run lint` EXIT=0 进验收门槛**；§8.37；R1–R6 = 7–8 批 + R7–R10 = 4 批 → 合计 **11–12 批**，R6/R10 含 DDL 仅新增列） |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -2624,8 +2624,10 @@ hash + 本批）。
      `pre-restore` 快照、导入没有 —— 风险不对称，§8.33 登记）~~ → **✅ 已由 §8.38
      （R1）收口**（2026-10-02：`safety_snapshot()` + 响应 `preImportSnapshot` +
      `pre-import-*` 打 `[快照]` 徽标）；
-  6. 删除类操作**无软删除 / 回收站**（引用检查 + 前端确认齐全，误删只能靠 DataHub
-     备份回退）；
+  6. ~~删除类操作**无软删除 / 回收站**（引用检查 + 前端确认齐全，误删只能靠 DataHub
+     备份回退）~~ → **后端半已收口：R6-1（§8.43，2026-10-02）** —— 13 表统一加
+     `deleted_at`（仅新增列）、7 类 `DELETE` 改软删 + 恢复 / 彻底删除、新增 `GET /trash`
+     统一入口，误删**不用再靠 DataHub 备份回退**；**余 R6-2 = FE 回收站 UI**；
   7. ~~传输配置**无「上一配置」一键回退**（改错手动改回；持久化失败已可从
      `GET /transport/status` 的 error 事件看到，§8.33 批修）~~ → **✅ 已由 §8.39
      （R2）收口**（2026-10-02：进程内回退栈 + `POST /transport/config/revert` +
@@ -2974,7 +2976,7 @@ R9–R10（C-2，2 批）—— 明细与追加理由见 §8.37。
 | ~~**R3**~~ ✅ | 8 · **ESLint 存量**清理 → **已清零（§8.40）** | FE | 中（1 批，**60 problems / 26 文件**） | 否 | ✅ **2026-10-02 完成**：`npm run lint` **EXIT=0、0 problems / 0 文件**（60 → 0，涉 27 文件）。**纪律落地 = 只删未用变量 + 加带理由的 disable，不改行为**；过程中撞出 **2 处真问题并顺手修掉**：`ParamConfigForm` 的 **conditional hook**（`if (!template) return null` 写在 `useEffect` 之前 → op_code 切到无模板指令时**钩子数跳变**，已改成「无模板判断进 effect 体内 + 早退挪到钩子之后」）、`NieRDatePicker` 的 **先用后声明**（`initDate` 声明在 effect 之后，已重排）。`no-control-regex` = **有意的**控字符校验 → 注释 disable。**自本批起 `npm run lint` EXIT=0 进验收门槛** |
 | ~~**R4**~~ ✅ | 3 · 编排页**绑定拖拽排序** → **已落地（§8.41）** | FE | 中（1 批） | 否 | ✅ **2026-10-02 完成**：拍板口径 = **拖完只改展示序，点保存按钮才改持久序** —— 拖拽只在本地重写 `slot_order`（侧栏展示序按 (协议序, 洞号) 派生 → 立刻重排、填装预览跟着变），**零即时 PUT**；「保存更改 (SAVE)」才把**真变化的行**逐行落库，与洞位下拉**同一条持久化路径**，**零 BE 改动**。实现 = `utils/reorderBindings.js` 纯函数（拖拽/下拉共用，跨协议组直接忽略）+ `@dnd-kit/core` 把手（8px 起拖，只挂 listeners 不挂 attributes）+ `BindingRow` 抽组件（**钩子不进 `.map()`**）。**更正原行「现状 = 上移/下移按钮」**：实测**只有洞位下拉、无上下移按钮**；原行提的丢弃提示 —— 刷新**已有** `beforeunload` 拦截（`dirtyRef`）、协议切换**不丢稿**（脏行按行驻留），故**无需新增** |
 | ~~**R5**~~ ✅ | 4 · **float64 编码**双端不一致 → **已落地（§8.42）** | BE+FE+向量 | 中（1 批） | 否 | ✅ **2026-10-02 完成**：`byte_len=8` 双端真出 IEEE 754 float64 大端 —— BE `encode_float_ieee(value, byte_len=4)`（**缺省参 = 存量 f32 行为**）+ `>d`、`datahub.to_block` 分派 `byte_len in (4, 8)`；FE `getFieldBytes` 改 `byteLen ∈ {4, 8}` → `Float64Array`；`vectors/float_ieee.json` **分组 `f32`（22 行，一字节未改）/ `f64`（23 行，新）** —— `bcd_scaled.json` / `time_counter.json` 本就是「同语义多表」分组先例，同一解析口径只差位宽放同一文件；提醒 `FLOAT64_UNSUPPORTED` **收窄**为 `FLOAT_IEEE_WIDTH_UNSUPPORTED`（只报 4/8 以外）；`resolveRunnerKind` 章按位宽出 F32 / F64。**更正原行「`response_match` 解码侧同步（否则能发不能判）」—— 实测不成立**：`backend/core/response_match.py` 全文 **零值解码**（547 行只做 prefix / suffix / echo_header_bytes / length / checksum / unpack 六类**字节级**比对，`sent`/`received` 都是 `bytes`；全仓 grep `struct.unpack`、`'>f'`、`'>d'` 零命中）→ 判定天然与位宽无关，**`response_match` 零改动**；真缺口在**编译侧 `datahub.to_block`**（保持 zeros → 服务端编译/导出与 FE 两套帧），本批一并修。**缺省逐字节不变证明** = `f32` 22 例两端原样全绿 + `encode_float_ieee` 单参回归 + `test_default_arg_stays_f32` 显式断言 `f(v) == f(v, 4)` + 改前 BE 644 / FE 990 全量零改动全绿 |
-| **R6** | 6 · **软删除 / 回收站** | BE+FE | 大（2 批：DDL + FE） | **是（仅新增列/表）** | **先拍「列 vs 表」**：① 13 张表统一加 `deleted_at`（**仅新增列，合 §0**，读端点过滤）—— 省、但每张表都要动；② 新表 `trash_bin(id, entity_type, entity_id, payload_json, deleted_at, purged_at)` —— 集中、但写路径要双写。引用检查与前端确认**沿用现成**，DataHub 备份仍是最终兜底 |
+| **R6** 🔄 | 6 · **软删除 / 回收站** → **R6-1 已落地（§8.43）**，R6-2 FE 待办 | BE+FE | 大（2 批：DDL + FE） | **是（仅新增列）** | **拍板 = 13 表统一加 `deleted_at`（仅新增列，合 §0）+ 读端点过滤 + 回收站页，不做 `trash_bin` 新表（§8.36「R6 方案」行）。** ✅ **R6-1 2026-10-02 完成（§8.43）**：DDL 走**已有的版本化迁移** `Migration(2, "soft_delete_deleted_at")`（apply = 逐表 `PRAGMA` → 缺则 `ALTER ADD COLUMN`，新库 `create_all` 已带 → 只验不改；verify = 13 表每张都有列，缺一回滚；既有库升级前自动整库备份；启动接线零改动）；写侧收口在 `backend/db/soft_delete.py`（`mark_deleted` / `mark_related` / `restore_related` / `purge_related` / `alive` / `trashed`）—— **级联共用同一时间戳 = 恢复判据**（不加级联标记列，独立入站的子行戳不同 → 不被父行恢复顺带捞回）；7 类可回收的 `DELETE` 改软删且**回执形状与计数键逐字不变**，读端点 `alive()` 过滤 → **列表不出现 / 单查 404 / 二次删 404 与改前硬删后同口径**；新增 `GET /trash` + `POST /trash/{kind}/{id}/restore` + `DELETE /trash/{kind}/{id}`（**kind 白名单**、列表**隐藏被父行连带入站的子行**）；`datahub` 导出 / 状态计数 / 导入宿主校验三处读侧也过滤（否则下载包里会有刚删的行、或回灌出指向回收站行的活绑定）；`dispatch_logs` / `operator_templates` / `transport_settings` 只加列不改行为。**已知取舍（§8.43 四）**：软删行**继续占唯一键**（三条 inline UNIQUE 是 `sqlite_autoindex_*`、删不掉 → 同名重建 400「已存在」、彻底删除才释放）；`response_specs` **upsert 复活**（同 id、不撞键）；配方/档案指针**删除期解除、恢复不回填**（读侧按「无配方」降级、前端回退路径原样可用）。**待办 R6-2** = FE 回收站 UI + 各删除确认弹窗文案「不可撤销」改「移入回收站，可恢复」。测试 648 → **668（+20）** |
 
 **R3 实测分布**（`npm run lint`，HEAD 实测，用作排期依据）：`no-unused-vars` **23** /
 `react-hooks/exhaustive-deps` **17** / `no-useless-escape` 3 / `no-empty` 2 /
@@ -3362,6 +3364,123 @@ zeros。**同一份指令，本地试发与服务端编译/导出给出两种不
 `vectors/README.md`（表清单 16 表 + `[f64]` 组说明）、`docs/BUSINESS_SCENARIOS.md`
 （浮点 64 位行 / G7 行 / §8.14 注）、`PROJECT_HANDOVER.md` 条目 51 与 E1-4 已知缺口
 第 1 条、`test_operator_templates.py` 注释。
+
+### 8.43 R6-1 · 软删除 / 回收站 —— DDL + BE（13 表统一 `deleted_at`）
+
+（2026-10-02 · **第 6 批** · 拍板 = §8.36「R6 方案」行：**13 表统一加 `deleted_at`（仅新增列，
+合 §0）+ 读端点过滤 + 回收站页，不做 `trash_bin` 新表**。R6 拆两批：**本批 = DDL + BE**，
+R6-2 = FE 回收站 UI。`/dispatch` 缺省口径与 `processor.py` / `graph.py` / `Blueprint.jsx` 未碰）
+
+**一、DDL：只加 13 列，走已有的版本化迁移（§8.30），不另起 `ensure_*`**
+
+- `backend/db/models.py`：13 张表**每张末尾**加一列 `deleted_at = Column(String(40),
+  nullable=True)`（**仅新增列**，合 §0；模块顶加 R6 口径块注释）。名单不另抄 ——
+  `backend/db/migrate.py::soft_delete_tables()` 从 `Base.metadata` **派生**（SSOT：models 带
+  该列的表 = 需要迁移的表），verify 侧再钉死「恰好 13 张」。
+- 追加 `Migration(2, "soft_delete_deleted_at", apply, verify)`：
+  - **apply** = 逐表 `PRAGMA table_info` → 缺则 `ALTER TABLE ... ADD COLUMN deleted_at
+    VARCHAR(40)`；新库 `create_all` 已建全列 → 逐表跳过（`ALTER` 加已存在的列会直接报错），
+    等价 no-op；表尚不存在 → 跳过（交给 0001 baseline verify 报缺表）；
+  - **verify** = 13 表**每张**都有 `deleted_at`，缺一即 `MigrationError` → 整体回滚、版本不前进；
+  - 既有库升级前**自动整库备份**（`pre-migration-v1-to-v2-*.bak`），新库只记版本不备份。
+- 启动接线**零改动**：`main.py` lifespan 本来就跑 `run_pending_migrations(engine, ...)`；
+  恢复旧备份的自愈路径（`datahub._heal_schema_after_restore`）同理自动补齐。
+- `backend/db/migrations/schema.sql`（目录头已声明 NON-AUTHORITATIVE）本就不含 `wrap` /
+  `definition_hash`，早与权威脱钩 → **本批不同步**（权威始终是 `models.py`）。
+
+**二、写侧语义单点收口：`backend/db/soft_delete.py`**
+
+- `mark_deleted(row, ts)` —— 删除单行 = 打标记进回收站（不毁行），返回本次时间戳；
+- `mark_related(query, Model, criteria, ts)` —— 级联软删，**只标尚未入站的行**；
+- `restore_related(query, Model, criteria, ts)` —— 按「同父 + 同时间戳」把被连带的子行一并恢复；
+- `purge_related(query, Model, criteria)` —— 彻底删除的级联，按外键清引用者（**不看时间戳**，
+  不留孤儿行）；
+- `alive(query, Model)` / `trashed(query, Model)` —— 读侧 `deleted_at IS NULL` / `IS NOT NULL`。
+
+**「级联共用同一时间戳」是本批的关键设计**：拍板只要 `deleted_at` 一列 → **不额外加级联标记列**，
+恢复判据 = `(子表, 外键列, 父 id, 子行戳 == 父行戳)`。本次之前已独立入站的子行时间戳不同 →
+**不会**被父行恢复顺带捞回，也**不计入** `deleted_*` 回执计数（`mark_related` 用 `IS NULL`
+限定，天然成立）。
+
+**三、端点改动**
+
+- **7 类可回收** = protocol / instruction / binding / recipe / sequence / profile /
+  response_spec：
+  - `DELETE` 一律改软删，**响应体形状与计数键逐字不变** —— `deleted_bindings` /
+    `deleted_response_specs` / `orphaned_sequence_steps` / `cleared_instructions` / `204`；
+  - 读端点（列表 / 单查 / 更新 / 二次删 / 引用计数）一律 `alive()` 过滤 →
+    **「列表不出现、单查 404、二次删 404」与改前硬删后同口径**；
+  - 级联范围 = `protocol → protocol_bindings`、`instruction → protocol_bindings +
+    response_specs`。`sequence_steps` / `instruction_fields` **不打标记**（两者不独立可列，
+    跟着宿主在读侧一起隐藏），彻底删除时才由 ORM cascade / `children` 清掉。
+- **新增 `routers/trash.py`（`/trash`）** 统一回收站入口：
+  - `GET /trash` → `{items: [{kind, id, label, deleted_at}], count}`（**最近删的在前**）；
+  - `POST /trash/{kind}/{id}/restore` → `{status, kind, id, related}`（`related` = 级联恢复计数）；
+  - `DELETE /trash/{kind}/{id}` → `{status, kind, id, related}`（**彻底删除**）。
+  `kind` 是**白名单**（路径参数不接受任意表名 → 无注入面）；**列表隐藏「被父行连带入站」
+  的子行**（判据 = 子行宿主也在站里：恢复会一起回来，不该单独占一行；独立删的子行宿主
+  活着 → 正常显示）。
+- **读端点过滤还覆盖 `datahub`**：`GET /datahub/export/bundle`（指令 / 绑定 / 规格三处）、
+  `GET /datahub/status` 的四张表计数、`POST /datahub/import/relations` 的三处**宿主存在性
+  校验** —— 否则下载包里会出现「用户刚删掉的指令」，或回灌出一条指向回收站行的活绑定。
+  导出列子集本就没有 `deleted_at` → **回灌后一律是活行**。
+- **三张表只加列、不改行为**：`dispatch_logs`（清空日志 = 追加型审计数据，删除即不可恢复是
+  既有口径，且回收站会被海量日志行淹掉）、`operator_templates`（种子数据无删除入口）、
+  `transport_settings`（单行配置无删除入口）。
+
+**四、已知取舍（拍板「仅新增列、不做表重建」的直接后果）**
+
+1. **软删行继续占用唯一键** —— `sequences.name` / `device_profiles.label` /
+   `response_specs.instruction_id` 都是 inline UNIQUE（SQLite 落 `sqlite_autoindex_*`，
+   **索引删不掉**；拍板禁止表重建 → 没法改成部分唯一索引）。**后果**：回收站里还有同名
+   序列/档案时，新建或改名会 400「已存在」—— `sequence._checked_name` /
+   `profile._checked_label` / `create_instruction` 的查重**故意不过滤回收站**，把这 400 明确
+   落在路由上（漏到 DB 才报就是 500）；**彻底删除后键释放**
+   （`test_*_reserved_while_in_trash_until_purged` 双向断言）。
+2. **`response_specs` 走 upsert 复活** —— `filter(instruction_id == ...).first()`（**无**
+   `deleted_at` 过滤）天然命中回收站行 → 更新 + `deleted_at = None`，**不撞唯一键、不换 id**
+   （手工 SAVE 与「据此生成」两处同口径）。
+3. **配方 / 档案的指针在删除期解除、恢复不回填** —— `delete_recipe` 仍清
+   `instructions.default_recipe_id`（回执 `cleared_instructions` 与前端「解除 N 条指令关联」
+   文案**照旧为真**、零 FE 改动），`delete_profile` 仍清 `transport_settings.active_profile_id`；
+   **活行不许指向回收站行**。代价 = 恢复配方/档案后需重新指定默认配方 / 重新激活。
+   读侧已兜底：`recipe.get_recipes` 加 `alive()` → 指针指向回收站行时按**「无配方」降级**回
+   空数组（不是 404、不崩；前端 `recipes.find(...) || null` 与 `（配方缺失）` 回退路径原样可用）。
+   配方**彻底删除**前再清一次指针（`trash._clear_recipe_links`）→ 恢复后重新指定的也不留脏行。
+
+**五、测试（+20 → BE 668/668）**
+
+新增 `backend/tests/test_soft_delete.py`（4 类 19 例）：
+
+- `MigrationDeletedAtTest`（3）：13 表名单与建列；**存量库**（13 列 `DROP COLUMN` 掉 + 记
+  0001 基线）被 0002 补齐（applied / from_version / to_version / integrity / **备份文件存在** /
+  13 表都有列 / 版本记账）；**新库只验不改**（applied = 注册表全量，不撞重复列名）。
+- `TrashProtocolTest`（3）：删除 → 读侧 404 + 入站 + 连带绑定**隐藏** + 与宿主同戳；
+  恢复 → 协议与绑定一起回来、站清空；彻底删除 → 行真没了、旁支完好。
+- `TrashInstructionTest`（4）：三表同戳 + 旁支 / 冻结快照 / 日志不动；恢复带回绑定与规格；
+  彻底删除连 `instruction_fields` 一起删但保住快照与日志；**独立入站的子行跨宿主恢复仍留站**。
+- `TrashSequenceProfileRecipeTest`（6）+ `TrashScopeTest`（2）：序列删后步骤留库、彻底删除
+  才清；**序列名 / 档案名在站期间占用 400、彻底删除后释放**；配方指针三态 + 读侧降级；
+  响应规格 upsert 复活；**白名单恰 7 类**（日志 / 模板 / 单行配置不进站）；标签与倒序。
+
+`test_datahub.py` **+2**：`TestExportExcludesTrashed`（回收站行不进 ZIP）、
+`test_trashed_parents_treated_as_missing`（回灌把回收站宿主当「不存在」跳过）。
+
+改动既有测试 **6 个**（语义变更如实改写）：`test_instruction_delete`（级联软删 + 同戳 +
+读侧 404）、`test_protocol_delete`（级联软删 + 旁支不动）、`test_sequence_api`（步骤留库 +
+读侧 404，改名 `test_delete_marks_trash_and_keeps_steps_204`）、`test_migrate`
+（`["0001_baseline"]` 硬编码改随 `REGISTRY` 派生的 `_ALL_LABELS`；`NewerDbTest` 插入版本改
+`TARGET_VERSION + 1` —— 目标版本 1 → 2 后原值不再是「更高」）、`test_recoverability`
+（版本标签派生 + 断言 `deleted_at` 已补齐）。
+
+**验收**：**BE 668/668**（648 → 668）、**FE 1020/1020（67 文件）**、`npx vite build` EXIT=0、
+`npm run lint` **EXIT=0**、yorha-ui 校验器 **0 违规**（**本批零 FE 改动 → 无改动文件可跑**）；
+**DDL = 仅新增 13 列**（`models.py` 只加列、未加表；`processor.py` / `graph.py` /
+`Blueprint.jsx` 未碰；`/dispatch` 缺省口径逐字节不变）；`pageStatus.json` 未改 → 无需重生成
+`PAGE_STATUS.md`；`vectors/` 未动。
+
+**文档同步（同批）**：本节 §8.43、§8.37 R6 行（R6-1 已办 / R6-2 待办）、§1 `R1–R10` 状态、
+§8.34 B2 缺口第 6 条（后端半已收口）、`PROJECT_HANDOVER.md` 条目 52。
 
 ## 9. 保留勿动（非任务，勿清理）
 

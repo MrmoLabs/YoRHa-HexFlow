@@ -22,6 +22,10 @@
 build_bundle / sanitize_filename / validate_backup_name / create_backup /
 replace_database_file / list_backups）由 backend/tests/test_datahub.py 用
 stdlib unittest 直测，无新增依赖。
+
+PLAN §8.43 R6-1：聚合导出 / 状态面板计数 / 导入的存在性校验一律 `alive()`
+过滤 —— 回收站行既不进下载包（`deleted_at` 不在导出列子里，回灌后也是活行）
+也不进计数。
 """
 import io
 import json
@@ -42,6 +46,8 @@ from backend.core import diagnostics as diag
 from backend.core import sequence_runner, transport
 from backend.core.orchestrator import Orchestrator, encode_int_signed, encode_bcd, encode_scaled, encode_float_ieee, encode_time_accumulator, encode_auto_counter, encode_string, _floor_numeric
 from backend.core.response_match import normalize_spec
+# R6（§8.43）：导出 / 状态 / 导入校验都是**读端点** → 只认活行
+from backend.db.soft_delete import alive
 from backend.db.database import (
     Base,
     DB_PATH,
@@ -551,10 +557,10 @@ def import_relations(db: Session, payload) -> dict:
         if not binding_id or not protocol_id or not instruction_id:
             _skip(sink, index, row, "缺 id / protocol_id / instruction_id")
             continue
-        if db.query(Instruction).filter(Instruction.id == instruction_id).first() is None:
+        if alive(db.query(Instruction), Instruction).filter(Instruction.id == instruction_id).first() is None:
             _skip(sink, index, row, f"指令不存在：{instruction_id}")
             continue
-        protocol = db.query(ProtocolTemplate).filter(ProtocolTemplate.id == protocol_id).first()
+        protocol = alive(db.query(ProtocolTemplate), ProtocolTemplate).filter(ProtocolTemplate.id == protocol_id).first()
         if protocol is None:
             _skip(sink, index, row, f"协议不存在：{protocol_id}")
             continue
@@ -627,7 +633,7 @@ def import_relations(db: Session, payload) -> dict:
         if not spec_id or not instruction_id:
             _skip(sink, index, row, "缺 id / instruction_id")
             continue
-        if db.query(Instruction).filter(Instruction.id == instruction_id).first() is None:
+        if alive(db.query(Instruction), Instruction).filter(Instruction.id == instruction_id).first() is None:
             _skip(sink, index, row, f"指令不存在：{instruction_id}")
             continue
         if not isinstance(raw_spec, dict):
@@ -684,14 +690,15 @@ def datahub_status():
     db = SessionLocal()
     try:
         counts = {
-            "instructions": db.query(Instruction).count(),
+            # R6（§8.43）：状态面板计数 = 活行（回收站行不计）
+            "instructions": alive(db.query(Instruction), Instruction).count(),
             "instructionFields": db.query(InstructionField).count(),
             "bitFields": db.query(BitField).count(),
-            "protocols": db.query(ProtocolTemplate).count(),
+            "protocols": alive(db.query(ProtocolTemplate), ProtocolTemplate).count(),
             "operatorTemplates": db.query(OperatorTemplate).count(),
             # 批次四 4a：关系数据行数（随 relations.json 一并导出的两张表）
-            "protocolBindings": db.query(ProtocolBinding).count(),
-            "responseSpecs": db.query(ResponseSpec).count(),
+            "protocolBindings": alive(db.query(ProtocolBinding), ProtocolBinding).count(),
+            "responseSpecs": alive(db.query(ResponseSpec), ResponseSpec).count(),
         }
     finally:
         db.close()

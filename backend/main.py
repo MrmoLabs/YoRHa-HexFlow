@@ -17,6 +17,7 @@ from backend.routers.profile import router as profile_router
 from backend.routers.response_spec import router as response_spec_router
 from backend.routers.sequence import router as sequence_router
 from backend.routers.logs import router as logs_router
+from backend.routers.trash import router as trash_router
 
 
 @asynccontextmanager
@@ -130,6 +131,8 @@ app.include_router(profile_router)
 app.include_router(response_spec_router)
 app.include_router(sequence_router)
 app.include_router(logs_router)
+# R6 软删除 / 回收站（PLAN §8.43）：列条目 / 恢复 / 彻底删除的统一入口
+app.include_router(trash_router)
 
 
 if __name__ == "__main__":

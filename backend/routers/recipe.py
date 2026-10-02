@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend.core.definition_hash import protocol_definition_hash
 from backend.db.database import get_db
 from backend.db.models import FrameRecipe, Instruction, ProtocolTemplate
+from backend.db.soft_delete import alive, mark_deleted
 # 槽定位复用 binding.py 的纯函数（同树深搜 dict 树）—— 不重复实现同一段遍历。
 from backend.routers.binding import find_slot_node
 from backend.schemas.recipe_api import (
@@ -144,16 +145,25 @@ def get_recipes(db: Session = Depends(get_db), instruction_id: Optional[str] = N
     # default_recipe_id 反查 → 0 或 1 条；无关联即空数组（不是 404）。
     if instruction_id is not None:
         instruction = (
-            db.query(Instruction).filter(Instruction.id == instruction_id).first()
+            alive(db.query(Instruction), Instruction)
+            .filter(Instruction.id == instruction_id)
+            .first()
         )
         recipe_id = instruction.default_recipe_id if instruction else None
         if not recipe_id:
             return []
-        row = db.query(FrameRecipe).filter(FrameRecipe.id == recipe_id).first()
+        # R6: 指令的默认配方在回收站 → 按「无配方」降级（回空数组，不是 404）
+        row = (
+            alive(db.query(FrameRecipe), FrameRecipe)
+            .filter(FrameRecipe.id == recipe_id)
+            .first()
+        )
         return [_to_out(db, row)] if row else []
-    rows = db.query(FrameRecipe).order_by(
-        FrameRecipe.created_at.asc(), FrameRecipe.id.asc()
-    ).all()
+    rows = (
+        alive(db.query(FrameRecipe), FrameRecipe)
+        .order_by(FrameRecipe.created_at.asc(), FrameRecipe.id.asc())
+        .all()
+    )
     return [_to_out(db, row) for row in rows]
 
 
@@ -181,7 +191,11 @@ def create_recipe(payload: RecipeCreate, db: Session = Depends(get_db)):
 
 @router.get("/{recipe_id}", response_model=RecipeResponse)
 def get_recipe(recipe_id: str, db: Session = Depends(get_db)):
-    recipe = db.query(FrameRecipe).filter(FrameRecipe.id == recipe_id).first()
+    recipe = (
+        alive(db.query(FrameRecipe), FrameRecipe)
+        .filter(FrameRecipe.id == recipe_id)
+        .first()
+    )
     if recipe is None:
         raise HTTPException(status_code=404, detail="Recipe not found")
     return _to_out(db, recipe)
@@ -189,7 +203,11 @@ def get_recipe(recipe_id: str, db: Session = Depends(get_db)):
 
 @router.put("/{recipe_id}", response_model=RecipeResponse)
 def update_recipe(recipe_id: str, payload: RecipeUpdate, db: Session = Depends(get_db)):
-    recipe = db.query(FrameRecipe).filter(FrameRecipe.id == recipe_id).first()
+    recipe = (
+        alive(db.query(FrameRecipe), FrameRecipe)
+        .filter(FrameRecipe.id == recipe_id)
+        .first()
+    )
     if recipe is None:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
@@ -229,17 +247,23 @@ def update_recipe(recipe_id: str, payload: RecipeUpdate, db: Session = Depends(g
 
 @router.delete("/{recipe_id}")
 def delete_recipe(recipe_id: str, db: Session = Depends(get_db)):
-    recipe = db.query(FrameRecipe).filter(FrameRecipe.id == recipe_id).first()
+    recipe = (
+        alive(db.query(FrameRecipe), FrameRecipe)
+        .filter(FrameRecipe.id == recipe_id)
+        .first()
+    )
     if recipe is None:
         raise HTTPException(status_code=404, detail="Recipe not found")
 
     # 逻辑外键无 FK（同 protocol_bindings 删除级联先例）：引用本配方的指令
     # default_recipe_id 一并清 NULL，回执条数供前端提示（不静默留脏行）。
+    # R6（§8.43）口径不变 —— 软删**仍解除指针**（活行不许指向回收站行），
+    # 代价是恢复配方后需重新指定默认配方（已知取舍，PLAN §8.43 记录）。
     cleared = (
         db.query(Instruction)
         .filter(Instruction.default_recipe_id == recipe_id)
         .update({"default_recipe_id": None}, synchronize_session=False)
     )
-    db.delete(recipe)
+    mark_deleted(recipe)
     db.commit()
     return {"status": "deleted", "id": recipe_id, "cleared_instructions": cleared}

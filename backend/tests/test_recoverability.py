@@ -27,7 +27,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.core import sequence_runner, transport
 from backend.db.database import Base
-from backend.db.migrate import MigrationError, current_version
+from backend.db.migrate import REGISTRY, TARGET_VERSION, MigrationError, current_version
 from backend.db.transport_store import save_config
 from backend.routers import datahub as datahub_mod
 from backend.routers.datahub import RestoreRequest
@@ -102,10 +102,12 @@ class RestoreHealTests(_RestoreBase):
         self.assertTrue(safety)
         self.assertTrue((self.backup_dir / safety).is_file())
 
-        # schema 自愈：补列 + 记基线版本 + 完整性 ok
+        # schema 自愈：补列 + 记版本 + 完整性 ok（版本标签随注册表，不硬编码单条）
         schema = resp["schema"]
-        self.assertEqual(schema["applied"], ["0001_baseline"])
-        self.assertEqual(schema["version"], 1)
+        self.assertEqual(
+            schema["applied"], [f"{m.version:04d}_{m.name}" for m in REGISTRY]
+        )
+        self.assertEqual(schema["version"], TARGET_VERSION)
         self.assertEqual(schema["integrity"], "ok")
 
         with self.live_engine.connect() as conn:
@@ -116,7 +118,8 @@ class RestoreHealTests(_RestoreBase):
                 ).fetchall()
             }
             self.assertIn("wrap", cols)              # 缺列已补
-            self.assertEqual(current_version(conn), 1)  # 版本表已建并记账
+            self.assertIn("deleted_at", cols)        # R6（§8.43）0002 迁移也补到位
+            self.assertEqual(current_version(conn), TARGET_VERSION)  # 版本表已建并记账
 
     def test_transport_config_from_backup_applies_and_keeps_profile_pointer(self):
         resp = datahub_mod.restore_db(RestoreRequest(name="old-backup.db"))

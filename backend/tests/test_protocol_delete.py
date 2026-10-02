@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.db.database import Base
+from backend.db.models import ProtocolBinding, ProtocolTemplate
 from backend.routers.binding import create_binding, get_bindings
 from backend.routers.protocol import create_protocol, delete_protocol, get_protocol
 from backend.schemas.binding_api import BindingCreate
@@ -65,10 +66,34 @@ class DeleteProtocolCascadeTest(unittest.TestCase):
         result = delete_protocol(proto.id, db=self.db)
 
         self.assertEqual(result["deleted_bindings"], 2)
-        # 其他协议的绑定不受影响；被删协议的绑定不再在库
+        # 其他协议的绑定不受影响；被删协议的绑定不再出现在**读侧**（alive 过滤）
         remaining = get_bindings(db=self.db)
         self.assertEqual([b.id for b in remaining], [keep.id])
         self.assertTrue(all(b.protocol_id != proto.id for b in remaining))
+
+        # R6（§8.43）：级联 = **软删** —— 行留库、与宿主共用同一时间戳（恢复时
+        # 据此一并捞回）；未被删的那条绑定原样保留。
+        host = (
+            self.db.query(ProtocolTemplate)
+            .filter(ProtocolTemplate.id == proto.id)
+            .first()
+        )
+        self.assertIsNotNone(host.deleted_at)
+        mine = (
+            self.db.query(ProtocolBinding)
+            .filter(ProtocolBinding.protocol_id == proto.id)
+            .all()
+        )
+        others = (
+            self.db.query(ProtocolBinding)
+            .filter(ProtocolBinding.protocol_id != proto.id)
+            .all()
+        )
+        self.assertEqual(len(mine), 2)
+        self.assertEqual(len(others), 1)
+        for b in mine:
+            self.assertEqual(b.deleted_at, host.deleted_at)
+        self.assertIsNone(others[0].deleted_at)
 
     def test_delete_missing_protocol_404(self):
         with self.assertRaises(HTTPException) as ctx:

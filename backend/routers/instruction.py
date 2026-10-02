@@ -14,6 +14,7 @@ from backend.db.models import (
     ResponseSpec,
     SequenceStep,
 )
+from backend.db.soft_delete import alive, mark_deleted, mark_related, now_iso
 from backend.schemas.instruction_api import InstructionCreate, InstructionResponse, InstructionFieldSchema, BitFieldSchema, InstructionUpdate
 
 # Create tables if not exist (Simple migration)
@@ -177,7 +178,8 @@ def serialize_instruction(db_inst: Instruction) -> InstructionResponse:
 
 @router.get("/", response_model=List[InstructionResponse])
 def get_instructions(search: str = None, db: Session = Depends(get_db)):
-    query = db.query(Instruction)
+    # R6: 回收站行不进列表（alive = deleted_at IS NULL）
+    query = alive(db.query(Instruction), Instruction)
     if search:
         query = query.filter(or_(Instruction.name.contains(search), Instruction.code.contains(search)))
     instructions = query.all()
@@ -185,7 +187,7 @@ def get_instructions(search: str = None, db: Session = Depends(get_db)):
 
 @router.get("/{id}", response_model=InstructionResponse)
 def get_instruction_detail(id: str, db: Session = Depends(get_db)):
-    inst = db.query(Instruction).filter(Instruction.id == id).first()
+    inst = alive(db.query(Instruction), Instruction).filter(Instruction.id == id).first()
     if not inst:
         raise HTTPException(status_code=404, detail="Instruction not found")
 
@@ -196,6 +198,9 @@ def create_instruction(inst: InstructionCreate, db: Session = Depends(get_db)):
     i_id = str(uuid.uuid4())
     
     # 1. Uniqueness Check
+    # R6（§8.43 已知取舍）：**不过滤回收站** —— 软删行继续占名/代号，回收站里
+    # 还有同名指令时重建会 400（先恢复或彻底删除）。漏到 DB 才报错就没法兜了，
+    # 路由先查正是这条兜底链的第一环。
     existing = db.query(Instruction).filter(or_(Instruction.name == inst.name, Instruction.code == inst.code)).first()
     if existing:
         raise HTTPException(status_code=400, detail="指令名称或代号必须唯一")
@@ -230,7 +235,7 @@ def create_instruction(inst: InstructionCreate, db: Session = Depends(get_db)):
 
 @router.put("/{id}", response_model=InstructionResponse)
 def update_instruction(id: str, updates: InstructionUpdate, db: Session = Depends(get_db)):
-    db_inst = db.query(Instruction).filter(Instruction.id == id).first()
+    db_inst = alive(db.query(Instruction), Instruction).filter(Instruction.id == id).first()
     if not db_inst:
         raise HTTPException(status_code=404, detail="Not Found")
     
@@ -282,13 +287,19 @@ def get_instruction_references(id: str, db: Session = Depends(get_db)):
     - **日志** `dispatch_logs` → **只读保留**。
     前端据本端点在弹窗里列出受影响项后再确认。
     """
-    if db.query(Instruction.id).filter(Instruction.id == id).first() is None:
+    if (
+        alive(db.query(Instruction.id), Instruction)
+        .filter(Instruction.id == id)
+        .first()
+        is None
+    ):
         raise HTTPException(status_code=404, detail="Instruction not found")
     counts = {
         "instruction_id": id,
-        "bindings": db.query(ProtocolBinding)
+        # R6: 只数活行（已在回收站里的绑定/规格不该再算进「受影响项」）
+        "bindings": alive(db.query(ProtocolBinding), ProtocolBinding)
         .filter(ProtocolBinding.instruction_id == id).count(),
-        "response_specs": db.query(ResponseSpec)
+        "response_specs": alive(db.query(ResponseSpec), ResponseSpec)
         .filter(ResponseSpec.instruction_id == id).count(),
         "sequence_steps": db.query(SequenceStep)
         .filter(SequenceStep.instruction_id == id).count(),
@@ -308,28 +319,38 @@ def delete_instruction(id: str, db: Session = Depends(get_db)):
     此前只删本体（`db.delete`），四表全留脏行 —— 逻辑外键无 FK，脏行不报错、
     只静默错。现在：活配置级联删、冻结快照留（回执 orphaned 计数供前端提示
     「N 条序列步骤的宿主已删除，步骤保留可继续运行」）、日志只读保留。
+
+    R6（§8.43）起「级联删」= **级联软删**：指令与被它连带的绑定/规格**共用
+    同一时间戳**，回收站恢复指令时按同戳把它们一并捞回；冻结快照与日志口径
+    不变（前者保留、后者只读保留）。回执形状与计数键全部不变。
     """
-    db_inst = db.query(Instruction).filter(Instruction.id == id).first()
+    db_inst = (
+        alive(db.query(Instruction), Instruction).filter(Instruction.id == id).first()
+    )
     if not db_inst:
         raise HTTPException(status_code=404, detail="Not Found")
 
-    # 计数先于删除（同事务内顺序敏感）
-    deleted_bindings = (
-        db.query(ProtocolBinding)
-        .filter(ProtocolBinding.instruction_id == id)
-        .delete(synchronize_session=False)
+    ts = now_iso()
+    # 计数先于删除（同事务内顺序敏感）；mark_related 只标尚未入站的行，
+    # 故计数 = 本次真正被连带进回收站的条数（改前的 deleted_* 口径）。
+    deleted_bindings = mark_related(
+        db.query(ProtocolBinding),
+        ProtocolBinding,
+        [ProtocolBinding.instruction_id == id],
+        ts,
     )
-    deleted_specs = (
-        db.query(ResponseSpec)
-        .filter(ResponseSpec.instruction_id == id)
-        .delete(synchronize_session=False)
+    deleted_specs = mark_related(
+        db.query(ResponseSpec),
+        ResponseSpec,
+        [ResponseSpec.instruction_id == id],
+        ts,
     )
     # 冻结快照：保留（序列步骤 payload 自含，删宿主不破坏可运行性）
     orphaned_steps = (
         db.query(SequenceStep).filter(SequenceStep.instruction_id == id).count()
     )
 
-    db.delete(db_inst)
+    mark_deleted(db_inst, ts)
     db.commit()
     return {
         "status": "deleted",

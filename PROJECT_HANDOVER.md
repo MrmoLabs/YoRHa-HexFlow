@@ -1532,6 +1532,54 @@
       `fields_json` 入库（DDL）**。每批验收项固定为：BE 全量 + FE 全量 +
       `npx vite build` + **`npm run lint` EXIT=0** + yorha-ui 校验器 0 违规。
 
+52. **R6-1 · 软删除 / 回收站 —— DDL + BE（13 表统一 `deleted_at`）—— PLAN §8.43**
+    （2026-10-02，**BE + DDL（仅新增列）**，零 FE 改动 —— 未碰 `processor.py` /
+    `graph.py` / `Blueprint.jsx`，`/dispatch` 缺省口径逐字节不变）：
+    - **它是什么问题**：B2 缺口 6 —— 删除类操作**没有软删除 / 回收站**，误删只能靠
+      DataHub 备份回退（引用检查与前端确认虽齐全，但「删了就真没了」）。拍板（§8.36
+      「R6 方案」行）= **13 表统一加 `deleted_at`（仅新增列，合 §0）+ 读端点过滤 +
+      回收站页，不做 `trash_bin` 新表**。R6 拆两批：**本批 = DDL + BE**，
+      R6-2 = FE 回收站 UI。
+    - **DDL**：`models.py` 13 张表每张末尾加 `deleted_at String(40) NULL`；迁移走**已有的
+      版本化注册表**（不另起 `ensure_*`）`Migration(2, "soft_delete_deleted_at")` ——
+      apply 逐表 `PRAGMA` 缺则 `ALTER ADD COLUMN`（新库 `create_all` 已带 → 逐表跳过，
+      不撞重复列名）、verify = 13 表每张都有列（缺一回滚、版本不前进）、既有库升级前
+      自动整库备份。名单由 `migrate.soft_delete_tables()` 从 `Base.metadata` **派生**
+      （SSOT）。`migrations/schema.sql`（NON-AUTHORITATIVE）本就与权威脱钩 → 不同步。
+    - **写侧**：新文件 `backend/db/soft_delete.py` = 唯一落点 —— `mark_deleted` /
+      `mark_related` / `restore_related` / `purge_related` / `alive` / `trashed`。
+      **级联子行与父行共用同一时间戳** = 恢复判据（不加级联标记列；本次之前已独立入站的
+      子行戳不同 → 不被父行恢复顺带捞回，也不计入 `deleted_*` 回执）。
+    - **端点**：7 类可回收（protocol / instruction / binding / recipe / sequence /
+      profile / response_spec）的 `DELETE` 改软删，**回执形状与计数键逐字不变**
+      （`deleted_bindings` / `deleted_response_specs` / `orphaned_sequence_steps` /
+      `cleared_instructions` / `204`）；读端点一律 `alive()` → **列表不出现、单查 404、
+      二次删 404，与改前硬删后同口径**。新增 `routers/trash.py`：`GET /trash`
+      （最近删的在前）、`POST /trash/{kind}/{id}/restore`、`DELETE /trash/{kind}/{id}`
+      （彻底删除）；`kind` 走**白名单**；列表**隐藏被父行连带入站的子行**（宿主回来会一起
+      恢复，不单独占一行）。`datahub` 的导出 / 状态计数 / 导入宿主校验三处读侧同样过滤。
+      `dispatch_logs`（追加型审计）/ `operator_templates` / `transport_settings`
+      **只加列不改行为**。
+    - **已知取舍**（拍板「不做表重建」的直接后果，**R6-2 要写进 UI 文案**）：
+      ① 软删行**继续占唯一键** —— `sequences.name` / `device_profiles.label` /
+      `response_specs.instruction_id` 都是 `sqlite_autoindex_*`（删不掉）→ 站内同名
+      新建 / 改名 400「已存在」（路由查重**故意不过滤回收站**，宁可落在路由也不要漏到
+      DB 变 500），**彻底删除才释放**；② `response_specs` 走 **upsert 复活**（同 id、
+      不撞键）；③ 配方 / 档案**指针在删除期解除、恢复不回填** → 恢复后需重新指定默认
+      配方 / 重新激活（读侧 `alive()` 兜底：指针指向站内行时按「无配方」降级回空数组，
+      前端 `recipes.find(...) || null` 与 `（配方缺失）` 回退路径原样可用）。
+    - **测试**：新增 `backend/tests/test_soft_delete.py`（4 类 19 例：迁移 DDL 存量/新库
+      两态、三态与级联共戳、唯一键占用 400、upsert 复活、指针口径、白名单恰 7 类）+
+      `test_datahub.py` **+2**（导出不含回收站行 / 回灌把站内宿主当不存在）；改写 6 个
+      既有删除与迁移测试。**BE 648 → 668**。
+    - **文档同步（同批）**：PLAN 新 **§8.43** + §8.37 R6 行（R6-1 已办 / R6-2 待办）+
+      §1 状态 + §8.34 B2 缺口第 6 条（后端半收口）；本条。
+    - **状态**：**R1 ✅ R2 ✅ R3 ✅ R4 ✅ R5 ✅ R6-1 ✅**，余 **R6-2 FE 回收站 UI（含各
+      删除确认弹窗文案「不可撤销」改「移入回收站，可恢复」）→ R7 导出补域 → R8 导入
+      补端点 → R9 解码展示面板 → R10 `fields_json` 入库（DDL）**。每批验收项固定为：
+      BE 全量 + FE 全量 + `npx vite build` + **`npm run lint` EXIT=0** + yorha-ui
+      校验器 0 违规。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.core import sequence_runner, transport
 from backend.db.database import Base
-from backend.db.models import Instruction, SequenceStep
+from backend.db.models import Instruction, Sequence, SequenceStep
 from backend.routers import dispatch as dispatch_mod
 from backend.routers.dispatch import (
     DispatchRequest,
@@ -167,16 +167,24 @@ class SequenceCrudTest(SequenceApiTestBase):
                     fn(*args, db=self.db)
                 self.assertEqual(ctx.exception.status_code, 404)
 
-    def test_delete_removes_steps_and_204(self):
+    def test_delete_marks_trash_and_keeps_steps_204(self):
         out = self._create()
         resp = delete_sequence(out.id, db=self.db)
         self.assertEqual(resp.status_code, 204)
+        # R6（§8.43）：软删只给序列行打标记 —— **步骤留库**（恢复序列即原样
+        # 回来；彻底删除才按外键清，见 routers/trash.py）。读侧 alive() 过滤 →
+        # 列表 / 单查都看不到它。
+        row = self.db.query(Sequence).filter(Sequence.id == out.id).first()
+        self.assertIsNotNone(row.deleted_at)
         self.assertEqual(
             self.db.query(SequenceStep)
             .filter(SequenceStep.sequence_id == out.id)
             .count(),
-            0,
+            1,
         )
+        with self.assertRaises(HTTPException) as ctx:
+            get_sequence(out.id, db=self.db)  # 读侧 404（同改前硬删后口径）
+        self.assertEqual(ctx.exception.status_code, 404)
         with self.assertRaises(HTTPException) as ctx:
             delete_sequence(out.id, db=self.db)  # 二次删 404
         self.assertEqual(ctx.exception.status_code, 404)

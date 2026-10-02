@@ -15,6 +15,7 @@ from backend.core.recipe_compile import (
 from backend.core.sequence_plan import core_plan, kernel_slice, normalize_plan
 from backend.db.database import SessionLocal, get_db
 from backend.db.models import FrameRecipe, Instruction, Sequence, SequenceStep
+from backend.db.soft_delete import alive, mark_deleted
 from backend.schemas.sequence_api import (
     SequenceOut,
     SequencePayload,
@@ -60,6 +61,9 @@ def _checked_name(db: Session, name, exclude_id=None) -> str:
         raise HTTPException(status_code=400, detail="序列名不能为空")
     if len(cleaned) > _MAX_NAME:
         raise HTTPException(status_code=400, detail=f"序列名最长 {_MAX_NAME} 字")
+    # R6（§8.43 已知取舍）：**不过滤回收站** —— 软删行继续占名（sequences.name 是
+    # inline UNIQUE，拍板 R6 只新增列、不重建表 → 删不掉那个索引）。回收站里还有
+    # 同名序列时新建/改名会 400「已存在」，先恢复或彻底删除即可释放。
     query = db.query(Sequence).filter(Sequence.name == cleaned)
     if exclude_id is not None:
         query = query.filter(Sequence.id != exclude_id)
@@ -120,7 +124,11 @@ def _freeze_wrap(db: Session, where: str, recipe_id: str, data: bytes, plan):
     返回 (完整帧 bytes, 注入 shell 的 plan)。协议/配方语义错误统一降为 400 并
     带 `steps[i]:` 定位（与 payload/plan 归一同一报错口径，前端可直接指到步骤）。
     """
-    recipe = db.query(FrameRecipe).filter(FrameRecipe.id == recipe_id).first()
+    recipe = (
+        alive(db.query(FrameRecipe), FrameRecipe)
+        .filter(FrameRecipe.id == recipe_id)
+        .first()
+    )
     if recipe is None:
         raise diag.http(
             400, f"{where}: 配方不存在：{recipe_id}",
@@ -273,7 +281,12 @@ def _wrap_with_stale(db: Session, wrap, seen: dict) -> Optional[dict]:
     out = dict(wrap)
     recipe_id = out.get("recipe_id")
     if recipe_id not in seen:
-        recipe = db.query(FrameRecipe).filter(FrameRecipe.id == recipe_id).first()
+        # R6: 配方在回收站 → 指纹算不出 → stale 徽标（与「配方已删」同口径）
+        recipe = (
+            alive(db.query(FrameRecipe), FrameRecipe)
+            .filter(FrameRecipe.id == recipe_id)
+            .first()
+        )
         seen[recipe_id] = None if recipe is None else current_fingerprint(db, recipe)
     current = seen[recipe_id]
     recorded = out.get("definition_hash")
@@ -328,7 +341,13 @@ def stop_sequence() -> SequenceStatus:
 
 @router.get("", response_model=List[SequenceOut])
 def list_sequences(db: Session = Depends(get_db)) -> List[SequenceOut]:
-    rows = db.query(Sequence).order_by(Sequence.name.asc(), Sequence.id.asc()).all()
+    # R6: 回收站行不进列表（alive = deleted_at IS NULL）；步骤仍按宿主 id 分组，
+    # 轫库行的步骤不落到任何活序列上 → 不会外泄。
+    rows = (
+        alive(db.query(Sequence), Sequence)
+        .order_by(Sequence.name.asc(), Sequence.id.asc())
+        .all()
+    )
     grouped: dict = {}
     for step in (
         db.query(SequenceStep)
@@ -360,7 +379,11 @@ def create_sequence(payload: SequencePayload, db: Session = Depends(get_db)) -> 
 
 @router.get("/{sequence_id}", response_model=SequenceOut)
 def get_sequence(sequence_id: str, db: Session = Depends(get_db)) -> SequenceOut:
-    row = db.query(Sequence).filter(Sequence.id == sequence_id).first()
+    row = (
+        alive(db.query(Sequence), Sequence)
+        .filter(Sequence.id == sequence_id)
+        .first()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Sequence not found")
     return _to_out(db, row, _step_rows(db, row.id))
@@ -370,7 +393,11 @@ def get_sequence(sequence_id: str, db: Session = Depends(get_db)) -> SequenceOut
 def update_sequence(
     sequence_id: str, payload: SequencePayload, db: Session = Depends(get_db)
 ) -> SequenceOut:
-    row = db.query(Sequence).filter(Sequence.id == sequence_id).first()
+    row = (
+        alive(db.query(Sequence), Sequence)
+        .filter(Sequence.id == sequence_id)
+        .first()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Sequence not found")
     name = _checked_name(db, payload.name, exclude_id=row.id)
@@ -391,13 +418,18 @@ def update_sequence(
 
 @router.delete("/{sequence_id}")
 def delete_sequence(sequence_id: str, db: Session = Depends(get_db)):
-    row = db.query(Sequence).filter(Sequence.id == sequence_id).first()
+    # R6（§8.43）：删除 = 只给序列行打标记进回收站 —— **步骤一并留库**。
+    # 改前是连步骤一起硬删，恢复无从谈起；现在步骤跟着宿主（同表分组、读侧
+    # 只列活序列）自动隐藏，恢复序列即原样回来，彻底删除时才按外键清步骤
+    # （routers/trash.py 的 children 级联）。二次删 404 口径不变。
+    row = (
+        alive(db.query(Sequence), Sequence)
+        .filter(Sequence.id == sequence_id)
+        .first()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Sequence not found")
-    db.query(SequenceStep).filter(SequenceStep.sequence_id == row.id).delete(
-        synchronize_session=False
-    )
-    db.delete(row)
+    mark_deleted(row)
     db.commit()
     return Response(status_code=204)
 
@@ -426,7 +458,11 @@ def _compile_wrap_factory():
 
 @router.post("/{sequence_id}/start", response_model=SequenceStatus)
 def start_sequence(sequence_id: str, db: Session = Depends(get_db)) -> SequenceStatus:
-    row = db.query(Sequence).filter(Sequence.id == sequence_id).first()
+    row = (
+        alive(db.query(Sequence), Sequence)
+        .filter(Sequence.id == sequence_id)
+        .first()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Sequence not found")
     # 互斥第一道（快速失败）；claim 内的锁为兜底（竞态 → SequenceBusy 同 409）

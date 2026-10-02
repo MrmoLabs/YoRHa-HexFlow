@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend.core.definition_hash import protocol_definition_hash
 from backend.db.database import get_db
 from backend.db.models import Instruction, ProtocolBinding, ProtocolTemplate
+from backend.db.soft_delete import alive, mark_deleted
 from backend.schemas.binding_api import BindingCreate, BindingResponse, BindingUpdate
 
 # E4 编排绑定持久化（甲案：新表）。绑定 = protocol_id + instruction_id + 插槽序。
@@ -139,7 +140,8 @@ def _attach_stale(binding: ProtocolBinding, db: Session) -> ProtocolBinding:
 def get_bindings(db: Session = Depends(get_db), instruction_id: Optional[str] = None):
     # 插槽序升序即前端侧栏列表顺序；同序按 id 兜底保证稳定。
     # 批次一: 可选 instruction_id 过滤（加工页取默认协议走 ?instruction_id=）。
-    query = db.query(ProtocolBinding)
+    # R6: 回收站行不进列表（alive = deleted_at IS NULL）
+    query = alive(db.query(ProtocolBinding), ProtocolBinding)
     if instruction_id is not None:
         query = query.filter(ProtocolBinding.instruction_id == instruction_id)
     rows = query.order_by(ProtocolBinding.slot_order.asc(), ProtocolBinding.id.asc()).all()
@@ -179,7 +181,11 @@ def create_binding(payload: BindingCreate, db: Session = Depends(get_db)):
 
 @router.put("/{binding_id}", response_model=BindingResponse)
 def update_binding(binding_id: str, payload: BindingUpdate, db: Session = Depends(get_db)):
-    binding = db.query(ProtocolBinding).filter(ProtocolBinding.id == binding_id).first()
+    binding = (
+        alive(db.query(ProtocolBinding), ProtocolBinding)
+        .filter(ProtocolBinding.id == binding_id)
+        .first()
+    )
     if not binding:
         raise HTTPException(status_code=404, detail="Binding not found")
 
@@ -213,10 +219,17 @@ def update_binding(binding_id: str, payload: BindingUpdate, db: Session = Depend
 
 @router.delete("/{binding_id}")
 def delete_binding(binding_id: str, db: Session = Depends(get_db)):
-    binding = db.query(ProtocolBinding).filter(ProtocolBinding.id == binding_id).first()
+    # R6（§8.43）：删除 = 打标记进回收站（读侧 alive 过滤，二次删 404 不变）；
+    # 绑定是叶子行，无级联子行。宿主（指令/协议）被删时会连带标记，此时本行
+    # 已在回收站 → alive 查不到 → 404，与改前的硬删级联后 404 同口径。
+    binding = (
+        alive(db.query(ProtocolBinding), ProtocolBinding)
+        .filter(ProtocolBinding.id == binding_id)
+        .first()
+    )
     if not binding:
         raise HTTPException(status_code=404, detail="Binding not found")
 
-    db.delete(binding)
+    mark_deleted(binding)
     db.commit()
     return {"status": "deleted", "id": binding_id}

@@ -33,6 +33,10 @@ from backend.db.migrate import (
 )
 
 
+#: 注册表全量标签（版本号随 REGISTRY 增长，测试不硬编码单条迁移名）。
+_ALL_LABELS = [f"{m.version:04d}_{m.name}" for m in REGISTRY]
+
+
 class _MigrateCase(unittest.TestCase):
     """临时库 + 临时备份目录。"""
 
@@ -65,7 +69,7 @@ class FreshDbTest(_MigrateCase):
             self.engine, do_backup=False, backups_dir=self.backups
         )
 
-        self.assertEqual(report["applied"], ["0001_baseline"])
+        self.assertEqual(report["applied"], _ALL_LABELS)
         self.assertEqual(report["from_version"], 0)
         self.assertEqual(report["to_version"], TARGET_VERSION)
         self.assertEqual(report["integrity"], "ok")
@@ -76,7 +80,7 @@ class FreshDbTest(_MigrateCase):
         info = status(self.engine)
         self.assertEqual(info["current_version"], TARGET_VERSION)
         self.assertEqual(info["pending"], [])
-        self.assertEqual(info["applied"], ["0001_baseline"])
+        self.assertEqual(info["applied"], _ALL_LABELS)
 
     def test_version_row_names_migration(self):
         Base.metadata.create_all(bind=self.engine)
@@ -121,7 +125,7 @@ class ExistingDbBackupTest(_MigrateCase):
         backup = Path(report["backup"])
         self.assertTrue(backup.is_file())
         self.assertGreater(backup.stat().st_size, 0)
-        self.assertEqual(report["applied"], ["0001_baseline"])
+        self.assertEqual(report["applied"], _ALL_LABELS)
 
         # 快照可用（用 sqlite3 独立打开读回升级前的数据）
         with sqlite3.connect(str(backup)) as con:
@@ -291,7 +295,7 @@ class RegistryDisciplineTest(unittest.TestCase):
 
 class NewerDbTest(_MigrateCase):
     def test_newer_db_refused_before_touching_anything(self):
-        """恢复了更高版本程序的备份（库 v2 / 本程序目标 v1）→ 一律拒绝。
+        """恢复了更高版本程序的备份（库版本 > 本程序目标版本）→ 一律拒绝。
 
         PLAN §8.33：**不做备份、不记版本、不动一列** —— 拿旧代码盖新库比失败更糟。
         """
@@ -300,7 +304,7 @@ class NewerDbTest(_MigrateCase):
             ensure_migrations_table(conn)
             conn.exec_driver_sql(
                 "INSERT INTO schema_migrations (version, name, applied_at) "
-                "VALUES (2, 'future', '2030-01-01T00:00:00')"
+                f"VALUES ({TARGET_VERSION + 1}, 'future', '2030-01-01T00:00:00')"
             )
 
         with self.assertRaises(MigrationError) as ctx:
@@ -310,11 +314,11 @@ class NewerDbTest(_MigrateCase):
 
         message = str(ctx.exception)
         self.assertIn("高于", message)
-        self.assertIn("v2", message)
+        self.assertIn(f"v{TARGET_VERSION + 1}", message)
         self.assertIn(f"v{TARGET_VERSION}", message)
         self.assertFalse(self.backups.exists())      # 连快照都没建：根本没打算动库
         with self.engine.connect() as conn:
-            self.assertEqual(current_version(conn), 2)  # 版本行原样
+            self.assertEqual(current_version(conn), TARGET_VERSION + 1)  # 版本行原样
 
 
 class StatusTest(_MigrateCase):
@@ -324,7 +328,7 @@ class StatusTest(_MigrateCase):
         before = status(self.engine)
         self.assertEqual(before["current_version"], 0)
         self.assertEqual(before["target_version"], TARGET_VERSION)
-        self.assertEqual(before["pending"], ["0001_baseline"])
+        self.assertEqual(before["pending"], _ALL_LABELS)
         self.assertEqual(before["applied"], [])
         self.assertEqual(before["integrity"], "ok")
         self.assertIn("main.db", before["db_path"])
@@ -334,7 +338,7 @@ class StatusTest(_MigrateCase):
         after = status(self.engine)
         self.assertEqual(after["current_version"], TARGET_VERSION)
         self.assertEqual(after["pending"], [])
-        self.assertEqual(after["applied"], ["0001_baseline"])
+        self.assertEqual(after["applied"], _ALL_LABELS)
 
     def test_integrity_check_failure_raises(self):
         # PRAGMA integrity_check 结果不是 ok（文件损坏/写坏）→ 必须报错而不是静默通过。

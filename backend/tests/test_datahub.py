@@ -11,6 +11,7 @@ import zipfile
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
+from unittest import mock
 
 from fastapi import HTTPException
 from sqlalchemy import create_engine
@@ -382,6 +383,33 @@ class TestImportRelations(RelationsTestCase):
         self.assertIn("指令不存在", reasons["b-no-i"])
         self.assertIn("协议不存在", reasons["b-no-p"])
         self.assertIn("缺 id", reasons["b-missing-fields"])
+
+    def test_trashed_parents_treated_as_missing(self):
+        # R6（§8.43）：**回收站里的宿主不是合法宿主** —— 回灌按「不存在」跳过，
+        # 否则会写进一条指向回收站行的活绑定（读侧 alive 挡不住这种活行）。
+        TRASHED = "2026-10-02T00:00:00+00:00"
+        self.db.query(Instruction).filter(Instruction.id == "i1").update(
+            {"deleted_at": TRASHED}, synchronize_session=False
+        )
+        self.db.query(ProtocolTemplate).filter(ProtocolTemplate.id == "p1").update(
+            {"deleted_at": TRASHED}, synchronize_session=False
+        )
+        self.db.commit()
+
+        report = import_relations(self.db, {"bindings": [
+            relation_binding(id="b-dead-i"),                      # 指令已入站
+            relation_binding(id="b-dead-p", instruction_id="i2"),  # 指令活、协议已入站
+        ]})
+        self.assertEqual(report["bindings"]["imported"], 0)
+        reasons = {s["id"]: s["reason"] for s in report["bindings"]["skipped"]}
+        self.assertIn("指令不存在", reasons["b-dead-i"])
+        self.assertIn("协议不存在", reasons["b-dead-p"])
+
+        spec_report = import_relations(self.db, {"responseSpecs": [relation_spec()]})
+        self.assertEqual(spec_report["responseSpecs"]["imported"], 0)
+        self.assertIn(
+            "指令不存在", spec_report["responseSpecs"]["skipped"][0]["reason"]
+        )
 
     def test_dangling_slot_cleared_with_warning(self):
         report = import_relations(self.db, {"bindings": [relation_binding(slot_id="gone")]})

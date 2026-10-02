@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from backend.core import transport
 from backend.db.database import get_db
 from backend.db.models import DeviceProfile
+from backend.db.soft_delete import alive, mark_deleted
 from backend.db.transport_store import load_settings, save_config, set_active_profile
 from backend.schemas.profile_api import ProfileCreate, ProfileResponse, ProfileUpdate
 
@@ -28,6 +29,9 @@ def _checked_label(db: Session, label, exclude_id: Optional[str] = None) -> str:
     cleaned = str(label or "").strip()
     if not cleaned:
         raise HTTPException(status_code=400, detail="档案名不能为空")
+    # R6（§8.43 已知取舍）：**不过滤回收站** —— device_profiles.label 是
+    # inline UNIQUE（拍板 R6 只新增列、不重建表），软删行继续占名 → 回收站里
+    # 还有同名档案时新建/改名 400「已存在」，先恢复或彻底删除才释放。
     query = db.query(DeviceProfile).filter(DeviceProfile.label == cleaned)
     if exclude_id is not None:
         query = query.filter(DeviceProfile.id != exclude_id)
@@ -61,8 +65,9 @@ def _response(profile: DeviceProfile, active_id: Optional[str]) -> ProfileRespon
 
 @router.get("", response_model=List[ProfileResponse])
 def get_profiles(db: Session = Depends(get_db)) -> List[ProfileResponse]:
+    # R6: 回收站行不进列表（alive = deleted_at IS NULL）
     rows = (
-        db.query(DeviceProfile)
+        alive(db.query(DeviceProfile), DeviceProfile)
         .order_by(DeviceProfile.label.asc(), DeviceProfile.id.asc())
         .all()
     )
@@ -94,7 +99,11 @@ def create_profile(payload: ProfileCreate, db: Session = Depends(get_db)) -> Pro
 def update_profile(
     profile_id: str, payload: ProfileUpdate, db: Session = Depends(get_db)
 ) -> ProfileResponse:
-    profile = db.query(DeviceProfile).filter(DeviceProfile.id == profile_id).first()
+    profile = (
+        alive(db.query(DeviceProfile), DeviceProfile)
+        .filter(DeviceProfile.id == profile_id)
+        .first()
+    )
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
@@ -110,20 +119,30 @@ def update_profile(
 
 @router.delete("/{profile_id}")
 def delete_profile(profile_id: str, db: Session = Depends(get_db)):
-    profile = db.query(DeviceProfile).filter(DeviceProfile.id == profile_id).first()
+    # R6（§8.43）：删除 = 打标记进回收站。激活指针仍照旧清（活行不许指向
+    # 回收站行）→ 恢复档案后需重新激活（已知取舍，与配方指针同口径）。
+    profile = (
+        alive(db.query(DeviceProfile), DeviceProfile)
+        .filter(DeviceProfile.id == profile_id)
+        .first()
+    )
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
     if _active_id(db) == profile.id:
         set_active_profile(db, None)  # 清悬空指针，生效配置保持不变
-    db.delete(profile)
+    mark_deleted(profile)
     db.commit()
     return {"status": "deleted", "id": profile_id}
 
 
 @router.post("/{profile_id}/activate", response_model=ProfileResponse)
 def activate_profile(profile_id: str, db: Session = Depends(get_db)) -> ProfileResponse:
-    profile = db.query(DeviceProfile).filter(DeviceProfile.id == profile_id).first()
+    profile = (
+        alive(db.query(DeviceProfile), DeviceProfile)
+        .filter(DeviceProfile.id == profile_id)
+        .first()
+    )
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 

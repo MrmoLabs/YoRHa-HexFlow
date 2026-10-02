@@ -110,8 +110,60 @@ def _baseline_apply(conn):
     return None
 
 
+# --------------------------------------------------------------------------
+# 0002 · R6 软删除（PLAN §8.43）：13 表统一加 `deleted_at`
+# --------------------------------------------------------------------------
+
+
+def soft_delete_tables() -> List[str]:
+    """需要 `deleted_at` 的表 = **models 里带该列的表**（SSOT，不另抄一张名单）。
+
+    从 `Base.metadata` 派生 → models 加列、迁移范围自动跟随；verify 侧再钉死
+    「恰好 13 张」，防有人误删某表的列而迁移静默漏改。
+    """
+    return sorted(
+        name
+        for name, table in Base.metadata.tables.items()
+        if "deleted_at" in table.columns
+    )
+
+
+def _column_names(conn, table: str) -> set:
+    rows = conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()
+    return {row[1] for row in rows}
+
+
+def _soft_delete_apply(conn):
+    """缺则 `ALTER TABLE ... ADD COLUMN deleted_at VARCHAR(40)`（幂等）。
+
+    全新库由 create_all 直接建出全列 → 逐表跳过（`ALTER` 加已存在的列会直接
+    报错），等价于 no-op；存量库逐表补列（同 `ensure_*` 的 PRAGMA 先查口径）。
+    表尚不存在 → 跳过，交给 0001 baseline verify 报缺表。
+    """
+    for table in soft_delete_tables():
+        have = _column_names(conn, table)
+        if have and "deleted_at" not in have:
+            conn.exec_driver_sql(
+                f"ALTER TABLE {table} ADD COLUMN deleted_at VARCHAR(40)"
+            )
+
+
+def _soft_delete_verify(conn):
+    """升级结果检查：13 表**每张**都得有 `deleted_at`，一张都不能少。"""
+    tables = soft_delete_tables()
+    if len(tables) != 13:
+        raise MigrationError(
+            f"R6 软删除应覆盖 13 张表，实得 {len(tables)}: {tables}"
+        )
+    missing = sorted(t for t in tables if "deleted_at" not in _column_names(conn, t))
+    if missing:
+        raise MigrationError(f"软删除列缺失: {missing}")
+
+
 REGISTRY: List[Migration] = [
     Migration(1, "baseline", _baseline_apply, _baseline_verify),
+    # 13 表统一加 `deleted_at`（仅新增列，合 §0；新库 create_all 已带 → 只验不改）。
+    Migration(2, "soft_delete_deleted_at", _soft_delete_apply, _soft_delete_verify),
 ]
 
 #: 当前目标版本（= REGISTRY 最后一条）。升级即把库推进到这个号。

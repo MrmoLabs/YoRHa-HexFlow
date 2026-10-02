@@ -8,6 +8,7 @@ from backend.core.response_generate import chain_fingerprint, generate, resolve_
 from backend.core.response_match import normalize_spec
 from backend.db.database import get_db
 from backend.db.models import Instruction, ResponseSpec
+from backend.db.soft_delete import alive, mark_deleted
 from backend.schemas.response_spec_api import (
     ResponseSpecGenerateResponse,
     ResponseSpecResponse,
@@ -81,7 +82,12 @@ def get_generate_targets(
     候选里** —— 没有协议可映射就没得生成。
     """
     targets: List[ResponseSpecTarget] = []
-    rows = db.query(Instruction).order_by(Instruction.name.asc()).all()
+    # R6: 已入回收站的指令不作候选（活着才谈得上「据此生成」）
+    rows = (
+        alive(db.query(Instruction), Instruction)
+        .order_by(Instruction.name.asc())
+        .all()
+    )
     for instruction in rows:
         try:
             layers = resolve_layers(db, instruction.id)
@@ -105,8 +111,9 @@ def get_generate_targets(
 
 @router.get("", response_model=List[ResponseSpecResponse])
 def get_response_specs(db: Session = Depends(get_db)) -> List[ResponseSpecResponse]:
+    # R6: 回收站行不进列表（alive = deleted_at IS NULL）
     rows = (
-        db.query(ResponseSpec)
+        alive(db.query(ResponseSpec), ResponseSpec)
         .order_by(ResponseSpec.instruction_id.asc())
         .all()
     )
@@ -115,7 +122,11 @@ def get_response_specs(db: Session = Depends(get_db)) -> List[ResponseSpecRespon
 
 @router.get("/{instruction_id}", response_model=ResponseSpecResponse)
 def get_response_spec(instruction_id: str, db: Session = Depends(get_db)) -> ResponseSpecResponse:
-    row = db.query(ResponseSpec).filter(ResponseSpec.instruction_id == instruction_id).first()
+    row = (
+        alive(db.query(ResponseSpec), ResponseSpec)
+        .filter(ResponseSpec.instruction_id == instruction_id)
+        .first()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Response spec not found")
     return _response(row, db)
@@ -126,6 +137,9 @@ def upsert_response_spec(
     instruction_id: str, payload: ResponseSpecUpsert, db: Session = Depends(get_db)
 ) -> ResponseSpecResponse:
     spec = _validated_spec(payload.spec)
+    # R6（§8.43）：**故意不过滤回收站** —— response_specs.instruction_id 是
+    # inline UNIQUE，回收站里那行仍占键；重新 SAVE 直接**复活**在库行（清标记 +
+    # 覆盖 spec），既不撞唯一约束，也不会变成「看起来存了、读出来还是旧的」。
     row = db.query(ResponseSpec).filter(ResponseSpec.instruction_id == instruction_id).first()
     if row is None:
         row = ResponseSpec(id=str(uuid.uuid4()), instruction_id=instruction_id, spec=spec)
@@ -134,6 +148,7 @@ def upsert_response_spec(
         # 手工编辑：spec 换、stage 镜像随 spec 重算；definition_hash **保留** ——
         # 它记的是「哪一版协议链生成的」出处，改规则不改变出处（D7-A 比对基准）。
         row.spec = spec
+        row.deleted_at = None  # 回收站行被覆盖 → 复活
     row.stage = _stage_mirror(spec)
     db.commit()
     db.refresh(row)
@@ -153,12 +168,14 @@ def generate_response_spec(
         raise HTTPException(status_code=400, detail=str(e))
 
     spec = result["spec"]
+    # 同 upsert：回收站行被覆盖 → 复活（唯一键 = instruction_id，见上）
     row = db.query(ResponseSpec).filter(ResponseSpec.instruction_id == instruction_id).first()
     if row is None:
         row = ResponseSpec(id=str(uuid.uuid4()), instruction_id=instruction_id, spec=spec)
         db.add(row)
     else:
         row.spec = spec
+        row.deleted_at = None
     row.stage = _stage_mirror(spec)
     row.definition_hash = result["definition_hash"]
     db.commit()
@@ -175,10 +192,15 @@ def generate_response_spec(
 
 @router.delete("/{instruction_id}")
 def delete_response_spec(instruction_id: str, db: Session = Depends(get_db)):
-    row = db.query(ResponseSpec).filter(ResponseSpec.instruction_id == instruction_id).first()
+    # R6（§8.43）：删除 = 打标记进回收站（叶子行，无级联子行）
+    row = (
+        alive(db.query(ResponseSpec), ResponseSpec)
+        .filter(ResponseSpec.instruction_id == instruction_id)
+        .first()
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Response spec not found")
     row_id = row.id
-    db.delete(row)
+    mark_deleted(row)
     db.commit()
     return {"status": "deleted", "id": row_id, "instruction_id": instruction_id}

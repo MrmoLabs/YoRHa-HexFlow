@@ -17,6 +17,14 @@ class Endianness(str, enum.Enum):
     BIG = "BIG"
     LITTLE = "LITTLE"
 
+# ── R6 软删除 / 回收站（PLAN §8.43）─────────────────────────────────────────────
+# 13 张表**统一**加一列 `deleted_at`（仅新增列，合 §0）：
+#   NULL    = 活行；
+#   非 NULL = 已入回收站的 ISO-8601 时间戳。
+# 父行与被级联软删的子行**共用同一时间戳** —— 恢复时据此把子行一并捞回
+# （不额外加级联标记列）。写侧 = 各路由 mark_deleted + routers/trash.py，
+# 读侧 = 各路由 alive() 过滤；存量库由 migrate.py 的 0002 迁移补列（新库
+# create_all 直接建全列）。日志 / 模板 / 传输配置三表只加列、不改行为。
 # 1. Instructions (Main Table)
 class Instruction(Base):
     __tablename__ = "instructions"
@@ -38,6 +46,8 @@ class Instruction(Base):
     
     # Children
     fields = relationship("InstructionField", back_populates="instruction", cascade="all, delete-orphan")
+    # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
+    deleted_at = Column(String(40), nullable=True)
 
 # 2. Operator Templates
 class OperatorTemplate(Base):
@@ -48,6 +58,8 @@ class OperatorTemplate(Base):
     category = Column(String(32), nullable=False)
     param_template = Column(JSON, nullable=False) # UI render config
     description = Column(String(255))
+    # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
+    deleted_at = Column(String(40), nullable=True)
 
 
 class ProtocolTemplate(Base):
@@ -62,6 +74,8 @@ class ProtocolTemplate(Base):
     # 不符 409（陈旧写拒收），每次成功写 +1。存量库缺列由
     # database.ensure_protocol_version_column 启动自愈（create_all 不补列）。
     version = Column(Integer, nullable=False, default=1)
+    # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
+    deleted_at = Column(String(40), nullable=True)
 
 # 3. Instruction Fields
 class InstructionField(Base):
@@ -96,6 +110,8 @@ class InstructionField(Base):
                               order_by="BitField.sequence",
                               backref="field",
                               cascade="all, delete-orphan")
+    # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
+    deleted_at = Column(String(40), nullable=True)
 
 
 # 4. Bit Fields (Bit-level layout for BITFIELD fields)
@@ -110,6 +126,8 @@ class BitField(Base):
     start_bit = Column(Integer, default=0, nullable=False)
     bit_len = Column(Integer, default=1, nullable=False)
     default_val = Column(Integer, default=0, nullable=False)
+    # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
+    deleted_at = Column(String(40), nullable=True)
 
 
 # 5. Protocol Bindings (E4: 编排绑定持久化 — 新表，不改既有表)
@@ -139,6 +157,8 @@ class ProtocolBinding(Base):
     # 出 stale 徽标，**不阻断**（绑定关系与槽位仍有效，只提示需复核）。
     # 存量库缺列由 database.ensure_binding_columns 启动自愈。
     definition_hash = Column(String(80), nullable=True)
+    # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
+    deleted_at = Column(String(40), nullable=True)
 
 
 # 7. Transport Settings（P1: 连接持久化 — 单行表，id 恒为 "current"）
@@ -149,6 +169,8 @@ class TransportSetting(Base):
     config = Column(JSON, nullable=False)  # 当前生效传输配置（transport.default_config 形态）
     # 逻辑指针（同 op_code 先例不加 FK）：最后激活的设备档案；手工改配置/删档案时置空
     active_profile_id = Column(String(36), nullable=True)
+    # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
+    deleted_at = Column(String(40), nullable=True)
 
 
 # 8. Device Profiles（P1: 设备档案 — 传输配置的命名快照）
@@ -158,6 +180,8 @@ class DeviceProfile(Base):
     id = Column(String(36), primary_key=True)
     label = Column(String(128), nullable=False, unique=True)  # 档案名唯一（路由先查给 400，DB 约束兜底）
     config = Column(JSON, nullable=False)  # 完整三段传输配置快照（validate_config 归一后入库）
+    # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
+    deleted_at = Column(String(40), nullable=True)
 
 
 # 9. Response Specs（P2: 事务化发送引擎 — 按指令持久化的应答匹配规格，新表）
@@ -180,6 +204,8 @@ class ResponseSpec(Base):
     # 只在后端算、客户端传入忽略（同 frame_recipes.stage.definition_hash 先例）；
     # 读侧重算比对 → stale 徽标**不阻断**（D7-A）。
     definition_hash = Column(String(80), nullable=True)
+    # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
+    deleted_at = Column(String(40), nullable=True)
 
 
 # 10. Sequences（P3: 序列编排 — 定义载体，新表；既有表零改）
@@ -191,6 +217,8 @@ class Sequence(Base):
     description = Column(Text, nullable=True)
     # 运行配置 JSON：normalize_config 归一（stop_on_error / read_timeout_ms）
     config = Column(JSON, nullable=False, default=dict)
+    # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
+    deleted_at = Column(String(40), nullable=True)
 
 
 # 11. Sequence Steps（P3: 步骤 = 保存时定值的帧快照 + 发送时重算计划，新表）
@@ -214,6 +242,8 @@ class SequenceStep(Base):
     # shell（外壳逐层 length/checksum 区间），发送期按配方重算（D6-B）。
     # 存量库缺列由 database.ensure_sequence_step_columns 启动自愈。
     wrap = Column(JSON, nullable=True)
+    # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
+    deleted_at = Column(String(40), nullable=True)
 
 
 # 12. Dispatch Logs（P5: 通讯日志落库 — 三路写入（manual/transaction/sequence）
@@ -237,6 +267,8 @@ class DispatchLog(Base):
     step_order = Column(Integer, nullable=True)  # 1-based 步序（仅序列路）
     rtt_ms = Column(Float, nullable=True)  # 事务=末次样本 / 序列=本步；manual·replay 无
     error = Column(Text, nullable=True)  # ERROR 原因（OK 为 NULL）
+    # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
+    deleted_at = Column(String(40), nullable=True)
 
 
 # 13. Frame Recipes（CP3 3a: 封装配方 — D13 拍板 A「封装配方 + 串行编译」，
@@ -256,3 +288,5 @@ class FrameRecipe(Base):
     version = Column(Integer, nullable=False, default=1)
     created_at = Column(Text, nullable=True)  # ISO-8601 UTC
     updated_at = Column(Text, nullable=True)  # ISO-8601 UTC
+    # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
+    deleted_at = Column(String(40), nullable=True)
