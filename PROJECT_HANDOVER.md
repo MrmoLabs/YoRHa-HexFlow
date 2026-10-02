@@ -1081,7 +1081,7 @@
     - **文档同步**：`DESIGN_CorePipeline.md` §7 批次四 4b/4c 进度注 + §6.3、
       `DESIGN_Decisions.md` D8/D9/D10、`README.md` §6、`pageStatus.json` + `PAGE_STATUS.md`、
       `PLAN_Backlog.md` §1 CP4 行 + 新 §8.26、本条。
-    - **提交**：→ **`PENDING_FEAT4B`（代码+文档），2026-10-02**。
+    - **提交**：→ **`03b25d3`（代码+文档），2026-10-02**。
     - **状态**：**批次四（治理）三子批 4a / 4b / 4c 全数完成并提交 —— CP4 收口**。
       遗留待确认项（不阻塞）：应答是否带转义字节（`escape` 未接进 `response_match`，
       D15 关联项 1 / §9.7 人工验证 ④）。

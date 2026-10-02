@@ -398,7 +398,7 @@ def build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) -> Wrap
   > 逐字回读、二次导入 upsert 覆盖、非法 JSON 与严格 400 三态），明细见
   > `PLAN_Backlog.md` §8.25。
 
-  > ✅ **4b + 4c 已提交 `PENDING_FEAT4B`（代码+文档，零 DDL），2026-10-02**：
+  > ✅ **4b + 4c 已提交 `03b25d3`（代码+文档，零 DDL），2026-10-02**：
   > **4b 绑定矩阵** —— `frontend/src/utils/bindingMatrix.js` 纯函数
   > `buildBindingMatrix`：一行一条**指令**（含未绑定的，覆盖率即治理信息）；默认格 /
   > 其它格按 `is_default` 真值分栏（API 出布尔、DB 存 0/1 皆认），显式槽 → 节点标签、
