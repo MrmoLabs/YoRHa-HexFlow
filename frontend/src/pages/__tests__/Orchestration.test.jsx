@@ -922,4 +922,41 @@ describe('Orchestration Page', () => {
         // 回显：草稿毕业为服务端行（link 反查 = inst-2）
         await waitFor(() => expect(screen.getByTestId('recipe-link').value).toBe('inst-2'));
     });
+
+    // ─── CP3 3d (D7-A): 绑定失效徽标 ─────────────────────────────────────
+    // 口径：仅 stale === true 出徽标（侧栏绑定行内）；false / null / 缺键均不出。
+    it('D7-A stale=true → 侧栏绑定行渲染「绑定已失效 STALE」徽标', async () => {
+        api.getBindings.mockResolvedValue([
+            { id: 'srv-1', label: '失效绑定', protocol_id: 'proto-1', instruction_id: 'inst-1', slot_order: 0, stale: true }
+        ]);
+        render(
+            <Orchestration
+                protocols={[{ id: 'proto-1', label: '协议A', children: [] }]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
+        );
+
+        const badge = await screen.findByTestId('binding-stale');
+        expect(badge.textContent).toContain('绑定已失效 STALE');
+        expect(screen.getByText('失效绑定')).toBeDefined();
+        // 同批行只出 1 枚（不重复渲染）
+        expect(screen.getAllByTestId('binding-stale')).toHaveLength(1);
+    });
+
+    it('D7-A stale=false / null → 不渲染徽标', async () => {
+        api.getBindings.mockResolvedValue([
+            { id: 'srv-1', label: '仍匹配', protocol_id: 'proto-1', instruction_id: 'inst-1', slot_order: 0, stale: false },
+            { id: 'srv-2', label: '无出处', protocol_id: 'proto-1', instruction_id: 'inst-1', slot_order: 1, stale: null }
+        ]);
+        render(
+            <Orchestration
+                protocols={[{ id: 'proto-1', label: '协议A', children: [] }]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
+        );
+
+        expect(await screen.findByText('仍匹配')).toBeDefined();
+        expect(screen.getByText('无出处')).toBeDefined();
+        expect(screen.queryByTestId('binding-stale')).toBeNull();
+    });
 });

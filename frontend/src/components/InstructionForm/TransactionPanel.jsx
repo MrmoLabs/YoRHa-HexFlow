@@ -45,6 +45,10 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
     const [rangesText, setRangesText] = useState('');
     const [specDirty, setSpecDirty] = useState(false);
     const [specOpen, setSpecOpen] = useState(false);
+    // CP3 3d (D7-A): 规格失效徽标 —— GET 回执的 stale（true = 生成后协议链已变）。
+    // 三态：true 出徽标 / false 仍匹配不出 / null 无出处（手工规格）不出；
+    // 存 null 而非布尔，缺省与降级路径天然「不出徽标」。
+    const [specStale, setSpecStale] = useState(null);
     const [settings, setSettings] = useState(DEFAULT_SETTINGS);
     const [running, setRunning] = useState(false);
     const [result, setResult] = useState(null);
@@ -58,6 +62,7 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
             setSpec(defaultSpec());
             setRangesText('');
             setSpecDirty(false);
+            setSpecStale(null);
             return () => { alive = false; };
         }
         (async () => {
@@ -67,12 +72,15 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
                 setSpec(row.spec);
                 setRangesText(formatIgnoreRanges(row.spec.ignore_ranges));
                 setSpecDirty(false);
+                // D7-A: 只认严格 true（false/null/undefined 一律归 null = 不出徽标）
+                setSpecStale(row.stale === true ? true : null);
                 setMessage(null);
             } catch (err) {
                 if (!alive) return;
                 setSpec(defaultSpec());
                 setRangesText('');
                 setSpecDirty(false);
+                setSpecStale(null); // 未取得行 → 无出处可比，不出徽标
                 if (err?.response?.status === 404) {
                     setMessage(null);
                 } else {
@@ -114,8 +122,12 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
         if (!instructionId || rangesInvalid) return;
         setMessage(null);
         try {
-            await api.saveResponseSpec(instructionId, spec);
+            const saved = await api.saveResponseSpec(instructionId, spec);
             setSpecDirty(false);
+            // D7-A: PUT 回执与 GET 同形（含 stale）——出处指纹在手工编辑时保留 →
+            // 比对仍有效；新建行无出处 → stale null → 徽标自然消失，不会崩。
+            // 回执缺 stale（旧夹具）→ null 同样不出徽标。
+            setSpecStale(saved?.stale === true ? true : null);
             setMessage({ kind: 'ok', text: 'SPEC SAVED' });
         } catch (err) {
             setMessage({ kind: 'err', text: `SPEC SAVE FAILED: ${err?.message || 'UNKNOWN'}` });
@@ -273,14 +285,26 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
                         <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-nier-light/40">
                             RESPONSE_SPEC
                         </span>
-                        <button
-                            type="button"
-                            onClick={handleSaveSpec}
-                            disabled={!instructionId || rangesInvalid}
-                            className="text-[9px] font-mono uppercase tracking-widest border border-nier-light/20 px-2 py-1 text-nier-light/70 hover:border-nier-light hover:text-nier-light transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                            {specDirty ? 'SAVE *' : 'SAVE'}
-                        </button>
+                        <div className="flex items-center gap-2">
+                            {/* CP3 3d (D7-A): 仅 stale === true 出徽标（false/null 不渲染） */}
+                            {specStale === true && (
+                                <span
+                                    data-testid="response-spec-stale"
+                                    title="生成后协议链已变更，请重新生成（REGENERATE）"
+                                    className="text-[9px] font-mono uppercase tracking-widest border border-[#E58D28]/60 px-2 py-1 text-[#FFB74D]"
+                                >
+                                    规格已失效 STALE
+                                </span>
+                            )}
+                            <button
+                                type="button"
+                                onClick={handleSaveSpec}
+                                disabled={!instructionId || rangesInvalid}
+                                className="text-[9px] font-mono uppercase tracking-widest border border-nier-light/20 px-2 py-1 text-nier-light/70 hover:border-nier-light hover:text-nier-light transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                                {specDirty ? 'SAVE *' : 'SAVE'}
+                            </button>
+                        </div>
                     </div>
 
                     {!instructionId && (

@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI):
         ensure_binding_columns,
         ensure_protocol_version_column,
         ensure_recipe_columns,
+        ensure_response_spec_columns,
         ensure_sequence_step_columns,
     )
     from backend.db.seed import seed_sample_instructions, seed_sample_protocols
@@ -45,6 +46,8 @@ async def lifespan(app: FastAPI):
     ensure_recipe_columns(engine)
     # CP3 3c (D6-B): sequence_steps.wrap 单列自愈（同上口径）。
     ensure_sequence_step_columns(engine)
+    # CP3 3d: response_specs.stage + definition_hash 双列自愈（同上口径）。
+    ensure_response_spec_columns(engine)
     db = SessionLocal()
     try:
         seed_operator_templates(db)

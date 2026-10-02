@@ -13,6 +13,7 @@ vi.mock('../../../api', () => ({
 
 import { api } from '../../../api';
 import TransactionPanel from '../TransactionPanel';
+import { defaultSpec } from '../../../utils/transactionView';
 
 const INSTRUCTION = { id: 'instr-1', name: '示例指令', code: '0x10' };
 const PAYLOAD = 'AABB01';
@@ -169,5 +170,51 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
         expect(screen.getByText(/格式非法/)).toBeDefined();
         // 非法区间 → SAVE 禁用（不落半截状态）
         expect(screen.getByRole('button', { name: /SAVE/ }).disabled).toBe(true);
+    });
+
+    // ─── CP3 3d (D7-A): 应答规格失效徽标 ─────────────────────────────────
+    // 口径：仅 stale === true 出徽标；false（仍匹配）/ null（无出处，手工规格）
+    // 一律不渲染。徽标挂在规格编辑器头部（RESPONSE_SPEC 行）。
+    const openSpecWith = async (stale) => {
+        api.getResponseSpec.mockResolvedValue({
+            id: 's1',
+            instruction_id: 'instr-1',
+            spec: defaultSpec(),
+            stage: null,
+            definition_hash: 'sha256:fixture',
+            stale
+        });
+        render(<TransactionPanel instruction={INSTRUCTION} payload={PAYLOAD} />);
+        fireEvent.click(await screen.findByRole('button', { name: /SPEC ▸/ }));
+    };
+
+    it('D7-A stale=true → 编辑器头部出「规格已失效 STALE」徽标，字段编辑重渲染后仍在', async () => {
+        await openSpecWith(true);
+
+        expect(screen.getByTestId('response-spec-stale').textContent).toContain('规格已失效 STALE');
+
+        // 本地改字段（脏稿重渲染）→ 徽标不丢
+        fireEvent.change(screen.getByPlaceholderText('AA55'), { target: { value: 'AA55' } });
+        expect(screen.getByTestId('response-spec-stale')).toBeDefined();
+        expect(screen.getByRole('button', { name: /SAVE \*/ })).toBeDefined();
+    });
+
+    it('D7-A stale=false（仍匹配）→ 不渲染徽标', async () => {
+        await openSpecWith(false);
+        expect(screen.getByText('RESPONSE_SPEC')).toBeDefined(); // 编辑器头部在场
+        expect(screen.queryByTestId('response-spec-stale')).toBeNull();
+    });
+
+    it('D7-A stale=null（无出处的手工规格）→ 不渲染徽标', async () => {
+        await openSpecWith(null);
+        expect(screen.queryByTestId('response-spec-stale')).toBeNull();
+    });
+
+    it('D7-A 404（未配置规格）→ 本地默认且无徽标（降级路径不崩）', async () => {
+        api.getResponseSpec.mockRejectedValue(Object.assign(new Error('nf'), { response: { status: 404 } }));
+        render(<TransactionPanel instruction={INSTRUCTION} payload={PAYLOAD} />);
+        fireEvent.click(await screen.findByRole('button', { name: /SPEC ▸/ }));
+        expect(await screen.findByText('RESPONSE_SPEC')).toBeDefined();
+        expect(screen.queryByTestId('response-spec-stale')).toBeNull();
     });
 });

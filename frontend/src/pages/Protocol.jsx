@@ -633,6 +633,64 @@ export default function Protocol({ protocols, setProtocols }) {
         [currentProtocol]
     );
 
+    // ===== CP3 3d (D5-A): 「据此生成 RESPONSE SPEC」底栏 =====================
+    // 挂载 / 切协议按 protocol_id 拉候选（GET /response-specs/targets）——后端只给
+    // 层链可解析的指令并把 uses_protocol（当前协议在链内）排前；切换即清选中与回显
+    // （候选集属旧协议）。拉取失败静默降级：候选清空（下拉禁用 + 短提示行），不打断编辑。
+    const [specTargets, setSpecTargets] = useState([]);
+    const [specTargetId, setSpecTargetId] = useState(''); // '' = 未选 → 生成钮禁用
+    const [specTargetsError, setSpecTargetsError] = useState('');
+    const [specGenerating, setSpecGenerating] = useState(false);
+    // { kind: 'ok' | 'err', text, warnings }：ok 行回显层数 / stage / 降级警告，
+    // err 行透传 handleResponse 格式化后的后端 detail（同 saveError 口径）。
+    const [specMessage, setSpecMessage] = useState(null);
+
+    useEffect(() => {
+        let alive = true;
+        setSpecTargetId('');
+        setSpecMessage(null);
+        if (!activeProtocolId) {
+            setSpecTargets([]);
+            setSpecTargetsError('');
+            return () => { alive = false; };
+        }
+        (async () => {
+            try {
+                const rows = await api.getResponseSpecTargets(activeProtocolId);
+                if (!alive) return;
+                setSpecTargets(Array.isArray(rows) ? rows : []);
+                setSpecTargetsError('');
+            } catch (error) {
+                if (!alive) return;
+                setSpecTargets([]);
+                setSpecTargetsError(`候选加载失败：${error?.message || '网络/服务错误'}`);
+            }
+        })();
+        return () => { alive = false; };
+    }, [activeProtocolId]);
+
+    // 生成 = POST /response-specs/{id}/generate：成功回层数/stage/warnings（warnings
+    // 是降级说明，规格已落库）；400/404/网络错误统一透传 detail。
+    const handleGenerateSpec = async () => {
+        if (!specTargetId || specGenerating) return;
+        setSpecGenerating(true);
+        setSpecMessage(null);
+        try {
+            const result = await api.generateResponseSpec(specTargetId);
+            const target = specTargets.find(t => t.instruction_id === specTargetId);
+            const layers = Array.isArray(result?.layers) ? result.layers : [];
+            setSpecMessage({
+                kind: 'ok',
+                text: `${target?.name || specTargetId} · ${layers.length} 层 · STAGE ${result?.stage ?? '—'}`,
+                warnings: Array.isArray(result?.warnings) ? result.warnings : []
+            });
+        } catch (error) {
+            setSpecMessage({ kind: 'err', text: error?.message || '生成失败', warnings: [] });
+        } finally {
+            setSpecGenerating(false);
+        }
+    };
+
     if (!currentProtocol) {
         return (
             <div className="flex-1 flex items-center justify-center text-nier-light/40 font-mono tracking-widest">
@@ -817,6 +875,79 @@ export default function Protocol({ protocols, setProtocols }) {
                         setSelectedId(id);
                     }}
                 />
+            </div>
+
+            {/* CP3 3d (D5-A): 底部动作条 —— 选指令 →「据此生成 GENERATE」按其分层链
+                映射出逐层应答规格并覆盖落库（★ = 候选链含当前协议，后端已排前）。
+                空候选 = 本协议无可生成指令（下拉禁用 + 提示）；失败只出短错误行。 */}
+            <div className="border-t border-[#E58D28]/60 bg-nier-dark/95 px-4 py-2 flex flex-col gap-1.5 shrink-0">
+                <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-nier-light/50 whitespace-nowrap">
+                        据此生成 GENERATE
+                    </span>
+                    <select
+                        data-testid="response-spec-targets"
+                        value={specTargetId}
+                        onChange={(e) => setSpecTargetId(e.target.value)}
+                        disabled={specTargets.length === 0}
+                        title="可生成应答规格的指令（★ = 分层链含当前协议）"
+                        className="grow min-w-0 max-w-[20rem] bg-nier-dark border border-nier-light/40 px-2 py-1 font-mono text-[10px] text-nier-light focus:outline-none focus:border-nier-light transition-colors duration-100 disabled:opacity-40"
+                    >
+                        {specTargets.length === 0 && (
+                            <option value="">{specTargetsError ? '候选不可用 (UNAVAILABLE)' : '本协议暂无可生成的指令'}</option>
+                        )}
+                        {specTargets.length > 0 && <option value="">— 选择指令 (SELECT) —</option>}
+                        {specTargets.map(target => (
+                            <option key={target.instruction_id} value={target.instruction_id}>
+                                {`${target.uses_protocol ? '★ ' : ''}${target.name || target.instruction_id} (${target.code}) · ${target.layers}层`}
+                            </option>
+                        ))}
+                    </select>
+                    <button
+                        type="button"
+                        data-testid="response-spec-generate"
+                        onClick={handleGenerateSpec}
+                        disabled={!specTargetId || specGenerating}
+                        title="按指令分层链生成逐层应答规格并覆盖保存"
+                        className="border border-[#E58D28]/60 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-[#FFB74D] hover:bg-[#E58D28] hover:text-black disabled:opacity-30 disabled:pointer-events-none transition-colors duration-100 whitespace-nowrap"
+                    >
+                        {specGenerating ? '生成中 GENERATING…' : '生成 GENERATE'}
+                    </button>
+                </div>
+                {specTargetsError && (
+                    <div
+                        data-testid="response-spec-targets-error"
+                        className="truncate text-[10px] font-mono text-[#FFB74D]"
+                        title={specTargetsError}
+                    >
+                        {specTargetsError}
+                    </div>
+                )}
+                {specMessage && specMessage.kind === 'ok' && (
+                    <div
+                        data-testid="response-spec-status"
+                        className="flex items-center gap-2 min-w-0 text-[10px] font-mono text-nier-light/70"
+                    >
+                        <span className="whitespace-nowrap text-green-400">生成完成 {specMessage.text}</span>
+                        {specMessage.warnings.length > 0 && (
+                            <span
+                                className="truncate text-[#FFB74D] opacity-80"
+                                title={specMessage.warnings.join(' / ')}
+                            >
+                                ⚠ {specMessage.warnings.join(' / ')}
+                            </span>
+                        )}
+                    </div>
+                )}
+                {specMessage && specMessage.kind === 'err' && (
+                    <div
+                        data-testid="response-spec-error"
+                        className="truncate text-[10px] font-mono text-[#FFB74D]"
+                        title={specMessage.text}
+                    >
+                        生成失败 GENERATE FAILED：{specMessage.text}
+                    </div>
+                )}
             </div>
 
             {/* 批次一 P0-1: 删协议引用警示（仅被绑定引用时打开；确认 → 后端

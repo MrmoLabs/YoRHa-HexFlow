@@ -23,9 +23,9 @@
 | D2 | 分层求值：单层+容器 vs 跨协议引用 | **P0 先拍** | 「层层外包」无法实现或事后返工 refs 模型 | ✅ **A**（单层+容器，PROTOCOL_REF 按需再议） |
 | D3 | 插槽契约与溢出/欠载策略 | **P0 先拍** | 继续静默发错帧（溢出 append / 欠载补零） | ✅ **A**（加契约三件套，默认口径取现状零回归） |
 | D4 | 封装点位置（谁负责「套协议」） | P1 | 每加一条发送路径重考虑一次，双端继续漂移 | ✅ **A**（后端 frame_builder 单一入口） |
-| D5 | 入方向：协议是否双向 / 应答规格来源 | P1 | 手工应答规则与协议定义持续漂移 | ✅ **A**（协议页「据此生成 response_spec」）+ 实施按 **D15** 分层生成 |
+| D5 | 入方向：协议是否双向 / 应答规格来源 | P1 | 手工应答规则与协议定义持续漂移 | ✅ **A**（协议页「据此生成 response_spec」）+ 实施按 **D15** 分层生成 → **已实施（CP3-3d，2026-10-01，提交 `PENDING_FEAT`）**：协议页「据此生成」按配方**每层各映射一次**，`GET /response-specs/targets` 给候选、`POST /response-specs/{instruction_id}/generate` 落库 |
 | D6 | 三时间点语义（设计期/编译期/发送期） | P1 | 冻结 vs 重算口径分散在各页，靠口口相传 | ✅ **A**（先成文于 CorePipeline，序列封装冻结口径随后续批） |
-| D7 | 版本演进与失效通知 | P2 | 指令/协议改了，绑定与冻结产物静默过期 | ✅ **A**（definition_hash 失效徽标，不阻断）→ **配方消费方已实施（CP3-3a，2026-10-01，后端算 + 保存期回写 + 编译期比对不回写）；binding / response_spec 留 3d** |
+| D7 | 版本演进与失效通知 | P2 | 指令/协议改了，绑定与冻结产物静默过期 | ✅ **A**（definition_hash 失效徽标，不阻断）→ **三处消费方全数实施**：配方（CP3-3a，2026-10-01，后端算 + 保存期回写 + 编译期比对不回写）；binding / response_spec（CP3-3d，2026-10-01，提交 `PENDING_FEAT`，含 DDL 两列） |
 | D8 | 校验责任分层 | P2 | 直连 API 绕过前端的口子继续存在 | ✅ **A**（三层校验表：后端强制、前端前置提示） |
 | D9 | 传输层归属（不归协议定义页管） | P2 | 有人往协议页加波特率，层次混淆 | ✅ **A**（纯文档划界） |
 | D10 | 设备/通道维度（device_code 是否扩到协议与绑定） | P2 | 多设备共用协议时无法区分 | ✅ **A**（先用槽 accepts 白名单近似，协议保持设备无关） |
@@ -33,7 +33,7 @@
 | D12 | 引用完整性与级联策略矩阵 | P2 | 删指令留脏行（binding/response_spec/sequence_step/logs） | ✅ **A**（引用计数 + 弹窗警示 + 后端同事务级联兜底）+ 子项已由 **D14 ②** 细化（原文两处口径矛盾） |
 | D13 | 层数模型与跨协议组合（封装配方 vs `PROTOCOL_REF`） | P1 | 外壳套外壳无法组合，或事后上 B 导致 refs 模型与双端编译器返工 | ✅ **A**（封装配方 + 串行 `build_wrapped`；`PROTOCOL_REF` 挂起并写明重开条件，2026-10-01）→ **3a 已实施（CP3-3a 完成 2026-10-01，含 DDL + 加工页分层预览；`dispatch` `wrap.recipe_id` 接线提前并入 3a）+ 3b 已提交 `c4b1f7f`（CP3-3b 编排页配方编辑器 + 试发改走配方，2026-10-01，零 DDL）** |
 | D14 | 批次二三个口径（存量槽迁移 / 序列步骤处置 / 转义层位） | P1 | 批次二排了却无法开工，`reject` 分支不知对谁生效、转义层位分歧留现场 | ✅ **A/A/A**（存量不迁移 / `sequence_steps` 失效标记不阻断 / 试发改带 `wrap` 下发，2026-10-01）= CP2 开工前置**已满足** |
-| D15 | 入方向：应答是否逐层解包（D5 × D13 交互） | P1 | 配方上线后单层应答匹配必然失配，`response_specs` 模型返工或现场关校验 | ✅ **A**（`response_spec` 增 `stage` 维度 + 按 `stages` 逆序解包，2026-10-01）= D5-A 实施前置**已满足** |
+| D15 | 入方向：应答是否逐层解包（D5 × D13 交互） | P1 | 配方上线后单层应答匹配必然失配，`response_specs` 模型返工或现场关校验 | ✅ **A**（`response_spec` 增 `stage` 维度 + 按 `stages` 逆序解包，2026-10-01）= D5-A 实施前置**已满足** → **已实施（CP3-3d，2026-10-01，提交 `PENDING_FEAT`）**：`response_specs.stage` 单列 + `response_match` 逆序解包逐层跑五要素（无配方 = 单层退化，存量零改） |
 
 > D1/D2/D3 属「先拍再动工」；D4–D6 属「本批动工前拍」；其余可迭代中补。
 > **D1–D15 已全部拍板**（D1–D12 于 2026-09-24、D13–D15 与 D11 分段于
@@ -148,6 +148,19 @@ checksum 闲置，两者会漂移。
 > 不够用** —— 应答是链路壳帧，需逐层解包才轮得到内核的 echo_header/length/checksum。
 > 是否按配方分层见 **D15（已拍板 = A 应答逐层解包）**；D5-A 的实施设计**须按 D15
 > 修订**，不得按单层字面实现。
+>
+> ✅ **已按 D15-A 修订实施（CP3-3d，2026-10-01，提交 `PENDING_FEAT`）**：
+> 新建 `backend/core/response_generate.py` —— `resolve_layers` 取默认配方的层链
+> （**无默认协议则 400**）→ 每层把该层协议的 fixed→`echo_header_bytes`、
+> length→`length_element`（`offset_val = A - head - trailer`，引用到插槽或区间
+> 闭合不定 → **跳过 + warning**）、checksum→`checksum_element`（refs 只圈插槽 →
+> `span_start = head` + `span_end_pad = trailer`；恰好整帧 → 省略区间；否则跳过 +
+> warning）各映射一次 → **`stages[]` 每层一份 spec**，落库的那层记 `stage`；
+> **1 层不写 `stages` 键**（存量形逐字节等价）。生成入口在协议页（选指令 →
+> 「据此生成」），`GET /response-specs/targets?protocol_id=` 候选按
+> `uses_protocol` 前置、`POST /response-specs/{id}/generate` upsert 并记
+> `chain_fingerprint` 出处；生成后**仍可手工改**（手工 PUT 保留 `definition_hash`
+> 不抹出处）。完整接线见 `DESIGN_CorePipeline.md` §7 批次三 3d 进度注。
 
 ---
 
@@ -190,6 +203,17 @@ binding，指令改结构不提醒序列冻结 payload 与 response_spec。
 > DB**：若编译即回写，下一次比对必然「已对齐」，徽标即失去意义；故 `stages[]` 回显的
 > hash 是**编译时的当前指纹**（响应回显），**落库只在 `/recipes` 保存期**。binding /
 > response_spec 两处仍留 `DESIGN_CorePipeline.md` §7 批次三 **3d**。
+>
+> ✅ **余下两处已实施（CP3-3d，2026-10-01，提交 `PENDING_FEAT`，含 DDL 两列）**：
+> `protocol_bindings.definition_hash` 与 `response_specs.definition_hash` 均**只在
+> 后端算**（同 `definition_hash.py`，写在创建/生成期，客户端传入忽略）——
+> **绑定**：`create_binding` 记出处，`update_binding` **仅 `protocol_id` 真变时重记**
+> （改 label/priority **不抹**失效提示）；**应答规格**：随「据此生成」记
+> `chain_fingerprint`（配方 → 所引协议的复合指纹），链解析不出 → 记 NULL。
+> 读侧 `stale` **三态**：出处 NULL → `null`、比对一致 → `false`、**指纹对不上 →
+> `true`**；前端 **只在 `stale === true` 出琥珀「定义已变更」徽标**
+> （`TransactionPanel` 应答规格处 / `Orchestration` 绑定处），`false`/`null`
+> 一律不出 —— 失效是**提示不是阻断**，`/dispatch` 路径不受影响。
 
 ---
 
@@ -522,6 +546,23 @@ hex 字符串**、纯函数、单遍、无环；`routers/protocol.py::_validate_
 仅加一列，符合硬约束）+ `response_match` 按 `stages` **逆序解包**逐层跑五要素；
 D5-A 的「据此生成」**按层各执行一次**。D5-A 的实施设计须据此修订，**不得按单层
 字面实现**。关联待确认项（应答是否也要反转义）随 A 方案一并在真实应答帧上核对。
+
+> ✅ **已实施（CP3-3d，2026-10-01，提交 `PENDING_FEAT`，含 DDL 3 列仅新增）**：
+> ① `response_specs` 加 `stage`（另加 `definition_hash` 供 D7-A，见 D7 实施注）、
+> `protocol_bindings` 加 `definition_hash` —— 三列全部走**补列自愈**
+> （`ensure_response_spec_columns` / `ensure_binding_columns` 第 4 列，lifespan 接线）。
+> ② `_SPEC_KEYS` 收 `stages`、`_STAGE_KEYS`/`_UNPACK_KEYS`（head+trailer ≥ 1）、
+> `_CHECKSUM_KEYS` 收 `span_end_pad`/`field_offset_from_end`、`_LENGTH_KEYS` 收
+> `offset_from_end`，`MAX_STAGES = 4`（与 `MAX_RECIPE_STAGES` 同值）。
+> ③ **逆序解包**：`_match_stages` 按 **i = n-1 → 0** 跑五要素，head/trailer **同时
+> 剥 `received` 与 `sent`**，reasons 前缀 `STAGE[i].`；**顶层**禁 echo_header /
+> length / checksum、`mode` 禁 `echo`（外壳层没有这些要素）。
+> ④ **后插槽字段**（运行期才知道绝对位置）改用 `offset_from_end` /
+> `field_offset_from_end`（= `len(frame) - 字段起点`），与绝对 `offset`/
+> `field_offset` **互斥**（非 0 同给 → 400）。
+> ⑤ **退化保底**：spec 无 `stages` 键 → 原单帧路径**逐字节不变**
+> （`test_bare_frame_path_unchanged` + 存量用例零改全绿）。**关联项「应答是否也带
+> 转义字节」仍未确认**，`escape` 反转义尚未接进 `response_match`（见 §9.7 ④）。
 
 ---
 

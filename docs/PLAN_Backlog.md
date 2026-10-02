@@ -36,7 +36,13 @@
 | CP1 | Core Pipeline 批次一：1a 绑定三列 DDL + 1b frame_builder + 1c 发送 wrap 接线 + 1d 文档（`DESIGN_CorePipeline.md` §7 首批） | **已提交 ✅ `31bc367`（代码+文档）/ `da91228`（db 同步），2026-09-24**——反馈 1（星标确认，§8.8）与反馈 2（协议卡面直填，§8.9）均已并入验收 |
 | CP2 | Core Pipeline 批次二（防错）：D3 `fit_policy=reject` 执行（**存量槽不迁移**）+ 槽契约 warning 徽标 + 新建槽 UI 默认 reject + D12 删除级联（**`sequence_steps` 失效标记不阻断**，活配置级联删 / 冻结快照留 / 日志留）+ **转义层位统一**（封装试发改带 `wrap` 下发）（`DESIGN_CorePipeline.md` §7 批次二） | **已提交 ✅ `5afe706`（代码+文档），2026-10-01**——**人工验证 5 项已通过**（STRICT 400 / 删指令三分弹窗 / 序列失效只读 / 试发 warnings 徽标 / 真实链路帧）：BE 426/426（基线 383 + 43）、FE 915/915（63 文件）、`vite build` EXIT=0、yorha-ui 校验器 13 文件 0 违规；**零 DDL**（`yorha.db` 未随本批提交）。明细见 §8.19。2026-10-01 起为 CP3 硬前置（CP3 的 3a 复用其 reject 分支） |
 | CP2b | D11 分段 ① **向量表共享 fixture 化**（两端测试读同一份 JSON 向量、新增向量只写一处；`DESIGN_Decisions.md` D11 实施注） | **已提交 ✅ `da0179d`（代码+文档），2026-10-01**——跨语言特殊值约定拍板 = **`$v` 包装对象**（`{"$v":"Infinity"}` / `"-Infinity"` / `"NaN"`，其余标量按 JSON 原型天然分型）；新增根目录 **`vectors/`（12 个 JSON 文件 / 15 张表 + 双端加载器 + README）**，13 个后端 / 6 个前端测试文件改读共享 JSON。终态：BE 426/426、FE 915/915（63 文件）、`npx vite build` EXIT=0、yorha-ui 校验器 7 文件 0 违规；**零 DDL**。明细见 §8.20。**不阻塞 CP3**（CP3 只硬前置 CP2 的 reject 分支） |
-| CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | 🔄 **3a 已提交 ✅ `e63d76f`（代码+文档）/ `438f3af`（db 同步）；3b 已提交 ✅ `c4b1f7f`（代码+文档，零 DDL），2026-10-01**，**3c 已提交 ✅ `fbad083`（代码+文档）/ `17c6830`（db 同步），2026-10-01**；3d 未开工——硬前置 CP2 ✅；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**，实施设计已写入 §9 与 §7。**3a 含 DDL**（`frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈）→ yorha.db 单独同步提交；**3a 提前并入了原属 3b 的 `dispatch` `wrap.recipe_id` 接线**（加工页预览/TRANSMIT/事务三路须同字节，缺接线则预览帧与出线帧不同）。3a 终态：BE 466/466（基线 426 + 40）、FE 920/920（63 文件，基线 915 + 5）、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、**真路由冒烟 25 项 PASS**；明细见 §8.21。**3b 终态**：**纯前端批、零 DDL**（未改 `models.py`/`database.py`，`yorha.db` 未随本批提交）—— FE **924/924（63 文件，基线 920 + 4）**、既有「属性面板四分区 select = 3」用例**零改全绿**（未建配方时编辑器不占 select）、BE 466/466、`npx vite build` EXIT=0、yorha-ui 校验器 3 文件 0 违规、**真 curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；明细见 §8.22。**3c 终态（2026-10-01）**：**含 DDL** —— `sequence_steps` 新增 `wrap JSON` 单列自愈（`database.ensure_sequence_step_columns`，镜像 3a `ensure_recipe_columns` 先例）→ yorha.db **单独同步提交**；BE **496/496（基线 466 + 30）**、FE **932/932（63 文件，基线 924 + 8）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**真路由冒烟 30 项 ALL PASS** + **真浏览器 UI 验证 6 项通过**；明细见 §8.23。**3d 未开工**（前置 D15-A 已拍板，实施口径见 §9.7 3d 行） |
+| CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | **已提交 ✅ 3a `e63d76f`（代码+文档）/ `438f3af`（db 同步）、3b `c4b1f7f`（代码+文档，零 DDL）、3c `fbad083`（代码+文档）/ `17c6830`（db 同步）、3d `PENDING_FEAT`（代码+文档）/ `PENDING_DB`（db 同步），2026-10-01 —— CP3 四个子批全数完成**。硬前置 CP2 ✅；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**。**3a 含 DDL**（`frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈）→ yorha.db 单独同步提交；**3a 提前并入了原属 3b 的 `dispatch` `wrap.recipe_id` 接线**（加工页预览/TRANSMIT/事务三路须同字节，缺接线则预览帧与出线帧不同）。3a 终态：BE 466/466（基线 426 + 40）、FE 920/920（63 文件，基线 915 + 5）、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、**真路由冒烟 25 项 PASS**；明细见 §8.21。**3b 终态**：**纯前端批、零 DDL**（未改 `models.py`/`database.py`，`yorha.db` 未随本批提交）—— FE **924/924（63 文件，基线 920 + 4）**、既有「属性面板四分区 select = 3」用例**零改全绿**（未建配方时编辑器不占 select）、BE 466/466、`npx vite build` EXIT=0、yorha-ui 校验器 3 文件 0 违规、**真 curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；明细见 §8.22。**3c 终态（2026-10-01）**：**含 DDL** —— `sequence_steps` 新增 `wrap JSON` 单列自愈（`database.ensure_sequence_step_columns`，镜像 3a `ensure_recipe_columns` 先例）→ yorha.db **单独同步提交**；BE **496/496（基线 466 + 30）**、FE **932/932（63 文件，基线 924 + 8）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**真路由冒烟 30 项 ALL PASS** + **真浏览器 UI 验证 6 项通过**；明细见 §8.23。**3d 终态（2026-10-01）**：**含 DDL** —— **3 列仅新增**
+（`response_specs.stage` / `response_specs.definition_hash` /
+`protocol_bindings.definition_hash`，`ensure_response_spec_columns` 新建 +
+`ensure_binding_columns` 扩列自愈，lifespan 接线）→ yorha.db 沿先例
+**手工只跑 3 条 ALTER 后单独同步提交**；BE **537/537（基线 496 + 41）**、
+FE **944/944（63 文件，基线 932 + 12）**、`npx vite build` EXIT=0、yorha-ui
+校验器 8 文件 0 违规、**真路由冒烟 43 项 ALL PASS**；明细见 §8.24 |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -2017,7 +2023,80 @@ E2`、`received` 同帧（过 `match_response` 语义）/ **改中间层协议 �
 条目 37、`pageStatus.json` 序列页条目 + `node scripts/generate-page-status.mjs`
 再生成 `docs/PAGE_STATUS.md`。
 
-## 9. 保留勿动（非任务，勿清理）
+### 8.24 Core Pipeline 批次三 · 3d（CP3-3d）：D5-A 按 D15-A 生成 response_spec + D7-A 余下徽标（含 DDL）
+
+**批次**（2026-10-01，**含 DDL** —— `models.py` 新增 3 列（仅新增列）+
+`database.ensure_response_spec_columns` 新建 / `ensure_binding_columns` 扩第 4 列
+补列自愈（`main.py` lifespan 调用），故**有 `chore(db)` 提交**；未碰
+`processor.py` / `graph.py` / `Blueprint.jsx`；`/dispatch` 缺省口径由
+`test_bare_frame_path_unchanged` + 存量用例**零改全绿**双钉。）
+
+**范围（`DESIGN_CorePipeline.md` §9.7 3d 行 · D5-A 按 D15-A 修订 + D7-A 余下两处）**
+
+- **DDL 三列（仅新增）**：`response_specs.stage`（该条 spec 在配方链中的层序）、
+  `response_specs.definition_hash`（`chain_fingerprint` 出处）、
+  `protocol_bindings.definition_hash`。补列自愈四态与 `ensure_recipe_columns`
+  同构：缺列补列且存量行回填 `NULL` / 二次调用 no-op / `create_all` 已带列 no-op /
+  表不存在 no-op。
+- **生成映射（`core/response_generate.py`，新建）**：`resolve_layers` =
+  默认配方 → **每层各生成一次** / 默认协议 → 单层 / 皆无 → `ValueError` → **400
+  「该指令既无默认封装配方也无默认协议，无法据此生成」**。每层把协议叶子
+  （容器内联、`is_enabled is False` 跳过、slot 恒叶子）映射成五要素：
+  **fixed → `echo_header_bytes`**（首个非 fixed 前的连续 fixed）、
+  **length → `length_element`**（refs 含插槽 → `offset_val = A - head - trailer`；
+  插槽后仍有插槽 / 区间模式 / 悬空 → **跳过 + warning**）、
+  **checksum → `checksum_element`**（`BACKEND_ALGO` 映射；refs 只圈插槽 →
+  `span_start = head` + `span_end_pad = trailer`；恰好全叶子除自身 → 整帧省区间；
+  否则跳过 + warning）、字段位置统一给 `offset` 或 **`offset_from_end`**。
+  **1 层不写 `stages` 键**（存量形逐字节等价）；产出先过 `normalize_spec` 归一。
+- **逆序解包（`core/response_match.py`）**：`_SPEC_KEYS` 增 `stages`、
+  `_STAGE_KEYS` / `_UNPACK_KEYS`（head+trailer ≥ 1）、`_CHECKSUM_KEYS` 增
+  `span_end_pad` / `field_offset_from_end`、`_LENGTH_KEYS` 增 `offset_from_end`，
+  `MAX_STAGES = 4`（同 `MAX_RECIPE_STAGES`）。`_match_stages` 按 **i = n-1 → 0**
+  跑五要素，head/trailer **同时剥 `received` 与 `sent`**，reasons 前缀
+  `STAGE[i].`；**顶层禁 echo_header / length / checksum、`mode` 禁 `echo`**
+  （外壳层无此三要素）。**无 `stages` 键 → 原单帧路径逐字节不变**。
+- **后插槽字段**：绝对位置不可静态定位 → 新增 `offset_from_end` /
+  `field_offset_from_end`（= `len(frame) - 字段起点` = `Σ bls[idx:]`），
+  与绝对 `offset` / `field_offset` **互斥**（非 0 同给 → 400）。
+- **端点**：`POST /response-specs/{instruction_id}/generate`（写 spec + stage +
+  `definition_hash`，返回 `{spec, stage, definition_hash, stale, layers, warnings}`；
+  `warnings` 是降级说明不是错误，规格已保存）；`GET /response-specs/targets?
+  protocol_id=`（**声明在 `/{instruction_id}` 之前**，`uses_protocol` 前置）；
+  手工 `PUT` **保留 `definition_hash`**、`stage` 镜像随 spec 重算。
+- **D7-A 绑定徽标**：`create_binding` 记出处（空/协议不存在 → `NULL`）；
+  `update_binding` **仅 `protocol_id` 真变时重记**（改 label/priority 不抹失效
+  提示）；读侧 `stale` 三态挂** ORM 行本身**（NULL 出处 → `None`、链解析不出 →
+  `true`、比对一致 → `false`）。
+- **前端（仅 `frontend/`）**：`api/responseSpecs.js` 增
+  `getResponseSpecTargets` / `generateResponseSpec`；协议页新增「据此生成
+  RESPONSE SPEC」底栏（切协议重拉候选、选中前生成钮禁用、成功回显
+  `N 层 · STAGE k` + `warnings` 降级行、失败透传 400 detail、候选拉取失败短错误行
+  降级不打断编辑）；`TransactionPanel`（`response-spec-stale`）与 `Orchestration`
+  （`binding-stale`）两处徽标 —— **只在 `stale === true` 渲染**，
+  `false` / `null` 一律不出。
+
+**测试**：新建 `backend/tests/test_response_generate.py` **41 例**（`resolve_layers`
+三分支 / 按层三要素映射与跳过 warning / 单层不写 `stages` / `chain_fingerprint`
+失败回 NULL）；`test_response_match.py` 仅 `test_length_normalization_and_validation`
+精确断言补 `offset_from_end: None` 一行（**有意的模型扩展**）；FE 补 **12 例**
+（Protocol 6 + TransactionPanel 3 + Orchestration 3）。终态：BE **537/537**
+（基线 496 + 41）、FE **944/944（63 文件，基线 932 + 12）**、
+`npx vite build` EXIT=0、yorha-ui 校验器 8 文件 0 违规。
+
+**真路由冒烟 43 项 ALL PASS**（`Temp/opencode/smoke_3d.py`，真 uvicorn :8765）：
+DDL 三列落真库、无链 400 / 不存在 404、三层协议 + 配方挂默认 → `targets` 命中 +
+`uses_protocol` + 层数 3、生成 `stage=2` / `layers=3` / `warnings` 空 /
+`stale=false` / sha256 出处、`GET` 复核、dispatch `spec_source=instruction`
+应答 OK、**内联写错最内层 length → `MATCH_FAILED` + `STAGE[0].`**、绑定记出处 +
+`stale=false`、改协议 → spec 与 binding **同时 `stale=true`**、手工 PUT 保留出处 +
+`stage` 镜像 = 2、无 `stages` → stage `NULL`、回滚协议 → 两处 `stale=false`。
+
+**文档同步**：`DESIGN_CorePipeline.md` §7 批次三 3d 进度注 + §9.7 排批表 3d 行 +
+人工验证必查 ④、§9.8 末条改「已随 3d 完成」，`DESIGN_Decisions.md` D5/D7/D15
+表行与三处实施注，`PLAN_Backlog.md` §1 CP3 行 + 本节，`PROJECT_HANDOVER.md`
+条目 38，`pageStatus.json` 经 `node scripts/generate-page-status.mjs` 再生。
+
 
 - `backend/core/processor.py` / `graph.py` 未接线（Phase-2 遗留，保留勿删，
   勿引入新依赖）

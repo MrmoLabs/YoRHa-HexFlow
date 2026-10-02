@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from backend.core.definition_hash import protocol_definition_hash
 from backend.db.database import get_db
 from backend.db.models import Instruction, ProtocolBinding, ProtocolTemplate
 from backend.schemas.binding_api import BindingCreate, BindingResponse, BindingUpdate
@@ -17,6 +18,11 @@ from backend.schemas.binding_api import BindingCreate, BindingResponse, BindingU
 # （slot_id 存在且为 slot 块 / accepts 设备白名单命中，DESIGN_CorePipeline §6.1）。
 # 唯一约束冲突（显式槽重复 / 默认唯一并发）由两个部分唯一索引兜底 → IntegrityError
 # 统一转 400（create_all 只建表不建索引，索引在 ensure_binding_columns）。
+#
+# CP3 3d (D7-A 余下两处之一)：绑定行记 `definition_hash`（绑定期所引协议的结构
+# 指纹，**只在后端算**），读侧重算比对出 `stale` 徽标 —— 协议一改即提示复核，
+# **不阻断**（绑定关系与槽位仍有效）。改 label/priority 不影响出处；只有
+# `protocol_id` 真的换掉才重记指纹（否则改个名字就把失效提示抹了）。
 
 router = APIRouter(prefix="/bindings", tags=["bindings"])
 
@@ -98,6 +104,37 @@ def _commit_or_conflict(db: Session) -> None:
         raise HTTPException(status_code=400, detail=f"绑定冲突：{exc.orig}")
 
 
+def protocol_fingerprint(db: Session, protocol_id: str) -> Optional[str]:
+    """协议结构指纹；protocol_id 空 / 协议已删 → None（无出处可比）。"""
+    if not protocol_id:
+        return None
+    protocol = db.query(ProtocolTemplate).filter(ProtocolTemplate.id == protocol_id).first()
+    if protocol is None:
+        return None
+    return protocol_definition_hash(protocol.children)
+
+
+def binding_stale(binding: ProtocolBinding, db: Session) -> Optional[bool]:
+    """D7-A 徽标：NULL 出处 → None（不出徽标）；协议已删 → True（按失效提示）。"""
+    if not binding.definition_hash:
+        return None
+    current = protocol_fingerprint(db, binding.protocol_id)
+    if current is None:
+        return True
+    return current != binding.definition_hash
+
+
+def _attach_stale(binding: ProtocolBinding, db: Session) -> ProtocolBinding:
+    """把 D7-A `stale` 徽标挂到行上再出线。
+
+    **返回 ORM 行本身**（不是 pydantic 副本）：既有单测依赖「同会话行在别处
+    commit 后读到的是刷新值」的语义，换副本会把快照当真相。`stale` 是普通实例
+    属性、不是列 —— `response_model` 走 from_attributes 照样读得到。
+    """
+    binding.stale = binding_stale(binding, db)
+    return binding
+
+
 @router.get("", response_model=List[BindingResponse])
 def get_bindings(db: Session = Depends(get_db), instruction_id: Optional[str] = None):
     # 插槽序升序即前端侧栏列表顺序；同序按 id 兜底保证稳定。
@@ -105,7 +142,8 @@ def get_bindings(db: Session = Depends(get_db), instruction_id: Optional[str] = 
     query = db.query(ProtocolBinding)
     if instruction_id is not None:
         query = query.filter(ProtocolBinding.instruction_id == instruction_id)
-    return query.order_by(ProtocolBinding.slot_order.asc(), ProtocolBinding.id.asc()).all()
+    rows = query.order_by(ProtocolBinding.slot_order.asc(), ProtocolBinding.id.asc()).all()
+    return [_attach_stale(row, db) for row in rows]
 
 
 @router.post("", response_model=BindingResponse)
@@ -127,6 +165,8 @@ def create_binding(payload: BindingCreate, db: Session = Depends(get_db)):
         slot_id=payload.slot_id,
         is_default=1 if payload.is_default else 0,
         priority=payload.priority,
+        # D7-A: 绑定期记出处指纹（占位期 protocol_id 空 / 协议未建 → None，出不了徽标）
+        definition_hash=protocol_fingerprint(db, payload.protocol_id),
     )
     db.add(binding)
     if payload.is_default:
@@ -134,7 +174,7 @@ def create_binding(payload: BindingCreate, db: Session = Depends(get_db)):
         enforce_single_default(db, payload.instruction_id, keep_id=binding.id)
     _commit_or_conflict(db)
     db.refresh(binding)
-    return binding
+    return _attach_stale(binding, db)
 
 
 @router.put("/{binding_id}", response_model=BindingResponse)
@@ -146,6 +186,10 @@ def update_binding(binding_id: str, payload: BindingUpdate, db: Session = Depend
     if payload.label is not None:
         binding.label = payload.label
     if payload.protocol_id is not None:
+        if payload.protocol_id != binding.protocol_id:
+            # 换协议 = 换出处 → 重记指纹（改 label/priority 不动出处，否则
+            # 顺手改个名字就把失效提示抹了 —— D7-A 徽标只反映协议结构演进）。
+            binding.definition_hash = protocol_fingerprint(db, payload.protocol_id)
         binding.protocol_id = payload.protocol_id
     if payload.instruction_id is not None:
         binding.instruction_id = payload.instruction_id
@@ -164,7 +208,7 @@ def update_binding(binding_id: str, payload: BindingUpdate, db: Session = Depend
         enforce_single_default(db, binding.instruction_id, keep_id=binding.id)
     _commit_or_conflict(db)
     db.refresh(binding)
-    return binding
+    return _attach_stale(binding, db)
 
 
 @router.delete("/{binding_id}")

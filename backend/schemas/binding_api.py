@@ -40,6 +40,11 @@ class BindingResponse(BaseModel):
     slot_id: Optional[str] = None
     is_default: bool = False
     priority: int = 0
+    # CP3 3d (D7-A 余下两处之一): 绑定期所引协议的结构指纹（后端算、客户端忽略）
+    # + 读侧比对结果。stale: true = 协议结构已改（复核提示，不阻断）、false = 仍匹配、
+    # null = 无出处可比（存量行 / 占位期 protocol_id 未回填）。
+    definition_hash: Optional[str] = None
+    stale: Optional[bool] = None
 
     class Config:
         from_attributes = True

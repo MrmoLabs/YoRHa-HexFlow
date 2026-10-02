@@ -891,8 +891,9 @@
     - **提交**：→ **已提交 `c4b1f7f`（代码+文档，零 DDL 未提交 `yorha.db`），2026-10-01**。
     - **待办**：① **§9.7 3b 人工验证 3 项**（编排页建配方 → 加层/换序/选槽 → SAVE
       → 刷新回读一致；配方试发出线与头部指示一致、**未选配方时与改前逐字节一致**；
-      改名未保存 → 试发按钮置灰，保存后恢复）；② CP3 剩余子批 **3c**（序列封装帧
-      D6-B）与 **3d**（D5-A `response_spec` `stage` 维度 + D7-A 余下徽标）。
+      改名未保存 → 试发按钮置灰，保存后恢复）；② CP3 剩余子批 ~~**3c**（序列封装帧
+      D6-B）与 **3d**（D5-A `response_spec` `stage` 维度 + D7-A 余下徽标）~~
+      —— **均已完成**（3c = 条目 37、3d = 条目 38）。
 
 37. **CP3-3c 序列封装帧实现完成（D6-B 冻结 vs 重算分离）**
     （2026-10-01，**含 DDL** —— `sequence_steps` 新增 `wrap JSON` 单列，故有
@@ -950,8 +951,69 @@
       §1 CP3 行 + 新 §8.23、`DESIGN_Decisions.md` D6 关联与 D15-② 实施注、
       本条、`pageStatus.json` 序列页条目 + `PAGE_STATUS.md` 再生成。
     - **提交**：→ **已提交 `fbad083`（代码+文档）→ `17c6830`（chore(db) DDL 落库），2026-10-01**。
-    - **待办**：CP3 剩余子批 **3d**（D5-A 按 D15-A 修订实施：`response_specs` 增
-      `stage` 列 + 按层生成 + 逆序解包；D7-A 余下 binding/response_spec 两处失效徽标）。
+    - **待办**：~~CP3 剩余子批 3d~~ —— **已完成，见条目 38**（CP3 四子批全数收口）。
+
+38. **CP3-3d 应答分层生成与失效徽标实现完成（D5-A 按 D15-A 修订 + D7-A 余下两处）**
+    （2026-10-01，**含 DDL** —— 3 列**仅新增**：`response_specs.stage` /
+      `response_specs.definition_hash` / `protocol_bindings.definition_hash`，
+      故有 `chore(db)` 提交；未碰 `processor.py`/`graph.py`/`Blueprint.jsx`；
+      `/dispatch` 缺省口径由 `test_bare_frame_path_unchanged` + 存量用例**零改全绿**
+      双钉）：
+    - **生成映射**（`core/response_generate.py`，新建）：`resolve_layers` =
+      默认配方 → **每层各生成一次** / 默认协议 → 单层 / 皆无 → **400
+      「该指令既无默认封装配方也无默认协议，无法据此生成」**。每层按
+      fixed → `echo_header_bytes`（首个非 fixed 前连续 fixed）、
+      length → `length_element`（插槽参与 → `offset_val = A - head - trailer`；
+      插槽后仍有插槽 / 区间模式 / 悬空 → **跳过 + warning**）、
+      checksum → `checksum_element`（refs 只圈插槽 → `span_start=head` +
+      `span_end_pad=trailer`；恰好整帧 → 省区间；否则跳过 + warning）各映射一次
+      → **`stages[]` 每层一份**，落库层记 `stage`；**1 层不写 `stages` 键**
+      （存量形逐字节等价）；产出先过 `normalize_spec` 归一，出处用
+      `chain_fingerprint`（解析不出 → `NULL`）。
+    - **逆序解包**（`core/response_match.py`）：`_SPEC_KEYS` 增 `stages`、
+      `_STAGE_KEYS`/`_UNPACK_KEYS`（head+trailer ≥ 1）、`_CHECKSUM_KEYS` 增
+      `span_end_pad`/`field_offset_from_end`、`_LENGTH_KEYS` 增 `offset_from_end`、
+      `MAX_STAGES = 4`。`_match_stages` 按 **i = n-1 → 0** 跑五要素，head/trailer
+      **同时剥 `received`/`sent`**，reasons 前缀 `STAGE[i].`；**顶层禁 echo /
+      length / checksum、`mode` 禁 `echo`**。**无 `stages` 键 → 原单帧路径
+      逐字节不变**。**后插槽字段**绝对位置不可静态定位 → 新增 `offset_from_end` /
+      `field_offset_from_end`（与绝对 `offset`/`field_offset` **互斥**，非 0 同给 → 400）。
+    - **端点**：`POST /response-specs/{instruction_id}/generate`（写 spec + stage +
+      出处，返回 `{spec, stage, definition_hash, stale, layers, warnings}`，
+      `warnings` 是降级说明不是错误）；`GET /response-specs/targets?protocol_id=`
+      （**声明在 `/{instruction_id}` 之前**，`uses_protocol` 前置）；手工 `PUT`
+      **保留出处**、`stage` 镜像随 spec 重算（`_stage_mirror`）。
+    - **D7-A 绑定徽标**：`create_binding` 记出处；`update_binding` **仅
+      `protocol_id` 真变时重记**（改 label/priority 不抹提示）；`_attach_stale`
+      把 `stale` 挂** ORM 行本身**（保持既有「同会话 commit 后读到刷新值」单测语义），
+      三态 = NULL 出处 `None` / 链解析不出 `true` / 一致 `false`。
+    - **DDL 自愈**：`database.ensure_response_spec_columns`（新建）+
+      `ensure_binding_columns` 扩第 4 列，`main.py` lifespan 接线；四态同
+      `ensure_recipe_columns`（缺列补列 / 二次 no-op / `create_all` 已带 no-op /
+      表不存在 no-op）。
+    - **前端**（仅 `frontend/`）：`api/responseSpecs.js` 增
+      `getResponseSpecTargets` / `generateResponseSpec`（`api/index.js` 导出）；
+      协议页新增「据此生成 RESPONSE SPEC」底栏（切协议重拉候选并清选中、未选禁用、
+      成功回显 `N 层 · STAGE k` + `warnings` 降级行、失败透传 400 detail、候选拉取
+      失败短错误行降级）；`TransactionPanel`（`response-spec-stale`）与
+      `Orchestration`（`binding-stale`）两处徽标 —— **只在 `stale === true` 渲染**。
+    - **验收**：BE **537/537（基线 496 + 41）**、FE **944/944（63 文件，基线 932 +
+      12）**、`npx vite build` EXIT=0、yorha-ui 校验器 8 文件 **0 违规**；**真路由
+      冒烟 43 项 ALL PASS**（真 uvicorn :8765）：DDL 三列落真库 / 无链 400 / 不存在
+      404 / 三层 `targets` 命中 + `uses_protocol` + 层数 3 / 生成 `stage=2`
+      `layers=3` `warnings` 空 `stale=false` sha256 出处 / dispatch
+      `spec_source=instruction` 应答 OK / **内联写错最内层 length → `MATCH_FAILED`
+      + `STAGE[0].`** / 绑定记出处 `stale=false` / 改协议 → spec 与 binding
+      **同时 `stale=true`** / 手工 PUT 保留出处 + `stage` 镜像 2 / 无 `stages` →
+      stage `NULL` / 回滚协议 → 两处 `stale=false`。
+    - **文档同步**：`DESIGN_CorePipeline.md` §7 批次三 3d 进度注 + §9.7 排批表 3d 行 +
+      人工验证 ④ + §9.8 末条改「已随 3d 完成」、`DESIGN_Decisions.md` D5/D7/D15
+      表行与三处实施注、`PLAN_Backlog.md` §1 CP3 行 + 新 §8.24、本条、
+      `pageStatus.json` 再生成。
+    - **提交**：→ **`PENDING_FEAT`（代码+文档）→ `PENDING_DB`（chore(db) DDL 落库），
+      2026-10-01**。
+    - **待办**：**§9.7 人工验证 ④**（真实设备应答帧的反转义口径 —— `escape` 尚未接进
+      `response_match`，见 `DESIGN_Decisions.md` D15 关联项 1）；批次四（治理）开新批。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

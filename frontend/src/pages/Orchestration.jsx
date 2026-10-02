@@ -38,7 +38,10 @@ const toLocal = (row) => ({
     slotOrder: row.slot_order,
     slotId: row.slot_id ?? null,
     isDefault: Boolean(row.is_default),
-    priority: row.priority ?? 0
+    priority: row.priority ?? 0,
+    // CP3 3d (D7-A): 失效徽标 —— true = 协议链在绑定落库后已变（出徽标），
+    // false = 仍匹配 / null = 无出处（手工·存量）→ 均不出徽标。
+    stale: row.stale ?? null
 });
 
 const syncErrorText = (prefix, err) => `${prefix}：${err?.message || '后端不可用'}`;
@@ -633,6 +636,18 @@ export default function Orchestration({ protocols, instructions }) {
                                 {b.label}
                             </div>
                             <div className="flex items-center gap-1 shrink-0">
+                                {/* CP3 3d (D7-A): 绑定失效徽标 —— 仅 stale === true 渲染
+                                    （false/null/未回执 = 不出）；span 在删除钮之前但非 button，
+                                    不影响行内「首个 button = 删除」的既有取法 */}
+                                {b.stale === true && (
+                                    <span
+                                        data-testid="binding-stale"
+                                        title="协议链已变更 — 绑定定义可能已失效 (STALE)"
+                                        className="border border-[#E58D28]/60 px-1 py-0.5 text-[8px] font-mono tracking-widest text-[#FFB74D] whitespace-nowrap leading-none"
+                                    >
+                                        绑定已失效 STALE
+                                    </span>
+                                )}
                                 <button onClick={(e) => handleDeleteBinding(e, b.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-400">×</button>
                                 {/* 批次一 (D1): 星标 = 指令默认封装绑定（is_default）——放删除之后 */}
                                 <button

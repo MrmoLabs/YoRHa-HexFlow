@@ -312,6 +312,35 @@ def build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) -> Wrap
   匹配用例 + 单层存量退化回归**、序列封装往返过 `match_response`、
   hash 失效/不失配徽标用例（子批明细见 §9.7）。
 
+  > ✅ **3d 已提交 `PENDING_FEAT`（代码+文档）/ `PENDING_DB`（db 同步），2026-10-01**：
+  > **含 DDL** —— `response_specs.stage` + `response_specs.definition_hash`、
+  > `protocol_bindings.definition_hash` 共 **3 列、仅新增列**（新建
+  > `database.ensure_response_spec_columns`，`ensure_binding_columns` 扩第 4 列，
+  > `main.py` lifespan 接线）→ yorha.db 沿 3a/3c 先例**手工只跑这 3 条 ALTER**后
+  > **单独同步提交**（不带任何业务行变动）。
+  > ① **D5-A 按 D15-A 修订实施** —— 新建 `core/response_generate.py`：
+  > `resolve_layers`（默认配方 → 逐层 / 默认协议 → 单层 / 皆无 → 400）→ 每层按
+  > **fixed→`echo_header_bytes`、length→`length_element`、checksum→`checksum_element`**
+  > 各映射一次 → **每层一份 spec 塞 `stages[]`**（`stage` = 落库的那层序号；**1 层
+  > 不写 `stages` 键**，天然退化成存量形），生成后 `normalize_spec` 归一 +
+  > `chain_fingerprint` 记出处（解析不出 → `definition_hash = NULL`）。
+  > ② **`response_match` 逆序解包** —— spec 带 `stages` 时按 **i = n-1 → 0** 逐层跑
+  > 五要素（head/trailer **同时剥 `received`/`sent`**，reasons 前缀 `STAGE[i].`），
+  > 顶层禁 echo/length/checksum；**无 `stages` 键走原单帧路径逐字节不变**
+  > （`test_bare_frame_path_unchanged` 钉死口径）。**后插槽字段**（绝对位置无法
+  > 静态定位）新增 `offset_from_end` / `field_offset_from_end`，与绝对
+  > `offset`/`field_offset` 互斥（非 0 同给 → 400）。
+  > ③ **D7-A 余下两处失效徽标** —— `POST /response-specs/{instruction_id}/generate`
+  > 写 spec + stage + 出处，`GET /response-specs/targets?protocol_id=` 给候选
+  > （`uses_protocol` 前置，声明在 `/{instruction_id}` 之前）；绑定**创建记出处、
+  > 仅 `protocol_id` 真变时重记**（改 label/priority 不抹提示）；读侧 `stale`
+  > **三态**（NULL 出处 → `None`、链解析不出 → `true`、比对一致 → `false`），
+  > **前端只在 `stale === true` 出琥珀徽标**（binding / response_spec 两处同口径）。
+  > 终态：BE **537/537**（基线 496 + 41）、FE **944/944**（63 文件，基线 932 + 12）、
+  > `npx vite build` EXIT=0、yorha-ui 校验器 8 文件 0 违规、**真路由冒烟 43 项
+  > ALL PASS**（真 uvicorn：无链 400 / 三层生成 / 逆序解包失配出 `STAGE[0].` /
+  > 改协议两处同时 stale / 手工 PUT 保留出处）。明细 `PLAN_Backlog.md` §8.24。
+
 ### 批次四（治理）
 
 - 关系数据导入导出（bindings + response_specs 并入 DataHub ZIP 或独立包）、
@@ -460,7 +489,7 @@ return {hex: frame, total_length, warnings, stages: [...]}
 | **3a 数据层 + 串行编译** ✅ 已提交 `e63d76f` + `438f3af`（2026-10-01） | `frame_recipes` DDL + `default_recipe_id` 补列自愈 + `/recipes` CRUD + `/compile/wrapped` `recipe_id` 串行编译 + `stages[]` 回显 + `definition_hash` 回写/比对 + 加工页分层堆叠预览与降级链三级。**实施时并入 3b 的 `dispatch` `wrap.recipe_id` 接线**（三路同字节所需，见 §7 3a 进度注 ①） | ✅ `test_frame_recipes.py` 新建（CRUD / 补列自愈幂等 / hash 回写与失效 / 层数上限 / stage 404 / version 409 / 删引用回执）、`test_wrap_api.py` 扩（**recipe 三层帧往返**、配方 vs 单协议**同内核 byte-equal 双跑**、配方路径缺省 `reject` 对照存量 warning、dispatch/事务带 recipe、缺省裸帧**零回归**）、FE `InstructionProcessor` 5 例（分层预览 + 失效徽标 + 降级三级）；三层帧主向量**一处钉死改一必改三** = `vectors/wrap.json` 表 `three`（沿 §7 共享向量先例） |
 | **3b 配方编辑器 + 发送接线** ✅ 已提交 `c4b1f7f`（2026-10-01） | 编排页配方编辑器（有序 stage 增删/排序/选槽/手动保存/离开拦截 + 关联指令换绑）、~~`/dispatch` 与 `/dispatch/transaction` 接 `recipe_id`~~（**已提前随 3a 实施**）、试发改走配方（**未选配方 = 现状组协议逐字节不变**） | ✅ Orchestration 配方编辑 **4 例**（其余用例**零改**，含「四分区 select = 3」）、`dispatch.py` 缺省裸帧既有测试**零改全绿**、**curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 = 预览同字节 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；**零 DDL** |
 | **3c 序列封装帧（D6-B）** ✅ 已提交 `fbad083` + `17c6830`（db），2026-10-01 | 序列步骤可选 `wrap: {recipe_id}`、保存冻结完整帧 + `plan` 扩外壳 length/checksum **逐层区间**（`plan.shell`）、发送按配方重算、读侧 `stale` 失效徽标、**含 DDL**（`sequence_steps.wrap` 单列自愈） | ✅ **自动化三项全过** —— ① 序列封装往返过 `match_response`（`test_sequence_wrap.py`：三层冻结帧 `sent == received` 且与主向量 `three` 同字节）；② **冻结 vs 重算用例**（内核 `plan.dynamic` 在套壳下重算 + 配方协议改动后重算、冻结 `payload`/`plan.shell` 字节不动）；③ **`normalize_plan` 键集纪律**（无 shell 时仍是 `{dynamic, checksum}`、未知键 400、嵌套不变量逐条、`core_plan`/`kernel_slice` 往返）；另补 `ensure_sequence_step_columns` **补列自愈四态**（镜像 `ensure_recipe_columns` 模板）；**真路由冒烟 30 项 + 真浏览器 UI 验证 6 项 ALL PASS** |
-| **3d 应答与失效徽标（原批次三内容）** | **D5-A 按 D15-A 修订实施**：`response_specs` 增 `stage` 列 + 「据此生成」按配方每层各执行一次 + `response_match` 按 `stages` 逆序解包逐层跑五要素（无配方 = 单层退化）；D7-A 余下 binding/response_spec 两处失效徽标 | 生成映射**按层**用例、**多层应答逆序解包匹配**用例、**单层存量退化回归**、hash 失效/不失配徽标用例 |
+| **3d 应答与失效徽标（原批次三内容）** ✅ 已提交 `PENDING_FEAT` + `PENDING_DB`（db），2026-10-01 | **D5-A 按 D15-A 修订实施**：`response_specs` 增 `stage` 列 + 「据此生成」按配方每层各执行一次 + `response_match` 按 `stages` 逆序解包逐层跑五要素（无配方 = 单层退化）；D7-A 余下 binding/response_spec 两处失效徽标；**含 DDL**（3 列仅新增：`response_specs.stage` / `response_specs.definition_hash` / `protocol_bindings.definition_hash`） | ✅ ① **生成映射按层用例**（`test_response_generate.py` 新建 **41 例**：`resolve_layers` 三分支 / 每层 fixed→`echo_header_bytes`、length→`offset_val = A - head - trailer`、checksum→`span` 映射 / 引用不足与区间越界跳过出 warning / **单层不写 `stages` 键** / `chain_fingerprint` 失败回 NULL）；② **多层应答逆序解包匹配用例**（三层帧 `C008B005A0020102E0E1E2` 正向命中 + **改坏最内层 length → `MATCH_FAILED` 且 reasons 前缀 `STAGE[0].`** + 顶层要素禁用与 `mode` 禁 `echo` 校验）；③ **单层存量退化回归**（无 `stages` 走旧路径，`test_bare_frame_path_unchanged` 与存量 `response_match` 用例**零改全绿**）；④ **hash 失效/不失配徽标用例**（生成后 `stale=false` → 改协议 → spec 与 binding **同时 `stale=true`** → 回滚即复位；手工 PUT 保留出处、`stage` 镜像随 spec 重算）；FE 补 **12 例**（Protocol 6 + TransactionPanel 3 + Orchestration 3）；**真路由冒烟 43 项 ALL PASS** |
 
 - **节奏**沿 §7：测试 EXIT=0 → `vite build` EXIT=0 → yorha-ui 校验器 0 违规 →
   文档同步 → 人工验证 → 一批一提交；**3a 含 DDL（新表 + 补列）→ yorha.db 单独同步提交**；
@@ -472,7 +501,11 @@ return {hex: frame, total_length, warnings, stages: [...]}
   摘要出 `SHELL L1..LN` 逐层 LEN/CRC 偏移（与后端 `shell_plan` 同坐标）；运行后
   逐步 `sent` 与冻结帧**同字节**（外壳重算等价）；改中间层协议 → `WRAP ::` 旁
   `stale` 徽标点亮；**未选配方步骤的 PUT 请求体与改前逐字节一致**。
-  ✅ **3a①②③ / 3b①②③ / 3c⑤ 共 7 项已执行通过（2026-10-01）**。
+  ✅ **3a①②③ / 3b①②③ / 3c⑤ 共 7 项已执行通过（2026-10-01）**；
+  ④ **3d 真实应答帧核对已随 3d 冒烟执行（2026-10-01）** —— 三层应答帧
+  `C008B005A0020102E0E1E2` 经 `stages` 逆序解包后内层五要素命中、最内层 length
+  改坏即出 `STAGE[0].LENGTH_...`；「应答是否也带转义字节」一项**仍待真实设备确认**
+  （`escape` 反转义未接进 `response_match`，见 §9.8 与 D15 关联待确认项）。
 
 ### 9.8 本期明确不做
 
@@ -484,6 +517,8 @@ return {hex: frame, total_length, warnings, stages: [...]}
   `DESIGN_Decisions.md` D13「边界（转义）」；
 - **多载荷 stage（9.2 乙案）**：形态丙单承载槽够用；
 - 传输层进配方（D9 划界）；`PROTOCOL_REF`（D13 重开条件四条）；
-- 应答规格生成（D5-A）、`definition_hash` 在 binding/response_spec 两处的失效徽标
-  （D7-A 其余消费方）—— 归原批次三（3d），本批只做配方这一处；3d 实施时按
-  **D15-A**（`stage` 列 + 按层生成 + 逆序解包），见 §7 批次三 3d；
+- ~~应答规格生成（D5-A）、`definition_hash` 在 binding/response_spec 两处的失效徽标
+  （D7-A 其余消费方）~~ —— **已随 3d 完成（2026-10-01）**：D5-A 按 **D15-A**
+  （`stage` 列 + 按层生成 + `stages` 逆序解包）实施，D7-A 三处消费方（配方 /
+  binding / response_spec）全数落地，见 §7 批次三 3d 进度注与 §9.7 3d 行；
+  **唯一残留待确认项** = 应答是否也要反转义（见 §9.7 ④ 与 D15 关联项 1）；

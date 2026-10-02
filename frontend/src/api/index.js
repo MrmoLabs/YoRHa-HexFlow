@@ -24,7 +24,7 @@ import { getBindings, createBinding, updateBinding, deleteBinding } from './bind
 import { getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './recipes';
 import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle } from './datahub';
 import { getProfiles, createProfile, updateProfile, deleteProfile, activateProfile } from './profiles';
-import { getResponseSpec, saveResponseSpec, deleteResponseSpec, sendTransaction } from './responseSpecs';
+import { getResponseSpec, saveResponseSpec, deleteResponseSpec, getResponseSpecTargets, generateResponseSpec, sendTransaction } from './responseSpecs';
 import {
     listSequences,
     getSequence,
@@ -103,6 +103,9 @@ export const api = {
     getResponseSpec,
     saveResponseSpec,
     deleteResponseSpec,
+    // CP3 3d (D5-A): 协议页「据此生成」—— 候选指令 + 分层链生成入口
+    getResponseSpecTargets,
+    generateResponseSpec,
     sendTransaction,
 
     // Sequences (P3 后端 + P4 页面: 定义 CRUD / 启停 / status 1.5s 轮询)

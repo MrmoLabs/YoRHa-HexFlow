@@ -133,6 +133,13 @@ class ProtocolBinding(Base):
     is_default = Column(Integer, nullable=False, default=0)  # 1 = 该指令的默认封装协议
     priority = Column(Integer, nullable=False, default=0)  # 多候选择序（大者先，预留）
 
+    # CP3 3d (D7-A 余下两处之一): 绑定期所引协议的 `definition_hash`
+    # （core/definition_hash.protocol_definition_hash，只在后端算）；NULL = 存量行 /
+    # 占位期（protocol_id 尚未回填）→ 读侧不出徽标。协议结构改动 → 读侧重算比对
+    # 出 stale 徽标，**不阻断**（绑定关系与槽位仍有效，只提示需复核）。
+    # 存量库缺列由 database.ensure_binding_columns 启动自愈。
+    definition_hash = Column(String(80), nullable=True)
+
 
 # 7. Transport Settings（P1: 连接持久化 — 单行表，id 恒为 "current"）
 class TransportSetting(Base):
@@ -162,6 +169,17 @@ class ResponseSpec(Base):
     instruction_id = Column(String(36), nullable=False, unique=True)
     # 匹配规格 JSON：normalize_spec 归一后入库（core/response_match.py 为形态 SSOT）
     spec = Column(JSON, nullable=False)
+    # CP3 3d (D15-A): 分层维度 —— 本行 spec.stages 的**最外层序号**
+    # （= len(stages)-1；2 = 共 3 层），NULL = 未分层（spec 无 stages 键 =
+    # 单层：存量手工规格 / 无配方指令的「据此生成」）。保存期由路由回写镜像，
+    # 读侧不必解析 JSON 即知层数（D15 拍板「response_specs 仅加一列」）。
+    stage = Column(Integer, nullable=True)
+    # CP3 3d (D7-A): 「据此生成」期记录的协议链复合指纹
+    # （recipe_compile.stages_fingerprint 口径：各层 protocol_definition_hash 拼接
+    # 后 sha256）；NULL = 从未生成（手工规格，无出处可比 → 读侧不出徽标）。
+    # 只在后端算、客户端传入忽略（同 frame_recipes.stage.definition_hash 先例）；
+    # 读侧重算比对 → stale 徽标**不阻断**（D7-A）。
+    definition_hash = Column(String(80), nullable=True)
 
 
 # 10. Sequences（P3: 序列编排 — 定义载体，新表；既有表零改）

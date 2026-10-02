@@ -66,8 +66,10 @@ class NormalizeSpecTest(unittest.TestCase):
 
     def test_length_normalization_and_validation(self):
         length = normalize_spec({"length": {"offset": 2}})["length"]
+        # CP3 3d: + offset_from_end（插槽后长度块的「距帧尾」表达，缺省 None）
         self.assertEqual(length, {
-            "offset": 2, "byte_length": 1, "offset_val": 0, "byte_order": "big"
+            "offset": 2, "byte_length": 1, "offset_val": 0, "byte_order": "big",
+            "offset_from_end": None,
         })
         with self.assertRaises(ValueError):
             normalize_spec({"length": {"bogus": 1}})
@@ -75,6 +77,12 @@ class NormalizeSpecTest(unittest.TestCase):
             normalize_spec({"length": {"byte_order": "middle"}})
         with self.assertRaises(ValueError):
             normalize_spec({"length": {"byte_length": 0}})
+        # 绝对与距帧尾两种表达互斥
+        with self.assertRaises(ValueError):
+            normalize_spec({"length": {"offset": 2, "offset_from_end": 3}})
+        self.assertEqual(
+            normalize_spec({"length": {"offset_from_end": 3}})["length"]["offset"], 0
+        )
 
     def test_checksum_normalization_and_validation(self):
         cs = normalize_spec({"checksum": {"algo": "crc16_modbus", "field_offset": 4}})

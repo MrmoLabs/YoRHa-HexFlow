@@ -13,7 +13,10 @@ vi.mock('../../api', () => ({
         getProtocol: vi.fn(),
         updateProtocol: vi.fn(),
         deleteProtocol: vi.fn(),
-        getBindings: vi.fn() // 批次一 P0-1: 删前引用检查
+        getBindings: vi.fn(), // 批次一 P0-1: 删前引用检查
+        // CP3 3d (D5-A): 协议页「据此生成 response_spec」候选 + 生成入口
+        getResponseSpecTargets: vi.fn(),
+        generateResponseSpec: vi.fn()
     }
 }));
 
@@ -1142,5 +1145,142 @@ describe('Protocol Page', () => {
                 }
             })]
         }));
+    });
+
+    // ─── CP3 3d (D5-A): 协议页「据此生成 RESPONSE SPEC」底栏 ────────────────
+    it('CP3 3d 候选：挂载按 protocol_id 拉取，★ 标链内指令，选中后生成钮才可用', async () => {
+        vi.useRealTimers();
+        api.getResponseSpecTargets.mockResolvedValue([
+            { instruction_id: 'i-star', name: '开门指令', code: 'DEMO-001', layers: 3, recipe_id: 'r1', uses_protocol: true },
+            { instruction_id: 'i-other', name: '状态查询', code: 'DEMO-002', layers: 1, recipe_id: null, uses_protocol: false }
+        ]);
+
+        render(<Protocol protocols={[
+            { id: 'proto-1', label: '甲协议', type: 'container', children: [] },
+            { id: 'proto-2', label: '乙协议', type: 'container', children: [] }
+        ]} setProtocols={vi.fn()} />);
+
+        await waitFor(() => expect(api.getResponseSpecTargets).toHaveBeenCalledWith('proto-1'));
+        const select = await screen.findByTestId('response-spec-targets');
+        // 占位 + 2 候选
+        expect(select.options.length).toBe(3);
+        expect(select.options[1].textContent).toContain('★');
+        expect(select.options[1].textContent).toContain('3层');
+        expect(select.options[2].textContent).not.toContain('★');
+
+        // 未选 → 生成钮禁用；选中 → 放行
+        expect(screen.getByTestId('response-spec-generate').disabled).toBe(true);
+        fireEvent.change(select, { target: { value: 'i-star' } });
+        expect(screen.getByTestId('response-spec-generate').disabled).toBe(false);
+    });
+
+    it('CP3 3d 切协议重拉候选：旧选中清空、回显清空（候选集属旧协议）', async () => {
+        vi.useRealTimers();
+        api.getResponseSpecTargets.mockImplementation(async (pid) => ([
+            { instruction_id: `i-${pid}`, name: '指令', code: 'D1', layers: 2, recipe_id: null, uses_protocol: true }
+        ]));
+
+        render(<Protocol protocols={[
+            { id: 'proto-1', label: '甲协议', type: 'container', children: [] },
+            { id: 'proto-2', label: '乙协议', type: 'container', children: [] }
+        ]} setProtocols={vi.fn()} />);
+
+        const select = await screen.findByTestId('response-spec-targets');
+        fireEvent.change(select, { target: { value: 'i-proto-1' } });
+        expect(screen.getByTestId('response-spec-generate').disabled).toBe(false);
+
+        fireEvent.click(screen.getByText('乙协议'));
+        await waitFor(() => expect(api.getResponseSpecTargets).toHaveBeenLastCalledWith('proto-2'));
+        await waitFor(() => expect(screen.getByTestId('response-spec-targets').value).toBe(''));
+        expect(screen.getByTestId('response-spec-generate').disabled).toBe(true);
+    });
+
+    it('CP3 3d 生成成功：POST generate → 回显层数/STAGE，warnings 降级行出 ⚠', async () => {
+        vi.useRealTimers();
+        api.getResponseSpecTargets.mockResolvedValue([
+            { instruction_id: 'i-star', name: '开门指令', code: 'DEMO-001', layers: 3, recipe_id: 'r1', uses_protocol: true }
+        ]);
+        api.generateResponseSpec.mockResolvedValue({
+            id: 'spec-1', instruction_id: 'i-star', stage: 2, definition_hash: 'sha256:x', stale: false,
+            layers: [{ protocol_id: 'p1', label: '应用壳' }, { protocol_id: 'p2' }, { protocol_id: 'p3' }],
+            warnings: ['[层0] length refs 缺失 → 未生成 length']
+        });
+
+        render(<Protocol protocols={[
+            { id: 'proto-1', label: '甲协议', type: 'container', children: [] }
+        ]} setProtocols={vi.fn()} />);
+
+        const select = await screen.findByTestId('response-spec-targets');
+        fireEvent.change(select, { target: { value: 'i-star' } });
+        fireEvent.click(screen.getByTestId('response-spec-generate'));
+
+        await waitFor(() => expect(api.generateResponseSpec).toHaveBeenCalledWith('i-star'));
+        const status = await screen.findByTestId('response-spec-status');
+        expect(status.textContent).toContain('3 层');
+        expect(status.textContent).toContain('STAGE 2');
+        expect(status.textContent).toContain('未生成 length');
+        expect(screen.queryByTestId('response-spec-error')).toBeNull();
+    });
+
+    it('CP3 3d 生成失败：后端 400 detail 透传到失败行（无未捕获异常、不出成功行）', async () => {
+        vi.useRealTimers();
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
+        api.getResponseSpecTargets.mockResolvedValue([
+            { instruction_id: 'i-bare', name: '裸发指令', code: 'DEMO-003', layers: 1, recipe_id: null, uses_protocol: false }
+        ]);
+        const rejection = new Error('该指令既无默认封装配方也无默认协议，无法据此生成');
+        rejection.response = { status: 400, data: { detail: '该指令既无默认封装配方也无默认协议，无法据此生成' } };
+        api.generateResponseSpec.mockRejectedValue(rejection);
+
+        try {
+            render(<Protocol protocols={[
+                { id: 'proto-1', label: '甲协议', type: 'container', children: [] }
+            ]} setProtocols={vi.fn()} />);
+
+            const select = await screen.findByTestId('response-spec-targets');
+            fireEvent.change(select, { target: { value: 'i-bare' } });
+            fireEvent.click(screen.getByTestId('response-spec-generate'));
+
+            const err = await screen.findByTestId('response-spec-error');
+            expect(err.textContent).toContain('无法据此生成');
+            expect(screen.queryByTestId('response-spec-status')).toBeNull();
+        } finally {
+            errorSpy.mockRestore();
+        }
+    });
+
+    it('CP3 3d 空候选：本协议无可生成指令 → 下拉禁用 + 提示行，生成钮不可用', async () => {
+        vi.useRealTimers();
+        api.getResponseSpecTargets.mockResolvedValue([]);
+
+        render(<Protocol protocols={[
+            { id: 'proto-1', label: '甲协议', type: 'container', children: [] }
+        ]} setProtocols={vi.fn()} />);
+
+        const select = await screen.findByTestId('response-spec-targets');
+        await waitFor(() => expect(select.disabled).toBe(true));
+        expect(select.options[0].textContent).toContain('本协议暂无可生成的指令');
+        expect(screen.getByTestId('response-spec-generate').disabled).toBe(true);
+        expect(screen.queryByTestId('response-spec-status')).toBeNull();
+    });
+
+    it('CP3 3d 候选拉取失败：短错误行降级，不打断协议编辑', async () => {
+        vi.useRealTimers();
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
+        api.getResponseSpecTargets.mockRejectedValue(new Error('network down'));
+
+        try {
+            render(<Protocol protocols={[
+                { id: 'proto-1', label: '甲协议', type: 'container', children: [] }
+            ]} setProtocols={vi.fn()} />);
+
+            const err = await screen.findByTestId('response-spec-targets-error');
+            expect(err.textContent).toContain('候选加载失败');
+            expect(screen.getByTestId('response-spec-targets').disabled).toBe(true);
+            // 编辑面仍在（底栏只是附加动作条）
+            expect(screen.getByText(/PROTOCOL EDITOR \/\/ 甲协议/)).toBeTruthy();
+        } finally {
+            errorSpy.mockRestore();
+        }
     });
 });
