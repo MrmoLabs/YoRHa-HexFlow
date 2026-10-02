@@ -46,6 +46,11 @@
   - 100% test coverage for core hooks.
   - Includes smoke tests to prevent crashes.
 
+### 6. Scope Boundaries (页面划界 · D9 / D10)
+- **Protocol page = frame format only (D9-A)**: the protocol tree models bytes (header / fields / length / checksum / slots). Transport settings — loopback vs. TCP vs. serial, target address, timeouts, reconnect, device profiles — live only on the Communication Terminal page (`/transport/config`) and in the transport abstraction; neither page carries the other's settings.
+- **Device-agnostic protocols (D10-A)**: protocols carry no `device_code`. "Which instruction may fill this slot" is approximated by the slot's `accepts` whitelist of `device_code` values, enforced server-side at bind time (`backend/routers/binding.py::validate_binding`).
+- **Governance view**: the Data Hub page hosts the read-only binding matrix (instruction → default protocol → slot) plus `relations.json` export/import; dangling slots, deleted protocols, and stale `definition_hash` fingerprints are flagged rather than silently dropped.
+
 ## 📌 Current Page Status
 
 Page navigation labels, placeholder descriptions, and implementation status now use `frontend/src/config/pageStatus.json` as the single source of truth.

@@ -152,7 +152,34 @@ def build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) -> Wrap
 |---|---|---|---|---|---|
 | **指令** | 级联删 | 级联删 | **失效标记不阻断**（宿主悬空打徽标 + 该步骤编辑降只读，零 DDL；**D14 ② 拍板**） | 只读保留（id/name 已冗余存文本） | 批次二：删前 `GET` 引用计数 → 弹窗警示（镜像协议页 P0-1）+ **活配置**后端同事务级联兜底 |
 | **协议** | 级联删（已有 P0-1） | — | —（序列存内核帧，不含协议） | 只读保留 | ✅ 已有 |
-| **槽节点**（协议内删块） | `slot_id` 悬空 → 置 NULL 并回执 warning（不静默：回执带 N） | — | — | — | 批次二随绑定矩阵 |
+| **槽节点**（协议内删块） | `slot_id` 悬空 → 置 NULL 并回执 warning（不静默：回执带 N） | — | — | — | ✅ **已有（批次二）**：`protocol.py::update_protocol` 同事务置 NULL + 回执 `dangling_slots_cleared`；**4b** 起数据中心页「绑定矩阵」读侧核对（`test_slot_contract.py` 3 例） |
+
+### 6.3 全量核对销项（D8 · 批次四 4c，2026-10-02）
+
+> 逐行对着代码与测试核过一遍，**0 缺口、0 待补**；「已有」= 该行的拦截点已在仓库
+> 落地且有测试锚，「镜像」= 同口径在另一条路径上重复实现（保持文案/语义同源）。
+
+**§6.1 三层校验（+ D13 第四层）**
+
+| 行 | 拦截点（代码） | 强制侧 | 测试锚 | 结论 |
+|---|---|---|---|---|
+| 保存时（结构） | `routers/protocol.py::_validate_refs` / `_validate_bits` / `_validate_slot_contracts`（400）、`version` 不符 **409**；`routers/instruction.py` 位域与 refs 同源校验 | 后端 400/409 | `test_protocol_refs` / `test_protocol_bitfield` / `test_bitfield_validation` / `test_protocol_version`；FE `validateProtocol.test.js`（10 例）+ `validateInstruction.*` 前置同文案 | ✅ 已有 |
+| 绑定时（关系） | `routers/binding.py::validate_binding`（`slot_id` 存在且 `type=slot`、`accepts` 白名单命中）+ `enforce_single_default` + 两个**部分唯一索引**兜底（同事务） | 后端 400 / 索引 409 | `test_bindings.py`（关系校验、默认唯一清旧行、唯一索引 400 兜底、`accepts` hit/miss、`(protocol, slot)` 冲突） | ✅ 已有（批次一） |
+| 发送时（值） | `core/frame_builder.py`：`fit_policy` 三态（`reject` → **400** 带槽 id 与实际/允许字节数；缺省 `append`/`zero_fill` 只 warning）、长度自洽、校验和必算 | 后端 `frame_builder`（预览同步 warning） | `test_frame_builder.py`（reject/append/zero_fill 三态 + accepts 拒 + 长度/校验和） | ✅ 已有（批次二 CP2） |
+| 配方期（组合，D13 §9.5） | `routers/recipe.py`：stage 协议存在 **404**、槽存在且为 slot、插槽重复、层数 1..MAX_RECIPE_STAGES（`schemas/recipe_api.py` = 4）、`definition_hash` 保存期回写；读侧 stale 徽标不阻断 | 后端 400/404（读侧徽标） | `test_frame_recipes.py`（§9.5-3 行 + 层数上限第 5 层拒） | ✅ 已有（批次三 3a） |
+| 关系回灌（4a，绑定层的**恢复期镜像**） | `routers/datahub.py::import_relations`：父缺失跳过、槽悬空置 NULL + warning、`is_default` 冲突清旧行、`(protocol, slot)` 唯一冲突 → `skipped` 带 reason、`spec` 过 `normalize_spec` | 后端逐行报告（不整批回滚） | `test_datahub.py` 新增 12 例（`TestImportRelations`） | ✅ 已有（批次四 4a，2026-10-02） |
+
+**§6.2 删除 × 引用矩阵**
+
+| 删除对象 | 四表处置 | 拦截点（代码） | 测试锚 | 结论 |
+|---|---|---|---|---|
+| **指令** | 绑定 / 应答规格 **级联删**、序列步骤 **失效标记不阻断**（回执 `orphaned` 计数）、日志 **只读保留** | `routers/instruction.py::get_instruction_references`（删前计数）+ `delete_instruction`（同事务） | `test_instruction_delete.py`（级联矩阵四表） | ✅ 已有（批次二 D12/D14②） |
+| **协议** | 绑定 **级联删**（删前 GET 计数 + 弹窗警示） | `routers/protocol.py::delete_protocol`（回执 `deleted_bindings`） | `test_protocol_delete.py`；FE 协议页 P0-1 弹窗用例 | ✅ 已有（批次一 P0-1） |
+| **槽节点**（协议内删块） | 该协议下引用它的绑定 `slot_id` **置 NULL 并回执 N**（不静默） | `routers/protocol.py::update_protocol`（commit 前同事务，回执 `dangling_slots_cleared`） | `test_slot_contract.py` 3 例 | ✅ 已有（批次二）；**4b** 起由数据中心页「绑定矩阵」提供读侧核对（悬空槽 / 协议已删 / 失效绑定三项计数） |
+
+> **核对结论**：D8 三层校验表 4 行 + 删除×引用矩阵 3 行全部「已有」，无「待补」行；
+> 唯一由本批次新增的代码是 4a 的关系回灌（绑定层在恢复路径上的镜像），以及 4b 的
+> 只读矩阵视图（不新增拦截，只把既有口径摊到台面上）。
 
 ## 7. 分批实施与验收标准
 
@@ -343,11 +370,11 @@ def build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) -> Wrap
 
 ### 批次四（治理）
 
-- **4a 关系数据导入导出**：`protocol_bindings` + `response_specs` 并入 DataHub ZIP
+- ✅ **4a 关系数据导入导出**：`protocol_bindings` + `response_specs` 并入 DataHub ZIP
   （`relations.json`）+ 回灌端点 `POST /datahub/import/relations`；
-- **4b 绑定矩阵视图 + 划界**：D9/D10 文档划界落 README/PAGE_STATUS、绑定矩阵视图
-  （指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 并回执」；
-- **4c D8 校验表全量核对**：§6.1 / §6.2 逐行「已有/已补」销项（纯文档）。
+- ✅ **4b 绑定矩阵视图 + 划界**：D9/D10 文档划界落 README/PAGE_STATUS、绑定矩阵视图
+  （指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 并回执」复核；
+- ✅ **4c D8 校验表全量核对**：§6.1 / §6.2 逐行「已有/已补」销项（新增 §6.3）。
 
   > ✅ **4a 已提交 `54620ab`（代码+文档），2026-10-02**：
   > **导出** —— `GET /datahub/export/bundle` 增 `relations.json`
@@ -370,6 +397,35 @@ def build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) -> Wrap
   > 且 manifest 条数逐项一致、确认前不发请求、导入回显四段计数 + 服务端 id/出处/stale
   > 逐字回读、二次导入 upsert 覆盖、非法 JSON 与严格 400 三态），明细见
   > `PLAN_Backlog.md` §8.25。
+
+  > ✅ **4b + 4c 已提交 `PENDING_FEAT4B`（代码+文档，零 DDL），2026-10-02**：
+  > **4b 绑定矩阵** —— `frontend/src/utils/bindingMatrix.js` 纯函数
+  > `buildBindingMatrix`：一行一条**指令**（含未绑定的，覆盖率即治理信息）；默认格 /
+  > 其它格按 `is_default` 真值分栏（API 出布尔、DB 存 0/1 皆认），显式槽 → 节点标签、
+  > 无显式槽 → `slot_order` 位次；**孤儿不静默**：协议已删 → `protocolMissing`、槽悬空 →
+  > `slotMissing`、`stale` 只认 `true`（`false`/`null` 不亮，与另两处同口径）；摘要八项
+  > 计数（指令 / 有默认协议 / 无绑定 / 绑定 / 悬空槽 / 协议已删 / 失效绑定 / 重复默认）。
+  > DataHub 页新增「绑定矩阵 (BINDING MATRIX)」只读面板：三读
+  > `GET /bindings · /instructions/ · /protocols/` 与状态面板**同拍刷新、单读失败互不
+  > 拖垮**，六列表 + 底部「N 条指令尚未指定默认协议」补齐提示。
+  > **§6.2 槽节点行复核**：`protocol.py::update_protocol` 的同事务置 NULL + 回执
+  > `dangling_slots_cleared` **批次二已落地**（`test_slot_contract.py` 3 例）→ **4b 零
+  > 后端改动**（BE 用例数持平），矩阵只是把既有口径摊到读侧。
+  > **D9/D10 文档划界落位**：`README.md` 新增 **§6 Scope Boundaries**；`pageStatus.json`
+  > 协议页增「页面划界（D9/D10）」「删槽回执不静默」、通讯调试页增「传输层唯一归属点」、
+  > 编排绑定页增「绑定矩阵指针」「设备白名单 accepts」、数据中心页增矩阵条目，
+  > `PAGE_STATUS.md` 经生成器再生；编排绑定页 `nextSteps` 移除已落地的「绑定集导入导出」。
+  > **4c 全量核对（D8）**：新增 **§6.3 销项表** —— §6.1 五行（结构 / 关系 / 值 /
+  > 配方 + 4a 恢复期镜像）+ §6.2 三行（指令 / 协议 / 槽节点），逐行落到具体函数与
+  > 测试锚 → **8 行全「已有」、0 待补**；§6.2 槽节点行状态由「批次二随绑定矩阵」改为
+  > 「✅ 已有 + 4b 读侧核对」；`DESIGN_Decisions.md` D8/D9/D10 三表行 + 三处实施注
+  > （含 D9-B / D10-B 重开条件「绑定矩阵落地」**已具备但仍取 A** 的拍板）。
+  > **终态**：BE **549/549**（与 4a 后持平 —— 本批无后端改动）、FE **958/958**
+  > （64 文件，基线 948 + 10 = `bindingMatrix.test.js` 8 例 + `DataHub.test.jsx` 2 例）、
+  > `npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**（`yorha.db` 未改）。
+  > **人工验证 3 项通过**（真浏览器：16 行矩阵 + 摘要与 API 逐项一致、有绑定行
+  > 「新协议 (NEW) / 按序 0」与未绑定行 `—` + 「15 条指令尚未指定默认协议」提示、
+  > 刷新后矩阵随 refresh 重读），明细见 `PLAN_Backlog.md` §8.26。
 
 ## 8. 明确不做（本次拍板范围外）
 

@@ -44,7 +44,7 @@
 FE **944/944（63 文件，基线 932 + 12）**、`npx vite build` EXIT=0、yorha-ui
 校验器 8 文件 0 违规、**真路由冒烟 43 项 ALL PASS**；明细见 §8.24 |
 
-| CP4 | Core Pipeline 批次四（治理）：**4a** 关系数据导入导出（`bindings` + `response_specs` 并入 DataHub ZIP `relations.json` + `POST /datahub/import/relations`）/ **4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 回执」+ D9/D10 划界落 README/PAGE_STATUS / **4c** D8 校验表全量核对（逐行销项，纯文档）（明细 `DESIGN_CorePipeline.md` §7 批次四） | 🔄 **4a 已提交 ✅ `54620ab`（代码+文档，零 DDL），2026-10-02**：导出 ZIP 增 `relations.json`（`manifest` 增 `relations` 计数、`/status` 增 `protocolBindings`/`responseSpecs` 两行计数）+ 回灌端点按 `id` upsert、逐行报告（父缺失 → `skipped` 带 reason、槽悬空 → 置 NULL + warning、默认唯一冲突清旧行、`spec` 过 `normalize_spec` / `stage` 重算镜像 / 出处原样回填）、**部分成功即部分落库不整批回滚**；前端 DataHub 增「关系数据」面板（选文件 → 解析校验 → 确认弹窗 → 回显 新增/更新/跳过/警告 计数 + 刷新）。终态 BE **549/549**（基线 537 + 12）、FE **948/948**（63 文件，基线 944 + 4）、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**；明细见 §8.25。**4b/4c 未开工**（4b 含 1 处后端级联回执 + 绑定矩阵视图，4c 纯文档随 4b 提交） |
+| CP4 | Core Pipeline 批次四（治理）：**4a** 关系数据导入导出（`bindings` + `response_specs` 并入 DataHub ZIP `relations.json` + `POST /datahub/import/relations`）/ **4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 回执」+ D9/D10 划界落 README/PAGE_STATUS / **4c** D8 校验表全量核对（逐行销项，纯文档）（明细 `DESIGN_CorePipeline.md` §7 批次四） | 🔄 **4a 已提交 ✅ `54620ab`（代码+文档，零 DDL），2026-10-02**：导出 ZIP 增 `relations.json`（`manifest` 增 `relations` 计数、`/status` 增 `protocolBindings`/`responseSpecs` 两行计数）+ 回灌端点按 `id` upsert、逐行报告（父缺失 → `skipped` 带 reason、槽悬空 → 置 NULL + warning、默认唯一冲突清旧行、`spec` 过 `normalize_spec` / `stage` 重算镜像 / 出处原样回填）、**部分成功即部分落库不整批回滚**；前端 DataHub 增「关系数据」面板（选文件 → 解析校验 → 确认弹窗 → 回显 新增/更新/跳过/警告 计数 + 刷新）。终态 BE **549/549**（基线 537 + 12）、FE **948/948**（63 文件，基线 944 + 4）、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**；明细见 §8.25。**4b+4c 已提交 ✅ `PENDING_FEAT4B`（代码+文档，零 DDL），2026-10-02**：**4b** 绑定矩阵只读面板（`utils/bindingMatrix.js` 纯函数 + DataHub 页六列表 + 摘要八项计数；孤儿不静默 —— 协议已删 / 槽悬空 / `stale===true` 琥珀标出；三读与状态面板同拍、单读失败互不拖垮）+ D9/D10 划界落 `README.md` §6 Scope Boundaries 与 `pageStatus.json` 四页条目（`PAGE_STATUS.md` 再生）；**4c** 全量核对新增 `DESIGN_CorePipeline.md` §6.3 销项表 —— 8 行**全「已有」、0 待补**，§6.2 槽节点行复核为批次二已落地（`dangling_slots_cleared`）→ **本批零后端改动**（BE 用例数持平），`DESIGN_Decisions.md` D8/D9/D10 三表行 + 三处实施注（D9-B/D10-B 重开条件已具备**仍取 A**）。终态 BE **549/549**（持平）、FE **958/958（64 文件，基线 948 + 10）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**人工验证 3 项通过**；明细见 §8.26。**批次四三子批（4a/4b/4c）全数完成** |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -2168,6 +2168,83 @@ DDL 三列落真库、无链 400 / 不存在 404、三层协议 + 配方挂默�
 5. **非法 JSON** 文件 → `SYS: 导入失败：文件不是合法 JSON（…）`，不出弹窗、不发请求。
 6. **HTTP 层严格 400**：未知字段 `extra` / `schemaVersion:99` / `bindings:{}` → 400
    （各带 detail），空载荷 `{bindings:[],responseSpecs:[]}` → 200。
+
+### 8.26 Core Pipeline 批次四 · 4b + 4c（CP4-4b/4c）：绑定矩阵视图 + D9/D10 划界 + D8 全量核对（零 DDL、零后端改动）
+
+**批次**（2026-10-02，**零 DDL**；**后端 0 文件改动** —— 复核发现 §6.2 槽节点行
+（删槽 → `slot_id` 悬空置 NULL + 回执 `dangling_slots_cleared`）**批次二已落地**
+并有 `test_slot_contract.py` 3 例，4b 只需把它摊到读侧；未碰 `processor.py` /
+`graph.py` / `Blueprint.jsx`，`/dispatch` 缺省口径零影响）。
+
+**4b 绑定矩阵（指令 → 默认协议 → 槽位）**
+
+- **纯函数** `frontend/src/utils/bindingMatrix.js`：
+  - `buildBindingMatrix(instructions, bindings, protocols)` → `{rows, summary}`：
+    **一行一条指令**（含零绑定的 —— 覆盖率本身是治理信息），按 `device_code → code → id`
+    排序；`is_default` 真值分栏（API 出布尔、DB 存 0/1，皆认；**重复默认不吞** →
+    `extraDefaults` 计数并取排序末条作代表格）；格内 `protocolMissing` /
+    `slotMissing` / `stale` 三标志。
+  - `findSlotNode`（与后端 `routers/binding.find_slot_node` 同形：仅认 `type==='slot'`，
+    递归容器）、`slotCellText`（显式槽 → 节点标签 / `悬空 <id>`；无显式槽 → `按序 N`）、
+    `protocolCellText`（存在 → 标签；已删 → `（协议已删）<id>`）。
+  - **孤儿不静默**（§6.2「不静默」的读侧延伸）；**`stale` 只认 `true`**（`false`/`null`
+    不亮，与编排页 / 指令页两处同口径）。
+  - `summary`：指令 / 有默认协议 / 无绑定 / 绑定 / 悬空槽 / 协议已删 / 失效绑定 /
+    重复默认 八项。
+- **UI**（`frontend/src/pages/DataHub.jsx`）：新增全宽面板「绑定矩阵 (BINDING MATRIX)」
+  —— 说明段 + 摘要行 + 六列表（指令 / 名称 / 设备 / 默认协议 / 槽位 / 其它绑定）+
+  底部「N 条指令尚未指定默认协议 —— 到「编排绑定」页补齐」；三读
+  `GET /bindings · /instructions/ · /protocols/` 挂在既有 `refresh()` 上**与状态面板
+  同拍**，任一读失败只置 `matrix.error`（琥珀「矩阵不可用」行），**不拖垮状态面板**；
+  加载 / 空库 / 出错三态齐备。
+
+**4b D9/D10 文档划界落位**
+
+- `README.md` 新增 **§6 Scope Boundaries (页面划界 · D9 / D10)**：协议页 = 只管线帧
+  格式；传输层只在通讯调试页 `/transport/config` 与 transport 抽象；协议保持设备无关，
+  `accepts` 白名单由 `validate_binding` 服务端强制；治理视图指针（矩阵 + `relations.json`）。
+- `pageStatus.json` 四页各增条目（`PAGE_STATUS.md` 经 `node scripts/generate-page-status.mjs`
+  再生）：协议页「页面划界（D9/D10）」「删槽回执不静默」；通讯调试页「传输层唯一归属点」；
+  编排绑定页「绑定矩阵指针」「设备白名单 accepts」；数据中心页「绑定矩阵 (BINDING MATRIX)」；
+  并移除编排绑定页 `nextSteps` 中已落地的「绑定集导入导出与跨项目迁移」。
+
+**4c D8 校验表全量核对（销项）**
+
+- `DESIGN_CorePipeline.md` 新增 **§6.3 全量核对销项表**：§6.1 五行（保存时结构 /
+  绑定时关系 / 发送时值 / 配方期组合 D13 + **4a 关系回灌 = 绑定层在恢复路径的镜像**）
+  × §6.2 三行（指令 / 协议 / 槽节点），每行落到**具体函数 + 测试锚 + 结论** →
+  **8 行全「已有」、0 待补**。
+- §6.2 槽节点行状态由「批次二随绑定矩阵」改为「✅ 已有（批次二）+ 4b 读侧核对」。
+- `DESIGN_Decisions.md`：D8/D9/D10 三个表行补实施注 + 三个正文段各加「实施注」——
+  D9-B / D10-B 的重开条件（原定「等绑定矩阵落地后再议」）**已具备，仍取 A**（矩阵是
+  读侧治理视图，不构成把 `transport_profile` / `device_code` 塞进协议树的理由；
+  要重开须单独拍板理由 + 基数代价）。
+
+**测试**：FE 增 **10 例** —— `utils/__tests__/bindingMatrix.test.js` **8 例**
+（排序、默认/其它分栏与布尔真值、孤儿不静默、重复默认、空入参降级、`findSlotNode`
+含容器与非 slot 同 id 拒、两格文案）+ `pages/__tests__/DataHub.test.jsx` **2 例**
+（摘要六项计数 + 行三格与琥珀标出、零绑定提示 + 刷新后矩阵重读）；**BE 0 新增**
+（4b 无后端改动，549 持平）。
+
+**终态**：BE **549/549**（持平）、FE **958/958（64 文件，基线 948 + 10）**、
+`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 **0 违规**；**零 DDL、零后端改动**
+（`yorha.db` 全程未改，`git status` 无该文件）。
+
+**人工验证（2026-10-02，`uvicorn :8000` + `vite :5173` + 真浏览器，只读零写入）3 项通过**：
+
+1. **矩阵与 API 逐项一致**：16 行（= `GET /instructions/` 条数），摘要
+   `指令 16 · 有默认协议 1 · 无绑定 15 · 绑定 1 · 悬空槽 0 · 协议已删 0 · 失效绑定 0`
+   与 `GET /bindings` / `/protocols` 实况一一对应（截图存证）。
+2. **行内三格**：有绑定行 `DEMO-002 · 示例状态包 · YoRHa-A2 · 新协议 (NEW) · 按序 0 ·
+   —`（无显式槽 → `slot_order` 位次）；未绑定行三格 `—`；底部出
+   「15 条指令尚未指定默认协议 —— 到「编排绑定」页补齐」。
+3. **刷新重读**：点「刷新 (REFRESH)」→ 状态面板与矩阵同拍重载，摘要仍逐项一致
+   （三读再次命中，无重复行 / 无残留）。
+
+**文档同步**：`DESIGN_CorePipeline.md` §7 批次四 4b/4c 进度注 + §6.2 行改写 +
+§6.3 新表、`DESIGN_Decisions.md` D8/D9/D10 表行与三处实施注、`README.md` §6、
+`pageStatus.json` 四页条目 + `PAGE_STATUS.md` 再生、`PLAN_Backlog.md` §1 CP4 行 +
+本节、`PROJECT_HANDOVER.md` 条目 40。
 
 ## 9. 保留勿动（非任务，勿清理）
 

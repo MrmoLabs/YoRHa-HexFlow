@@ -11,7 +11,10 @@ vi.mock('../../api', () => ({
         createDbBackup: vi.fn(),
         restoreDbBackup: vi.fn(),
         exportDataBundle: vi.fn(),
-        importRelations: vi.fn()
+        importRelations: vi.fn(),
+        getInstructions: vi.fn(),
+        getBindings: vi.fn(),
+        getProtocols: vi.fn()
     }
 }));
 
@@ -233,5 +236,68 @@ describe('DataHub Page', () => {
         fireEvent.change(input, { target: { files: [makeJsonFile(JSON.stringify({ foo: 1 }))] } });
         await waitFor(() => expect(screen.getByText(/缺 bindings \/ responseSpecs/)).toBeDefined());
         expect(api.importRelations).not.toHaveBeenCalled();
+    });
+
+    // ─── 批次四 4b: 绑定矩阵（指令 → 默认协议 → 槽位） ─────────────────────
+    const seedMatrix = () => {
+        api.getDatahubStatus.mockResolvedValue(STATUS);
+        api.getInstructions.mockResolvedValue([
+            { id: 'i-heart', code: 'DEMO-001', name: '示例心跳帧', device_code: 'DEMO-DEV' },
+            { id: 'i-loose', code: 'DEMO-003', name: '未绑定指令', device_code: 'DEMO-DEV' }
+        ]);
+        api.getProtocols.mockResolvedValue([
+            { id: 'p1', label: '协议一', children: [{ id: 's1', label: '外壳槽', type: 'slot' }] },
+            { id: 'p2', label: '协议二', children: [] }
+        ]);
+        api.getBindings.mockResolvedValue([
+            { id: 'b-def', protocol_id: 'p1', instruction_id: 'i-heart', label: '默认绑定',
+                slot_order: 0, slot_id: 's1', is_default: true, stale: false },
+            { id: 'b-other', protocol_id: 'p1', instruction_id: 'i-heart', label: '侧槽',
+                slot_order: 1, slot_id: 'gone-slot', is_default: false, stale: true },
+            { id: 'b-orphan', protocol_id: 'p2', instruction_id: 'i-loose', label: '侧绑定',
+                slot_order: 0, slot_id: null, is_default: false, stale: null }
+        ]);
+    };
+
+    it('4b 绑定矩阵: 摘要计数 + 默认协议/槽位 + 悬空槽与失效琥珀标出', async () => {
+        seedMatrix();
+
+        render(<DataHub />);
+        await waitFor(() => expect(screen.getByTestId('matrix-summary')).toBeDefined());
+
+        const summary = screen.getByTestId('matrix-summary').textContent;
+        expect(summary).toContain('指令 2');
+        expect(summary).toContain('有默认协议 1');
+        expect(summary).toContain('无绑定 0');
+        expect(summary).toContain('绑定 3');
+        expect(summary).toContain('悬空槽 1');
+        expect(summary).toContain('失效绑定 1');
+
+        const matrixSection = screen.getByTestId('binding-matrix').textContent;
+        expect(matrixSection).toContain('DEMO-001');
+        expect(matrixSection).toContain('协议一');
+        expect(matrixSection).toContain('外壳槽');             // 显式槽 → 节点标签
+        expect(matrixSection).toContain('悬空 gone-slot');     // 槽已删 → 不静默
+        expect(matrixSection).toContain('[失效]');             // stale === true 才亮
+        expect(matrixSection).toContain('DEMO-003');
+        expect(matrixSection).toContain('按序 0');             // 无显式槽 → slot_order
+        expect(matrixSection).toContain('协议二');
+    });
+
+    it('4b 绑定矩阵: 零绑定提示补齐入口；刷新后矩阵随 refresh 重读', async () => {
+        api.getDatahubStatus.mockResolvedValue(STATUS);
+        api.getInstructions.mockResolvedValue([{ id: 'i1', code: 'DEMO-001', name: '心跳', device_code: 'D1' }]);
+        api.getProtocols.mockResolvedValue([]);
+        api.getBindings.mockResolvedValue([]);
+
+        render(<DataHub />);
+        await waitFor(() => expect(screen.getByTestId('matrix-summary')).toBeDefined());
+        expect(screen.getByTestId('matrix-summary').textContent).toContain('无绑定 1');
+        expect(screen.getByText(/尚未指定默认协议/)).toBeDefined();
+
+        fireEvent.click(screen.getByRole('button', { name: /刷新/ }));
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledTimes(2));
+        // 刷新后矩阵随 refresh 重读（三读再次命中 mock）
+        expect(screen.getByTestId('matrix-summary').textContent).toContain('指令 1');
     });
 });

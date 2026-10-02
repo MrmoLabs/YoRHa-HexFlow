@@ -1047,9 +1047,44 @@
       `PLAN_Backlog.md` §1 新 CP4 行 + 新 §8.25、`pageStatus.json` 数据中心页条目 +
       `PAGE_STATUS.md` 再生成、本条。
     - **提交**：→ **`54620ab`（代码+文档），2026-10-02**。
-    - **待办**：**4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 →
-      `slot_id` 悬空置 NULL 并回执」+ D9/D10 划界落 README/PAGE_STATUS；**4c** D8
-      校验表全量核对（纯文档，随 4b 提交）。
+    - **待办**：（已随条目 40 = 4b+4c 完成）批次四三子批 4a/4b/4c 至此全数收口。
+
+40. **CP4-4b/4c 绑定矩阵视图 + D9/D10 划界 + D8 全量核对实现完成（批次四收口）**
+    （2026-10-02，**零 DDL、后端 0 文件改动** —— 复核确认 §6.2 槽节点行（删槽 →
+    `slot_id` 悬空置 NULL + 回执 `dangling_slots_cleared`）**批次二已落地**并有
+    `test_slot_contract.py` 3 例；未碰 `processor.py`/`graph.py`/`Blueprint.jsx`，
+    `yorha.db` 全程未改）：
+    - **4b 绑定矩阵**（指令 → 默认协议 → 槽位）：纯函数 `frontend/src/utils/bindingMatrix.js`
+      —— 一行一条**指令**（含未绑定的），`device_code → code` 排序、`is_default` 真值
+      分栏（API 布尔 / DB 0·1 皆认）、重复默认出 `extraDefaults`、显式槽 → 节点标签、
+      无显式槽 → `slot_order` 位次；**孤儿不静默**（`protocolMissing` / `slotMissing` /
+      `stale===true` 才亮）。DataHub 页新增「绑定矩阵 (BINDING MATRIX)」只读面板：
+      摘要八项计数 + 六列表 + 「N 条指令尚未指定默认协议」补齐提示，三读
+      `GET /bindings · /instructions/ · /protocols/` 挂既有 `refresh()` **与状态面板
+      同拍、单读失败互不拖垮**（加载/空库/出错三态）。
+    - **D9/D10 文档划界落位**：`README.md` 新增 **§6 Scope Boundaries（页面划界 · D9/D10）**；
+      `pageStatus.json` 协议页（页面划界 + 删槽回执）、通讯调试页（传输层唯一归属点）、
+      编排绑定页（矩阵指针 + `accepts` 白名单）、数据中心页（矩阵条目）四条目，`PAGE_STATUS.md`
+      再生；编排绑定页 `nextSteps` 移除已落地的「绑定集导入导出」。
+    - **4c D8 全量核对（销项）**：`DESIGN_CorePipeline.md` 新增 **§6.3** —— §6.1 五行
+      （结构 / 关系 / 值 / 配方 + 4a 恢复期镜像）+ §6.2 三行（指令 / 协议 / 槽节点）
+      逐行落到函数 + 测试锚 → **8 行全「已有」、0 待补**；§6.2 槽节点行状态改写；
+      `DESIGN_Decisions.md` D8/D9/D10 三表行 + 三处实施注（**D9-B / D10-B 重开条件
+      「绑定矩阵落地」已具备，仍取 A**，重开须单独拍板）。
+    - **验收**：BE **549/549**（持平 —— 本批无后端改动）、FE **958/958（64 文件，
+      基线 948 + 10 = `bindingMatrix.test.js` 8 例 + `DataHub.test.jsx` 2 例）**、
+      `npx vite build` EXIT=0、yorha-ui 校验器 4 文件 **0 违规**；**零 DDL**。
+    - **人工验证 3 项通过**（真浏览器只读）：16 行矩阵与 API 逐项一致
+      （`指令 16 · 有默认协议 1 · 无绑定 15 · 绑定 1 · 悬空槽 0 · 协议已删 0 · 失效绑定 0`，
+      截图存证）、行内三格（`新协议 (NEW) / 按序 0` 与未绑定行 `—`）+ 底部补齐提示、
+      刷新后矩阵随 `refresh` 重读一致；明细见 `PLAN_Backlog.md` §8.26。
+    - **文档同步**：`DESIGN_CorePipeline.md` §7 批次四 4b/4c 进度注 + §6.3、
+      `DESIGN_Decisions.md` D8/D9/D10、`README.md` §6、`pageStatus.json` + `PAGE_STATUS.md`、
+      `PLAN_Backlog.md` §1 CP4 行 + 新 §8.26、本条。
+    - **提交**：→ **`PENDING_FEAT4B`（代码+文档），2026-10-02**。
+    - **状态**：**批次四（治理）三子批 4a / 4b / 4c 全数完成并提交 —— CP4 收口**。
+      遗留待确认项（不阻塞）：应答是否带转义字节（`escape` 未接进 `response_match`，
+      D15 关联项 1 / §9.7 人工验证 ④）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import NieRModal from '../components/ui/NieRModal';
 import { PAGE_STATUS_BY_KEY } from '../config/pageRegistry';
+import { buildBindingMatrix, protocolCellText, slotCellText } from '../utils/bindingMatrix';
 import { triggerBlobDownload } from '../utils/download';
 
 // C3 数据中心一期：环境状态面板 + 聚合导出 ZIP + 数据库备份/恢复。
@@ -53,6 +54,8 @@ export default function DataHub() {
     // 批次四 4a: 已解析待确认的关系数据包（{name, payload}）；确认才 POST。
     const [importTarget, setImportTarget] = useState(null);
     const importInputRef = React.useRef(null);
+    // 批次四 4b：绑定矩阵（指令 → 默认协议 → 槽位），utils/bindingMatrix 纯函数产出
+    const [matrix, setMatrix] = useState({ rows: [], summary: null, loading: true, error: '' });
 
     const refresh = useCallback(async () => {
         try {
@@ -60,6 +63,22 @@ export default function DataHub() {
             setLoadError('');
         } catch (err) {
             setLoadError(err?.message || '无法连接后端服务');
+        }
+        // 批次四 4b：绑定矩阵三读（指令 / 绑定 / 协议）与状态面板同拍刷新，
+        // 单读失败不拖垮状态面板（各自 try）。
+        try {
+            const [instructions, bindings, protocols] = await Promise.all([
+                api.getInstructions(),
+                api.getBindings(),
+                api.getProtocols()
+            ]);
+            setMatrix({
+                ...buildBindingMatrix(instructions, bindings, protocols),
+                loading: false,
+                error: ''
+            });
+        } catch (err) {
+            setMatrix((prev) => ({ ...prev, loading: false, error: err?.message || '无法加载绑定数据' }));
         }
     }, []);
 
@@ -336,6 +355,132 @@ export default function DataHub() {
                         </section>
                     </div>
                 </div>
+
+                {/* 批次四 4b（DESIGN_CorePipeline §7 批次四 ②）：绑定矩阵
+                    只读总览（指令 → 默认协议 → 槽位）。孤儿关系不静默抹平：
+                    协议/槽已删与 definition_hash 失效一律琥珀标出。 */}
+                <section className="border border-nier-light/30 bg-nier-dark/60 mt-6" data-testid="binding-matrix">
+                    <PanelTitle hint="GET /bindings · /instructions/ · /protocols/">绑定矩阵 (BINDING MATRIX)</PanelTitle>
+                    <div className="p-4 flex flex-col gap-3">
+                        <p className="text-xs leading-6 opacity-80">
+                            只读总览：每行一条指令，看它落在哪条<span className="font-mono"> 默认协议 </span>的哪个
+                            <span className="font-mono"> 槽位 </span>（无显式槽按
+                            <span className="font-mono"> slot_order </span>位次）。
+                            协议或槽已删的关系不静默抹平，标<span className="font-mono"> 悬空 </span>/
+                            <span className="font-mono">（协议已删）</span>；绑定出处失效标
+                            <span className="font-mono"> [失效]</span>。
+                        </p>
+
+                        {matrix.summary && (
+                            <div className="flex flex-wrap gap-x-6 gap-y-1 text-[11px] font-mono opacity-70" data-testid="matrix-summary">
+                                <span>指令 {matrix.summary.instructions}</span>
+                                <span>有默认协议 {matrix.summary.withDefault}</span>
+                                <span>无绑定 {matrix.summary.unbound}</span>
+                                <span>绑定 {matrix.summary.bindings}</span>
+                                <span className={matrix.summary.danglingSlots ? 'text-yellow-300' : ''}>
+                                    悬空槽 {matrix.summary.danglingSlots}
+                                </span>
+                                <span className={matrix.summary.missingProtocols ? 'text-yellow-300' : ''}>
+                                    协议已删 {matrix.summary.missingProtocols}
+                                </span>
+                                <span className={matrix.summary.staleBindings ? 'text-yellow-300' : ''}>
+                                    失效绑定 {matrix.summary.staleBindings}
+                                </span>
+                                {matrix.summary.extraDefaults > 0 && (
+                                    <span className="text-yellow-300">重复默认 {matrix.summary.extraDefaults}</span>
+                                )}
+                            </div>
+                        )}
+
+                        {matrix.loading ? (
+                            <div className="text-xs opacity-60">加载中…</div>
+                        ) : matrix.error ? (
+                            <div className="text-xs text-yellow-300">矩阵不可用：{matrix.error}</div>
+                        ) : matrix.rows.length === 0 ? (
+                            <div className="text-xs opacity-50">暂无指令。</div>
+                        ) : (
+                            <div className="overflow-x-auto border-t border-nier-light/20 pt-3">
+                                <table className="w-full text-xs font-mono">
+                                    <thead>
+                                        <tr className="text-[10px] tracking-[0.2em] opacity-60 border-b border-nier-light/20">
+                                            <th className="text-left py-1 font-bold">指令 CODE</th>
+                                            <th className="text-left py-1 font-bold">名称 NAME</th>
+                                            <th className="text-left py-1 font-bold">设备 DEVICE</th>
+                                            <th className="text-left py-1 font-bold">默认协议 DEFAULT</th>
+                                            <th className="text-left py-1 font-bold">槽位 SLOT</th>
+                                            <th className="text-left py-1 font-bold">其它绑定 OTHER</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {matrix.rows.map((row) => (
+                                            <tr key={row.id} className="border-b border-nier-light/10 align-top">
+                                                <td className="py-1 pr-3 truncate max-w-[10rem]" title={row.id}>{row.code}</td>
+                                                <td className="py-1 pr-3 truncate max-w-[14rem]" title={row.name}>{row.name}</td>
+                                                <td className="py-1 pr-3 opacity-70">{row.deviceCode || '—'}</td>
+                                                <td className="py-1 pr-3">
+                                                    {row.defaultBinding ? (
+                                                        <>
+                                                            <span
+                                                                className={row.defaultBinding.protocolMissing ? 'text-yellow-300' : ''}
+                                                                title={row.defaultBinding.id}
+                                                            >
+                                                                {protocolCellText(row.defaultBinding)}
+                                                            </span>
+                                                            {row.defaultBinding.stale && (
+                                                                <span className="ml-2 text-yellow-300">[失效]</span>
+                                                            )}
+                                                            {row.extraDefaults > 0 && (
+                                                                <span className="ml-2 text-yellow-300">[默认×{row.extraDefaults + 1}]</span>
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        <span className="opacity-40">—</span>
+                                                    )}
+                                                </td>
+                                                <td className="py-1 pr-3">
+                                                    {row.defaultBinding ? (
+                                                        <span
+                                                            className={row.defaultBinding.slotMissing ? 'text-yellow-300' : ''}
+                                                            title={row.defaultBinding.slotId || ''}
+                                                        >
+                                                            {slotCellText(row.defaultBinding)}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="opacity-40">—</span>
+                                                    )}
+                                                </td>
+                                                <td className="py-1">
+                                                    {row.others.length === 0 ? (
+                                                        <span className="opacity-40">—</span>
+                                                    ) : (
+                                                        <span className="flex flex-wrap gap-x-3 gap-y-1">
+                                                            {row.others.map((cell) => (
+                                                                <span
+                                                                    key={cell.id}
+                                                                    title={cell.id}
+                                                                    className={cell.protocolMissing || cell.slotMissing ? 'text-yellow-300' : ''}
+                                                                >
+                                                                    {protocolCellText(cell)} · {slotCellText(cell)}
+                                                                    {cell.stale && '[失效]'}
+                                                                </span>
+                                                            ))}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+
+                        {matrix.summary && matrix.summary.unbound > 0 && (
+                            <p className="text-[11px] leading-5 opacity-60">
+                                {matrix.summary.unbound} 条指令尚未指定默认协议 —— 到「编排绑定」页补齐。
+                            </p>
+                        )}
+                    </div>
+                </section>
             </div>
         </div>
     );
