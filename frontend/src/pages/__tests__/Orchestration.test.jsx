@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react';
 import Orchestration from '../Orchestration';
 import { api } from '../../api';
 
@@ -31,6 +31,27 @@ vi.mock('../../api', () => ({
         // 批次二 (D14③): 试发改带 wrap 下发（后端先转义内核再套壳）
         dispatchWrappedGroup: vi.fn()
     }
+}));
+
+// R4 拖拽（PLAN §8.41）：jsdom 没有真实指针传感器，碰撞检测依赖的
+// getBoundingClientRect 也全是 0 —— 这里只把 DndContext 的 onDragEnd 透到 DOM 上，
+// 测试直接调用它。被测的是我们自己的「换位 / 标脏 / 落库」口径，不是 dnd-kit 本身。
+vi.mock('@dnd-kit/core', () => ({
+    DndContext: ({ children, onDragEnd }) => (
+        <div
+            data-testid="dnd-context"
+            ref={(node) => { if (node) node.__dndOnDragEnd = onDragEnd; }}
+        >
+            {children}
+        </div>
+    ),
+    PointerSensor: class PointerSensor {},
+    useSensor: () => ({}),
+    useSensors: (...sensors) => sensors,
+    useDraggable: () => ({
+        setNodeRef: () => {}, listeners: {}, attributes: {}, isDragging: false
+    }),
+    useDroppable: () => ({ setNodeRef: () => {}, isOver: false })
 }));
 
 const mountApis = () => {
@@ -958,5 +979,115 @@ describe('Orchestration Page', () => {
         expect(await screen.findByText('仍匹配')).toBeDefined();
         expect(screen.getByText('无出处')).toBeDefined();
         expect(screen.queryByTestId('binding-stale')).toBeNull();
+    });
+
+    // ── R4 · 绑定拖拽排序（PLAN §8.41，拍板：**拖完只改展示序，点保存按钮才改
+    // 持久序**）────────────────────────────────────────────────────────────
+    const sidebarRowsRaw = (container) =>
+        [...container.querySelectorAll('aside:first-of-type .truncate')]
+            .map((el) => el.textContent);
+
+    // 脏行琥珀点 ● 在 label 之前 —— 断「展示序」时先剥掉，另用 raw 断脏标记
+    const sidebarRows = (container) =>
+        sidebarRowsRaw(container).map((text) => text.replace(/^●/, ''));
+
+    const dragRow = (activeId, overId) => {
+        const node = screen.getByTestId('dnd-context');
+        act(() => {
+            node.__dndOnDragEnd({ active: { id: activeId }, over: { id: overId } });
+        });
+    };
+
+    it('R4 拖拽：松手只改展示序（零即时 PUT），点保存更改 (SAVE) 才改持久序', async () => {
+        api.getBindings.mockResolvedValue([
+            { id: 'srv-1', label: '绑定甲', protocol_id: 'proto-1', instruction_id: 'inst-1', slot_order: 0 },
+            { id: 'srv-2', label: '绑定乙', protocol_id: 'proto-1', instruction_id: 'inst-1', slot_order: 1 }
+        ]);
+
+        const { container } = render(
+            <Orchestration
+                protocols={[{ id: 'proto-1', label: '协议一', children: [] }]}
+                instructions={[{ id: 'inst-1', name: '指令一', fields: [] }]}
+            />
+        );
+
+        await screen.findByText('绑定甲');
+        expect(sidebarRows(container)).toEqual(['绑定甲', '绑定乙']);
+        expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(true);
+
+        api.updateBinding.mockClear();
+        dragRow('srv-2', 'srv-1');
+
+        // 展示序立刻翻转（本地草稿），持久序一个字节没写
+        expect(sidebarRows(container)).toEqual(['绑定乙', '绑定甲']);
+        expect(api.updateBinding).not.toHaveBeenCalled();
+        // 脏行 = 真变化的两行 → SAVE 由禁用转可用（与洞位下拉同一条路径）
+        expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(false);
+
+        fireEvent.click(screen.getByRole('button', { name: '保存更改 (SAVE)' }));
+        await waitFor(() => {
+            expect(api.updateBinding).toHaveBeenCalledWith('srv-2', expect.objectContaining({ slot_order: 0 }));
+            expect(api.updateBinding).toHaveBeenCalledWith('srv-1', expect.objectContaining({ slot_order: 1 }));
+        });
+        await waitFor(() => expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(true));
+    });
+
+    it('R4 拖拽：跨协议组的落点直接忽略（不换序、不标脏、不 PUT）', async () => {
+        api.getBindings.mockResolvedValue([
+            { id: 'srv-1', label: '甲1', protocol_id: 'proto-a', instruction_id: 'inst-1', slot_order: 0 },
+            { id: 'srv-2', label: '乙1', protocol_id: 'proto-b', instruction_id: 'inst-1', slot_order: 0 }
+        ]);
+
+        const { container } = render(
+            <Orchestration
+                protocols={[
+                    { id: 'proto-a', label: '协议A', children: [] },
+                    { id: 'proto-b', label: '协议B', children: [] }
+                ]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
+        );
+
+        await screen.findByText('甲1');
+        expect(sidebarRows(container)).toEqual(['甲1', '乙1']);
+
+        api.updateBinding.mockClear();
+        dragRow('srv-2', 'srv-1');
+
+        expect(sidebarRows(container)).toEqual(['甲1', '乙1']);
+        expect(api.updateBinding).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(true);
+    });
+
+    it('R4 拖拽：只有位次真变化的行进 PUT 队列（末行未动 → 不标脏）', async () => {
+        api.getBindings.mockResolvedValue([
+            { id: 'srv-1', label: '甲1', protocol_id: 'proto-1', instruction_id: 'inst-1', slot_order: 0 },
+            { id: 'srv-2', label: '甲2', protocol_id: 'proto-1', instruction_id: 'inst-1', slot_order: 1 },
+            { id: 'srv-3', label: '甲3', protocol_id: 'proto-1', instruction_id: 'inst-1', slot_order: 2 }
+        ]);
+
+        const { container } = render(
+            <Orchestration
+                protocols={[{ id: 'proto-1', label: '协议一', children: [] }]}
+                instructions={[{ id: 'inst-1', name: '指令一', fields: [] }]}
+            />
+        );
+
+        await screen.findByText('甲1');
+        api.updateBinding.mockClear();
+        // 甲2 → 首位：甲2=0 / 甲1=1 / 甲3 仍是 2（末行不动 → 不进队列）
+        dragRow('srv-2', 'srv-1');
+        // 展示序翻转，且**只有**前两行带脏标记（甲3 位次没动 → 不标脏）
+        expect(sidebarRowsRaw(container)).toEqual(['●甲2', '●甲1', '甲3']);
+        expect(sidebarRows(container)).toEqual(['甲2', '甲1', '甲3']);
+        expect(api.updateBinding).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: '保存更改 (SAVE)' }));
+        await waitFor(() => {
+            expect(api.updateBinding).toHaveBeenCalledWith('srv-2', expect.objectContaining({ slot_order: 0 }));
+            expect(api.updateBinding).toHaveBeenCalledWith('srv-1', expect.objectContaining({ slot_order: 1 }));
+        });
+        expect(api.updateBinding).not.toHaveBeenCalledWith('srv-3', expect.anything());
+        await waitFor(() => expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(true));
     });
 });

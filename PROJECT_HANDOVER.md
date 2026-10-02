@@ -1435,6 +1435,45 @@
       自本批起每批验收项固定为：BE 全量 + FE 全量 + `npx vite build` +
       **`npm run lint` EXIT=0** + yorha-ui 校验器 0 违规。
 
+50. **R4 · 编排页绑定拖拽排序 —— 拖完只改展示序，保存才改持久序（PLAN §8.41）**
+    （2026-10-02，**纯 FE，零 BE 改动、零 DDL** —— 未碰 `backend/`、`models.py`、
+    `processor.py`/`graph.py`/`Blueprint.jsx`，`/dispatch` 缺省口径不变）：
+    - **拍板**（§8.37 用户原话）：**「R4 拖完改展示序，点击保存按钮才改持久序」**。
+    - **为什么零 BE**：侧栏展示序 = `sortedBindings` 按 **(协议序, 洞号)** 派生，而
+      `slot_order` 本来就是 PUT 载荷字段（`toServer()` 一直带）→ 「改展示序」= 本地重写
+      `slot_order`（草稿），「改持久序」= 点「保存更改 (SAVE)」逐行 `PUT /bindings/{id}`。
+      **同一字段的两个阶段，不是两套数据**，所以没有"拖拽专用接口"这回事。
+    - **新增 `frontend/src/utils/reorderBindings.js`（纯函数，拖拽/下拉共用）**：
+      `moveBindingToIndex()` 组内换位 + 稠密重编号 0..n-1 + 目标位次钳 `0..组内余数`
+      + **只回写真变化的行**；`reorderBindingsWithinGroup()` 落在 `over` 的原位次，
+      **跨协议组直接 `null`**（洞号是组内位次，不猜"要不要顺带换协议"）。两条路径位次
+      数值等价的推导写在文件头注释。
+    - **`Orchestration.jsx`**：抽**模块级 `BindingRow`**（`useDraggable`/`useDroppable`
+      是钩子，**不能进 `.map()` 回调**）；把手 = label 前的**空白 grip**（两根 1px 横线）——
+      **无文本节点**（不动 `aside .truncate` 的 `textContent` 既有断言）、**不是 button**
+      （不影响「行内首个 button = 删除」取法）、**只挂 `listeners` 不挂 `attributes`**
+      （不给行加 `role="button"`）；`<DndContext>` 只包侧栏列表，`PointerSensor` +
+      **8px 起拖**（点一下选中不误判成拖）；`handleDragEnd` → 换位 + 并进 `dirtyIds`，
+      `loadFailed` 只改本地不标脏。键盘/无障碍等价路径本来就有（属性面板洞位下拉）。
+    - **测试 +14 → FE 990/990（67 文件）**：`utils/__tests__/reorderBindings.test.js`
+      **11 例**；`Orchestration.test.jsx` **+3 例**（① 拍板口径：展示序立刻翻转 +
+      `updateBinding` 零调用 + SAVE 禁用→可用 → 点 SAVE 才 PUT 新 `slot_order`；
+      ② 跨协议组落点不换序/不标脏/SAVE 仍禁用；③ 只有真变化的行进队列 —— 断言
+      `updateBinding` **从未**以 `srv-3` 被调用、脏标记只在前两行）。
+      **怎么测拖拽**：jsdom 无真实指针传感器、`getBoundingClientRect` 全 0 →
+      `vi.mock('@dnd-kit/core')` **只把 `DndContext` 的 `onDragEnd` 透到 DOM**，测试直接
+      调用；被测的是我们自己的换位/标脏/落库口径，不是 dnd-kit 本身。
+    - **更正 §8.37 原行两处失实**：① 「现状 = 上移/下移按钮 + 洞位下拉」→ 实测**只有
+      洞位下拉，没有上下移按钮**；② 「未保存切换协议/刷新要有丢弃提示」→ 刷新**已有**
+      `beforeunload` 拦截、协议切换**不丢稿**（脏行按行驻留）→ **无需新增**。
+    - **验收**：`npm run lint` **EXIT=0**、**BE 644/644**、**FE 990/990（67 文件）**、
+      `npx vite build` EXIT=0、yorha-ui 校验器 **0 违规**；零 DDL。
+    - **文档同步**：PLAN 新 **§8.41** + §8.37 R4 行已办 + §1 `R1–R10` 状态、本条。
+    - **状态**：**R1 ✅ R2 ✅ R3 ✅ R4 ✅**，余 **R5 float64 → R6 软删除（13 表加
+      `deleted_at`，DDL）→ R7 导出补域 → R8 导入补端点 → R9 解码展示面板 → R10
+      `fields_json` 入库（DDL）**。每批验收项固定为：BE 全量 + FE 全量 +
+      `npx vite build` + **`npm run lint` EXIT=0** + yorha-ui 校验器 0 违规。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { DndContext, PointerSensor, useSensor, useSensors, useDraggable, useDroppable } from '@dnd-kit/core';
 import Canvas from '../components/editor/Canvas';
 import RecipeEditor from '../components/editor/RecipeEditor';
 import NieRModal from '../components/ui/NieRModal';
@@ -8,6 +9,7 @@ import { mergeProtocolInstruction, buildLanes, getTotalBytes, countSlots, normal
 import { InstructionEncoder } from '../utils/InstructionEncoder';
 import { toFrameBlocks } from '../utils/toFrameBlocks';
 import { triggerBlobDownload } from '../utils/download';
+import { moveBindingToIndex, reorderBindingsWithinGroup } from '../utils/reorderBindings';
 
 // E4 编排绑定持久化：绑定列表接后端 /bindings CRUD（新表 protocol_bindings）。
 // 行为口径（反馈 #4 改手动）：挂载 GET 对账 → 空表种默认绑定（服务端也 POST
@@ -69,6 +71,72 @@ const stagesToServer = (stages) => (stages || []).map(stage => ({
     protocol_id: stage.protocol_id,
     ...(stage.slot_ids && stage.slot_ids.length ? { slot_ids: stage.slot_ids } : {})
 }));
+
+// ── R4 · 绑定行（可拖 + 可放）─────────────────────────────────────────────
+// 把手 = label 前的空白 grip：
+//   · **无文本节点** → 不动 `aside .truncate` 的 textContent（既有断言按行取 label）；
+//   · **不是 button** → 不影响「行内首个 button = 删除」的既有取法；
+//   · 只挂 dnd-kit 的 listeners、不挂 attributes → 不给行加 role=button 改无障碍角色。
+// 键盘侧的等价路径本来就有（属性面板的洞位下拉），拖拽只是鼠标侧的手感。
+function BindingRow({ binding, selected, dirty, onSelect, onDelete, onToggleDefault }) {
+    const b = binding;
+    const { setNodeRef: setRowRef, isOver } = useDroppable({ id: b.id });
+    const { setNodeRef: setGripRef, listeners, isDragging } = useDraggable({ id: b.id });
+    const gripState = (isDragging || isOver) ? 'opacity-100' : 'opacity-0 group-hover:opacity-70';
+    return (
+        <div
+            ref={setRowRef}
+            onClick={() => onSelect(b.id)}
+            className={`p-3 border-b border-nier-light/10 cursor-pointer hover:bg-white/5 flex justify-between group ${selected ? 'bg-nier-light/10 text-white font-bold' : 'text-nier-light/70'}${isDragging ? ' opacity-50' : ''}`}
+        >
+            <div className="truncate text-xs">
+                <span
+                    ref={setGripRef}
+                    {...listeners}
+                    title="拖拽调整组内洞序（仅改展示序，点保存更改 (SAVE) 才落库）"
+                    aria-hidden="true"
+                    className={`mr-1 inline-flex flex-col gap-[2px] justify-center w-3 h-3 align-middle cursor-grab active:cursor-grabbing select-none ${gripState}`}
+                >
+                    <span className="block w-2 h-px bg-nier-light/70" />
+                    <span className="block w-2 h-px bg-nier-light/70" />
+                </span>
+                {/* 人工验证 #6①: 脏行琥珀点（title 供定位/无障碍）；放 label
+                    文本节点之前——RTL getByText 只取直接文本节点，脏行 label 仍可查 */}
+                {dirty && (
+                    <span title="有未保存更改" className="text-[#E58D28] mr-1">●</span>
+                )}
+                {b.label}
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+                {/* CP3 3d (D7-A): 绑定失效徽标 —— 仅 stale === true 渲染
+                    （false/null/未回执 = 不出）；span 在删除钮之前但非 button，
+                    不影响行内「首个 button = 删除」的既有取法 */}
+                {b.stale === true && (
+                    <span
+                        data-testid="binding-stale"
+                        title="协议链已变更 — 绑定定义可能已失效 (STALE)"
+                        className="border border-[#E58D28]/60 px-1 py-0.5 text-[8px] font-mono tracking-widest text-[#FFB74D] whitespace-nowrap leading-none"
+                    >
+                        绑定已失效 STALE
+                    </span>
+                )}
+                <button onClick={(e) => onDelete(e, b.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-400">×</button>
+                {/* 批次一 (D1): 星标 = 指令默认封装绑定（is_default）——放删除之后 */}
+                <button
+                    type="button"
+                    onClick={(e) => onToggleDefault(e, b.id)}
+                    title={b.isDefault ? '取消默认封装 (UNSTAR)' : '设为指令默认封装 (STAR)'}
+                    aria-pressed={Boolean(b.isDefault)}
+                    className={b.isDefault
+                        ? 'text-yellow-400 leading-none'
+                        : 'opacity-0 group-hover:opacity-100 text-nier-light/50 hover:text-yellow-400 leading-none'}
+                >
+                    {b.isDefault ? '★' : '☆'}
+                </button>
+            </div>
+        </div>
+    );
+}
 
 export default function Orchestration({ protocols, instructions }) {
     // State for Bindings (Mappings)
@@ -318,27 +386,39 @@ export default function Orchestration({ protocols, instructions }) {
         putBinding(toServer(starred));
     };
 
-    // B3 洞位下拉：组内换位（目标位次钳在 0..组内余数）→ 稠密重编号 → 回写变化行
+    // B3 洞位下拉：组内换位（目标位次钳在 0..组内余数）→ 稠密重编号 → 回写变化行。
+    // R4 起与拖拽共用 utils/reorderBindings 的纯实现，两条路径只差「怎么给位次」。
     const handleSlotOrderChange = (targetIndex) => {
         if (!currentBinding) return;
-        const group = bindings
-            .filter(b => b.protocolId === currentBinding.protocolId)
-            .slice()
-            .sort((a, b) => (a.slotOrder ?? 0) - (b.slotOrder ?? 0));
-        const without = group.filter(b => b.id !== currentBinding.id);
-        const at = Math.max(0, Math.min(Number(targetIndex), without.length));
-        const reordered = [...without.slice(0, at), currentBinding, ...without.slice(at)]
-            .map((b, i) => ({ ...b, slotOrder: i }));
-        const byId = new Map(reordered.map(b => [b.id, b]));
-        setBindings(prev => prev.map(b => byId.get(b.id) || b));
+        const moved = moveBindingToIndex(bindings, currentBinding.id, targetIndex);
+        if (!moved) return;
+        setBindings(prev => prev.map(b => moved.byId.get(b.id) || b));
         if (loadFailed) return;
         // 反馈 #4：换洞 = 组内多行草稿 —— 标脏不即时 PUT，SAVE 逐行落库
         setDirtyIds((prev) => {
             const next = new Set(prev);
-            reordered.forEach((b) => {
-                const before = bindings.find(x => x.id === b.id);
-                if ((before?.slotOrder ?? 0) !== b.slotOrder) next.add(b.id);
-            });
+            moved.changedIds.forEach((id) => next.add(id));
+            return next;
+        });
+    };
+
+    // ── R4 · 绑定拖拽排序（PLAN §8.41；拍板：**拖完只改展示序，点保存按钮才改
+    // 持久序**）────────────────────────────────────────────────────────────
+    // 展示序按 (协议序, 洞号) 派生 → 松手只在本地重写 slot_order（列表立刻重排、
+    // 填装预览立刻跟着变），**零 PUT**；「保存更改 (SAVE)」才把脏行逐行落库 ——
+    // 与洞位下拉完全同一条持久化路径，零 BE 改动。
+    // 8px 起拖阈值：把手是 label 前的空白 grip，阈值保证「点一下」不会误判成拖。
+    const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+
+    const handleDragEnd = ({ active, over }) => {
+        if (!active || !over || active.id === over.id) return;
+        const moved = reorderBindingsWithinGroup(bindings, active.id, over.id);
+        if (!moved || !moved.changedIds.length) return; // 跨协议组 / 无位移 → 原样不动
+        setBindings(prev => prev.map(b => moved.byId.get(b.id) || b));
+        if (loadFailed) return; // 降级模式：本地编辑不持久化（提示条已说明）
+        setDirtyIds((prev) => {
+            const next = new Set(prev);
+            moved.changedIds.forEach((id) => next.add(id));
             return next;
         });
     };
@@ -621,49 +701,20 @@ export default function Orchestration({ protocols, instructions }) {
                     </div>
                 )}
                 <div className="flex-1 overflow-y-auto">
-                    {sortedBindings.map(b => (
-                        <div
-                            key={b.id}
-                            onClick={() => setActiveBindingId(b.id)}
-                            className={`p-3 border-b border-nier-light/10 cursor-pointer hover:bg-white/5 flex justify-between group ${b.id === activeBindingId ? 'bg-nier-light/10 text-white font-bold' : 'text-nier-light/70'}`}
-                        >
-                            <div className="truncate text-xs">
-                                {/* 人工验证 #6①: 脏行琥珀点（title 供定位/无障碍）；放 label
-                                    文本节点之前——RTL getByText 只取直接文本节点，脏行 label 仍可查 */}
-                                {dirtyIds.has(b.id) && (
-                                    <span title="有未保存更改" className="text-[#E58D28] mr-1">●</span>
-                                )}
-                                {b.label}
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                                {/* CP3 3d (D7-A): 绑定失效徽标 —— 仅 stale === true 渲染
-                                    （false/null/未回执 = 不出）；span 在删除钮之前但非 button，
-                                    不影响行内「首个 button = 删除」的既有取法 */}
-                                {b.stale === true && (
-                                    <span
-                                        data-testid="binding-stale"
-                                        title="协议链已变更 — 绑定定义可能已失效 (STALE)"
-                                        className="border border-[#E58D28]/60 px-1 py-0.5 text-[8px] font-mono tracking-widest text-[#FFB74D] whitespace-nowrap leading-none"
-                                    >
-                                        绑定已失效 STALE
-                                    </span>
-                                )}
-                                <button onClick={(e) => handleDeleteBinding(e, b.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-400">×</button>
-                                {/* 批次一 (D1): 星标 = 指令默认封装绑定（is_default）——放删除之后 */}
-                                <button
-                                    type="button"
-                                    onClick={(e) => handleToggleDefault(e, b.id)}
-                                    title={b.isDefault ? '取消默认封装 (UNSTAR)' : '设为指令默认封装 (STAR)'}
-                                    aria-pressed={Boolean(b.isDefault)}
-                                    className={b.isDefault
-                                        ? 'text-yellow-400 leading-none'
-                                        : 'opacity-0 group-hover:opacity-100 text-nier-light/50 hover:text-yellow-400 leading-none'}
-                                >
-                                    {b.isDefault ? '★' : '☆'}
-                                </button>
-                            </div>
-                        </div>
-                    ))}
+                    {/* R4 拖拽：DndContext 只包侧栏绑定列表（把手指针事件 → onDragEnd） */}
+                    <DndContext sensors={dragSensors} onDragEnd={handleDragEnd}>
+                        {sortedBindings.map(b => (
+                            <BindingRow
+                                key={b.id}
+                                binding={b}
+                                selected={b.id === activeBindingId}
+                                dirty={dirtyIds.has(b.id)}
+                                onSelect={setActiveBindingId}
+                                onDelete={handleDeleteBinding}
+                                onToggleDefault={handleToggleDefault}
+                            />
+                        ))}
+                    </DndContext>
                 </div>
                 <div className="p-2 border-t border-nier-light/20 text-[9px] font-mono opacity-40 tracking-widest text-center">
                     PERSIST // /bindings CRUD
