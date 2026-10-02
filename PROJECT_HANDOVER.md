@@ -1010,7 +1010,7 @@
       人工验证 ④ + §9.8 末条改「已随 3d 完成」、`DESIGN_Decisions.md` D5/D7/D15
       表行与三处实施注、`PLAN_Backlog.md` §1 CP3 行 + 新 §8.24、本条、
       `pageStatus.json` 再生成。
-    - **提交**：→ **`PENDING_FEAT`（代码+文档）→ `PENDING_DB`（chore(db) DDL 落库），
+    - **提交**：→ **`77dd389`（代码+文档）→ `bb7a0ba`（chore(db) DDL 落库），
       2026-10-01**。
     - **待办**：**§9.7 人工验证 ④**（真实设备应答帧的反转义口径 —— `escape` 尚未接进
       `response_match`，见 `DESIGN_Decisions.md` D15 关联项 1）；批次四（治理）开新批。
