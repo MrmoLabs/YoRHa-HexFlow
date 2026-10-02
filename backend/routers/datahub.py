@@ -10,6 +10,9 @@
   engine.dispose() 释放连接池 → 清理 -wal/-shm/-journal 残留 → 原子替换文件。
   运行中换库风险见 restore 端点 notice 与文档（恢复期间勿并发写入）。
 - D3 环境状态：DB 路径 / 大小 / 修改时间、各表行数、后端版本、备份列表。
+- 批次四 4a 关系数据：`relations.json`（protocol_bindings + response_specs）
+  并入聚合导出 ZIP，`POST /datahub/import/relations` 按 id 回灌（逐行报告）。
+  见 `DESIGN_CorePipeline.md` §7 批次四。
 
 纯函数（fields_to_blocks / compile_blocks / frame_bytes / format_hex_text /
 build_bundle / sanitize_filename / validate_backup_name / create_backup /
@@ -24,21 +27,28 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Response
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 import math
 
 from backend.core.orchestrator import Orchestrator, encode_int_signed, encode_bcd, encode_scaled, encode_float_ieee, encode_time_accumulator, encode_auto_counter, encode_string, _floor_numeric
-from backend.db.database import DB_PATH, SessionLocal, engine
+from backend.core.response_match import normalize_spec
+from backend.db.database import DB_PATH, SessionLocal, engine, get_db
 from backend.db.models import (
     BitField,
     Instruction,
     InstructionField,
     OperatorTemplate,
+    ProtocolBinding,
     ProtocolTemplate,
+    ResponseSpec,
 )
+from backend.routers.binding import find_slot_node
 from backend.routers.instruction import serialize_instruction
+from backend.routers.response_spec import _stage_mirror
 from backend.schemas.block import Block
 
 router = APIRouter(prefix="/datahub", tags=["datahub"])
@@ -389,6 +399,230 @@ def _backup_entry(path):
 
 
 # --------------------------------------------------------------------------
+# 批次四 4a（DESIGN_CorePipeline §7 批次四 ①）：关系数据（protocol_bindings +
+# response_specs）并入聚合导出 ZIP 与回灌端点。
+#
+# 口径：
+# - 导出形 `relations.json` = {schemaVersion, bindings[], responseSpecs[]}，
+#   字段与 ORM 行一一对应（`definition_hash` 原样带出）。
+# - 导入 = **恢复语义**（非手工编辑）：按 `id` upsert、逐行报告不整批回滚，
+#   出处指纹原样回填 —— 目标库协议若已不同，读侧 `stale` 徽标自然点亮（D7-A）。
+# - `stage` 不信文件、按 `spec.stages` 重算镜像（SSOT = `_stage_mirror`），
+#   `spec` 过 `normalize_spec` 归一（非法行跳过，不 400 整批）。
+# - 父不存在 → 跳过并给 reason；槽悬空 → **置 NULL 并记 warning**（§6.2 口径，
+#   不静默、也不整行丢弃）；`is_default` 冲突 → 清同指令旧行（默认唯一不变量）。
+# --------------------------------------------------------------------------
+
+RELATIONS_SCHEMA_VERSION = 1
+_RELATIONS_KEYS = {"schemaVersion", "bindings", "responseSpecs"}
+
+
+def binding_export_row(row) -> dict:
+    """ProtocolBinding → relations.json 条目（列序与 models.py 一致）。"""
+    return {
+        "id": row.id,
+        "protocol_id": row.protocol_id,
+        "instruction_id": row.instruction_id,
+        "label": row.label,
+        "slot_order": row.slot_order,
+        "slot_id": row.slot_id,
+        "is_default": row.is_default,
+        "priority": row.priority,
+        "definition_hash": row.definition_hash,
+    }
+
+
+def response_spec_export_row(row) -> dict:
+    """ResponseSpec → relations.json 条目（spec 原样、stage 镜像随行带出）。"""
+    return {
+        "id": row.id,
+        "instruction_id": row.instruction_id,
+        "spec": row.spec,
+        "stage": row.stage,
+        "definition_hash": row.definition_hash,
+    }
+
+
+def relations_export_payload(bindings, response_specs) -> dict:
+    """relations.json 载荷（与 GET /datahub/export/bundle 内该文件同形）。"""
+    return {
+        "schemaVersion": RELATIONS_SCHEMA_VERSION,
+        "bindings": [binding_export_row(b) for b in bindings],
+        "responseSpecs": [response_spec_export_row(s) for s in response_specs],
+    }
+
+
+def _relations_payload(payload):
+    """顶层校验（严格键集，未知键 400）→ (bindings, responseSpecs) 两个 list。"""
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="关系数据必须是 JSON 对象")
+    unknown = sorted(set(payload) - _RELATIONS_KEYS)
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"关系数据未知字段: {', '.join(unknown)}")
+    version = payload.get("schemaVersion")
+    if version not in (None, RELATIONS_SCHEMA_VERSION):
+        raise HTTPException(status_code=400, detail=f"不支持的 schemaVersion: {version!r}")
+    bindings = payload.get("bindings", [])
+    specs = payload.get("responseSpecs", [])
+    bindings = [] if bindings is None else bindings
+    specs = [] if specs is None else specs
+    if not isinstance(bindings, list) or not isinstance(specs, list):
+        raise HTTPException(status_code=400, detail="bindings / responseSpecs 必须是数组")
+    return bindings, specs
+
+
+def _skip(sink, index, row, reason):
+    sink.append({
+        "index": index,
+        "id": row.get("id") if isinstance(row, dict) else None,
+        "reason": reason,
+    })
+
+
+def import_relations(db: Session, payload) -> dict:
+    """回灌 relations.json：逐行 upsert，返回 {bindings, responseSpecs, warnings}。
+
+    每行独立提交 —— 单行唯一约束冲突只回滚该行（`IntegrityError` → 跳过），
+    已成功行保留；调用方无需事务包裹。纯函数之外的唯一副作用是 db 会话写入。
+    """
+    raw_bindings, raw_specs = _relations_payload(payload)
+    report = {
+        "bindings": {"imported": 0, "updated": 0, "skipped": []},
+        "responseSpecs": {"imported": 0, "updated": 0, "skipped": []},
+        "warnings": [],
+    }
+
+    for index, row in enumerate(raw_bindings):
+        sink = report["bindings"]["skipped"]
+        if not isinstance(row, dict):
+            _skip(sink, index, row, "条目必须是对象")
+            continue
+        binding_id = row.get("id")
+        protocol_id = row.get("protocol_id")
+        instruction_id = row.get("instruction_id")
+        if not binding_id or not protocol_id or not instruction_id:
+            _skip(sink, index, row, "缺 id / protocol_id / instruction_id")
+            continue
+        if db.query(Instruction).filter(Instruction.id == instruction_id).first() is None:
+            _skip(sink, index, row, f"指令不存在：{instruction_id}")
+            continue
+        protocol = db.query(ProtocolTemplate).filter(ProtocolTemplate.id == protocol_id).first()
+        if protocol is None:
+            _skip(sink, index, row, f"协议不存在：{protocol_id}")
+            continue
+
+        slot_id = row.get("slot_id") or None
+        if slot_id:
+            node = find_slot_node(protocol.children, slot_id)
+            if node is None or node.get("type") != "slot":
+                report["warnings"].append(
+                    f"绑定 {binding_id} 的 slot_id 悬空已置空：{slot_id}（协议 {protocol_id} 无此插槽）"
+                )
+                slot_id = None
+
+        is_default = 1 if row.get("is_default") else 0
+        label = row.get("label") or "新绑定 (NEW)"
+        try:
+            slot_order = int(row.get("slot_order") or 0)
+        except (TypeError, ValueError):
+            _skip(sink, index, row, "slot_order 必须是整数")
+            continue
+        try:
+            priority = int(row.get("priority") or 0)
+        except (TypeError, ValueError):
+            _skip(sink, index, row, "priority 必须是整数")
+            continue
+        definition_hash = row.get("definition_hash") or None
+
+        if is_default:
+            # 默认唯一不变量：清同指令其它行（镜像 create_binding 同事务口径）
+            db.query(ProtocolBinding).filter(
+                ProtocolBinding.instruction_id == instruction_id,
+                ProtocolBinding.id != binding_id,
+                ProtocolBinding.is_default == 1,
+            ).update({"is_default": 0}, synchronize_session=False)
+
+        existing = db.query(ProtocolBinding).filter(ProtocolBinding.id == binding_id).first()
+        kind = "updated" if existing else "imported"
+        try:
+            if existing:
+                existing.protocol_id = protocol_id
+                existing.instruction_id = instruction_id
+                existing.label = label
+                existing.slot_order = slot_order
+                existing.slot_id = slot_id
+                existing.is_default = is_default
+                existing.priority = priority
+                existing.definition_hash = definition_hash
+            else:
+                db.add(ProtocolBinding(
+                    id=binding_id, protocol_id=protocol_id, instruction_id=instruction_id,
+                    label=label, slot_order=slot_order, slot_id=slot_id,
+                    is_default=is_default, priority=priority,
+                    definition_hash=definition_hash,
+                ))
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            _skip(sink, index, row, f"唯一约束冲突：{exc.orig}")
+            continue
+        report["bindings"][kind] += 1
+
+    for index, row in enumerate(raw_specs):
+        sink = report["responseSpecs"]["skipped"]
+        if not isinstance(row, dict):
+            _skip(sink, index, row, "条目必须是对象")
+            continue
+        spec_id = row.get("id")
+        instruction_id = row.get("instruction_id")
+        raw_spec = row.get("spec")
+        if not spec_id or not instruction_id:
+            _skip(sink, index, row, "缺 id / instruction_id")
+            continue
+        if db.query(Instruction).filter(Instruction.id == instruction_id).first() is None:
+            _skip(sink, index, row, f"指令不存在：{instruction_id}")
+            continue
+        if not isinstance(raw_spec, dict):
+            _skip(sink, index, row, "spec 必须是对象")
+            continue
+        try:
+            spec = normalize_spec(raw_spec)
+        except (ValueError, TypeError) as exc:
+            _skip(sink, index, row, f"spec 非法：{exc}")
+            continue
+        clash = db.query(ResponseSpec).filter(
+            ResponseSpec.instruction_id == instruction_id,
+            ResponseSpec.id != spec_id,
+        ).first()
+        if clash is not None:
+            _skip(sink, index, row, f"该指令已有应答规格（行 {clash.id}）")
+            continue
+        definition_hash = row.get("definition_hash") or None
+        stage = _stage_mirror(spec)
+        existing = db.query(ResponseSpec).filter(ResponseSpec.id == spec_id).first()
+        kind = "updated" if existing else "imported"
+        try:
+            if existing:
+                existing.instruction_id = instruction_id
+                existing.spec = spec
+                existing.stage = stage
+                existing.definition_hash = definition_hash
+            else:
+                db.add(ResponseSpec(
+                    id=spec_id, instruction_id=instruction_id, spec=spec,
+                    stage=stage, definition_hash=definition_hash,
+                ))
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            _skip(sink, index, row, f"唯一约束冲突：{exc.orig}")
+            continue
+        report["responseSpecs"][kind] += 1
+
+    return report
+
+
+# --------------------------------------------------------------------------
 # 端点
 # --------------------------------------------------------------------------
 
@@ -407,6 +641,9 @@ def datahub_status():
             "bitFields": db.query(BitField).count(),
             "protocols": db.query(ProtocolTemplate).count(),
             "operatorTemplates": db.query(OperatorTemplate).count(),
+            # 批次四 4a：关系数据行数（随 relations.json 一并导出的两张表）
+            "protocolBindings": db.query(ProtocolBinding).count(),
+            "responseSpecs": db.query(ResponseSpec).count(),
         }
     finally:
         db.close()
@@ -427,21 +664,27 @@ def datahub_status():
 
 @router.get("/export/bundle")
 def export_bundle():
-    """D1 聚合导出 ZIP：instructions.json + manifest.json + frames/<code>.bin|.hex。
+    """D1 聚合导出 ZIP：instructions.json + relations.json + manifest.json + frames/*。
 
     每条指令都产出帧文件；单条编译失败只在 manifest 标记 error，
-    不阻断整包导出（JSON 始终完整）。
+    不阻断整包导出（JSON 始终完整）。relations.json = 批次四 4a 的关系数据
+    （protocol_bindings + response_specs），与 `POST /datahub/import/relations` 对称。
     """
     db = SessionLocal()
     try:
         instructions = db.query(Instruction).all()
         payload = instructions_export_payload(instructions)
+        relations = relations_export_payload(
+            db.query(ProtocolBinding).order_by(ProtocolBinding.id).all(),
+            db.query(ResponseSpec).order_by(ResponseSpec.id).all(),
+        )
         frames = []
     finally:
         db.close()
 
     entries = [
         ("instructions.json", json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")),
+        ("relations.json", json.dumps(relations, ensure_ascii=False, indent=2).encode("utf-8")),
     ]
     for inst in payload["instructions"]:
         base = sanitize_filename(inst.get("code") or inst.get("id"), "instruction")
@@ -459,6 +702,10 @@ def export_bundle():
         "generatedAt": datetime.now().isoformat(timespec="seconds"),
         "appVersion": APP_VERSION,
         "instructionCount": len(payload["instructions"]),
+        "relations": {
+            "bindings": len(relations["bindings"]),
+            "responseSpecs": len(relations["responseSpecs"]),
+        },
         "frames": frames,
     }
     entries.append(("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")))
@@ -469,6 +716,16 @@ def export_bundle():
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="yorha-datahub-{stamp}.zip"'},
     )
+
+
+@router.post("/import/relations")
+def import_relations_endpoint(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """批次四 4a：回灌 relations.json（ZIP 内该文件的原文）。
+
+    逐行 upsert、逐行报告（缺父 / 槽悬空 / 唯一冲突 → skipped 或 warning），
+    部分成功即部分落库，**不整批回滚**；顶层未知键 / 非法 schemaVersion → 400。
+    """
+    return import_relations(db, payload)
 
 
 @router.post("/backup")

@@ -343,9 +343,29 @@ def build_wrapped(protocol_tree, instruction_ids, bindings, *, now=None) -> Wrap
 
 ### 批次四（治理）
 
-- 关系数据导入导出（bindings + response_specs 并入 DataHub ZIP 或独立包）、
-- D9/D10 文档划界落 README/PAGE_STATUS、绑定矩阵视图（指令 → 默认协议 → 槽位）、
-- D8 校验表全量核对（逐行「已有/已补」销项）。
+- **4a 关系数据导入导出**：`protocol_bindings` + `response_specs` 并入 DataHub ZIP
+  （`relations.json`）+ 回灌端点 `POST /datahub/import/relations`；
+- **4b 绑定矩阵视图 + 划界**：D9/D10 文档划界落 README/PAGE_STATUS、绑定矩阵视图
+  （指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 并回执」；
+- **4c D8 校验表全量核对**：§6.1 / §6.2 逐行「已有/已补」销项（纯文档）。
+
+  > ✅ **4a 已提交 `PENDING_FEAT4A`（代码+文档），2026-10-02**：
+  > **导出** —— `GET /datahub/export/bundle` 增 `relations.json`
+  > （`{schemaVersion, bindings[], responseSpecs[]}`，行字段与列一一对应，
+  > `definition_hash` 原样带出），`manifest.json` 增 `relations` 计数，
+  > `/status` `counts` 增 `protocolBindings` / `responseSpecs`。
+  > **导入** —— `POST /datahub/import/relations` 严格顶层键集（未知键 / 非法
+  > `schemaVersion` → 400），**恢复语义**：按 `id` upsert、逐行独立提交（唯一约束
+  > 冲突只回滚该行 → `skipped` 带 reason，**部分成功即部分落库、不整批回滚**）；
+  > 父指令/协议缺失 → 跳过；**槽悬空 → 置 NULL + warning**（§6.2 口径，不静默）；
+  > `is_default` 冲突清同指令旧行（默认唯一不变量）；`spec` 过 `normalize_spec`、
+  > `stage` 按 `stages` 重算镜像（**不信文件里的 stage**）、出处指纹原样回填
+  > （目标库协议已变 → 读侧 `stale` 自然点亮，D7-A）。
+  > **前端** —— DataHub 页新增「关系数据 (RELATIONS IMPORT)」面板（选文件 →
+  > 解析校验 → `NieRModal` 确认 → POST → 回显 新增/更新/跳过/警告 四段计数 + 刷新），
+  > 环境面板增两行计数、导出回显补 `relations.json`。
+  > 终态：BE **549/549**（基线 537 + 12）、FE **948/948**（63 文件，基线 944 + 4）、
+  > `npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**。
 
 ## 8. 明确不做（本次拍板范围外）
 

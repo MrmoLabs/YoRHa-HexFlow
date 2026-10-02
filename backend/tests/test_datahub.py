@@ -1,4 +1,5 @@
-"""C3 数据中心一期：stdlib unittest 直测纯函数（无新增依赖，不碰真库）。
+"""C3 数据中心一期 + 批次四 4a：stdlib unittest 直测纯函数与临时库回灌
+（无新增依赖，不碰真库 —— 关系回灌用 tempfile 临时 SQLite，镜像 test_bindings）。
 
 运行（仓库根目录）：
     python -m unittest backend.tests.test_datahub -v
@@ -11,16 +12,24 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 
-from backend.db.models import Instruction, InstructionField
+from fastapi import HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from backend.db.database import Base, ensure_binding_columns, ensure_response_spec_columns
+from backend.db.models import Instruction, InstructionField, ProtocolBinding, ProtocolTemplate, ResponseSpec
 from backend.routers.datahub import (
+    RELATIONS_SCHEMA_VERSION,
     build_bundle,
     compile_blocks,
     create_backup,
     fields_to_blocks,
     format_hex_text,
     frame_bytes,
+    import_relations,
     instructions_export_payload,
     list_backups,
+    relations_export_payload,
     replace_database_file,
     sanitize_filename,
     validate_backup_name,
@@ -236,5 +245,236 @@ class TestBackupRestore(unittest.TestCase):
         self.assertEqual(by_name["yorha-1.db"]["sizeBytes"], 1)
 
 
+# --------------------------------------------------------------------------
+# 批次四 4a：relations.json 导出形 + 回灌（临时库直调 import_relations）
+# --------------------------------------------------------------------------
+
+
+def relation_binding(id="b1", protocol_id="p1", instruction_id="i1", **over):
+    row = {
+        "id": id,
+        "protocol_id": protocol_id,
+        "instruction_id": instruction_id,
+        "label": "绑定一",
+        "slot_order": 0,
+        "slot_id": None,
+        "is_default": 1,
+        "priority": 0,
+        "definition_hash": "sha256:abc",
+    }
+    row.update(over)
+    return row
+
+
+def relation_spec(id="rs1", instruction_id="i1", **over):
+    row = {
+        "id": id,
+        "instruction_id": instruction_id,
+        "spec": {"mode": "rules", "prefix": "AA", "suffix": "", "echo_header_bytes": 1,
+                 "length": None, "checksum": None, "ignore_ranges": []},
+        "stage": None,
+        "definition_hash": "sha256:def",
+    }
+    row.update(over)
+    return row
+
+
+class RelationsTestCase(unittest.TestCase):
+    """4a 关系回灌的临时库基座（镜像 test_bindings.setUp 的建库三步）。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        db_file = Path(self.tmp.name) / "test_relations.db"
+        self.engine = create_engine(f"sqlite:///{db_file.as_posix()}", connect_args={"check_same_thread": False})
+        Base.metadata.create_all(bind=self.engine)
+        ensure_binding_columns(self.engine)
+        ensure_response_spec_columns(self.engine)
+        self.session_factory = sessionmaker(autocommit=False, autoflush=False, bind=self.engine)
+        self.db = self.session_factory()
+        self.db.add(Instruction(id="i1", device_code="D1", code="CMD_1", name="指令一", type="DYNAMIC"))
+        self.db.add(Instruction(id="i2", device_code="D1", code="CMD_2", name="指令二", type="DYNAMIC"))
+        self.db.add(ProtocolTemplate(id="p1", label="协议一", type="container", children=[
+            {"id": "s1", "label": "S1", "type": "slot"},
+            {"id": "f1", "label": "F1", "type": "fixed", "byte_length": 1},
+        ]))
+        self.db.commit()
+
+    def tearDown(self):
+        self.db.close()
+        self.engine.dispose()
+        self.tmp.cleanup()
+
+
+class TestRelationsExportPayload(RelationsTestCase):
+    def test_shape_and_row_fields(self):
+        self.db.add(ProtocolBinding(**relation_binding()))
+        self.db.add(ResponseSpec(id="rs1", instruction_id="i1", spec={"mode": "rules"},
+                                 stage=2, definition_hash="sha256:def"))
+        self.db.commit()
+        bindings = self.db.query(ProtocolBinding).all()
+        specs = self.db.query(ResponseSpec).all()
+
+        payload = relations_export_payload(bindings, specs)
+        self.assertEqual(payload["schemaVersion"], RELATIONS_SCHEMA_VERSION)
+        self.assertEqual(len(payload["bindings"]), 1)
+        self.assertEqual(len(payload["responseSpecs"]), 1)
+        row = payload["bindings"][0]
+        self.assertEqual(row["id"], "b1")
+        self.assertEqual(row["definition_hash"], "sha256:abc")
+        self.assertEqual(row["slot_id"], None)
+        self.assertEqual(sorted(row), sorted(relation_binding()))
+        spec_row = payload["responseSpecs"][0]
+        self.assertEqual(spec_row["stage"], 2)
+        self.assertEqual(spec_row["definition_hash"], "sha256:def")
+        self.assertEqual(sorted(spec_row), sorted(relation_spec()))
+        # 导出形可 JSON 直序列化（ZIP 入口依赖）
+        json.dumps(payload)
+
+    def test_empty_relations_are_lists(self):
+        payload = relations_export_payload([], [])
+        self.assertEqual(payload["bindings"], [])
+        self.assertEqual(payload["responseSpecs"], [])
+
+
+class TestImportRelations(RelationsTestCase):
+    def test_round_trip_preserves_rows(self):
+        # 源载荷 = 导出形（dict），回灌后再次导出应逐字段等价
+        source = {
+            "schemaVersion": RELATIONS_SCHEMA_VERSION,
+            "bindings": [
+                relation_binding(slot_id="s1"),
+                relation_binding(id="b2", instruction_id="i2", label="绑定二",
+                                 slot_order=1, is_default=0),
+            ],
+            "responseSpecs": [relation_spec()],
+        }
+        report = import_relations(self.db, source)
+        self.assertEqual(report["bindings"], {"imported": 2, "updated": 0, "skipped": []})
+        self.assertEqual(report["responseSpecs"]["imported"], 1)
+        self.assertEqual(report["warnings"], [])
+
+        back = relations_export_payload(
+            self.db.query(ProtocolBinding).order_by(ProtocolBinding.id).all(),
+            self.db.query(ResponseSpec).order_by(ResponseSpec.id).all(),
+        )
+        self.assertEqual(back["bindings"], source["bindings"])
+        self.assertEqual(back["responseSpecs"], source["responseSpecs"])
+
+    def test_upsert_same_id_updates_without_duplicate(self):
+        import_relations(self.db, {"bindings": [relation_binding(label="旧名")]})
+        report = import_relations(self.db, {"bindings": [relation_binding(label="新名")]})
+        self.assertEqual(report["bindings"], {"imported": 0, "updated": 1, "skipped": []})
+        rows = self.db.query(ProtocolBinding).all()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].label, "新名")
+
+    def test_missing_parents_skipped_with_reason(self):
+        report = import_relations(self.db, {"bindings": [
+            relation_binding(id="b-no-i", instruction_id="no-such"),
+            relation_binding(id="b-no-p", protocol_id="no-such"),
+            relation_binding(id="b-missing-fields", protocol_id="", instruction_id=""),
+        ]})
+        self.assertEqual(report["bindings"]["imported"], 0)
+        reasons = {s["id"]: s["reason"] for s in report["bindings"]["skipped"]}
+        self.assertIn("指令不存在", reasons["b-no-i"])
+        self.assertIn("协议不存在", reasons["b-no-p"])
+        self.assertIn("缺 id", reasons["b-missing-fields"])
+
+    def test_dangling_slot_cleared_with_warning(self):
+        report = import_relations(self.db, {"bindings": [relation_binding(slot_id="gone")]})
+        self.assertEqual(report["bindings"]["imported"], 1)
+        self.assertEqual(len(report["warnings"]), 1)
+        self.assertIn("悬空", report["warnings"][0])
+        self.assertIsNone(self.db.query(ProtocolBinding).one().slot_id)
+        # 存在的槽原样保留
+        import_relations(self.db, {"bindings": [relation_binding(id="b2", slot_id="s1")]})
+        self.assertEqual(self.db.query(ProtocolBinding).filter_by(id="b2").one().slot_id, "s1")
+
+    def test_default_conflict_demotes_previous_default(self):
+        import_relations(self.db, {"bindings": [
+            relation_binding(id="b1", is_default=1),
+            relation_binding(id="b2", instruction_id="i1", is_default=0),
+        ]})
+        report = import_relations(self.db, {"bindings": [relation_binding(id="b2", is_default=1)]})
+        self.assertEqual(report["bindings"]["updated"], 1)
+        rows = {r.id: r for r in self.db.query(ProtocolBinding).all()}
+        self.assertEqual(rows["b2"].is_default, 1)
+        self.assertEqual(rows["b1"].is_default, 0)
+
+    def test_unique_slot_conflict_skipped(self):
+        import_relations(self.db, {"bindings": [relation_binding(id="b1", slot_id="s1", is_default=0)]})
+        report = import_relations(self.db, {"bindings": [
+            relation_binding(id="b-other", slot_id="s1", is_default=0),
+        ]})
+        self.assertEqual(report["bindings"]["imported"], 0)
+        self.assertEqual(len(report["bindings"]["skipped"]), 1)
+        self.assertIn("唯一约束冲突", report["bindings"]["skipped"][0]["reason"])
+        self.assertEqual(self.db.query(ProtocolBinding).count(), 1)
+
+    def test_spec_stage_mirror_recomputed_and_hash_preserved(self):
+        report = import_relations(self.db, {"responseSpecs": [
+            relation_spec(stage=99, spec={
+                "mode": "rules",
+                "stages": [
+                    {"unpack": {"head": 2, "trailer": 1}},
+                    {"unpack": {"head": 2, "trailer": 1}},
+                    {"unpack": {"head": 2, "trailer": 1}},
+                ],
+            }),
+        ]})
+        self.assertEqual(report["responseSpecs"]["imported"], 1)
+        row = self.db.query(ResponseSpec).one()
+        self.assertEqual(row.stage, 2)  # 文件里的 99 不作数，按 stages 重算
+        self.assertEqual(row.definition_hash, "sha256:def")
+
+    def test_spec_invalid_or_clashing_skipped(self):
+        report = import_relations(self.db, {"responseSpecs": [
+            relation_spec(id="rs-bad", spec={"mode": "bogus"}),
+            relation_spec(id="rs-notobj", spec="oops"),
+            relation_spec(id="rs-no-parent", instruction_id="no-such"),
+            relation_spec(id="", instruction_id="i2"),
+        ]})
+        reasons = {s["id"]: s["reason"] for s in report["responseSpecs"]["skipped"]}
+        self.assertIn("spec 非法", reasons["rs-bad"])
+        self.assertIn("必须是对象", reasons["rs-notobj"])
+        self.assertIn("指令不存在", reasons["rs-no-parent"])
+        self.assertIn("缺 id", reasons[""])
+        self.assertEqual(report["responseSpecs"]["imported"], 0)
+
+        import_relations(self.db, {"responseSpecs": [relation_spec(id="rs1")]})
+        clash = import_relations(self.db, {"responseSpecs": [relation_spec(id="rs-other")]})
+        self.assertIn("已有应答规格", clash["responseSpecs"]["skipped"][0]["reason"])
+        self.assertEqual(self.db.query(ResponseSpec).count(), 1)
+
+    def test_top_level_strict_keys(self):
+        with self.assertRaises(HTTPException) as ctx:
+            import_relations(self.db, {"bindings": [], "extra": 1})
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("未知字段", ctx.exception.detail)
+
+        with self.assertRaises(HTTPException) as ctx:
+            import_relations(self.db, {"schemaVersion": 99})
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertIn("schemaVersion", ctx.exception.detail)
+
+        with self.assertRaises(HTTPException) as ctx:
+            import_relations(self.db, ["not", "an", "object"])
+        self.assertEqual(ctx.exception.status_code, 400)
+
+        with self.assertRaises(HTTPException) as ctx:
+            import_relations(self.db, {"bindings": {}})
+        self.assertEqual(ctx.exception.status_code, 400)
+
+    def test_partial_success_keeps_good_rows(self):
+        report = import_relations(self.db, {"bindings": [
+            relation_binding(id="b-ok"),
+            relation_binding(id="b-bad", instruction_id="no-such"),
+        ]})
+        self.assertEqual(report["bindings"]["imported"], 1)
+        self.assertEqual(len(report["bindings"]["skipped"]), 1)
+        self.assertEqual(self.db.query(ProtocolBinding).count(), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
+

@@ -22,7 +22,7 @@ import { dispatchPayload, dispatchWrappedGroup, getDispatchHistory, clearDispatc
 import { getTransportConfig, setTransportConfig, getTransportStatus } from './transport';
 import { getBindings, createBinding, updateBinding, deleteBinding } from './bindings';
 import { getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './recipes';
-import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle } from './datahub';
+import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle, importRelations } from './datahub';
 import { getProfiles, createProfile, updateProfile, deleteProfile, activateProfile } from './profiles';
 import { getResponseSpec, saveResponseSpec, deleteResponseSpec, getResponseSpecTargets, generateResponseSpec, sendTransaction } from './responseSpecs';
 import {
@@ -87,10 +87,12 @@ export const api = {
     deleteRecipe,
 
     // Data Hub (C3: status / aggregate export / db backup & restore)
+    // 批次四 4a: relations.json（绑定 + 应答规格）导入导出
     getDatahubStatus,
     createDbBackup,
     restoreDbBackup,
     exportDataBundle,
+    importRelations,
 
     // Profiles (P1: 设备档案 → /profiles CRUD + activate，传输配置命名快照)
     getProfiles,

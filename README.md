@@ -34,8 +34,9 @@
 - **Dispatch + Transport**: `POST /dispatch/` sends frames through the transport abstraction and keeps a bounded in-memory history (max 100) with three event kinds — raw / response / error. **The default mode is the in-process loopback channel (`/dispatch` contract unchanged); `POST /transport/config` switches to real TCP (stdlib socket) or serial (pyserial) transport, and `GET /transport/status` reports connection-state events.**
 
 ### 4. Data Hub (数据中心)
-- **Environment Status Panel**: `GET /datahub/status` reports the DB path / size / mtime, row counts of all five tables, and the backend version.
-- **Aggregate Export**: `GET /datahub/export/bundle` packages `instructions.json` (import-format symmetric with the Instruction page), `manifest.json`, and per-instruction skeleton frames (`frames/*.bin|.hex`, compiled by the Orchestrator) into one ZIP.
+- **Environment Status Panel**: `GET /datahub/status` reports the DB path / size / mtime, row counts of all seven tables (incl. bindings / response specs), and the backend version.
+- **Aggregate Export**: `GET /datahub/export/bundle` packages `instructions.json` (import-format symmetric with the Instruction page), `relations.json` (protocol bindings + response specs, batch 4a), `manifest.json`, and per-instruction skeleton frames (`frames/*.bin|.hex`, compiled by the Orchestrator) into one ZIP.
+- **Relations Import**: `POST /datahub/import/relations` re-imports the ZIP's `relations.json` — upsert by `id` with a per-row report (missing parent → skipped with reason, dangling `slot_id` → cleared with a warning, `definition_hash` preserved as-is), partial success is kept instead of rolling back the whole batch.
 - **Backup & Restore**: `POST /datahub/backup` copies `yorha.db` into `backend/db/backups/` (gitignored); `POST /datahub/restore` takes an automatic `pre-restore-*` snapshot, releases the pool, clears WAL/SHM leftovers, and atomically replaces the file (filename traversal is rejected).
 
 ### 5. Engineering & Quality

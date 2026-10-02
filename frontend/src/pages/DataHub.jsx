@@ -19,7 +19,10 @@ const COUNT_LABELS = [
     ['instructionFields', '字段 FIELDS'],
     ['bitFields', '位域 BITFIELDS'],
     ['protocols', '协议 PROTOCOLS'],
-    ['operatorTemplates', '算子 OPERATORS']
+    ['operatorTemplates', '算子 OPERATORS'],
+    // 批次四 4a: relations.json 随包导出的两张关系表
+    ['protocolBindings', '绑定 BINDINGS'],
+    ['responseSpecs', '应答规格 SPECS']
 ];
 
 const PanelTitle = ({ children, hint }) => (
@@ -45,8 +48,11 @@ export default function DataHub() {
     const [status, setStatus] = useState(null);
     const [loadError, setLoadError] = useState('');
     const [sysMsg, setSysMsg] = useState('');
-    const [busy, setBusy] = useState(''); // 'export' | 'backup' | 'restore'
+    const [busy, setBusy] = useState(''); // 'export' | 'backup' | 'restore' | 'import'
     const [restoreTarget, setRestoreTarget] = useState(null);
+    // 批次四 4a: 已解析待确认的关系数据包（{name, payload}）；确认才 POST。
+    const [importTarget, setImportTarget] = useState(null);
+    const importInputRef = React.useRef(null);
 
     const refresh = useCallback(async () => {
         try {
@@ -67,7 +73,7 @@ export default function DataHub() {
             const blob = await api.exportDataBundle();
             const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
             triggerBlobDownload(blob, `yorha-datahub-${stamp}.zip`);
-            setSysMsg(`导出完成：${formatBytes(blob.size)}（instructions.json + manifest.json + frames/*.bin|hex）`);
+            setSysMsg(`导出完成：${formatBytes(blob.size)}（instructions.json + relations.json + manifest.json + frames/*.bin|hex）`);
         } catch (err) {
             setSysMsg(`导出失败：${err?.message || '未知错误'}`);
         } finally {
@@ -104,6 +110,55 @@ export default function DataHub() {
         }
     };
 
+    // 批次四 4a：关系数据导入 —— 选文件 → 解析 → 弹确认 → POST /datahub/import/relations。
+    // 解析失败 / 非对象 / 缺 bindings|responseSpecs 键一律不出弹窗，直接走 sysMsg 报错。
+    const handleImportFile = async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = ''; // 同一文件可重复选（change 不重发）
+        if (!file) return;
+        let payload;
+        try {
+            payload = JSON.parse(await file.text());
+        } catch (err) {
+            setSysMsg(`导入失败：文件不是合法 JSON（${err?.message || '解析错误'}）`);
+            return;
+        }
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+            setSysMsg('导入失败：relations.json 必须是 JSON 对象');
+            return;
+        }
+        const bindings = Array.isArray(payload.bindings) ? payload.bindings.length : 0;
+        const specs = Array.isArray(payload.responseSpecs) ? payload.responseSpecs.length : 0;
+        if (!Array.isArray(payload.bindings) && !Array.isArray(payload.responseSpecs)) {
+            setSysMsg('导入失败：缺 bindings / responseSpecs 数组（不是 relations.json）');
+            return;
+        }
+        setImportTarget({ name: file.name, payload, bindings, specs });
+    };
+
+    const handleImportConfirm = async () => {
+        const target = importTarget;
+        setImportTarget(null);
+        if (!target) return;
+        setBusy('import');
+        try {
+            const report = await api.importRelations(target.payload);
+            const b = report.bindings || {};
+            const s = report.responseSpecs || {};
+            const warns = (report.warnings || []).length;
+            setSysMsg(
+                `导入完成（${target.name}）：绑定 新增 ${b.imported ?? 0} / 更新 ${b.updated ?? 0} / 跳过 ${(b.skipped || []).length}；`
+                + `应答规格 新增 ${s.imported ?? 0} / 更新 ${s.updated ?? 0} / 跳过 ${(s.skipped || []).length}；警告 ${warns} 条。`
+                + ((b.skipped || []).length || (s.skipped || []).length ? ` 跳过明细见后端返回 skipped 字段。` : '')
+            );
+            await refresh();
+        } catch (err) {
+            setSysMsg(`导入失败：${err?.message || '未知错误'}`);
+        } finally {
+            setBusy('');
+        }
+    };
+
     return (
         <div className="flex-1 overflow-auto bg-[radial-gradient(circle_at_top,_rgba(218,212,187,0.12),_transparent_45%),linear-gradient(180deg,_rgba(212,206,178,0.04),_rgba(10,10,10,0))] text-nier-light">
             <NieRModal
@@ -111,6 +166,12 @@ export default function DataHub() {
                 message={`确认从备份恢复数据库？\n\n源文件：${restoreTarget?.name || ''}\n\n· 恢复前会自动为当前库留安全快照\n· 恢复期间请勿进行其它写操作\n· 恢复完成后建议刷新页面`}
                 onConfirm={handleRestoreConfirm}
                 onCancel={() => setRestoreTarget(null)}
+            />
+            <NieRModal
+                isOpen={Boolean(importTarget)}
+                message={`确认导入关系数据？\n\n源文件：${importTarget?.name || ''}\n\n· 绑定 ${importTarget?.bindings ?? 0} 条 · 应答规格 ${importTarget?.specs ?? 0} 条\n· 按 id upsert（同 id 覆盖，出处指纹原样回填）\n· 父指令/协议缺失的行跳过并回报，部分成功即部分落库`}
+                onConfirm={handleImportConfirm}
+                onCancel={() => setImportTarget(null)}
             />
 
             <div className="px-8 py-8 flex flex-col gap-6">
@@ -179,13 +240,40 @@ export default function DataHub() {
                             <PanelTitle hint="GET /datahub/export/bundle">聚合导出 (BUNDLE EXPORT)</PanelTitle>
                             <div className="p-4 flex flex-col gap-3">
                                 <p className="text-xs leading-6 opacity-80">
-                                    打包下载全量指令 JSON（与指令管理页「导入」格式对称）与逐指令骨架帧
+                                    打包下载全量指令 JSON（与指令管理页「导入」格式对称）、关系数据
+                                    <span className="font-mono"> relations.json </span>
+                                    （绑定 + 应答规格，批次四 4a）与逐指令骨架帧
                                     <span className="font-mono"> .bin / .hex </span>
                                     （Orchestrator 编译，未实现编码语义以 0x00 占位）。
                                 </p>
                                 <div>
                                     <ActionButton onClick={handleExport} busy={busy === 'export'}>
                                         下载 ZIP (EXPORT)
+                                    </ActionButton>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* 批次四 4a：relations.json 回灌 */}
+                        <section className="border border-nier-light/30 bg-nier-dark/60">
+                            <PanelTitle hint="POST /datahub/import/relations">关系数据 (RELATIONS IMPORT)</PanelTitle>
+                            <div className="p-4 flex flex-col gap-3">
+                                <p className="text-xs leading-6 opacity-80">
+                                    回灌 ZIP 内的 <span className="font-mono">relations.json</span>
+                                    （绑定 + 应答规格）：按 <span className="font-mono">id </span>
+                                    upsert，父指令/协议缺失的行跳过并回报，部分成功即部分落库、不整批回滚。
+                                </p>
+                                <input
+                                    ref={importInputRef}
+                                    type="file"
+                                    accept=".json,application/json"
+                                    className="hidden"
+                                    data-testid="relations-import-input"
+                                    onChange={handleImportFile}
+                                />
+                                <div>
+                                    <ActionButton onClick={() => importInputRef.current?.click()} busy={busy === 'import'}>
+                                        导入 JSON (IMPORT)
                                     </ActionButton>
                                 </div>
                             </div>

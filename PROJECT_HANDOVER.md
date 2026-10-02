@@ -1013,7 +1013,40 @@
     - **提交**：→ **`77dd389`（代码+文档）→ `bb7a0ba`（chore(db) DDL 落库），
       2026-10-01**。
     - **待办**：**§9.7 人工验证 ④**（真实设备应答帧的反转义口径 —— `escape` 尚未接进
-      `response_match`，见 `DESIGN_Decisions.md` D15 关联项 1）；批次四（治理）开新批。
+      `response_match`，见 `DESIGN_Decisions.md` D15 关联项 1）；批次四 4b/4c 见条目 39。
+
+39. **CP4-4a 关系数据导入导出实现完成（bindings + response_specs 并入 DataHub ZIP）**
+    （2026-10-02，**零 DDL** —— 只读写既有 `protocol_bindings` / `response_specs`
+      两表，`models.py`/`database.py` 未改，`yorha.db` 不随本批提交；未碰
+      `processor.py`/`graph.py`/`Blueprint.jsx`，`/dispatch` 缺省口径零影响）：
+    - **导出**：`GET /datahub/export/bundle` 的 ZIP 增 `relations.json`
+      （`{schemaVersion, bindings[], responseSpecs[]}`，行字段与列一一对应，
+      `definition_hash` 原样带出）；`manifest.json` 增 `relations` 计数；
+      `/datahub/status` `counts` 增 `protocolBindings` / `responseSpecs`。
+    - **导入**（`POST /datahub/import/relations`，入参 = `relations.json` 原文）：
+      严格顶层键集（未知键 / 非 1 `schemaVersion` / 非数组 → 400）；**恢复语义**
+      按 `id` upsert、**逐行独立提交**（`IntegrityError` 只回该行 → `skipped` 带
+      reason，**部分成功即部分落库、不整批回滚**）；父指令/协议缺失 → 跳过；
+      **槽悬空 → 置 NULL + `warnings[]`**（§6.2 不静默口径，保留行不丢弃）；
+      `is_default=1` 先清同指令旧行（默认唯一不变量）；`spec` 过 `normalize_spec`
+      （非法行跳过，不整批 400）、**`stage` 按 `spec.stages` 重算镜像**
+      （SSOT = `_stage_mirror`，不信文件里的值）、同指令已有别行 → 跳过；
+      出处指纹原样回填 → 目标库协议已变则读侧 `stale` 自然点亮（D7-A）。
+    - **前端**（仅 `frontend/`）：DataHub 页新增「关系数据 (RELATIONS IMPORT)」
+      面板（隐藏 file input → JSON 解析校验 → `NieRModal` 确认（列条数与 upsert
+      语义）→ POST → 回显 **新增/更新/跳过/警告** 四段计数并 `refresh()`）；
+      环境面板 `COUNT_LABELS` 增 `绑定 BINDINGS` / `应答规格 SPECS`；
+      导出回显补 `relations.json`。
+    - **验收**：BE **549/549（基线 537 + 12）**、FE **948/948（63 文件，基线 944 + 4）**、
+      `npx vite build` EXIT=0、yorha-ui 校验器 4 文件 **0 违规**；**零 DDL**。
+    - **文档同步**：`DESIGN_CorePipeline.md` §7 批次四 4a 进度注、`README.md`
+      Data Hub 一段（+ `relations.json` 与导入端点、状态面板改「七表行数」）、
+      `PLAN_Backlog.md` §1 新 CP4 行 + 新 §8.25、`pageStatus.json` 数据中心页条目 +
+      `PAGE_STATUS.md` 再生成、本条。
+    - **提交**：→ **`PENDING_FEAT4A`（代码+文档），2026-10-02**。
+    - **待办**：**4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 →
+      `slot_id` 悬空置 NULL 并回执」+ D9/D10 划界落 README/PAGE_STATUS；**4c** D8
+      校验表全量核对（纯文档，随 4b 提交）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

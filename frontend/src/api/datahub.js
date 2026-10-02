@@ -20,7 +20,7 @@ export const restoreDbBackup = async (name) => {
     return handleResponse(response);
 };
 
-// 聚合导出 ZIP（instructions.json + manifest.json + frames/*.bin|hex）→ Blob
+// 聚合导出 ZIP（instructions.json + relations.json + manifest.json + frames/*）→ Blob
 export const exportDataBundle = async () => {
     const response = await fetch(`${API_BASE}/datahub/export/bundle`);
     if (!response.ok) {
@@ -28,4 +28,15 @@ export const exportDataBundle = async () => {
         throw new Error(formatApiErrorDetail(data.detail));
     }
     return response.blob();
+};
+
+// 批次四 4a：relations.json 回灌 —— 按 id upsert、逐行报告（部分成功不整批回滚）。
+// 入参 = ZIP 内 relations.json 的原文；返回 {bindings, responseSpecs, warnings}。
+export const importRelations = async (relations) => {
+    const response = await fetch(`${API_BASE}/datahub/import/relations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(relations)
+    });
+    return handleResponse(response);
 };

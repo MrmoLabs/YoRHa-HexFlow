@@ -44,6 +44,8 @@
 FE **944/944（63 文件，基线 932 + 12）**、`npx vite build` EXIT=0、yorha-ui
 校验器 8 文件 0 违规、**真路由冒烟 43 项 ALL PASS**；明细见 §8.24 |
 
+| CP4 | Core Pipeline 批次四（治理）：**4a** 关系数据导入导出（`bindings` + `response_specs` 并入 DataHub ZIP `relations.json` + `POST /datahub/import/relations`）/ **4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 回执」+ D9/D10 划界落 README/PAGE_STATUS / **4c** D8 校验表全量核对（逐行销项，纯文档）（明细 `DESIGN_CorePipeline.md` §7 批次四） | 🔄 **4a 已提交 ✅ `PENDING_FEAT4A`（代码+文档，零 DDL），2026-10-02**：导出 ZIP 增 `relations.json`（`manifest` 增 `relations` 计数、`/status` 增 `protocolBindings`/`responseSpecs` 两行计数）+ 回灌端点按 `id` upsert、逐行报告（父缺失 → `skipped` 带 reason、槽悬空 → 置 NULL + warning、默认唯一冲突清旧行、`spec` 过 `normalize_spec` / `stage` 重算镜像 / 出处原样回填）、**部分成功即部分落库不整批回滚**；前端 DataHub 增「关系数据」面板（选文件 → 解析校验 → 确认弹窗 → 回显 新增/更新/跳过/警告 计数 + 刷新）。终态 BE **549/549**（基线 537 + 12）、FE **948/948**（63 文件，基线 944 + 4）、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**；明细见 §8.25。**4b/4c 未开工**（4b 含 1 处后端级联回执 + 绑定矩阵视图，4c 纯文档随 4b 提交） |
+
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
 ## 2. M1 明细（实现完成，待人工验证）
@@ -2097,6 +2099,57 @@ DDL 三列落真库、无链 400 / 不存在 404、三层协议 + 配方挂默�
 表行与三处实施注，`PLAN_Backlog.md` §1 CP3 行 + 本节，`PROJECT_HANDOVER.md`
 条目 38，`pageStatus.json` 经 `node scripts/generate-page-status.mjs` 再生。
 
+### 8.25 Core Pipeline 批次四 · 4a（CP4-4a）：关系数据导入导出（零 DDL）
+
+**批次**（2026-10-02，**零 DDL** —— 只读写既有 `protocol_bindings` /
+`response_specs` 两表，`models.py`/`database.py` 未改，`yorha.db` 不随本批提交；
+未碰 `processor.py` / `graph.py` / `Blueprint.jsx`；`/dispatch` 缺省口径零影响）。
+
+**范围（`DESIGN_CorePipeline.md` §7 批次四 4a）**
+
+- **导出**：`GET /datahub/export/bundle` 的 ZIP 增 `relations.json`
+  —— `{schemaVersion: 1, bindings: [...], responseSpecs: [...]}`，行字段与
+  `models.py` 列一一对应（`definition_hash` 原样带出）；`manifest.json` 增
+  `relations: {bindings, responseSpecs}` 计数；`/datahub/status` `counts` 增
+  `protocolBindings` / `responseSpecs` 两键。
+- **导入**（`POST /datahub/import/relations`，入参 = `relations.json` 原文）：
+  - **严格顶层键集**：未知字段 / 非 `1` 的 `schemaVersion` / 非对象 → 400
+    （镜像 `_wrap_spec` 未知键 400 口径）；`bindings`/`responseSpecs` 缺席当 `[]`，
+    给了但不是数组 → 400。
+  - **恢复语义、非手工编辑**：按 `id` upsert；`definition_hash` 原样回填 ——
+    目标库协议若已不同，读侧 `stale` 徽标自然点亮（D7-A 口径不变）。
+  - **逐行独立提交**：每行写完即 `commit`；`IntegrityError` → `rollback` 只回该行
+    并进 `skipped`（带 reason），**部分成功即部分落库、不整批回滚**。
+  - **父缺失 → 跳过**：指令/协议不存在 → `skipped` + `reason`（不静默）。
+  - **槽悬空 → 置 NULL + warning**（§6.2「不静默」口径）：导入的 `slot_id` 在目标
+    协议里不存在或非 slot 节点 → 保留行但清空槽 + 记 `warnings[]`。
+  - **默认唯一不变量**：`is_default=1` 先清同指令其它行（镜像 `create_binding`）。
+  - **应答规格**：`spec` 过 `normalize_spec`（非法 → 跳过，不 400 整批）；
+    **`stage` 不信文件、按 `spec.stages` 重算镜像**（SSOT = `_stage_mirror`）；
+    同指令已有别行 → 跳过（一指令一规格）。
+- **前端（仅 `frontend/`）**：DataHub 页新增「关系数据 (RELATIONS IMPORT)」面板
+  （隐藏 file input `data-testid="relations-import-input"` → JSON 解析校验 →
+  `NieRModal` 确认（列条数与 upsert 语义）→ `POST` → 回显
+  **新增/更新/跳过/警告** 四段计数并 `refresh()`）；环境面板 `COUNT_LABELS` 增
+  `绑定 BINDINGS` / `应答规格 SPECS`；导出回显补 `relations.json`。
+
+**测试**：`backend/tests/test_datahub.py` 增 **12 例**（导出形键集与行字段 /
+空关系为 `[]`、往返等价、同 id 更新不重复、父缺失三态跳过、槽悬空置空带警告 +
+存在槽原样、默认冲突降旧默认、`(protocol, slot)` 唯一冲突跳过、`stage` 重算 +
+出处保留、spec 非法/非对象/缺父/缺 id 跳过 + 同指令撞行跳过、顶层严格键集 400
+四态、部分成功保留好行），沿 `test_bindings` 临时库三步建库范式；FE
+`DataHub.test.jsx` 增 **4 例**（导出回显 + 两行计数 / 确认后才 POST 并回显四段
+计数 + 刷新 / 取消不发请求 / 非法 JSON 与非关系包不出弹窗）。
+
+**终态**：BE **549/549**（基线 537 + 12）、FE **948/948（63 文件，基线 944 + 4）**、
+`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 **0 违规**；**零 DDL**。
+
+**文档同步**：`DESIGN_CorePipeline.md` §7 批次四 4a 进度注、`README.md` 聚合导出
+一段（+ `relations.json` 与导入端点）、`PLAN_Backlog.md` §1 新 CP4 行 + 本节、
+`PROJECT_HANDOVER.md` 条目 39、`pageStatus.json` 数据中心页条目 +
+`node scripts/generate-page-status.mjs` 再生 `PAGE_STATUS.md`。
+
+## 9. 保留勿动（非任务，勿清理）
 
 - `backend/core/processor.py` / `graph.py` 未接线（Phase-2 遗留，保留勿删，
   勿引入新依赖）
