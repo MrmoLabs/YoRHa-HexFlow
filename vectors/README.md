@@ -83,7 +83,28 @@ JSON 只有一种表达，两端原本的记法差异靠 **3 个稳定适配**�
 - `backend/routers/op_whitelist.py` ↔ FE `validateInstruction` 的 `KNOWN_OPS`
 - `backend/core/escape.py` 的转义语义 ↔ `escapeTable.js`（表已共享，实现仍双写）
 
-## 6. 行注归档
+## 6. 验收方式（防分叉的自动化口径）
+
+迁表的收口不是「跑一次绿」，而是**持续拦住回潮**。四道闸全部是可执行用例：
+
+| 闸 | 执行者 | 拦什么 |
+|---|---|---|
+| 消费矩阵 | `backend/tests/test_vectors_manifest.py::test_every_vector_table_consumed_by_both_sides` | 每张 `vectors/*.json` 必须同时被**后端测试 + 前端测试**引用；单侧消费即红（正是手抄时代的失守方式：另一端改实现不再报警） |
+| 引用可解析 | 同文件 `test_load_vectors_references_all_resolve` | 测试里 `load_vectors("<name>")` 引用的表必须真实存在（新增表忘落 JSON / 改名漏改 → 红） |
+| 可读 + `$v` 纪律 | 同文件 `test_every_table_readable_and_non_empty` / `test_illegal_v_markers_rejected` + 前端 `frontend/src/utils/__tests__/vectorsLoader.test.js` | 表非空可读；`$v` 混键 / 未知值两端同口径抛错；FE 侧表清单与 `vectors/` 目录**同集**（新增 JSON 忘登记 → 红） |
+| 入库卫生 | 同文件 `test_repo_ignores_python_bytecode` | `.gitignore` 必须含 `__pycache__/` 与 `*.py[cod]`，且 `git ls-files` 索引里不得有 `__pycache__` / `*.pyc`（加载器会在本目录生成 `vectors/__pycache__`） |
+
+- **两张验收单不重复扫仓**：后端那份扫两侧文件做矩阵，前端这份只测自己这半（加载器
+  约定 + 目录同集），两侧的「验收单自身」都被排除在消费统计之外 —— 它们只扫描、
+  不钉数据，不能算数。
+- **新增一张向量表的固定动作**：落 `vectors/<name>.json` → 后端测试 `load_vectors("<name>")`
+  引用 → 前端测试 `import ... 'vectors/<name>.json'` 引用 → 前端 `TABLES` 登记一行。
+  少任何一步，四道闸之一当场红。
+- **迁移范围与遗留**：范围 = 11 张平面向量表 + `wrap.json` 三处同值场景树（§3 表清单）；
+  不迁的是**实现语义锚点**（`pad.py`↔`padSpec.js`、白名单、转义实现）—— 那些仍各自
+  一份、改一必改二（§5）。
+
+## 7. 行注归档
 
 迁表时两端测试里的逐行注释（JSON 不支持注释）按表归档于此，`#N` = 该表下标（0 起）。
 
