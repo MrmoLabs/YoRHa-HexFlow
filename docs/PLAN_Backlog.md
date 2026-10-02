@@ -2309,8 +2309,55 @@ DDL 三列落真库、无链 400 / 不存在 404、三层协议 + 配方挂默�
 补人工验证态、`PROJECT_HANDOVER.md` 条目 35/36 待办①销项 + 新条目 41。
 
 **残留（不阻塞，仍开放）**：`pageStatus.json` 协议页 2 条（跨泳道拖拽目视 / slot refs
-新语义复测）与 `DESIGN_CorePipeline.md` §9.7 ④（应答是否带转义字节 —— 需真实设备帧或
-单独拍板）。
+新语义复测）—— **已同日由 §8.28 收口**；仅剩 `DESIGN_CorePipeline.md` §9.7 ④（应答是否
+带转义字节 —— 需真实设备帧或单独拍板）。
+
+### 8.28 协议页人工复测收口（slot refs 新语义 4 子项 + 跨泳道拖拽，零代码改动）
+
+**背景**：`pageStatus.json` 协议页两条 `nextSteps` 长期挂着 —— ① 跨容器拖拽落点
+`moveNode` 已有 `protocolTree` 单测锁形但「人工跨泳道拖拽目视验证待补」（HANDOVER 11
+待办）；② `DESIGN_CorePipeline` 一期 §8.7 ②「slot 作 refs 目标」新语义四子项「人工复测
+待补」（HANDOVER 12 待办）。此前失败原因是**用合成 MouseEvent 点画布不触发选中**，本节
+改用浏览器工具的**真实点击 / 真实拖拽**（snapshot 取 ref → `click` / `drag`）跑通。
+
+**执行方式**（2026-10-02，`uvicorn :8000` + `vite :5173` 真机）：验证期间的 refs 增删与
+拖拽改树只作用于本地会话，验完从库备份 `yorha.db.bak_4bv` 整库还原 —— 还原后基线逐项
+一致（protocols 3 / bindings 1 · `slot_order=0` / frame_recipes 0、LENGTH refs 回 3 项、
+嵌套容器 children 回 3 项），`yorha.db` 工作树零 diff、不入提交。
+
+**5 项全部通过**：
+
+1. **slot 拾取计数进位**：点 LENGTH 卡 → 属性面板 `结构引用 (REFS)` `3 REF(S)` +
+   `SELECT FIELDS`（芯片：固定块 / 固定块 / 新容器）→ 点 `SELECT FIELDS`（按钮变
+   `STOP PICKING (DONE)`，拾取态生效）→ 点 SLOT 卡 → **`4 REF(S)`** + 新芯片
+   `SLOT ×` + `保存更改 (SAVE)` 出现（脏态）→ SAVE 落库（服务端
+   `parameter_config.refs` 4 项、`version` 8）。
+2. **自引用 SYS 提示**：拾取态点 LENGTH 自身 → 计数**仍 `4 REF(S)`**（未入 refs），
+   状态栏出 **`SYS: 不能引用自身`**。
+3. **含槽卡面 `??`**：加槽前 LENGTH 卡面 `3B`（Σ=1+2+0 可定注入）→ 加槽后
+   **`LENGTH ?? 1B @06`**（`computeRefsSigma` 对含槽 refs 整卡不注入维持 `??`）；对照：
+   既有 CHECKSUM（refs 含槽）同为 `??`，嵌套容器内 LENGTH（refs=固定块 1B 全可定）仍
+   注入 `1B`；SAVE 后回读卡面与 chips 一致（`REF SLOT` 角标点亮）。
+4. **组装试发 SENT 长度含载荷真值**：编排页封装试发出线 `… ED 00 0E EE 00 01 20 …`
+   （28B）→ LENGTH 字节 **`0E` = 14 = 内核 11B + 引用固定块 3B**；改槽 refs **之前**同
+   路径出线为 `… ED 00 03 EE …`（`03` = 设计期静态 Σ=3B）—— **同一位 `03 → 0E`，静态
+   设计值翻成含载荷真值**。旁证：`POST /compile/wrapped` 用 payload 0/1/2/4/11B 扫描，
+   LENGTH 字节 **`03/04/05/07/0E` = payload + 3 线性跟随**；UI 试发出线与 API 编译帧
+   **逐字节一致**；`⚠ 空洞：2 个洞未被载荷填充` 照常透出。
+5. **跨泳道拖拽落点**：画布 3 泳道（根 `新协议 (NEW)` / 空容器 `新容器 [EMPTY GROUP]` /
+   嵌套容器）→ 把嵌套容器里的 `固定块 00 1B @0A` 真实拖到根泳道 `固定块_1 00 00 2B @02`
+   卡上 → 落点**贴目标前插**（根泳道 14 卡、`固定块 @02` + `固定块_1 @03`、偏移全量
+   重算），嵌套容器剩 2 卡（LENGTH / CHECKSUM），脏态 `保存更改` → SAVE 落库
+   （`bd980b3a` 上移顶层 index 2、`c8925b01.children` 剩 2、`version` 9），**UI 三泳道
+   与服务端 children 树一致**；截图存证（三泳道 + `4 REF(S)` 芯片 + 跨泳道落点同框）。
+
+**文档同步（本节）**：`pageStatus.json` 协议页 `nextSteps` 两条销项（`PAGE_STATUS.md`
+再生）、`PLAN_Backlog.md` 本节、`PROJECT_HANDOVER.md` 条目 11/12 待办销项 + 新条目 42、
+§8.27 残留段改写。
+
+**残留（不阻塞，仍开放）**：`DESIGN_CorePipeline.md` §9.7 ④（应答是否带转义字节 —— 需
+真实设备帧或单独拍板）+ 编排页「绑定拖拽排序（`slot_order` 洞位下拉回写已落地，拖拽
+交互未做）」**功能项**（非验证项）。
 
 ## 9. 保留勿动（非任务，勿清理）
 
