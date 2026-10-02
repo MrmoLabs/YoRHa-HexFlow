@@ -19,6 +19,9 @@
 双端纪律：向量表锚定 backend/tests/test_escape.py ↔
 frontend/src/utils/__tests__/escapeTable.test.js（FE 仅配置面板样例预览用，
 出线字节 SSOT 在本模块），改一必改二。
+收侧（§8.35 / §9.7 ④）：真机应答按对称约定同样带转义字节，还原用本模块
+`unescape_bytes`（与 `escape_bytes` 互逆），交 `response_match.match_response`
+作「先线上、后逻辑」的第二口径 —— 表为空即不启用，判定路径与存量逐字节一致。
 """
 
 import re
@@ -117,6 +120,43 @@ def escape_bytes(data, table: Dict[int, bytes]) -> bytes:
     for b in bytes(data):
         repl = table.get(b)
         out.extend(repl if repl is not None else bytes((b,)))
+    return bytes(out)
+
+
+def unescape_bytes(data, table: Dict[int, bytes]) -> bytes:
+    """单趟反转义 —— `escape_bytes` 的逆（§8.35 应答侧收口）。
+
+    左到右扫描，命中某条 `to` 序列（**最长优先**）即还原为对应 `from` 字节，
+    未命中原样带过；空表直通（与 `escape_bytes` 对称，不做任何解析）。
+    单趟、不回扫 —— 与出线方向同构，`escape_bytes(x)` 的输出必被本函数还原。
+
+    歧义口径与 RFC 1662 §4.2「发送方必须转义 Control Escape 字节自身」同一条
+    要求：`to` 序列要能自描述，转义字节本身必须也在 `from` 里（`7D→7D5D` 即
+    此形态）；否则裸字节与转义序列不可区分 —— 这种表按最长匹配左到右取，结果
+    确定但不保证还原语义，配置期不拒绝（与 `build_table` 的 fail-open 同纪律）。
+    """
+    if not table:
+        return bytes(data)
+    raw = bytes(data)
+    if not raw:
+        return b""
+    # (to 序列, from 字节) 按序列长度降序 —— 最长匹配优先（同长保持插入序，确定）
+    candidates = sorted(
+        ((dst, bytes((src,))) for src, dst in table.items()),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    )
+    out = bytearray()
+    i, n = 0, len(raw)
+    while i < n:
+        for dst, src in candidates:
+            if raw.startswith(dst, i):
+                out.extend(src)
+                i += len(dst)
+                break
+        else:
+            out.append(raw[i])
+            i += 1
     return bytes(out)
 
 

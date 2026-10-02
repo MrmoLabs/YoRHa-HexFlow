@@ -558,6 +558,13 @@ hex 字符串**、纯函数、单遍、无环；`routers/protocol.py::_validate_
 1. **应答是否也要反转义**：出方向 `escape` 已实现（见 D13「边界（转义）」），
    若设备应答同样带转义字节，匹配前需要逆映射 —— `response_match` 现状不处理。
    → 属 A 方案的一部分（每层解包时先反转义再匹配）；**设备实际行为待确认**。
+   ✅ **已定论并实施（2026-10-02，PLAN §8.35，销 §9.7 ④）**：按 DL/T 645-2007
+   （数据域 +0x33 双向对称、L/CS 按线上字节）与 RFC 1662 §4.2 / RFC 1549
+   （0x7D stuffing 双向对称、FCS 在塞之前）两条公开规范核定 **应答带转义字节**；
+   且因 L/CS 口径两种规范各占一端（本仓内核 = RFC 1662 型、外壳 = DL/T 645 型），
+   收侧取 **「先线上、后逻辑」双口径** —— `escape.py::unescape_bytes` +
+   `match_response(unescape=)`（keyword-only，缺省 `None` = 存量单口径逐字节一致）。
+   无需真机帧，**本项不用再拍**。
 2. **D6-B 冻结口径**（配方下已扩为逐层区间，见 `DESIGN_CorePipeline.md` §9.7
    3c）：补一条 —— `recipe_id` 与配方 `definition_hash` 一并存进 `sequence_steps`，
    协议结构变了才亮徽标。**零争议，随 3c 落地**。
@@ -570,7 +577,8 @@ hex 字符串**、纯函数、单遍、无环；`routers/protocol.py::_validate_
 **实施注（2026-10-01 拍板 = A）**：`response_spec` **增 `stage` 维度**（`response_specs`
 仅加一列，符合硬约束）+ `response_match` 按 `stages` **逆序解包**逐层跑五要素；
 D5-A 的「据此生成」**按层各执行一次**。D5-A 的实施设计须据此修订，**不得按单层
-字面实现**。关联待确认项（应答是否也要反转义）随 A 方案一并在真实应答帧上核对。
+字面实现**。关联待确认项（应答是否也要反转义）→ ~~随 A 方案一并在真实应答帧上核对~~
+**已另行定论（2026-10-02，PLAN §8.35）**：无需真实应答帧，按公开规范模拟核销。
 
 > ✅ **已实施（CP3-3d，2026-10-01，提交 `77dd389`，含 DDL 3 列仅新增）**：
 > ① `response_specs` 加 `stage`（另加 `definition_hash` 供 D7-A，见 D7 实施注）、
@@ -586,8 +594,10 @@ D5-A 的「据此生成」**按层各执行一次**。D5-A 的实施设计须据
 > `field_offset_from_end`（= `len(frame) - 字段起点`），与绝对 `offset`/
 > `field_offset` **互斥**（非 0 同给 → 400）。
 > ⑤ **退化保底**：spec 无 `stages` 键 → 原单帧路径**逐字节不变**
-> （`test_bare_frame_path_unchanged` + 存量用例零改全绿）。**关联项「应答是否也带
-> 转义字节」仍未确认**，`escape` 反转义尚未接进 `response_match`（见 §9.7 ④）。
+> （`test_bare_frame_path_unchanged` + 存量用例零改全绿）。~~**关联项「应答是否也带
+> 转义字节」仍未确认**，`escape` 反转义尚未接进 `response_match`（见 §9.7 ④）。~~
+> ✅ **已销（2026-10-02，PLAN §8.35）**：`escape` 反转义已接进 `response_match`
+> （第二口径，`escape` 关闭时零改动）；单帧路径退化保底仍由 ⑤ 那两条用例钉住。
 
 ---
 

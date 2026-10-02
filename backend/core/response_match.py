@@ -371,12 +371,44 @@ def _checksum_reasons(cs: Dict[str, Any], frame: bytes) -> List[str]:
     return []
 
 
-def match_response(spec: Dict[str, Any], sent: bytes, received: bytes) -> Tuple[bool, List[str]]:
+def match_response(
+    spec: Dict[str, Any],
+    sent: bytes,
+    received: bytes,
+    *,
+    unescape=None,
+) -> Tuple[bool, List[str]]:
     """按归一化规格判定一次应答；返回 (ok, reasons)。
 
     空应答恒判失败（EMPTY_RESPONSE）——事务引擎的「超时无应答」与「失配」是两类
     失败，分别对应 attempt 状态 NO_RESPONSE / MATCH_FAILED。
+
+    **双口径（§8.35，销 §9.7 ④「应答是否带转义字节」）**：
+    1. 先按**线上字节**判一次（`sent`/`received` 原样 —— 覆盖 DL/T 645 型：
+       变换后算 L/CS，应答自带长度与校验覆盖线上字节）；
+    2. 未通过且调用方给了 `unescape`（= 转义表非空时的 `escape.unescape_bytes`）
+       且表**确实能改变任一侧字节**时，把 `sent`/`received` 一并还原为逻辑字节
+       再判第二次（覆盖 RFC 1662 型 / 本仓内核口径：先算 LEN/CS 再转义），
+       第二次通过即视为命中、`reasons` 清空；
+    3. 两次都未过 → 返回**第 1 次（线上口径）**的 reasons —— 诊断以线上字节为准。
+    `escape` 缺省关闭 → 调用方传 `unescape=None` → 单口径，与存量逐字节一致
+    （§0 硬约束：判定路径零改动）。
     """
+    ok, reasons = _match_frame(spec, sent, received)
+    if ok or unescape is None or not received:
+        return ok, reasons
+    tx2 = unescape(sent)
+    rx2 = unescape(received)
+    if tx2 == sent and rx2 == received:
+        return ok, reasons  # 表对两侧都无作用 → 第二次与第一次等价，不白跑
+    ok2, _ = _match_frame(spec, tx2, rx2)
+    if ok2:
+        return True, []
+    return ok, reasons
+
+
+def _match_frame(spec: Dict[str, Any], sent: bytes, received: bytes) -> Tuple[bool, List[str]]:
+    """单口径判定（线上字节原样）—— `match_response` 第 1 次与第 2 次共用。"""
     if not received:
         return False, ["EMPTY_RESPONSE"]
     mode = spec.get("mode", "echo")

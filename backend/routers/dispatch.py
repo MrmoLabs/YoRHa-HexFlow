@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.core import diagnostics as diag
 from backend.core import response_match, sequence_runner, transport
-from backend.core.escape import escape_hex, table_from_config
+from backend.core.escape import escape_hex, table_from_config, unescape_bytes
 from backend.core.frame_builder import build_wrapped
 from backend.core.recipe_compile import compile_recipe
 from backend.core.diagnostics import Diagnostic
@@ -453,10 +453,10 @@ def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_
         )
     # 批次一 1c: 与 dispatch_frame 同口径 —— wrap 先封装、hex 终检在后
     # N4 (G3): 与 dispatch_frame 同口径 —— 内核先转义再套壳（缺省关闭原样）
+    # §8.35: 表同时喂给收侧 —— 应答按同一张表作「先线上、后逻辑」第二口径判定
+    escape_table = table_from_config(transport.get_config())
     try:
-        hex_string = escape_hex(
-            request.hex_string, table_from_config(transport.get_config())
-        )
+        hex_string = escape_hex(request.hex_string, escape_table)
     except ValueError as e:
         raise diag.http_from(
             e, 400, f"Invalid payload: {e}",
@@ -483,6 +483,9 @@ def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_
     max_attempts = 1 + retries
     attempts: List[TransactionAttempt] = []
     last_received = b""
+    # §8.35（销 §9.7 ④）：应答是否带转义字节 → 两种真机口径都收。转义表为空
+    # （escape 缺省关闭）传 None ⇒ 单口径，判定与存量逐字节一致（§0 硬约束）。
+    rx_unescape = (lambda b: unescape_bytes(b, escape_table)) if escape_table else None
 
     for n in range(1, max_attempts + 1):
         started = time.perf_counter()
@@ -515,7 +518,9 @@ def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_
                 ))
             else:
                 last_received = received
-                ok, reasons = response_match.match_response(spec, data, received)
+                ok, reasons = response_match.match_response(
+                    spec, data, received, unescape=rx_unescape
+                )
                 attempts.append(TransactionAttempt(
                     n=n, status="OK" if ok else "MATCH_FAILED",
                     sent=payload_spaced, received=_spaced(received), rtt_ms=rtt,
