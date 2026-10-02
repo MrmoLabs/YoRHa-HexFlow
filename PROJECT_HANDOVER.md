@@ -1474,6 +1474,64 @@
       `fields_json` 入库（DDL）**。每批验收项固定为：BE 全量 + FE 全量 +
       `npx vite build` + **`npm run lint` EXIT=0** + yorha-ui 校验器 0 违规。
 
+51. **R5 · float64 编码双端（缺省 f32 逐字节不变）—— PLAN §8.42**
+    （2026-10-02，**BE + FE + 向量，零 DDL** —— 未碰 `models.py`、`processor.py` /
+    `graph.py` / `Blueprint.jsx`，`/dispatch` 缺省口径不变）：
+    - **它是什么问题**：不是「功能缺失」，是**双端不一致** —— R5 前 `byte_len=8`：
+      FE `getFieldBytes` 落默认整数路径出 `0000000000000001`，BE `datahub.to_block`
+      的 `byte_len == 4` 闸不命中 → 保持 zeros。**同一份指令，本地试发与服务端编译 /
+      导出给出两种不同的帧**。N1（§8.16）当时只能挂 `FLOAT64_UNSUPPORTED` 提醒
+      （G7 定案「提醒而非改模板」），本批补真正的双端分支。
+    - **BE**：`orchestrator.encode_float_ieee(value, byte_len=4)` 加**缺省 4 = 存量
+      行为**的形参 —— `byte_len == 8` → `struct.pack(">d")` 出 16 hex，否则仍 `">f"`；
+      解析口径 `_float_number` **一字未改**（非有限 → 0，f64 也不写 NaN 位型）。
+      `datahub.to_block` 分派 `byte_len == 4` → `byte_len in (4, 8)`。LITTLE 走
+      `orchestrator.py` 的**字节整体逆序**，与宽度无关 → f64 自动成立（补测）。
+    - **FE**：`InstructionEncoder.getFieldBytes` —— `byteLen === 4` → `(4 || 8)`、
+      `new Float32Array(1)` → `byteLen === 8 ? new Float64Array(1) : new Float32Array(1)`，
+      解析 / `isFinite` 归 0 / `.reverse()` 全复用，**4 位分支逐字符未动**。
+      `formula.js formatFloatToHex(value, byteLen = 4)` 补宽度参数（**全仓零调用方**；
+      它是裸位型转换，与编码器「先解析后归 0」口径不同，差异写进 docstring）。
+    - **提醒收窄**：`FLOAT64_UNSUPPORTED`（`byte_len === 8` 报）→
+      **`FLOAT_IEEE_WIDTH_UNSUPPORTED`**（`byte_len ∉ {4, 8}` 才报）。全仓该 code 只在
+      `validateInstruction.js` 与其测试两处（**无 UI 按 code 分派**）→ 改名无副作用。
+    - **章随位宽走**：`runnerRenderRules.resolveRunnerKind` 的 `FLOAT_IEEE` →
+      `byte_len === 8` 出 **F64** 章、否则 F32（之前 `key` 恒为 F32，会「章写 F32、
+      出帧 8 字节」错位）。
+    - **`vectors/float_ieee.json` 分组 `{ "f32": [...], "f64": [...] }`（不拆文件）**：
+      `bcd_scaled.json` / `time_counter.json` / `presence.json` 已是「同语义多表」的
+      分组先例；f32/f64 是**同一解析口径的两种位宽**，放同一文件一眼看出「只差位宽」。
+      `f32` **22 行一字节未改**（缺省不变的物证），`f64` 新增 **23 行**。关键锚点 =
+      `1e40`：f32 出 `7F800000`（IEEE 溢出）/ f64 出 `483D6329F1C35CA5`。
+    - **更正 §8.37 R5 原行「`response_match` 解码侧同步（否则能发不能判）」—— 实测不
+      成立**：`backend/core/response_match.py` 全文**零值解码**（547 行只有
+      `prefix/suffix/echo_header_bytes/length/checksum/unpack` 六类**字节级**比对，
+      两侧都是 `bytes`；全仓 grep `struct.unpack`、`'>f'`、`'>d'` 零命中）→ 判定天然与
+      位宽无关，**`response_match` 零改动**；真缺口在**编译侧 `datahub.to_block`**，
+      本批一并修。
+    - **测试 +4 BE / +30 FE** → **BE 648/648 · FE 1020/1020（67 文件）**：
+      BE `test_encode_float_ieee.py` 6 → 10 例（`VECTORS64`、
+      `test_default_arg_stays_f32` 单参回归、`test_byte_len_8_emits_float64`、
+      `test_f32_f64_dividing_line`、f64 LITTLE / 矛盾 type）；FE
+      `InstructionEncoder.test.js` 187 例（+23 f64 向量 + 5 锚点）、
+      `validateInstruction.test.js` +1（G7 收窄成三条）、`runnerRenderRules.test.js`
+      +1（F64 章）。
+    - **缺省逐字节不变的证据链**：`f32` 22 行两端原样全绿 + `encode_float_ieee`
+      单参调用回归 + `test_default_arg_stays_f32` 显式断言 `f(v) == f(v, 4) == 期望`
+      + 改前 BE 644 / FE 990 全量零改动全绿。
+    - **验收**：`npm run lint` **EXIT=0**、**BE 648/648**、**FE 1020/1020（67 文件）**、
+      `npx vite build` EXIT=0、yorha-ui 校验器 **0 违规**（7 个改动 .js）；零 DDL；
+      `pageStatus.json` 未改 → 无需重生成 `PAGE_STATUS.md`。
+    - **文档同步（同批）**：PLAN 新 **§8.42** + §8.37 R5 行已办（含 `response_match`
+      更正）+ §1 状态 + §8.16 N1 后记与引子 + E1-4 进度块 + B2 缺口第 4 条 +
+      §8.37 验收口径；`vectors/README.md`（16 表 + `[f64]` 组说明）；
+      `docs/BUSINESS_SCENARIOS.md`（浮点 64 位 🟡→🟢 / G7 行 / §8.14 注）；
+      `test_operator_templates.py` 注释（模板仍默认 32）；本条。
+    - **状态**：**R1 ✅ R2 ✅ R3 ✅ R4 ✅ R5 ✅**，余 **R6 软删除（13 表加
+      `deleted_at`，DDL）→ R7 导出补域 → R8 导入补端点 → R9 解码展示面板 → R10
+      `fields_json` 入库（DDL）**。每批验收项固定为：BE 全量 + FE 全量 +
+      `npx vite build` + **`npm run lint` EXIT=0** + yorha-ui 校验器 0 违规。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
@@ -1554,7 +1612,7 @@
 *   **未接线代码**: `processor.py` / `graph.py` / `Blueprint.jsx` 保留原样，仅在文档中标注，不要删除。
 *   **B1 校验和收敛（2026-09 已修）**: 算法选择原先因键名（`algo` vs `algorithm`）与枚举值双重不匹配，恒算 CRC16-MODBUS。现 `backend/routers/operator.py` seed 枚举收敛为编码器真实实现的 `CRC_16_MODBUS / SUM_8 / XOR_8`；`utils/normalizeInstruction.js` 的 `mapChecksumAlgo` 负责旧值（`CRC16_CCITT/CRC32/XOR_SUM/ADD_SUM`）映射与 `parameter_config.algorithm` 别名。**若要新增算法，必须同时改 `formula.js` 的 `calculateChecksum` 并与 `backend/handlers/checksum.py` 核对**。
 *   **编码器已知限制（2026-09 字段覆盖面审计，B2–B8；B2–B8 已于 E1 批 E1-1..E1-6 解除）**: 以下均属 `InstructionEncoder.js` / 双端同步范围，**未获授权勿改**（加工页 UI 已对可展示项做语义标注；2026-09-22 管理页 Phase0：`utils/encoderLimits.js` 为标注单一事实源，面板横幅/⚠角标 + `utils/validateInstruction.js` 保存前校验（Error 阻断/Warning 不阻断），见 `docs/PLAN_InstructionManagement.md`）：
-    1. ~~`FLOAT_IEEE` 按普通整数编码（浮点分支要求 `parameter_config.type='float'`，算子模板从不设置）~~ **已解决（E1-4，2026-09-23）**：`op=FLOAT_IEEE` + `byte_len=4`（bits=32）+ 规范 type（缺省/number）→ IEEE 754 float32 大端恒 4 字节（`orchestrator.encode_float_ieee` ↔ `getFieldBytes` FLOAT_IEEE 分支；严格十进制解析同 E1-1 口径，非有限→0，超 f32 范围 → ±Infinity IEEE 溢出对齐 JS Float32Array），byte-equal 向量表 22 例锚定双端测试（`test_encode_float_ieee.py` ↔ E1-4 describe，改一必改二）。**范围外保留现状**：bits=64（`byte_len=8`）仍走整数路径 / BE zeros（E1-4 只做 float32，如需 float64 另立子项）；矛盾 `type=float/string/hex` 模板不会产生，FE 走既有分支、BE 保持 zeros 契约外。
+    1. ~~`FLOAT_IEEE` 按普通整数编码（浮点分支要求 `parameter_config.type='float'`，算子模板从不设置）~~ **已解决（E1-4，2026-09-23）**：`op=FLOAT_IEEE` + `byte_len=4`（bits=32）+ 规范 type（缺省/number）→ IEEE 754 float32 大端恒 4 字节（`orchestrator.encode_float_ieee` ↔ `getFieldBytes` FLOAT_IEEE 分支；严格十进制解析同 E1-1 口径，非有限→0，超 f32 范围 → ±Infinity IEEE 溢出对齐 JS Float32Array），byte-equal 向量表 22 例锚定双端测试（`test_encode_float_ieee.py` ↔ E1-4 describe，改一必改二；**R5 起再加 `f64` 组 23 例**）。~~**范围外保留现状**：bits=64（`byte_len=8`）仍走整数路径 / BE zeros（E1-4 只做 float32，如需 float64 另立子项）~~ → **✅ 已由 R5（PLAN §8.42，2026-10-02）收口**：`byte_len=8` 双端真出 float64（`struct.pack('>d')` / `Float64Array`），`vectors/float_ieee.json` 分 `f32`（22 行未改）/ `f64`（23 行）两组，**缺省 f32 逐字节不变**；矛盾 `type=float/string/hex` 模板不会产生，FE 走既有分支、BE 保持 zeros 契约外。
     2. ~~`BCD_CODE` 无 BCD 分支（`25 → 0x19`，而非 `0x25`）~~ **已解决（E1-3，2026-09-23）**：双端 packed BCD（`orchestrator.encode_bcd` ↔ `getFieldBytes` BCD_CODE 分支）——floor 解析后取绝对值、数字逐 nibble 打包，超长截高位保低 `2*byte_len` 位、高位补 0；byte-equal 向量表 17 例锚定双端测试（`test_encode_bcd_scaled.py` ↔ E1-3 describe，改一必改二）；LITTLE 联动（`0025 → 2500`）经 E1-2 wrapper 自动生效。
     3. ~~`SCALED_DECIMAL` 的 `factor/offset` 不参与编码（加工页已展示，字节仍按裸整数）~~ **已解决（E1-3，2026-09-23）**：双端定标 `(value+offset)*factor`（`orchestrator.encode_scaled` ↔ `getFieldBytes` SCALED_DECIMAL 定标分支）——factor/offset 空/缺省/非有限 → 1/0 恒等回归、value 非有限 → 0、结果 `abs(floor)` 定宽 mod `2^(8n)`；矛盾 type（string/float/hex，算子模板不设置）不参与定标保持现行为；byte-equal 向量表 16 例锚定双端测试，改一必改二；B4 ⚠角标随 `getParamKeyLimitRef` 撤除自动消失。
     4. ~~`INT_SIGNED` 负数用 `Math.abs` 而非补码（`-1 → 01`），加工页 hex 输入也无法表达负数~~ **已解决（E1-1，2026-09-23）**：双端按位宽两补码（`orchestrator.encode_int_signed` ↔ `getFieldBytes` INT_SIGNED 分支，byte-equal 向量表 24 例锚定在双端测试，改一必改二）；加工页 hex 输入的补码写法（如 `FF`）经 `RunnerFieldTree` parseInt 归一为 255 → 掩码得同一字节，负数可表达。

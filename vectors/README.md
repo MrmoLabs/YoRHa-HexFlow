@@ -41,14 +41,14 @@ JSON 没有 `Infinity` / `NaN`，而向量里确实要喂这两个值（如 `[Na
   行注见本文末尾「行注归档」。
 - 迁移时已校验：**无任何大于 2⁵³−1 的整数**，JS `Number` 精度无损。
 
-## 3. 表清单（12 文件 / 15 表）
+## 3. 表清单（12 文件 / 16 表）
 
 | JSON | 表 · 行数 | 后端消费 | 前端消费 |
 |---|---|---|---|
 | `int_signed.json` | 24 | `test_encode_int_signed.py::VECTORS` | `InstructionEncoder.test.js` E1-1 |
 | `little_endian.json` | 7 | `test_encode_little_endian.py::VECTORS` | 同上 E1-2 |
 | `bcd_scaled.json` | `bcd` 17 · `scaled` 16 | `test_encode_bcd_scaled.py` | 同上 E1-3 |
-| `float_ieee.json` | 22 | `test_encode_float_ieee.py::VECTORS` | 同上 E1-4 |
+| `float_ieee.json` | `f32` 22 · `f64` 23 | `test_encode_float_ieee.py::VECTORS` / `::VECTORS64` | 同上 E1-4（R5） |
 | `repeat.json` | 11 | `test_encode_repeat.py::VECTORS` | 同上 E1-5 |
 | `time_counter.json` | `time` 5 · `auto` 11 | `test_encode_time_counter.py` | 同上 E1-6 |
 | `string.json` | 13 | `test_encode_string.py::VECTORS` | 同上 STRING |
@@ -145,7 +145,7 @@ JSON 只有一种表达，两端原本的记法差异靠 **3 个稳定适配**�
 - `#10` factor 数字字符串
 - `#11` (7+2.5)=9.5 → floor 9
 
-### float_ieee.json
+### float_ieee.json[f32]
 
 - `#0` [value, expectedHex] — IEEE 754 float32 大端（网络序），恒 4 字节
 - `#12` 严格十进制字符串
@@ -153,6 +153,19 @@ JSON 只有一种表达，两端原本的记法差异靠 **3 个稳定适配**�
 - `#14` 拒指数记法（同 E1-1 正则）→ 0
 - `#17` 非有限 → 0
 - `#20` 超 f32 范围 → +Infinity（IEEE 溢出）
+
+### float_ieee.json[f64]（R5）
+
+- `#0` [value, expectedHex] — IEEE 754 **float64** 大端（网络序），恒 8 字节；同一 JSON
+  分组的两表共用**同一解析口径**（`_float_number` / FE 分支：非有限一律归 0、拒指数记法），
+  只差位宽 —— 因此 NaN / ±Inf 输入在两组里都出全零，不会写出 NaN 位型
+- `#12` `1e40` —— **两种位宽的分水岭**：f32 溢出 `7F800000`、f64 正常 `483D6329F1C35CA5`
+- `#13` `1e300` / `-1e300` —— f32 溢出、f64 有限位型（f64 才能表达的大数域）
+- `#15` 严格十进制字符串 `"3.14"` → 同数字 `3.14`
+- `#16` 非法串 `"FF"` → 0
+- `#17` 拒指数记法 `"1e3"` → 0（同 E1-1 正则）
+- `#18` `true` → 1.0、`#19` `false` → 0.0
+- `#20..#22` `{"$v":"NaN"}` / `{"$v":"Infinity"}` / `null` → 全零
 
 ### little_endian.json
 

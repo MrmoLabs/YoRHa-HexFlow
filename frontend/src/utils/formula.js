@@ -54,10 +54,16 @@ export function formatUnknown(byteLen) {
 
 /**
  * IEEE 754 Floating Point to Hex
- * Supports 4 bytes (Float32) as standard protocol decimal.
+ * byteLen=4 → Float32（8 hex）、byteLen=8 → Float64（16 hex），缺省 4（存量调用
+ * 逐字符不变）；其余长度一律按 f32。
+ *
+ * 注意口径：这里是**裸位型转换**（value 非有限就写出 ±Inf/NaN 位型），与
+ * 指令编码器 InstructionEncoder 的 FLOAT_IEEE 分支**不同** —— 那边先走统一解析
+ * 口径、非有限一律归 0（BE `_float_number` 同款）。改口径请一并改两端与
+ * vectors/float_ieee.json。
  */
-export function formatFloatToHex(value) {
-    const farr = new Float32Array(1);
+export function formatFloatToHex(value, byteLen = 4) {
+    const farr = byteLen === 8 ? new Float64Array(1) : new Float32Array(1);
     farr[0] = value;
     const barr = new Uint8Array(farr.buffer);
     // Standardizing on Big Endian (Network order). Barr is usually Little Endian on x86.

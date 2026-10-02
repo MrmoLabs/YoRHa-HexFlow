@@ -454,7 +454,14 @@ export const resolveRunnerKind = (field = {}) => {
     if (isEnum) return hasOptions
         ? { key: 'MAP', label: 'MAP', title: 'MAP // 枚举映射：从选项表取值' }
         : { key: 'MAP', label: 'MAP', title: 'MAP // 枚举映射（未配置选项表）：手动录入数值，配置 options 后自动出下拉' };
-    if (isOp('FLOAT_IEEE')) return { key: 'F32', label: 'F32', title: 'F32 // IEEE754 float32 大端（恒 4B）：十进制小数录入' };
+    // R5（§8.42）：byte_len=8 起真出 float64 → 章要跟着说 F64，杜绝「章 F32、
+    // 出帧却是 8 字节」的错位；其余位宽仍标 F32（校验 W 已提醒两端不一致）。
+    if (isOp('FLOAT_IEEE')) {
+        const bl = Number(field.byte_len ?? field.byte_length);
+        return bl === 8
+            ? { key: 'F64', label: 'F64', title: 'F64 // IEEE754 float64 大端（恒 8B）：十进制小数录入' }
+            : { key: 'F32', label: 'F32', title: 'F32 // IEEE754 float32 大端（恒 4B）：十进制小数录入' };
+    }
     if (isOp('BCD_CODE')) return { key: 'BCD', label: 'BCD', title: 'BCD // 压缩 BCD：十进制数字逐 nibble 打包（每位 0-9）' };
     if (isOp('SCALED_DECIMAL')) return { key: 'SCALE', label: 'SCALE', title: 'SCALE // 定标整数：编码 =（输入 + OFFSET）× FACTOR' };
     if (isOp('STRING') || params.type === 'string' || params.type === 'text') return { key: 'TEXT', label: 'TEXT', title: 'TEXT // 定长文本：ascii|utf8 编码，pad/截断到 byte_len' };

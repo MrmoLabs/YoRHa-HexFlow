@@ -136,13 +136,18 @@ export function validateInstruction(instruction) {
             warnings.push({ blockId: f.id, code: 'BYTE_LEN_MISSING', message: `「${label || f.id}」字节长度未设置` });
         }
 
-        // --- W4 (G7): float64 配出即静默错码（E1-4 范围外）——FE 落整数路径、
-        // BE 保持 zeros，两端不一致；模板默认 32，陷阱入口是手改 byte_len=8。 ---
-        if (f.op_code === 'FLOAT_IEEE' && Number(f.byte_len) === 8) {
+        // --- W4 (G7 收口 · R5): FLOAT_IEEE 位宽闸 —— 4=float32 / 8=float64 双端
+        // 已支持（§8.42），其余宽度仍落「FE 走整数路径、BE 保持 zeros」的两端不一致，
+        // 配出即提醒。模板默认仍是 32（test_operator_templates 钉死），陷阱入口是手改
+        // byte_len —— R5 之前 8 也报（FLOAT64_UNSUPPORTED），现改成只报真不支持的宽度。 ---
+        if (f.op_code === 'FLOAT_IEEE'
+            && f.byte_len !== undefined && f.byte_len !== null
+            && Number.isFinite(Number(f.byte_len))
+            && ![4, 8].includes(Number(f.byte_len))) {
             warnings.push({
                 blockId: f.id,
-                code: 'FLOAT64_UNSUPPORTED',
-                message: `「${label || f.id}」float64 编码未支持（E1-4 范围外）：前端按整数路径输出、后端保持 zeros（两端不一致）——请改 32 位或 HEX_RAW`,
+                code: 'FLOAT_IEEE_WIDTH_UNSUPPORTED',
+                message: `「${label || f.id}」FLOAT_IEEE 位宽 ${f.byte_len}B 不在支持范围（4=float32 / 8=float64）：前端按整数路径输出、后端保持 zeros（两端不一致）——请改 4/8 位或 HEX_RAW`,
             });
         }
 

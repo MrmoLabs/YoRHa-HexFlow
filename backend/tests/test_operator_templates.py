@@ -2,8 +2,9 @@
 
 - 模板 op_code 不得重复（调色板按 op 唯一键索引）；
 - FLOAT_IEEE `param_template.bits` 首元素 = 新建字段默认位宽（Instruction.jsx
-  只取 rawBits[0]）→ 必须保持 32：float64 是 E1-4 已知范围外，模板若把 64
-  摆进首位会让新字段直接落 FE 整数路径 / BE zeros 的两端不一致陷阱（G7）；
+  只取 rawBits[0]）→ 必须保持 32：**R5（PLAN §8.42）起 float64 双端编码已支持**，
+  但默认位宽仍不改 —— G7 定案「提醒而非改模板」，64 是用户按需手改的可选位宽，
+  模板把 64 摆进首位会改变**所有新建字段的缺省出帧宽度**（行为变更，另排批）；
 - 核心业务算子必须在席（调色板业务覆盖面锁定）。
 """
 import unittest
@@ -19,7 +20,7 @@ class TestOperatorTemplates(unittest.TestCase):
     def test_float_bits_default_is_32(self):
         float_t = next(t for t in SEED_TEMPLATES if t["op_code"] == "FLOAT_IEEE")
         bits = float_t["param_template"]["bits"]
-        self.assertEqual(bits[0], 32, "新建字段默认位宽必须是 32（float64 范围外，G7）")
+        self.assertEqual(bits[0], 32, "新建字段默认位宽必须是 32（64 是可选位宽不进默认 —— G7 定案；R5 §8.42 起 8 字节双端已支持，模板仍不动）")
 
     def test_seed_covers_core_business_ops(self):
         codes = {t["op_code"] for t in SEED_TEMPLATES}

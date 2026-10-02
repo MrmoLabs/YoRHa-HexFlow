@@ -245,12 +245,13 @@ def fields_to_blocks(fields, now=None):
                 hex_value = encode_scaled(
                     cfg.get("value"), cfg.get("factor"), cfg.get("offset"), byte_len
                 )
-        elif op == "FLOAT_IEEE" and byte_len == 4 and not kids:
-            # E1-4 (B2): bits=32（byte_len=4）规范类型静态值出 float32 大端帧
-            # （恒 4 字节），与前端 FLOAT_IEEE 分支 byte-equal；bits=64 与矛盾
-            # type 不在范围，保持既有 zeros 契约外行为。
+        elif op == "FLOAT_IEEE" and byte_len in (4, 8) and not kids:
+            # R5: bits=32（byte_len=4）→ float32 大端 8 hex；bits=64（byte_len=8）
+            # → float64 大端 16 hex —— 两端同一解析口径 `_float_number`（非有限
+            # 一律归 0），与前端 FLOAT_IEEE 分支 byte-equal；其余长度与矛盾 type
+            # 不在范围，保持既有 zeros 契约外行为（前端 W 提醒兜底）。
             if str(cfg.get("type") or "").lower() in ("", "number"):
-                hex_value = encode_float_ieee(cfg.get("value"))
+                hex_value = encode_float_ieee(cfg.get("value"), byte_len)
         elif op == "TIME_ACCUMULATOR" and byte_len > 0 and not kids:
             # E1-6 (B8): 规范类型按墙钟 Current−BaseTime 秒数出帧；now 经
             # fields_to_blocks(now=… ms) 注入，与前端 opts.now 同值 byte-equal。

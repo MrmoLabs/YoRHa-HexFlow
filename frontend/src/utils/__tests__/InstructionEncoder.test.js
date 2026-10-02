@@ -295,7 +295,7 @@ describe('E1-3 BCD 打包 + SCALED 定标（B3/B4 已解 · 双端 byte-equal �
     });
 });
 
-describe('E1-4 FLOAT_IEEE float32（B2 已解 · 双端 byte-equal 锚点）', () => {
+describe('E1-4 FLOAT_IEEE float32 / R5 float64（B2+R5 · 双端 byte-equal 锚点）', () => {
     const hexOf = (bytes) => bytes.map(b => b.toString(16).padStart(2, '0').toUpperCase()).join('');
     const fld = (config = {}, byte_len = 4) => ({
         id: 'x', name: 'X', op_code: 'FLOAT_IEEE', byte_len, sequence: 0,
@@ -303,10 +303,13 @@ describe('E1-4 FLOAT_IEEE float32（B2 已解 · 双端 byte-equal 锚点）', (
     });
 
     // CP2b (D11-①): 单一真相源 = vectors/float_ieee.json —— 两端同读一份，新增向量只写一处。
-    const VECTORS = loadVectors(floatIeeeVec);
+    // R5（§8.42）：该文件已分组 f32 / f64（同解析口径、两种位宽），两边各锚一组。
+    const TAB = loadVectors(floatIeeeVec);
+    const VECTORS = TAB.f32;
+    const VECTORS64 = TAB.f64;
 
     VECTORS.forEach(([value, expected], i) => {
-        it(`vector#${i} ${String(value)} → ${expected}`, () => {
+        it(`f32 vector#${i} ${String(value)} → ${expected}`, () => {
             const bytes = InstructionEncoder.getFieldBytes(
                 fld(), { x: value }, {}, []);
             expect(hexOf(bytes)).toBe(expected);
@@ -328,12 +331,9 @@ describe('E1-4 FLOAT_IEEE float32（B2 已解 · 双端 byte-equal 锚点）', (
         expect(bytes.length).toBe(4);
     });
 
-    it('byte_len≠4（bits=64/2）不在范围：保持既有整数路径现状', () => {
-        const b8 = InstructionEncoder.getFieldBytes(
-            fld({}, 8), { x: 1 }, {}, []);
+    it('byte_len=2 仍不在范围：保持既有整数路径现状', () => {
         const b2 = InstructionEncoder.getFieldBytes(
             fld({}, 2), { x: 1 }, {}, []);
-        expect(hexOf(b8)).toBe('0000000000000001'); // 现状整数编码
         expect(hexOf(b2)).toBe('0001');
     });
 
@@ -365,6 +365,55 @@ describe('E1-4 FLOAT_IEEE float32（B2 已解 · 双端 byte-equal 锚点）', (
         };
         const r = InstructionEncoder.encodeInstruction(instr, {}, {});
         expect(r.hexString).toBe('3F 80 00 00 00');
+    });
+
+    // ── R5（§8.42）· float64 ────────────────────────────────────────────────
+    it('缺省值 → 8 零字节（BE 同口径出 0000000000000000）', () => {
+        const bytes = InstructionEncoder.getFieldBytes(fld({}, 8), {}, {}, []);
+        expect(hexOf(bytes)).toBe('0000000000000000');
+        expect(bytes.length).toBe(8);
+    });
+
+    // 双端 byte-equal 关键锚点：同一输入在 f32 下溢出成 +Inf（7F800000），
+    // f64 正常落位 —— 两种位宽必须分得开，缺省 4 位逐字节不变由上面 f32 组锚定。
+    it('f32/f64 分水岭：1e40 在 4B 出 7F800000（IEEE 溢出）、在 8B 出 483D6329F1C35CA5', () => {
+        expect(hexOf(InstructionEncoder.getFieldBytes(fld(), { x: 1e40 }, {}, [])))
+            .toBe('7F800000');
+        expect(hexOf(InstructionEncoder.getFieldBytes(fld({}, 8), { x: 1e40 }, {}, [])))
+            .toBe('483D6329F1C35CA5');
+    });
+
+    it('静态 parameter_config.value 与运行时输入同口径（f64）', () => {
+        expect(hexOf(InstructionEncoder.getFieldBytes(
+            fld({ value: 3.14 }, 8), {}, {}, []))).toBe('40091EB851EB851F');
+        expect(hexOf(InstructionEncoder.getFieldBytes(
+            fld({}, 8), { x: 3.14 }, {}, []))).toBe('40091EB851EB851F');
+    });
+
+    it('FLOAT_IEEE × LITTLE 联动（f64）：3FF0000000000000 → 字节整体逆序 000000000000F03F', () => {
+        const bytes = InstructionEncoder.getFieldBytes(
+            { ...fld({}, 8), endianness: 'LITTLE' }, { x: 1 }, {}, []);
+        expect(hexOf(bytes)).toBe('000000000000F03F');
+        expect(bytes.length).toBe(8);
+    });
+
+    it('encodeInstruction 组装：FLOAT_IEEE byte_len=8 + FIXED 00 → 8B + 1B', () => {
+        const instr = {
+            fields: [
+                { id: 'a', op_code: 'FLOAT_IEEE', byte_len: 8, sequence: 0, parameter_config: { value: 1 } },
+                { id: 'b', op_code: 'FIXED', byte_len: 1, sequence: 1, parameter_config: { hex: '00' } },
+            ],
+        };
+        const r = InstructionEncoder.encodeInstruction(instr, {}, {});
+        expect(r.hexString).toBe('3F F0 00 00 00 00 00 00 00');
+    });
+
+    VECTORS64.forEach(([value, expected], i) => {
+        it(`f64 vector#${i} ${String(value)} → ${expected}`, () => {
+            const bytes = InstructionEncoder.getFieldBytes(
+                fld({}, 8), { x: value }, {}, []);
+            expect(hexOf(bytes)).toBe(expected);
+        });
     });
 });
 

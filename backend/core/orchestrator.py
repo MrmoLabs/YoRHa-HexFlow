@@ -306,18 +306,29 @@ def _float_number(value) -> float:
     return 0.0
 
 
-def encode_float_ieee(value) -> str:
-    """E1-4 (B2): FLOAT_IEEE 值 → IEEE 754 float32 大端（网络序）8 hex，恒 4 字节。
+def encode_float_ieee(value, byte_len: int = 4) -> str:
+    """R5: FLOAT_IEEE 值 → IEEE 754 大端（网络序）hex。
 
-    有限值经 struct '>f' 转换（round-to-nearest-even，与 JS Float32Array 同）；
-    超出 f32 表示范围 → ±Infinity（IEEE 溢出，对齐 JS Float32Array 转换语义）。
-    与前端 getFieldBytes 的 FLOAT_IEEE 分支 byte-equal（改一必改二）。
+    - ``byte_len == 4``（bits=32）→ ``>f``，8 hex，**恒 4 字节**（存量行为，
+      缺省参数即此路径，逐字节不变）；
+    - ``byte_len == 8``（bits=64）→ ``>d``，16 hex，**恒 8 字节**（R5 新增）；
+    - 其余长度 → 仍按 f32 出（调用方 ``datahub.to_block`` 只在 4/8 分派，
+      契约外长度由 W 提醒兜底，保持既有缺省不放大影响面）。
+
+    有限值经 struct 转换（round-to-nearest-even，与 JS Float32Array/Float64Array
+    同）；f32 超出表示范围 → ±Infinity（IEEE 溢出，对齐 JS Float32Array 语义）。
+    解析口径 `_float_number` 两端共用：**非有限值一律归 0**，故 NaN/±Inf 输入
+    两种位宽都出全零（f64 亦然，不会真的写出 NaN 位型）。
+
+    与前端 getFieldBytes 的 FLOAT_IEEE 分支 byte-equal（改一必改二），
+    向量表 vectors/float_ieee.json 的 f32/f64 两组锚定双端测试。
     """
     f = _float_number(value)
+    fmt = ">d" if byte_len == 8 else ">f"
     try:
-        packed = struct.pack(">f", f)
+        packed = struct.pack(fmt, f)
     except OverflowError:
-        packed = struct.pack(">f", math.copysign(math.inf, f))
+        packed = struct.pack(fmt, math.copysign(math.inf, f))
     return packed.hex().upper()
 
 

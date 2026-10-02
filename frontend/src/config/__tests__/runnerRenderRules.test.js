@@ -495,6 +495,18 @@ describe('第 14 单：resolveRunnerKind 种类章', () => {
         expect(kindOf(leaf({ op_code: 'INT_UNSIGNED', byte_len: 1, parameter_config: {} }))).toMatchObject({ key: 'UINT' });
     });
 
+    // R5（§8.42）：byte_len=8 真出 float64 → 章标 F64；4 / 未设宽度维持 F32。
+    it('R5 FLOAT_IEEE 位宽出章：8 → F64，4 / 缺省 → F32', () => {
+        expect(kindOf(leaf({ op_code: 'FLOAT_IEEE', byte_len: 8, parameter_config: {} })))
+            .toMatchObject({ key: 'F64', label: 'F64' });
+        expect(kindOf(leaf({ op_code: 'FLOAT_IEEE', byte_len: 8, parameter_config: {} })).title)
+            .toMatch(/float64/);
+        expect(kindOf(leaf({ op_code: 'FLOAT_IEEE', byte_len: 4, parameter_config: {} })))
+            .toMatchObject({ key: 'F32', label: 'F32' });
+        expect(kindOf(leaf({ op_code: 'FLOAT_IEEE', parameter_config: {} })))
+            .toMatchObject({ key: 'F32' });
+    });
+
     it('枚举 → MAP；位域 → BIT；计数 → CNT；组 → STRUCT/ARRAY；旧算子/兜底 → IN/HDR/VAR', () => {
         expect(kindOf(leaf({ op_code: 'MAPPING', parameter_config: { options: { A: 1 } } }))).toMatchObject({ key: 'MAP' });
         expect(kindOf(leaf({ op_code: 'INPUT', parameter_config: { options: [1, 2] } }))).toMatchObject({ key: 'MAP' });

@@ -333,14 +333,17 @@ export const InstructionEncoder = {
             return this.parseHexBytes(kept.padStart(nibbleCount, '0'));
         }
 
-        // E1-4 (B2): FLOAT_IEEE → IEEE 754 float32 大端（网络序），恒 4 字节。
-        // 仅 byte_len===4（bits=32）且规范 type（缺省/number）时生效；bits=64
-        // （byte_len=8）与矛盾 type 不在范围，保持现状（同 E1-1 原则）。
+        // R5: FLOAT_IEEE → IEEE 754 **大端（网络序）**：byteLen===4（bits=32）出
+        // 4 字节、byteLen===8（bits=64）出 8 字节；其余长度（bits=64 手改成 2 等
+        // 契约外值）与矛盾 type 不在此分支，保持既有整数/string 路径现状。
         // 解析口径：number 原样 / 严格十进制字符串（同 E1-1 正则）→ Number /
-        // bool → 1|0 / 其余 → 0；非有限（NaN/±Infinity/超范围）→ 0；有限值经
-        // Float32Array 转换（超 f32 表示范围 → ±Infinity，IEEE 溢出）。
-        // 与 backend orchestrator.encode_float_ieee byte-equal，向量表锚定双端测试。
-        if (op === 'FLOAT_IEEE' && byteLen === 4
+        // bool → 1|0 / 其余 → 0；**非有限（NaN/±Infinity/超 JS 可表示范围）→ 0**，
+        // 与 BE `_float_number` 同口径 —— 故 f64 也**不会**写出 NaN/Inf 位型。
+        // 有限值经 Float32Array / Float64Array 转换（round-to-nearest-even；f32 超
+        // 表示范围 → ±Infinity，IEEE 溢出）。
+        // 与 backend orchestrator.encode_float_ieee byte-equal，向量表
+        // vectors/float_ieee.json 的 f32/f64 两组锚定双端测试（改一必改二）。
+        if (op === 'FLOAT_IEEE' && (byteLen === 4 || byteLen === 8)
             && ['', 'number'].includes(String(params.type ?? '').toLowerCase())) {
             let base = 0;
             if (typeof value === 'number') base = value;
@@ -348,7 +351,7 @@ export const InstructionEncoder = {
             else if (typeof value === 'boolean') base = value ? 1 : 0;
             else base = 0;
             if (!Number.isFinite(base)) base = 0;
-            const farr = new Float32Array(1);
+            const farr = byteLen === 8 ? new Float64Array(1) : new Float32Array(1);
             farr[0] = base;
             return Array.from(new Uint8Array(farr.buffer)).reverse(); // 平台小端 → 大端
         }

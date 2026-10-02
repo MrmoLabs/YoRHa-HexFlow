@@ -39,7 +39,7 @@
 | CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | **已提交 ✅ 3a `e63d76f`（代码+文档）/ `438f3af`（db 同步）、3b `c4b1f7f`（代码+文档，零 DDL）、3c `fbad083`（代码+文档）/ `17c6830`（db 同步）、3d `77dd389`（代码+文档）/ `bb7a0ba`（db 同步），2026-10-01 —— CP3 四个子批全数完成**。硬前置 CP2 ✅；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**。**3a 含 DDL**（`frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈）→ yorha.db 单独同步提交；**3a 提前并入了原属 3b 的 `dispatch` `wrap.recipe_id` 接线**（加工页预览/TRANSMIT/事务三路须同字节，缺接线则预览帧与出线帧不同）。3a 终态：BE 466/466（基线 426 + 40）、FE 920/920（63 文件，基线 915 + 5）、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、**真路由冒烟 25 项 PASS**；明细见 §8.21。**3b 终态**：**纯前端批、零 DDL**（未改 `models.py`/`database.py`，`yorha.db` 未随本批提交）—— FE **924/924（63 文件，基线 920 + 4）**、既有「属性面板四分区 select = 3」用例**零改全绿**（未建配方时编辑器不占 select）、BE 466/466、`npx vite build` EXIT=0、yorha-ui 校验器 3 文件 0 违规、**真 curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；明细见 §8.22。**3c 终态（2026-10-01）**：**含 DDL** —— `sequence_steps` 新增 `wrap JSON` 单列自愈（`database.ensure_sequence_step_columns`，镜像 3a `ensure_recipe_columns` 先例）→ yorha.db **单独同步提交**；BE **496/496（基线 466 + 30）**、FE **932/932（63 文件，基线 924 + 8）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**真路由冒烟 30 项 ALL PASS** + **真浏览器 UI 验证 6 项通过**；明细见 §8.23。**3d 终态（2026-10-01）**：**含 DDL** —— **3 列仅新增**<br>（`response_specs.stage` / `response_specs.definition_hash` /<br>`protocol_bindings.definition_hash`，`ensure_response_spec_columns` 新建 +<br>`ensure_binding_columns` 扩列自愈，lifespan 接线）→ yorha.db 沿先例<br>**手工只跑 3 条 ALTER 后单独同步提交**；BE **537/537（基线 496 + 41）**、<br>FE **944/944（63 文件，基线 932 + 12）**、`npx vite build` EXIT=0、yorha-ui<br>校验器 8 文件 0 违规、**真路由冒烟 43 项 ALL PASS**；明细见 §8.24。**§9.7 人工验证收口（2026-10-02）**：3a①②③ + 3b①②③ + 编排页「洞位填装 → 封装试发」**8 项真浏览器 + `/dispatch/history` 对账复跑全过**（含 400 逐槽拦截与「未选配方 = 建配方前基线 28B 逐字节相同」），三处文档（§9.7 / `pageStatus.json` / HANDOVER 35·36 待办①）口径已统一，明细 §8.27 |
 | CP4 | Core Pipeline 批次四（治理）：**4a** 关系数据导入导出（`bindings` + `response_specs` 并入 DataHub ZIP `relations.json` + `POST /datahub/import/relations`）/ **4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 回执」+ D9/D10 划界落 README/PAGE_STATUS / **4c** D8 校验表全量核对（逐行销项，纯文档）（明细 `DESIGN_CorePipeline.md` §7 批次四） | 🔄 **4a 已提交 ✅ `54620ab`（代码+文档，零 DDL），2026-10-02**：导出 ZIP 增 `relations.json`（`manifest` 增 `relations` 计数、`/status` 增 `protocolBindings`/`responseSpecs` 两行计数）+ 回灌端点按 `id` upsert、逐行报告（父缺失 → `skipped` 带 reason、槽悬空 → 置 NULL + warning、默认唯一冲突清旧行、`spec` 过 `normalize_spec` / `stage` 重算镜像 / 出处原样回填）、**部分成功即部分落库不整批回滚**；前端 DataHub 增「关系数据」面板（选文件 → 解析校验 → 确认弹窗 → 回显 新增/更新/跳过/警告 计数 + 刷新）。终态 BE **549/549**（基线 537 + 12）、FE **948/948**（63 文件，基线 944 + 4）、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**；明细见 §8.25。**4b+4c 已提交 ✅ `03b25d3`（代码+文档，零 DDL），2026-10-02**：**4b** 绑定矩阵只读面板（`utils/bindingMatrix.js` 纯函数 + DataHub 页六列表 + 摘要八项计数；孤儿不静默 —— 协议已删 / 槽悬空 / `stale===true` 琥珀标出；三读与状态面板同拍、单读失败互不拖垮）+ D9/D10 划界落 `README.md` §6 Scope Boundaries 与 `pageStatus.json` 四页条目（`PAGE_STATUS.md` 再生）；**4c** 全量核对新增 `DESIGN_CorePipeline.md` §6.3 销项表 —— 8 行**全「已有」、0 待补**，§6.2 槽节点行复核为批次二已落地（`dangling_slots_cleared`）→ **本批零后端改动**（BE 用例数持平），`DESIGN_Decisions.md` D8/D9/D10 三表行 + 三处实施注（D9-B/D10-B 重开条件已具备**仍取 A**）。终态 BE **549/549**（持平）、FE **958/958（64 文件，基线 948 + 10）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**人工验证 3 项通过**；明细见 §8.26。**批次四三子批（4a/4b/4c）全数完成** |
 | C 已拍 | **5 项拍板已收齐**（§8.36 拍板结果表：C-1 自动选指令路由 / C-2 响应解码为字段 / C-3 全量项目包迁移 / C-4 应答带转义 / C-5 三项暂缓；另含 R6 方案） | ✅ **2026-10-02 全部拍定**：C-1=**A 不立项** / C-2=**C** / C-3=**C** / C-4=**确认接受** / C-5=**①② 触发式、③ 不做** / R6=**13 表加 `deleted_at`** → 编入 **R7–R10** |
-| R1–R10 | **B2 六项功能缺口 + 拍板选中项排期**（导入 pre-import 快照 / 传输配置上一配置回退 / ESLint 存量 / 编排页绑定拖拽 / float64 双端 / 软删除回收站 + C-3 补域 2 批 + C-2 解码 2 批）—— 顺序 = 先安全网 → 清欠账 → 体验 → 正确性 → 最后动 DDL | 🔄 **R1 ✅ §8.38 / R2 ✅ §8.39 / R3 ✅ §8.40 / R4 ✅ §8.41 已完成（2026-10-02）**，余 R5–R10 未开始（**R4 ✅ 已按拍板落地**：拖完只改展示序、点保存按钮才改持久序；**自 R3 起 `npm run lint` EXIT=0 进验收门槛**；§8.37；R1–R6 = 7–8 批 + R7–R10 = 4 批 → 合计 **11–12 批**，R6/R10 含 DDL 仅新增列） |
+| R1–R10 | **B2 六项功能缺口 + 拍板选中项排期**（导入 pre-import 快照 / 传输配置上一配置回退 / ESLint 存量 / 编排页绑定拖拽 / float64 双端 / 软删除回收站 + C-3 补域 2 批 + C-2 解码 2 批）—— 顺序 = 先安全网 → 清欠账 → 体验 → 正确性 → 最后动 DDL | 🔄 **R1 ✅ §8.38 / R2 ✅ §8.39 / R3 ✅ §8.40 / R4 ✅ §8.41 / R5 ✅ §8.42 已完成（2026-10-02）**，余 R6–R10 未开始（**R4 ✅ 已按拍板落地**：拖完只改展示序、点保存按钮才改持久序；**R5 ✅ 已落地**：float64 双端 + 向量 `f64` 组、缺省 `f32` 逐字节不变（§8.42）；**自 R3 起 `npm run lint` EXIT=0 进验收门槛**；§8.37；R1–R6 = 7–8 批 + R7–R10 = 4 批 → 合计 **11–12 批**，R6/R10 含 DDL 仅新增列） |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -191,8 +191,9 @@
 > 十进制字符串（同 E1-1 正则，拒 `1e3`/`0x`/`FF`）/ bool→1|0 / 其余→0；非有限
 > （NaN/±Infinity）→ 0；有限值经 Float32Array 转换，超 f32 表示范围 →
 > ±Infinity（IEEE 溢出，`struct.pack('>f')` OverflowError → copysign inf 对齐）。
-> **范围外保持现状**：bits=64（byte_len=8）仍走整数路径 / BE zeros（float64 不在
-> E1-4 范围，如需另立）；矛盾 type=float/string/hex 模板不会产生，FE 走既有分支、
+> **范围外保持现状 → 已由 R5（§8.42）收口（2026-10-02）**：~~bits=64（byte_len=8）
+> 仍走整数路径 / BE zeros~~ → **双端 float64 分支已落地**，向量表分 `f32`/`f64` 两组；
+> 矛盾 type=float/string/hex 模板不会产生，FE 走既有分支、
 > BE 保持 zeros 契约外（同 E1-1 原则）。落点：`getFieldBytes` FLOAT_IEEE 分支
 > （BCD 分支后）、`orchestrator.encode_float_ieee + _float_number`（`import struct`）、
 > `fields_to_blocks` elif（`byte_len == 4` + 规范 type 静态值出帧）。
@@ -1294,7 +1295,7 @@
 > 全集一次盘满。盘查结论落档 **`docs/BUSINESS_SCENARIOS.md`**（四层能力矩阵 +
 > 缺口 G1–G7 + 挂账清单），本节是其排期执行面。已立暂缓项（CRC 多算法 /
 > 长度域 BE/LE / varint·COBS / 解码回程，§8.14）与已知范围外（float64，E1-4
-> 口径）不重复排。
+> 口径 —— **后由 §8.42 R5 收口，已不是范围外**）不重复排。
 >
 > **提交序与并行边界**：
 > - 先按 §8.13–8.15 完成六单（批 1-4 四单 + 优化批 + 标色批）人工验证与提交；
@@ -1310,6 +1311,9 @@
   当前 FE 按整数路径输出、BE 保持 zeros（两端不一致）——请改 32 位或 HEX_RAW」。
   模板 `bits:[32,64]` **不动**（`Instruction.jsx:243-251` 只取首元素作默认，
   32 本就是默认；真正陷阱入口是手改 byte_len，校验才是正解）。
+  **后记（2026-10-02 · R5，§8.42）**：float64 双端编码已落地 → 该提醒**收窄**成
+  `FLOAT_IEEE_WIDTH_UNSUPPORTED`（只报 4/8 以外的位宽），`byte_len=8` 不再报；
+  模板 `bits:[32,64]` 仍不动（默认 32 口径不变）。
 - 范围 b（G5 护栏）：`validateInstruction` 新增 W `OP_UNKNOWN`——`op_code` 不在
   已知全集（`OP_CODES` 14 项 ∪ encoder legacy `INPUT/FIXED/HEADER/TAIL/CALCULATED`）
   → 提醒「未知算子，编码将落默认整数路径静默出错」。BE 保存侧白名单**挂账**
@@ -2612,9 +2616,10 @@ hash + 本批）。
 - **B2 纯功能缺口（✅ 已排期 → §8.37 批 R1–R6，2026-10-02 用户授权）**：
   3. 编排页「绑定拖拽排序」**拖拽交互未实现**（现状 = 上移 / 下移按钮；§8.28 标为
      功能项而非验证项）；
-  4. **float64 编码仍不可用**（FE 走整数路径 / BE 保持 zeros，两端不一致；N1 已摘
+  4. ~~**float64 编码仍不可用**（FE 走整数路径 / BE 保持 zeros，两端不一致；N1 已摘
      静默 → `FLOAT64_UNSUPPORTED` 提醒，G7 定案「提醒而非改模板」），真正修复 = 双端
-     float64 分支，未立项；
+     float64 分支，未立项~~ → **✅ 已由 §8.42（R5）收口**（2026-10-02：双端 float64
+     分支 + 向量表 `f64` 组 + 提醒收窄到 4/8 以外位宽）；
   5. ~~数据导入 `POST /datahub/import/*` **无 pre-import 自动快照**（恢复有
      `pre-restore` 快照、导入没有 —— 风险不对称，§8.33 登记）~~ → **✅ 已由 §8.38
      （R1）收口**（2026-10-02：`safety_snapshot()` + 响应 `preImportSnapshot` +
@@ -2968,7 +2973,7 @@ R9–R10（C-2，2 批）—— 明细与追加理由见 §8.37。
 | **R2** | 7 · 传输配置无**上一配置回退** → **已落地（§8.39）** | BE+FE | 小（1 批） | 否 | ✅ **2026-10-02 完成**：`transport.set_config` 每次真变更压栈（有界 20）+ `revert_config()` 弹栈 + `POST /transport/config/revert`（无历史 → 400）+ `status.configHistoryDepth`（0 → 按钮置灰）+ 通讯调试页 REVERT 按钮；生效语义与 APPLY 一致（断连 + 落库 + 留痕），**回退本身不入栈**（可连退多版、退空即止），**启动装载不入栈**（`record_history=False`，否则一开机点回退就被重置回默认）；零 DDL → 栈重启即空 |
 | ~~**R3**~~ ✅ | 8 · **ESLint 存量**清理 → **已清零（§8.40）** | FE | 中（1 批，**60 problems / 26 文件**） | 否 | ✅ **2026-10-02 完成**：`npm run lint` **EXIT=0、0 problems / 0 文件**（60 → 0，涉 27 文件）。**纪律落地 = 只删未用变量 + 加带理由的 disable，不改行为**；过程中撞出 **2 处真问题并顺手修掉**：`ParamConfigForm` 的 **conditional hook**（`if (!template) return null` 写在 `useEffect` 之前 → op_code 切到无模板指令时**钩子数跳变**，已改成「无模板判断进 effect 体内 + 早退挪到钩子之后」）、`NieRDatePicker` 的 **先用后声明**（`initDate` 声明在 effect 之后，已重排）。`no-control-regex` = **有意的**控字符校验 → 注释 disable。**自本批起 `npm run lint` EXIT=0 进验收门槛** |
 | ~~**R4**~~ ✅ | 3 · 编排页**绑定拖拽排序** → **已落地（§8.41）** | FE | 中（1 批） | 否 | ✅ **2026-10-02 完成**：拍板口径 = **拖完只改展示序，点保存按钮才改持久序** —— 拖拽只在本地重写 `slot_order`（侧栏展示序按 (协议序, 洞号) 派生 → 立刻重排、填装预览跟着变），**零即时 PUT**；「保存更改 (SAVE)」才把**真变化的行**逐行落库，与洞位下拉**同一条持久化路径**，**零 BE 改动**。实现 = `utils/reorderBindings.js` 纯函数（拖拽/下拉共用，跨协议组直接忽略）+ `@dnd-kit/core` 把手（8px 起拖，只挂 listeners 不挂 attributes）+ `BindingRow` 抽组件（**钩子不进 `.map()`**）。**更正原行「现状 = 上移/下移按钮」**：实测**只有洞位下拉、无上下移按钮**；原行提的丢弃提示 —— 刷新**已有** `beforeunload` 拦截（`dirtyRef`）、协议切换**不丢稿**（脏行按行驻留），故**无需新增** |
-| **R5** | 4 · **float64 编码**双端不一致 | BE+FE+向量 | 中（1–2 批） | 否 | 现状 = N1 摘静默 → `FLOAT64_UNSUPPORTED` 提醒、G7「提醒而非改模板」；真正修复 = `formula.js` + BE 编解码 + **`vectors/float_ieee.json` 扩 float64 组（双端同一期望）** + **`response_match` 解码侧同步**（否则能发不能判）；**动编码器 → 必须证明缺省逐字节不变** |
+| ~~**R5**~~ ✅ | 4 · **float64 编码**双端不一致 → **已落地（§8.42）** | BE+FE+向量 | 中（1 批） | 否 | ✅ **2026-10-02 完成**：`byte_len=8` 双端真出 IEEE 754 float64 大端 —— BE `encode_float_ieee(value, byte_len=4)`（**缺省参 = 存量 f32 行为**）+ `>d`、`datahub.to_block` 分派 `byte_len in (4, 8)`；FE `getFieldBytes` 改 `byteLen ∈ {4, 8}` → `Float64Array`；`vectors/float_ieee.json` **分组 `f32`（22 行，一字节未改）/ `f64`（23 行，新）** —— `bcd_scaled.json` / `time_counter.json` 本就是「同语义多表」分组先例，同一解析口径只差位宽放同一文件；提醒 `FLOAT64_UNSUPPORTED` **收窄**为 `FLOAT_IEEE_WIDTH_UNSUPPORTED`（只报 4/8 以外）；`resolveRunnerKind` 章按位宽出 F32 / F64。**更正原行「`response_match` 解码侧同步（否则能发不能判）」—— 实测不成立**：`backend/core/response_match.py` 全文 **零值解码**（547 行只做 prefix / suffix / echo_header_bytes / length / checksum / unpack 六类**字节级**比对，`sent`/`received` 都是 `bytes`；全仓 grep `struct.unpack`、`'>f'`、`'>d'` 零命中）→ 判定天然与位宽无关，**`response_match` 零改动**；真缺口在**编译侧 `datahub.to_block`**（保持 zeros → 服务端编译/导出与 FE 两套帧），本批一并修。**缺省逐字节不变证明** = `f32` 22 例两端原样全绿 + `encode_float_ieee` 单参回归 + `test_default_arg_stays_f32` 显式断言 `f(v) == f(v, 4)` + 改前 BE 644 / FE 990 全量零改动全绿 |
 | **R6** | 6 · **软删除 / 回收站** | BE+FE | 大（2 批：DDL + FE） | **是（仅新增列/表）** | **先拍「列 vs 表」**：① 13 张表统一加 `deleted_at`（**仅新增列，合 §0**，读端点过滤）—— 省、但每张表都要动；② 新表 `trash_bin(id, entity_type, entity_id, payload_json, deleted_at, purged_at)` —— 集中、但写路径要双写。引用检查与前端确认**沿用现成**，DataHub 备份仍是最终兜底 |
 
 **R3 实测分布**（`npm run lint`，HEAD 实测，用作排期依据）：`no-unused-vars` **23** /
@@ -2992,7 +2997,8 @@ R9–R10（C-2，2 批）—— 明细与追加理由见 §8.37。
 **验收口径（每批）**：BE `python -m unittest discover -s backend/tests -t backend/tests`
 全绿、FE `npx vitest run` 全绿、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、
 `pageStatus.json` 有改动则重生成 `PAGE_STATUS.md`；**自 R3 起加 `npm run lint`
-EXIT=0**（R1/R2/R4/R5 不提前引入 lint 门槛，避免把存量债转嫁到功能批）。
+EXIT=0**（R1/R2 不提前引入 lint 门槛，避免把存量债转嫁到功能批；R3 已把存量清零 →
+**R4/R5 起该门槛对每一批同样生效**）。
 
 **拍板后追加（2026-10-02 拍板 → §8.36 拍板结果表）—— R7–R10**
 
@@ -3269,6 +3275,93 @@ R3 改到该文件就必须过校验器 → 顺手清：去掉 blur 与圆角、
 
 **文档同步（同批）**：本节 §8.41、§8.37 R4 行（标已办 + 现状更正）、§1 `R1–R10` 状态、
 `PROJECT_HANDOVER.md` 条目 50。
+
+### 8.42 R5 · float64 编码双端（缺省 f32 逐字节不变）
+
+**批次**：2026-10-02 · BE + FE + 向量（**零 DDL**；未碰 `models.py`、`processor.py` /
+`graph.py` / `Blueprint.jsx`，`/dispatch` 缺省口径不变）。
+
+**目标（§8.37 R5 行）**：`FLOAT_IEEE` + `byte_len=8`（bits=64）在两端从「FE 落整数路径 /
+BE 保持 zeros 的**静默不一致**」变成**真出 IEEE 754 float64 大端**，并且**动了编码器也
+要证明缺省逐字节不变**。
+
+**为什么它是「双端不一致」而不是「功能缺失」**：R5 之前 `byte_len=8` —— FE 走默认整数
+编码出 `0000000000000001`，BE `datahub.to_block` 那一支 `byte_len == 4` 不命中 → 保持
+zeros。**同一份指令，本地试发与服务端编译/导出给出两种不同的帧**。N1（§8.16）当时只能
+挂 `FLOAT64_UNSUPPORTED` 提醒（G7 定案「提醒而非改模板」），真正修复就是本批的双端分支。
+
+**落地**
+
+1. **BE `backend/core/orchestrator.py` · `encode_float_ieee(value, byte_len=4)`**
+   - 新增 `byte_len` 形参，**缺省 4 = 存量行为**：`byte_len == 8` → `struct.pack(">d")`
+     出 16 hex，否则仍 `">f"`（契约外长度由调用方分派闸挡住，不放大影响面）。
+   - 解析口径 `_float_number` **一字未改**：非有限一律 → 0，所以 NaN / ±Inf 输入在 f64
+     下同样出全零，**不会写出 NaN 位型**（与 FE 同口径）。
+   - `backend/routers/datahub.py` 的 `to_block` 分派条件 `byte_len == 4` →
+     `byte_len in (4, 8)`。
+   - LITTLE 走 `orchestrator.py` 的**字节整体逆序**，与宽度无关 → f64 自动成立（补测）。
+2. **FE `frontend/src/utils/InstructionEncoder.js` · `getFieldBytes`**
+   - `byteLen === 4` → `(byteLen === 4 || byteLen === 8)`，`new Float32Array(1)` →
+     `byteLen === 8 ? new Float64Array(1) : new Float32Array(1)`；解析正则、
+     `Number.isFinite` 归 0、平台小端 → 大端的 `.reverse()` 全部复用，
+     **4 位分支的判断与取值逐字符未动**。
+3. **`frontend/src/utils/formula.js` · `formatFloatToHex(value, byteLen = 4)`（补口）**
+   - 这是**裸位型转换**工具（非有限就写出 ±Inf / NaN 位型），与指令编码器的「先解析、
+     非有限归 0」口径**不同** —— 加宽度参数 + 把两套口径的差异写进 docstring。
+   - 全仓 grep `formatFloatToHex` **零调用方** → 改它零行为风险。
+4. **`frontend/src/utils/validateInstruction.js` · 提醒收窄**
+   - `FLOAT64_UNSUPPORTED`（`byte_len === 8` 报）→ **`FLOAT_IEEE_WIDTH_UNSUPPORTED`**
+     （`byte_len ∉ {4, 8}` 才报），message 改「4=float32 / 8=float64」。
+   - 全仓 grep 该 code 只有 `validateInstruction.js` 与其测试两处（**无 UI 按 code 分派**）
+     → 改名无副作用。
+5. **`frontend/src/config/runnerRenderRules.js` · 章随位宽走**
+   - `resolveRunnerKind` 的 `FLOAT_IEEE` 分支 → `byte_len === 8` 出 **F64** 章、否则 F32
+     —— 杜绝「章写 F32、出帧却是 8 字节」的错位（本批之前 `key` 恒为 F32）。
+6. **`vectors/float_ieee.json` → 分组 `{ "f32": [...], "f64": [...] }`（不拆文件）**
+   - 理由：`bcd_scaled.json`（bcd/scaled）、`time_counter.json`（time/auto）、
+     `presence.json`（leaf/group）**已是「同语义多表」的分组先例**（README §3 口径）；
+     float32 / float64 是**同一解析口径的两种位宽**，放同一文件一眼看出「只差位宽」，
+     且两端仍是同一份 JSON、新增向量只写一处。
+   - `f32` **22 行一字节未改**（缺省不变的物证），`f64` 新增 **23 行**。
+   - 关键锚点：`1e40` 在 f32 出 `7F800000`（IEEE 溢出）、f64 出 `483D6329F1C35CA5`；
+     `1e300` / `-1e300` 只有 f64 能落有限位型；`"1e3"`（拒指数记法）、`"FF"`（非法串）、
+     `{"$v":"NaN"}` / `{"$v":"Infinity"}` / `null` 在 f64 组同样 → 全零。
+
+**`response_match` 解码侧 —— 更正 §8.37 原行的说法**
+
+原 R5 行写「`response_match` 解码侧同步（否则能发不能判）」。**实测不成立**：
+`backend/core/response_match.py` 全文**没有任何值解码** —— 547 行只有
+`prefix / suffix / echo_header_bytes / length / checksum / unpack` 六类 stage 的
+**字节级**比对（`match_response(spec, sent: bytes, received: bytes, ...)`，两侧都是
+`bytes`）；全仓 grep `struct.unpack`、`'>f'`、`'>d'` **零命中**。所以判定路径**天然与
+位宽无关**：出线帧对了，echo / length / checksum 就对。真正的「判读缺口」在**编译侧
+`datahub.to_block`**（保持 zeros → 服务端编译/导出与 FE 两套帧），本批已一并修掉 ——
+**`response_match` 零改动**。
+
+**测试（BE 644 → 648；FE 990 → 1020，67 文件）**
+
+- BE `test_encode_float_ieee.py` **6 → 10 例**：`VECTORS64`（23 行）、
+  `test_default_arg_stays_f32`（**缺省参数逐字节等同改前**）、
+  `test_byte_len_8_emits_float64`（`to_block` 分派真出 8 字节）、
+  `test_f32_f64_dividing_line`（`1e40` 两种位宽）、缺省 8 零字节、f64 矛盾 type 仍
+  zeros、f64 LITTLE 逆序；`f32` 22 例**原样保留**。
+- FE `InstructionEncoder.test.js` **187 例**（+23 f64 向量 + 5 锚点）：f32 组原样保留、
+  分水岭、f64 静态/输入同口径、f64 LITTLE、`encodeInstruction` 组装 8B + 1B。
+- FE `validateInstruction.test.js` **+1 例**（G7 收窄成三条：8 不报 / 2 报 / 4·8 都不报）。
+- FE `runnerRenderRules.test.js` **+1 例**（F64 章；4 与缺省仍 F32）。
+- **缺省逐字节不变的证据链**：`f32` 22 行向量两端原样全绿 + `encode_float_ieee` 单参
+  调用回归 + `test_default_arg_stays_f32` 显式断言 `f(v) == f(v, 4) == 期望` +
+  改前 BE 644 / FE 990 全量零改动全绿。
+
+**验收**：`npm run lint` **EXIT=0**、**BE 648/648**、**FE 1020/1020（67 文件）**、
+`npx vite build` EXIT=0、yorha-ui 校验器 **0 违规**（7 个改动 .js）；零 DDL；
+`pageStatus.json` 未改（无需重生成 `PAGE_STATUS.md`）。
+
+**文档同步（同批）**：本节 §8.42、§8.37 R5 行（标已办 + 更正 `response_match` 说法）、
+§1 `R1–R10` 状态、§8.16 N1 后记与引子、E1-4 进度块、B2 缺口第 4 条、§8.37 验收口径、
+`vectors/README.md`（表清单 16 表 + `[f64]` 组说明）、`docs/BUSINESS_SCENARIOS.md`
+（浮点 64 位行 / G7 行 / §8.14 注）、`PROJECT_HANDOVER.md` 条目 51 与 E1-4 已知缺口
+第 1 条、`test_operator_templates.py` 注释。
 
 ## 9. 保留勿动（非任务，勿清理）
 

@@ -11,7 +11,8 @@
 > - `PLAN_Backlog.md` §8.14 调研差距表：已做 1-4（BIN 三态 / 位段值表 /
 >   有符号位段 / 位号标尺）；**已立暂缓**：CRC 多算法（CCITT/CRC32/LRC）、
 >   长度域 BE/LE、varint/COBS 组帧、解码回程（后端 encode-only 边界）。
-> - `PROJECT_HANDOVER.md` E1-4：float64 编码**范围外保留现状**（如需另立子项）。
+> - `PROJECT_HANDOVER.md` E1-4：float64 编码~~范围外保留现状（如需另立子项）~~
+>   **已立项并落地 —— R5 / PLAN §8.42（2026-10-02），不再是范围外**。
 > - 定级图例：✅ 覆盖 ｜ ⚠️ 半残（有功能但有坑）｜ 🔴 真缺口 ｜ ⏸ 已立暂缓
 >   ｜ ⚪ 软缺口（有替代，挂账）。
 
@@ -21,7 +22,7 @@
 |---|---|---|
 | 无符号 / 有符号定宽整数 8-64b | ✅ | `InstructionEncoder` INT_UNSIGNED 默认路径 + INT_SIGNED 补码分支，双端 byte-equal |
 | 浮点 32 位 | ✅ | E1-4 向量锚定（`encode_float_ieee` ↔ FLOAT 分支） |
-| 浮点 64 位 | 🟡 | **已摘静默**（N1 校验提醒 `FLOAT64_UNSUPPORTED` 配出即提醒）：编码仍不可用——FE 落整数路径、BE 保持 zeros，两端不一致；模板 `bits:[32,64]` 只影响新建默认（取首元素 32），真正入口是手改 byte_len → G7 按定案落地（提醒而非改模板） |
+| 浮点 64 位 | 🟢 | **双端已落地（R5 · PLAN §8.42，2026-10-02）**：`byte_len=8` → BE `encode_float_ieee(value, byte_len=8)` 用 `struct.pack('>d')`、FE `getFieldBytes` 用 `Float64Array`，大端恒 8 字节；向量表 `vectors/float_ieee.json` 分 `f32`（22 行**一字节未改**）/ `f64`（23 行）两组锚定双端；提醒收窄为 `FLOAT_IEEE_WIDTH_UNSUPPORTED`（只报 4/8 以外位宽），章按位宽出 F32 / F64。模板 `bits:[32,64]` 仍不动（新建默认取首元素 32）。**缺省 f32 逐字节不变**有证据链（§8.42） |
 | 定点小数（比例 + 偏移） | ✅ | SCALED_DECIMAL，双端定标口径一致 |
 | BCD 码 | ✅ | BCD_CODE 分支 |
 | 枚举 / 值表 | ✅ | MAPPING（整值枚举）+ 位段 VAL_TABLE（§8.14 优化 2） |
@@ -91,7 +92,7 @@
 | **G4** | 填充 / 对齐 | ✅ 已解 | §8.16 **N5**（真机验证通过 2026-09-30，第 11 单已提交 `d8f0d65`）：字段级 `align`（内容起点补到 N 边界）/ `pad_to`（内容末尾补到 N 边界）/ `pad_byte` 骑 `parameter_config` 零 DDL；归一 1..4096 非法 → 0 fail-open（`ALIGN_INVALID`/`PAD_TO_INVALID` 提醒，pad_byte 非法静默 0x00，零 error 不锁保存）；pad 进发射流/偏移尺/LEN/卡宽（卡间空隙即填充字节）、不进长度公式/checksum/byteMap/页脚 LEN（内容口径）；presence 未命中与 repeat=0 不补、LITTLE 反转不涉 pad；FE=BE byte-equal + `/dispatch` 裸发 echo 实测 |
 | **G5** | 未知 op 静默错码无护栏 | ✅ 已解 | §8.16 **N1** FE W5 提醒先行 + **G5 收口双端硬拦**（真机验证通过 2026-10-01，第 12 单已提交 `b715e2b`）：已知全集 20 项双端同源（OP_CODES 15 + encoder legacy 5），FE OP_UNKNOWN 升结构错误（保存阻断 / 卡面 ⛔ / 导入预览拦截）+ BE POST/PUT 保存侧 400（拒绝在任何写入前）；存量 16 指令 × 37 字段全过门不锁历史 |
 | **G6** | STRUCT 创建入口缺失 | ✅ 已定性 | §8.16 N1：正式定为存量兼容、不补模板 |
-| **G7** | float64 可配出但静默错码（FE/BE 还不一致） | ✅ 已按定案落地 | §8.16 **N1** 校验提醒摘陷阱（模板不动） |
+| **G7** | float64 可配出但静默错码（FE/BE 还不一致） | ✅ 已按定案落地 → **R5 收口** | §8.16 **N1** 校验提醒摘陷阱（模板不动）→ §8.42 **R5** 双端 float64 编码 + 向量 `f64` 组，提醒收窄到 4/8 以外位宽 |
 
 ## 挂账（软缺口，有替代，不排期）
 

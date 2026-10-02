@@ -200,24 +200,37 @@ describe('validateInstruction — LENGTH_CALC refs without formula (W3)', () => 
     });
 });
 
-// N1 护栏批（PLAN §8.16 · G5/G7）：未知算子静默错码 + float64 可配出陷阱。
-describe('validateInstruction N1 护栏（G5 未知算子 / G7 float64）', () => {
-    it('W G7: FLOAT_IEEE byte_len=8 提醒 float64 未支持（FE/BE 口径不一致）', () => {
+// N1 护栏批（PLAN §8.16 · G5/G7）：未知算子静默错码 + FLOAT_IEEE 位宽可配出陷阱。
+// R5（§8.42）收口：4=float32 / 8=float64 双端已落地 → G7 提醒收窄到**其余位宽**。
+describe('validateInstruction N1 护栏（G5 未知算子 / G7 FLOAT_IEEE 位宽）', () => {
+    it('W G7 收口（R5）: byte_len=8 已支持 → 不报', () => {
         const { errors, warnings } = validateInstruction(inst([
             blk({ op_code: 'FLOAT_IEEE', byte_len: 8, parameter_config: {} }),
         ]));
         expect(errors).toEqual([]);
-        const w = warnings.find((x) => x.code === 'FLOAT64_UNSUPPORTED');
-        expect(w).toBeTruthy();
-        expect(w.blockId).toBe('f1');
-        expect(w.message).toMatch(/32/);
+        expect(warnings.some((x) => x.code === 'FLOAT_IEEE_WIDTH_UNSUPPORTED')).toBe(false);
+        expect(warnings.some((x) => x.code === 'FLOAT64_UNSUPPORTED')).toBe(false);
     });
 
-    it('W G7: FLOAT_IEEE 32 位（byte_len=4）不报', () => {
-        const { warnings } = validateInstruction(inst([
-            blk({ op_code: 'FLOAT_IEEE', byte_len: 4, parameter_config: {} }),
+    it('W G7: 其余位宽（byte_len=2）仍报两端不一致', () => {
+        const { errors, warnings } = validateInstruction(inst([
+            blk({ op_code: 'FLOAT_IEEE', byte_len: 2, parameter_config: {} }),
         ]));
-        expect(warnings.some((x) => x.code === 'FLOAT64_UNSUPPORTED')).toBe(false);
+        expect(errors).toEqual([]);
+        const w = warnings.find((x) => x.code === 'FLOAT_IEEE_WIDTH_UNSUPPORTED');
+        expect(w).toBeTruthy();
+        expect(w.blockId).toBe('f1');
+        expect(w.message).toMatch(/float32/);
+        expect(w.message).toMatch(/2B/);
+    });
+
+    it('W G7: 4/8 位（float32 / float64）都不报', () => {
+        [4, 8].forEach((byte_len) => {
+            const { warnings } = validateInstruction(inst([
+                blk({ op_code: 'FLOAT_IEEE', byte_len, parameter_config: {} }),
+            ]));
+            expect(warnings.some((x) => x.code === 'FLOAT_IEEE_WIDTH_UNSUPPORTED')).toBe(false);
+        });
     });
 
     it('G5 双端硬拦: 未知 op_code 升 error（保存阻断，W5 → E；BE 同口径 400）', () => {
