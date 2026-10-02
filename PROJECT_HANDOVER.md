@@ -1668,6 +1668,67 @@
       BE 全量 + FE 全量 + `npx vite build` + **`npm run lint` EXIT=0** + yorha-ui
       校验器改动文件 0 违规。
 
+55. **R8 · 按域导入 —— R7 出线的 5 个新域补回灌（C-3 收口）—— PLAN §8.46**
+    （2026-10-02，**零 DDL** —— `models.py` 一个字符未改；未碰 `processor.py` /
+    `graph.py` / `Blueprint.jsx`，`/dispatch` 缺省口径逐字节不变）：
+    - **它是什么问题**：R7 §8.45 只做出了线 —— 5 个新域进了 ZIP，但**没有任何端点能
+      把它们送回库里**。整机迁移最后一步卡死：解压出来 5 个 .json，只能手敲回界面。
+    - **它现在怎么解决**：`POST /datahub/import/` 下补 5 条路径（`recipes` /
+      `sequences` / `transport` / `profiles` / `templates`），与既有
+      `/import/relations` 完全同形；回执统一 `{domain, imported, updated, skipped,
+      warnings, preImportSnapshot}`（sequences 另带 `steps.written`）。三段式收在
+      `run_domain_import()`：① **纯函数顶层校验**（非对象 / 未知顶层键 /
+      schemaVersion 不符 / 缺数组 → 400 **不落快照**）→ ② `pre-import` 快照
+      （复用 R1 的 `safety_snapshot()`，失败 500 中止且库未被改）→ ③ **逐行独立
+      提交**（`IntegrityError` 只回滚该行 → `skipped` 带 index + id + reason，
+      **部分成功即部分落库**、不整批回滚）。
+    - **校验不写第二套**（本批最关键的一条取舍）：
+      ① 配方 = `routers/recipe.resolve_stages`（层上限 / 插槽归属，且
+      **`definition_hash` 不采信载荷**、按**目标机**的协议 children 重算 —— 配方搬到
+      新机器当场就知道与源机是否同构）；
+      ② 序列 = `routers/sequence` **新抽的共用入口 `normalize_sequence`**（串
+      `_checked_name` → `_normalize_config` → `_normalize_steps`），`create_sequence`
+      / `update_sequence` 改调它、**行为逐字不变**；`_write_steps` 同步改公开为
+      `write_steps`。后果 = 导入的序列等于用序列页 PUT 一遍：`plan` 重归一、`wrap`
+      按目标机配方重新冻结并重算指纹；
+      ③ 传输 / 档案 = `core.transport.validate_config`（`ValueError` → 单行跳过）；
+      ④ 算子模板 = 形态校验 + 按 `op_code`（即主键）天然 upsert。
+      `datahub` 只负责「逐行 upsert + 逐行报告 + 快照」，不复制各域的校验口径。
+    - **回收站边界（R6 §8.43 的回灌侧）**，两种要分开：
+      **宿主在站里 → 单行跳过**（配方的协议、序列的指令；序列是**整条跳过**，与 R7
+      「宿主-从属同进同出」同一条纪律）；**自己的 id 在站里 → 跳过并提示「先恢复或
+      彻底删除」**（软删行继续占唯一键，直接 upsert 会写出一条**看不见的行**）。
+      `label` / `name` 撞车（包括被回收站行占着的名字）→ 跳过并指出占用行；
+      传输配置的 `active_profile_id` 是逻辑指针 → 目标机没有那个活档案就**置空并记
+      警告**，不带悬空指针进来。
+    - **FE**：DataHub 页新增「按域导入 (DOMAIN IMPORT)」面板 —— 一个选择器吃 5 个域
+      文件，按**顶层数组键**自动识别域名（`recipes` / `sequences` / `settings` →
+      `transport` / `profiles` / `templates`，键名与 path 一一对应）→ 二次确认 →
+      回显 `新增 / 更新 / 跳过 / 警告（+ 写入步数）` → 刷新。识别不出域、非法 JSON、
+      不是对象**一律不出弹窗**，直接 `sysMsg` 报错（同 4a 关系导入）。`api.importDomain`
+      **不兜白名单第二层** —— 写错的路径让后端 404 detail 原样透出。
+    - **测试**：`test_datahub.py` 新增 3 类 **9 例**（`TestDomainPayloadValidation`
+      2 例顶层校验、`TestImportDomains` 5 例逐域回灌、`TestDomainImportEndpoints`
+      2 例快照次序 —— 顶层 400 时 `safety_snapshot` **一次都没被调**、成功路径回执带
+      `preImportSnapshot`）；`DataHub.test.jsx` 12 → **15（+3）**。
+      **BE 676 → 685/685**、**FE 1033 → 1036/1036（69 文件）**、
+      `npx vite build` EXIT=0、`npm run lint` **EXIT=0**、yorha-ui 校验器改动文件
+      **0 违规**；`pageStatus.json` 数据中心页补「按域导入」口径 → `PAGE_STATUS.md`
+      已重生成；`vectors/` 未动；`frontend/red-report.json` 不入库。
+    - **回灌路径全景（C-3 至此收口）**：`instructions.json` → 指令页 IMPORT（既有）；
+      `relations.json` → `/import/relations`（既有）；5 个新域 → **本批 5 条端点**；
+      `frames/*` → 派生物不回灌（按指令重编译）；协议本体 → **不在 8 域内**
+      （§8.45 五的已知观察），走「协议页导出 JSON + 协议页 IMPORT」既有路径。
+      **换机顺序 = 协议 → relations / recipes → sequences**，否则前两者会因宿主缺失
+      整批 skipped。C-3 拍板的「8 域」**未扩为 9** —— 日后要一条命令搬干净，需另拍
+      「协议是否入包」。
+    - **文档同步**：PLAN 新 **§8.46** + §8.37 **R8 行标已办** + §8.36 **C-3 行状态**
+      （三项到此全收口）+ §1 `R1–R10` 状态 + `docs/PAGE_STATUS.md`（重生成）；本条。
+    - **状态**：**R1 ✅ R2 ✅ R3 ✅ R4 ✅ R5 ✅ R6 ✅ R7 ✅ R8 ✅**，余 **R9 解码展示
+      面板 → R10 `fields_json` 入库（DDL）**。每批验收项固定为：
+      BE 全量 + FE 全量 + `npx vite build` + **`npm run lint` EXIT=0** + yorha-ui
+      校验器改动文件 0 违规。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

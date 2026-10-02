@@ -17,6 +17,8 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from backend.core.definition_hash import protocol_definition_hash
+from backend.core.transport import default_config as default_transport_config
 from backend.db.database import Base, ensure_binding_columns, ensure_response_spec_columns
 from backend.db.models import (
     DeviceProfile,
@@ -902,6 +904,190 @@ class TestExportBundleEightDomains(RelationsTestCase):
             self.assertEqual(manifest["relations"],
                              {"bindings": 0, "responseSpecs": 0})
             self.assertEqual(len(manifest["frames"]), 2)
+
+
+# --------------------------------------------------------------------------
+# R8（PLAN §8.46 · §8.37 R8 行）：按域导入 —— 顶层校验 / 五域回灌 / 三段式快照
+# --------------------------------------------------------------------------
+
+
+class TestDomainPayloadValidation(unittest.TestCase):
+    """按域载荷的顶层校验（纯函数）—— 400 必须发生在**落快照之前**。"""
+
+    def test_rejects_bad_top_level(self):
+        for bad, fragment in (
+            (["不是对象"], "必须是对象"),
+            ({"recipes": [], "extra": 1}, "未知顶层键"),
+            ({"recipes": [], "schemaVersion": 99}, "schemaVersion 不支持"),
+            ({"schemaVersion": 1}, "缺 recipes 数组"),
+        ):
+            with self.assertRaises(HTTPException) as ctx:
+                datahub.recipes_rows(bad)
+            self.assertEqual(ctx.exception.status_code, 400)
+            self.assertIn(fragment, str(ctx.exception.detail))
+
+    def test_accepts_current_and_missing_version(self):
+        # schemaVersion 缺省按当前版本收（镜像 `_relations_payload` 先例）
+        self.assertEqual(datahub.recipes_rows({"recipes": [1]}), [1])
+        self.assertEqual(
+            datahub.recipes_rows(
+                {"recipes": [1], "schemaVersion": RECIPES_SCHEMA_VERSION}
+            ),
+            [1],
+        )
+        for validator, key in (
+            (datahub.sequences_rows, "sequences"),
+            (datahub.transport_rows, "settings"),
+            (datahub.profiles_rows, "profiles"),
+            (datahub.templates_rows, "templates"),
+        ):
+            self.assertEqual(validator({key: []}), [])
+
+
+class TestImportDomains(RelationsTestCase):
+    """五个新域的回灌（临时库直调 importer）。"""
+
+    def test_recipes_recompute_hash_and_skip_missing_protocol(self):
+        payload = {"recipes": [
+            {"id": "r1", "name": "配方一", "description": "d",
+             "stages": [{"protocol_id": "p1", "slot_ids": ["s1"],
+                         "definition_hash": "sha256:stale"}],
+             "version": 3},
+            {"id": "r-bad", "name": "缺协议", "version": 1,
+             "stages": [{"protocol_id": "p-404", "slot_ids": None}]},
+        ]}
+        report = datahub.import_recipes(self.db, payload)
+        self.assertEqual(report["imported"], 1)
+        self.assertEqual(len(report["skipped"]), 1)
+        self.assertEqual(report["skipped"][0]["id"], "r-bad")
+        self.assertEqual(report["skipped"][0]["reason"], "协议不存在：p-404")
+
+        row = self.db.query(FrameRecipe).one()
+        # definition_hash **不采信载荷** —— 按目标机协议 children 重算
+        children = self.db.query(ProtocolTemplate).one().children
+        self.assertEqual(row.stages[0]["definition_hash"],
+                         protocol_definition_hash(children))
+        self.assertNotEqual(row.stages[0]["definition_hash"], "sha256:stale")
+        self.assertEqual(row.version, 3)
+
+        # 同 id 再导 → updated，版本与名字一并覆盖
+        payload["recipes"][0]["name"] = "配方一改"
+        self.assertEqual(datahub.import_recipes(self.db, payload)["updated"], 1)
+        self.assertEqual(self.db.query(FrameRecipe).one().name, "配方一改")
+
+    def test_sequences_whole_row_import_and_replace_steps(self):
+        payload = {"sequences": [
+            {"id": "s1", "name": "冒烟序列", "description": "d",
+             "config": {"stop_on_error": False},
+             "steps": [
+                 {"instruction_id": "i1", "label": "步一", "delay_ms": 0,
+                  "params": None, "payload": "AA55", "plan": None, "wrap": None},
+                 {"instruction_id": "i1", "label": "步二", "delay_ms": 5,
+                  "params": {"a": 1}, "payload": "BB", "plan": None, "wrap": None},
+             ]},
+            # 任一步骤宿主缺失 → **整条序列跳过**，不写一条缺步的序列
+            {"id": "s-bad", "name": "缺指令", "config": None,
+             "steps": [{"instruction_id": "i-404", "payload": "00"}]},
+        ]}
+        report = datahub.import_sequences(self.db, payload)
+        self.assertEqual(report["imported"], 1)
+        self.assertEqual(report["steps"], {"written": 2})
+        self.assertEqual(report["skipped"][0]["reason"], "指令不存在：i-404")
+
+        # 整体替换：同 id 再导 1 步 → updated，旧步被清掉
+        payload["sequences"][0]["steps"] = payload["sequences"][0]["steps"][:1]
+        report = datahub.import_sequences(self.db, payload)
+        self.assertEqual(report["updated"], 1)
+        self.assertEqual(report["steps"], {"written": 1})
+        self.assertEqual(
+            self.db.query(SequenceStep)
+            .filter(SequenceStep.sequence_id == "s1").count(),
+            1,
+        )
+        self.assertEqual(self.db.query(Sequence).count(), 1)
+
+    def test_transport_single_row_and_pointer_warning(self):
+        report = datahub.import_transport_settings(self.db, {"settings": [
+            {"id": "current", "config": default_transport_config(),
+             "active_profile_id": "d-404"},
+            {"id": "other", "config": default_transport_config()},
+        ]})
+        self.assertEqual(report["imported"], 1)
+        self.assertEqual(len(report["skipped"]), 1)
+        self.assertIn("只支持单行配置", report["skipped"][0]["reason"])
+        # 指针指向目标机没有的活档案 → **置空并记警告**，不带悬空指针进来
+        self.assertIn("已置空", report["warnings"][0])
+        row = self.db.query(TransportSetting).one()
+        self.assertIsNone(row.active_profile_id)
+        self.assertEqual(row.config["mode"], "loopback")
+
+    def test_profiles_label_clash_and_trashed_id(self):
+        self.db.add(DeviceProfile(
+            id="d1", label="车间A", config=default_transport_config(),
+            deleted_at="2026-10-02T00:00:00+00:00",
+        ))
+        self.db.commit()
+        report = datahub.import_profiles(self.db, {"profiles": [
+            {"id": "d1", "label": "车间A", "config": default_transport_config()},
+            {"id": "d2", "label": "车间A", "config": default_transport_config()},
+        ]})
+        # d1 自己在回收站 → 提示先恢复；d2 撞名 → 跳过（label 是 inline UNIQUE）
+        self.assertEqual(report["imported"], 0)
+        self.assertEqual(len(report["skipped"]), 2)
+        self.assertIn("回收站", report["skipped"][0]["reason"])
+        self.assertIn("档案名已存在", report["skipped"][1]["reason"])
+
+    def test_templates_upsert_by_op_code(self):
+        payload = {"templates": [
+            {"op_code": "HEX_RAW", "name": "原样", "category": "BASIC",
+             "param_template": {"hex": "input"}, "description": "逐字节"},
+            {"op_code": "", "name": "x", "category": "y", "param_template": {}},
+        ]}
+        report = datahub.import_operator_templates(self.db, payload)
+        self.assertEqual(report["imported"], 1)
+        self.assertEqual(report["skipped"][0]["reason"], "缺 op_code / name / category")
+        payload["templates"][0]["name"] = "原样改"
+        self.assertEqual(
+            datahub.import_operator_templates(self.db, payload)["updated"], 1
+        )
+        self.assertEqual(self.db.query(OperatorTemplate).one().name, "原样改")
+
+
+class TestDomainImportEndpoints(RelationsTestCase):
+    """三段式：① 顶层校验 400 **不落快照** → ② 快照 → ③ 逐行回灌。"""
+
+    def test_top_level_400_produces_no_snapshot(self):
+        calls = []
+        patcher = mock.patch.object(
+            datahub, "safety_snapshot",
+            side_effect=lambda *a, **k: calls.append(a) or None,
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        with self.assertRaises(HTTPException) as ctx:
+            datahub.import_recipes_endpoint(
+                {"recipes": [], "schemaVersion": 99}, db=self.db
+            )
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(calls, [])  # 纯函数 400 → 一行快照都不留
+
+    def test_success_carries_preimport_snapshot(self):
+        sentinel = {"name": "pre-import-9.db", "isSafetySnapshot": True}
+        patcher = mock.patch.object(
+            datahub, "safety_snapshot", return_value=sentinel
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        report = datahub.import_templates_endpoint(
+            {"schemaVersion": TEMPLATES_SCHEMA_VERSION,
+             "templates": [{"op_code": "HEX_RAW", "name": "原样",
+                            "category": "BASIC", "param_template": {"hex": "input"}}]},
+            db=self.db,
+        )
+        self.assertEqual(report["domain"], "templates")
+        self.assertEqual(report["imported"], 1)
+        self.assertEqual(report["preImportSnapshot"], sentinel)
+        self.assertEqual(report["skipped"], [])
 
 
 if __name__ == "__main__":

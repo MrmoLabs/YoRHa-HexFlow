@@ -41,3 +41,16 @@ export const importRelations = async (relations) => {
     });
     return handleResponse(response);
 };
+
+// R8（PLAN §8.46）：按域导入 —— R7 出线的 5 个新域回灌，与 importRelations 同形
+// （原文回灌、逐行 upsert、逐行报告、部分成功不整批回滚），导入前后端自动留快照。
+// `domain` 由调用方按文件形态识别后传入；**FE 不兜白名单第二层** ——
+// 认不出的域名由后端 404 detail 原样透出，避免前后端两处口径分叉。
+export const importDomain = async (domain, payload) => {
+    const response = await fetch(`${API_BASE}/datahub/import/${domain}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    return handleResponse(response);
+};

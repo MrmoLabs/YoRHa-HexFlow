@@ -227,7 +227,7 @@ def _normalize_steps(db: Session, steps: List[SequenceStepSpec]) -> List[dict]:
     return normalized
 
 
-def _write_steps(db: Session, sequence_id: str, steps: List[dict]) -> None:
+def write_steps(db: Session, sequence_id: str, steps: List[dict]) -> None:
     for order, spec in enumerate(steps):
         db.add(SequenceStep(
             id=str(uuid.uuid4()),
@@ -241,6 +241,21 @@ def _write_steps(db: Session, sequence_id: str, steps: List[dict]) -> None:
             plan=spec["plan"],
             wrap=spec.get("wrap"),
         ))
+
+
+def normalize_sequence(db: Session, name, config, steps, exclude_id=None):
+    """序列三段归一：名字 → 运行配置 → 步骤（plan / wrap 冻结）。
+
+    **create / update / 按域导入（PLAN §8.46 R8）共用这一套口径** —— `datahub` 只管
+    「逐行 upsert + 逐行报告 + 导入前快照」，不重写第二套校验。任一不合法即抛
+    HTTPException（含「序列名已存在：X」的回收站占名口径），调用方决定是 400 还是
+    单行 skip。顺序与 `update_sequence` 改前逐字一致（name → config → steps）。
+    """
+    return (
+        _checked_name(db, name, exclude_id=exclude_id),
+        _normalize_config(config),
+        _normalize_steps(db, steps),
+    )
 
 
 def _step_rows(db: Session, sequence_id: str) -> List[SequenceStep]:
@@ -364,14 +379,12 @@ def list_sequences(db: Session = Depends(get_db)) -> List[SequenceOut]:
 
 @router.post("", response_model=SequenceOut)
 def create_sequence(payload: SequencePayload, db: Session = Depends(get_db)) -> SequenceOut:
-    name = _checked_name(db, payload.name)
-    config = _normalize_config(payload.config)
-    steps = _normalize_steps(db, payload.steps)
+    name, config, steps = normalize_sequence(db, payload.name, payload.config, payload.steps)
     row = Sequence(
         id=str(uuid.uuid4()), name=name, description=payload.description, config=config
     )
     db.add(row)
-    _write_steps(db, row.id, steps)
+    write_steps(db, row.id, steps)
     db.commit()
     db.refresh(row)
     return _to_out(db, row, _step_rows(db, row.id))
@@ -400,9 +413,9 @@ def update_sequence(
     )
     if not row:
         raise HTTPException(status_code=404, detail="Sequence not found")
-    name = _checked_name(db, payload.name, exclude_id=row.id)
-    config = _normalize_config(payload.config)
-    steps = _normalize_steps(db, payload.steps)
+    name, config, steps = normalize_sequence(
+        db, payload.name, payload.config, payload.steps, exclude_id=row.id
+    )
     # 整体替换：删旧步骤 + 改定义 + 写新步骤，单事务提交
     db.query(SequenceStep).filter(SequenceStep.sequence_id == row.id).delete(
         synchronize_session=False
@@ -410,7 +423,7 @@ def update_sequence(
     row.name = name
     row.description = payload.description
     row.config = config
-    _write_steps(db, row.id, steps)
+    write_steps(db, row.id, steps)
     db.commit()
     db.refresh(row)
     return _to_out(db, row, _step_rows(db, row.id))

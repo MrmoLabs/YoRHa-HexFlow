@@ -7,8 +7,10 @@ import { triggerBlobDownload } from '../utils/download';
 
 // C3 数据中心一期：环境状态面板 + 聚合导出 ZIP + 数据库备份/恢复。
 // R7（PLAN §8.45）：聚合导出 3 域 → 8 域（补 recipes / sequences / transport /
-// profiles / templates），manifest 加 domainVersion 域清单；本批只做出线，导入 = R8。
-// 端点见 backend/routers/datahub.py；恢复前会自动留 pre-restore 安全快照。
+// profiles / templates），manifest 加 domainVersion 域清单。
+// R8（PLAN §8.46）：按域导入 —— R7 出线的 5 个新域补回灌（本批把 R7 的「不碰导入」
+// 收口），入参是 ZIP 里解出来的任一域文件，形态自动识别域名。
+// 端点见 backend/routers/datahub.py；恢复前会自动留 pre-restore 安全快照，按域导入前留 pre-import。
 
 const formatBytes = (bytes) => {
     if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
@@ -27,6 +29,24 @@ const COUNT_LABELS = [
     ['protocolBindings', '绑定 BINDINGS'],
     ['responseSpecs', '应答规格 SPECS']
 ];
+
+// R8（PLAN §8.46）：按域导入 —— 一个选择器吃 5 个域文件，**按顶层数组键识别域名**
+// （键名与后端 `/datahub/import/<domain>` 的 path 一一对应，transport 用 settings 键）。
+const DOMAIN_KEYS = [
+    ['recipes', 'recipes'],
+    ['sequences', 'sequences'],
+    ['settings', 'transport'],
+    ['profiles', 'profiles'],
+    ['templates', 'templates']
+];
+
+const DOMAIN_LABELS = {
+    recipes: '配方',
+    sequences: '序列',
+    transport: '传输配置',
+    profiles: '设备档案',
+    templates: '算子模板'
+};
 
 const PanelTitle = ({ children, hint }) => (
     <div className="flex items-baseline justify-between border-b border-nier-light/30 px-4 py-2 bg-nier-light/5">
@@ -56,6 +76,9 @@ export default function DataHub() {
     // 批次四 4a: 已解析待确认的关系数据包（{name, payload}）；确认才 POST。
     const [importTarget, setImportTarget] = useState(null);
     const importInputRef = React.useRef(null);
+    // R8（PLAN §8.46）：按域导入 —— 5 个新域文件共用一个选择器，形态自动识别域名
+    const [domainTarget, setDomainTarget] = useState(null);
+    const domainInputRef = React.useRef(null);
     // 批次四 4b：绑定矩阵（指令 → 默认协议 → 槽位），utils/bindingMatrix 纯函数产出
     const [matrix, setMatrix] = useState({ rows: [], summary: null, loading: true, error: '' });
 
@@ -180,6 +203,61 @@ export default function DataHub() {
         }
     };
 
+    // R8（PLAN §8.46）：按域导入 —— 选文件 → 按顶层数组键识别域名 → 弹确认 →
+    // POST /datahub/import/<domain>。识别不出域 / 不是对象 / 非法 JSON 一律不出弹窗，
+    // 直接走 sysMsg 报错（同 4a 关系导入的失败口径）。
+    const handleDomainFile = async (event) => {
+        const file = event.target.files?.[0];
+        event.target.value = ''; // 同一文件可重复选（change 不重发）
+        if (!file) return;
+        let payload;
+        try {
+            payload = JSON.parse(await file.text());
+        } catch (err) {
+            setSysMsg(`导入失败：文件不是合法 JSON（${err?.message || '解析错误'}）`);
+            return;
+        }
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+            setSysMsg('导入失败：域文件必须是 JSON 对象');
+            return;
+        }
+        const hit = DOMAIN_KEYS.find(([key]) => Array.isArray(payload[key]));
+        if (!hit) {
+            setSysMsg('导入失败：识别不出域（缺 recipes / sequences / settings / profiles / templates 数组）');
+            return;
+        }
+        setDomainTarget({
+            name: file.name,
+            domain: hit[1],
+            payload,
+            count: payload[hit[0]].length
+        });
+    };
+
+    const handleDomainConfirm = async () => {
+        const target = domainTarget;
+        setDomainTarget(null);
+        if (!target) return;
+        setBusy('domain');
+        try {
+            const report = await api.importDomain(target.domain, target.payload);
+            const skipped = (report.skipped || []).length;
+            const warns = (report.warnings || []).length;
+            const steps = report.steps ? ` · 写入步骤 ${report.steps.written ?? 0} 步` : '';
+            setSysMsg(
+                `导入完成（${target.name} · ${DOMAIN_LABELS[target.domain] || target.domain}）：`
+                + `新增 ${report.imported ?? 0} / 更新 ${report.updated ?? 0} / 跳过 ${skipped}；`
+                + `警告 ${warns} 条${steps}。`
+                + (skipped ? ' 跳过明细见后端返回 skipped 字段。' : '')
+            );
+            await refresh();
+        } catch (err) {
+            setSysMsg(`导入失败：${err?.message || '未知错误'}`);
+        } finally {
+            setBusy('');
+        }
+    };
+
     return (
         <div className="flex-1 overflow-auto bg-[radial-gradient(circle_at_top,_rgba(218,212,187,0.12),_transparent_45%),linear-gradient(180deg,_rgba(212,206,178,0.04),_rgba(10,10,10,0))] text-nier-light">
             <NieRModal
@@ -193,6 +271,12 @@ export default function DataHub() {
                 message={`确认导入关系数据？\n\n源文件：${importTarget?.name || ''}\n\n· 绑定 ${importTarget?.bindings ?? 0} 条 · 应答规格 ${importTarget?.specs ?? 0} 条\n· 按 id upsert（同 id 覆盖，出处指纹原样回填）\n· 父指令/协议缺失的行跳过并回报，部分成功即部分落库`}
                 onConfirm={handleImportConfirm}
                 onCancel={() => setImportTarget(null)}
+            />
+            <NieRModal
+                isOpen={Boolean(domainTarget)}
+                message={`确认导入${DOMAIN_LABELS[domainTarget?.domain] || domainTarget?.domain}？\n\n源文件：${domainTarget?.name || ''}\n\n· 条目 ${domainTarget?.count ?? 0} 条\n· 按 id upsert（同 id 覆盖，逐行报告）\n· 父宿主缺失 / 该行在回收站里的，跳过并回报原因\n· 导入前自动留 pre-import-* 安全快照，部分成功即部分落库`}
+                onConfirm={handleDomainConfirm}
+                onCancel={() => setDomainTarget(null)}
             />
 
             <div className="px-8 py-8 flex flex-col gap-6">
@@ -301,6 +385,36 @@ export default function DataHub() {
                                 <div>
                                     <ActionButton onClick={() => importInputRef.current?.click()} busy={busy === 'import'}>
                                         导入 JSON (IMPORT)
+                                    </ActionButton>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* R8（PLAN §8.46）：按域导入 —— R7 出线的 5 个新域回灌 */}
+                        <section className="border border-nier-light/30 bg-nier-dark/60">
+                            <PanelTitle hint="POST /datahub/import/{recipes|sequences|transport|profiles|templates}">按域导入 (DOMAIN IMPORT)</PanelTitle>
+                            <div className="p-4 flex flex-col gap-3">
+                                <p className="text-xs leading-6 opacity-80">
+                                    从 ZIP 里解出 R7 导出的任一域文件
+                                    <span className="font-mono"> recipes / sequences / transport / profiles / templates </span>
+                                    选入：按顶层数组键自动识别域名，按
+                                    <span className="font-mono"> id </span>
+                                    upsert、逐行报告；父宿主缺失（协议 / 指令不在）或该行正在回收站里的，
+                                    跳过并回报原因，不写半条数据。导入前后端自动留
+                                    <span className="font-mono"> pre-import-* </span>
+                                    安全快照，部分成功即部分落库、不整批回滚。
+                                </p>
+                                <input
+                                    ref={domainInputRef}
+                                    type="file"
+                                    accept=".json,application/json"
+                                    className="hidden"
+                                    data-testid="domain-import-input"
+                                    onChange={handleDomainFile}
+                                />
+                                <div>
+                                    <ActionButton onClick={() => domainInputRef.current?.click()} busy={busy === 'domain'}>
+                                        导入域文件 (IMPORT)
                                     </ActionButton>
                                 </div>
                             </div>

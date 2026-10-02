@@ -12,6 +12,7 @@ vi.mock('../../api', () => ({
         restoreDbBackup: vi.fn(),
         exportDataBundle: vi.fn(),
         importRelations: vi.fn(),
+        importDomain: vi.fn(),
         getInstructions: vi.fn(),
         getBindings: vi.fn(),
         getProtocols: vi.fn()
@@ -236,6 +237,89 @@ describe('DataHub Page', () => {
         fireEvent.change(input, { target: { files: [makeJsonFile(JSON.stringify({ foo: 1 }))] } });
         await waitFor(() => expect(screen.getByText(/缺 bindings \/ responseSpecs/)).toBeDefined());
         expect(api.importRelations).not.toHaveBeenCalled();
+    });
+
+    // ─── R8（PLAN §8.46）: 按域导入 —— R7 出线的 5 个新域回灌 ─────────────
+    const SEQUENCES = {
+        schemaVersion: 1,
+        sequences: [{ id: 's1', name: '冒烟序列', config: {}, steps: [] }]
+    };
+
+    it('R8 按域导入: 选序列文件 → 识别域名 → 弹确认(未发请求) → 确认才 POST + 回显 + 刷新', async () => {
+        api.getDatahubStatus.mockResolvedValue(STATUS);
+        api.importDomain.mockResolvedValue({
+            domain: 'sequences',
+            imported: 1,
+            updated: 0,
+            skipped: [{ index: 1, id: 's-bad', reason: '指令不存在：i-404' }],
+            warnings: [],
+            steps: { written: 2 },
+            preImportSnapshot: { name: 'pre-import-9.db' }
+        });
+
+        render(<DataHub />);
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+
+        fireEvent.change(screen.getByTestId('domain-import-input'), {
+            target: { files: [makeJsonFile(JSON.stringify(SEQUENCES), 'sequences.json')] }
+        });
+
+        await waitFor(() => expect(screen.getByText(/确认导入序列/)).toBeDefined());
+        expect(screen.getByText(/条目 1 条/)).toBeDefined();
+        expect(api.importDomain).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: /确认/ }));
+        await waitFor(() => expect(api.importDomain).toHaveBeenCalledWith('sequences', SEQUENCES));
+        await waitFor(() => expect(screen.getByText(/导入完成/)).toBeDefined());
+        const line = screen.getByText(/导入完成/).textContent;
+        expect(line).toContain('新增 1 / 更新 0 / 跳过 1');
+        expect(line).toContain('警告 0 条');
+        expect(line).toContain('写入步骤 2 步');
+        expect(line).toContain('跳过明细');
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledTimes(2)); // 初始 + 导入后刷新
+    });
+
+    it('R8 五个域文件都能按顶层数组键识别（transport 认 settings 键），取消不发请求', async () => {
+        api.getDatahubStatus.mockResolvedValue(STATUS);
+        api.importDomain.mockResolvedValue({ domain: 'x', imported: 0, updated: 0, skipped: [], warnings: [] });
+
+        render(<DataHub />);
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+        const input = screen.getByTestId('domain-import-input');
+
+        const cases = [
+            [{ recipes: [] }, 'recipes', '配方'],
+            [{ sequences: [] }, 'sequences', '序列'],
+            [{ settings: [] }, 'transport', '传输配置'],
+            [{ profiles: [] }, 'profiles', '设备档案'],
+            [{ templates: [] }, 'templates', '算子模板']
+        ];
+        for (const [payload, domain, label] of cases) {
+            const body = { schemaVersion: 1, ...payload };
+            fireEvent.change(input, {
+                target: { files: [makeJsonFile(JSON.stringify(body), `${domain}.json`)] }
+            });
+            await waitFor(() => expect(screen.getByText(new RegExp(`确认导入${label}`))).toBeDefined());
+            fireEvent.click(screen.getByRole('button', { name: /取消/ }));
+            expect(screen.queryByText(new RegExp(`确认导入${label}`))).toBeNull();
+        }
+        expect(api.importDomain).not.toHaveBeenCalled();
+    });
+
+    it('R8 非法 JSON / 识别不出域直接报错，不出弹窗不发请求', async () => {
+        api.getDatahubStatus.mockResolvedValue(STATUS);
+
+        render(<DataHub />);
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+        const input = screen.getByTestId('domain-import-input');
+
+        fireEvent.change(input, { target: { files: [makeJsonFile('{oops')] } });
+        await waitFor(() => expect(screen.getByText(/不是合法 JSON/)).toBeDefined());
+        expect(screen.queryByText(/确认导入序列/)).toBeNull();
+
+        fireEvent.change(input, { target: { files: [makeJsonFile(JSON.stringify({ foo: 1 }))] } });
+        await waitFor(() => expect(screen.getByText(/识别不出域/)).toBeDefined());
+        expect(api.importDomain).not.toHaveBeenCalled();
     });
 
     // ─── 批次四 4b: 绑定矩阵（指令 → 默认协议 → 槽位） ─────────────────────

@@ -22,7 +22,7 @@ import { dispatchPayload, dispatchWrappedGroup, getDispatchHistory, clearDispatc
 import { getTransportConfig, setTransportConfig, getTransportStatus, revertTransportConfig } from './transport';
 import { getBindings, createBinding, updateBinding, deleteBinding } from './bindings';
 import { getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './recipes';
-import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle, importRelations } from './datahub';
+import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle, importRelations, importDomain } from './datahub';
 import { getProfiles, createProfile, updateProfile, deleteProfile, activateProfile } from './profiles';
 // R6（PLAN §8.43）：软删除 / 回收站 —— 列条目 / 恢复 / 彻底删除
 import { listTrash, restoreTrashItem, purgeTrashItem } from './trash';
@@ -92,11 +92,13 @@ export const api = {
 
     // Data Hub (C3: status / aggregate export / db backup & restore)
     // 批次四 4a: relations.json（绑定 + 应答规格）导入导出
+    // R8（PLAN §8.46）: 按域导入 —— R7 出线的 5 个新域回灌
     getDatahubStatus,
     createDbBackup,
     restoreDbBackup,
     exportDataBundle,
     importRelations,
+    importDomain,
 
     // Profiles (P1: 设备档案 → /profiles CRUD + activate，传输配置命名快照)
     getProfiles,

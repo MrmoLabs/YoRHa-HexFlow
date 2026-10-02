@@ -23,6 +23,12 @@
   与 `domainCounts`（逐域行数，**键集与 domainVersion 严格相等**）。既有三键
   （`instructionCount` / `relations` / `frames`）只做加法。**本批只做出线**，
   按域导入端点 = R8（快照复用 R1 的 `safety_snapshot()`）。
+- PLAN §8.46 R8（C-3 选 C 收尾 · 按域导入）：5 个新域补回灌 —— `POST /datahub/import/`
+  加 `recipes` / `sequences` / `transport` / `profiles` / `templates`，回执统一
+  `{domain, imported, updated, skipped, warnings, preImportSnapshot}`；三段式 =
+  ① 纯函数顶层校验（400 **不落快照**）→ ② `pre-import` 快照（复用 R1）→ ③ 逐行
+  upsert、部分成功即部分落库。校验复用各域 SSOT（`recipe.resolve_stages` /
+  `sequence.normalize_sequence` / `transport.validate_config`），不写第二套口径。
 
 纯函数（fields_to_blocks / compile_blocks / frame_bytes / format_hex_text /
 build_bundle / sanitize_filename / validate_backup_name / create_backup /
@@ -42,7 +48,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -84,8 +90,12 @@ from backend.db.models import (
 from backend.db.transport_store import restore_transport_config
 from backend.routers.binding import find_slot_node
 from backend.routers.instruction import serialize_instruction
+from backend.routers.recipe import resolve_stages
 from backend.routers.response_spec import _stage_mirror
+from backend.routers.sequence import normalize_sequence, write_steps
 from backend.schemas.block import Block
+from backend.schemas.recipe_api import RecipeStage
+from backend.schemas.sequence_api import SequenceStepSpec
 
 router = APIRouter(prefix="/datahub", tags=["datahub"])
 
@@ -879,6 +889,405 @@ def bundle_manifest(instruction_payload, relations, extra_payloads, frames) -> d
 
 
 # --------------------------------------------------------------------------
+# R8（PLAN §8.46 · §8.37 R8 行 · C-3 选 C 收尾）：按域导入 —— R7 出线的 5 域补回灌
+# --------------------------------------------------------------------------
+# 口径全部复用 CP4-4a `POST /datahub/import/relations` 的三条纪律，不另起炉灶：
+#   ① **顶层校验是纯函数**，400 之前既不落快照也不碰库；
+#   ② **逐行独立提交** —— 校验失败 / 唯一约束冲突只回滚该行，`skipped` 带
+#      index + id + reason，**部分成功即部分落库**、不整批回滚；
+#   ③ **导入前先留 `pre-import` 快照**（复用 R1 的 `safety_snapshot()`），
+#      响应回 `preImportSnapshot`。
+# 校验**不重写第二套**：配方 = `recipe.resolve_stages`（层上限 / 插槽归属 /
+# `definition_hash` 按**目标机**协议重算）、序列 = `sequence.normalize_sequence`
+# （名字唯一含回收站占名 / config 严格键集 / 步骤 plan·wrap 冻结）、传输与档案 =
+# `core.transport.validate_config`（ValueError → 400 的 SSOT）。datahub 只负责
+# 「逐行 upsert + 逐行报告 + 快照」。
+#
+# 回收站（R6 §8.43）：**宿主在站里一律按不存在处理** —— 配方的协议、序列的指令
+# 缺失 → 单行跳过；**id 自己在站里**则跳过并提示「先恢复或彻底删除」（软删行继续
+# 占唯一键，直接 upsert 会写出一条看不见的行）。
+
+
+def _domain_rows(payload, key, expected, filename):
+    """按域载荷的**顶层**校验（纯函数，镜像 `_relations_payload` 的 400 口径）。"""
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail=f"{filename} 载荷必须是对象")
+    unknown = set(payload) - {key, "schemaVersion", "exportedAt"}
+    if unknown:
+        raise HTTPException(
+            status_code=400, detail=f"未知顶层键：{', '.join(sorted(unknown))}"
+        )
+    version = payload.get("schemaVersion")
+    if version not in (None, expected):
+        raise HTTPException(
+            status_code=400, detail=f"{filename} schemaVersion 不支持：{version}"
+        )
+    rows = payload.get(key)
+    if not isinstance(rows, list):
+        raise HTTPException(status_code=400, detail=f"缺 {key} 数组（不是 {filename}）")
+    return rows
+
+
+def _domain_report(domain):
+    """逐域回执骨架（键序固定 → 前端与单测都按这四键读）。"""
+    return {"domain": domain, "imported": 0, "updated": 0, "skipped": [], "warnings": []}
+
+
+def recipes_rows(payload) -> list:
+    return _domain_rows(payload, "recipes", RECIPES_SCHEMA_VERSION, "recipes.json")
+
+
+def sequences_rows(payload) -> list:
+    return _domain_rows(payload, "sequences", SEQUENCES_SCHEMA_VERSION, "sequences.json")
+
+
+def transport_rows(payload) -> list:
+    return _domain_rows(payload, "settings", TRANSPORT_SCHEMA_VERSION, "transport.json")
+
+
+def profiles_rows(payload) -> list:
+    return _domain_rows(payload, "profiles", PROFILES_SCHEMA_VERSION, "profiles.json")
+
+
+def templates_rows(payload) -> list:
+    return _domain_rows(payload, "templates", TEMPLATES_SCHEMA_VERSION, "templates.json")
+
+
+def import_recipes(db: Session, payload) -> dict:
+    """回灌 `recipes.json`：逐行 upsert，父协议缺失 / 阶段非法 → 单行跳过。
+
+    `definition_hash` **不采信载荷** —— `resolve_stages` 按目标机的协议 children
+    重算，配方搬到新机器当场就知道与源机是否同构。
+    """
+    rows = recipes_rows(payload)
+    report = _domain_report("recipes")
+    sink = report["skipped"]
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            _skip(sink, index, row, "条目必须是对象")
+            continue
+        recipe_id = row.get("id")
+        name = str(row.get("name") or "").strip()
+        if not recipe_id or not name:
+            _skip(sink, index, row, "缺 id / name")
+            continue
+        raw_stages = row.get("stages")
+        if not isinstance(raw_stages, list) or not raw_stages:
+            _skip(sink, index, row, "stages 必须是非空数组")
+            continue
+
+        specs, reason = [], None
+        for pos, raw in enumerate(raw_stages):
+            if not isinstance(raw, dict) or not raw.get("protocol_id"):
+                reason = f"stages[{pos}] 缺 protocol_id"
+                break
+            protocol_id = raw["protocol_id"]
+            if alive(db.query(ProtocolTemplate), ProtocolTemplate).filter(
+                ProtocolTemplate.id == protocol_id
+            ).first() is None:
+                reason = f"协议不存在：{protocol_id}"
+                break
+            try:
+                specs.append(RecipeStage(
+                    protocol_id=protocol_id,
+                    slot_ids=raw.get("slot_ids"),
+                    definition_hash=raw.get("definition_hash"),
+                ))
+            except ValidationError as exc:
+                reason = f"stages[{pos}] 形态非法：{exc.errors()[0].get('msg')}"
+                break
+        if reason:
+            _skip(sink, index, row, reason)
+            continue
+
+        try:
+            stages = resolve_stages(db, specs)
+        except HTTPException as exc:
+            _skip(sink, index, row, f"阶段校验失败：{exc.detail}")
+            continue
+
+        existing = db.query(FrameRecipe).filter(FrameRecipe.id == recipe_id).first()
+        if existing is not None and existing.deleted_at:
+            _skip(sink, index, row, f"该配方在回收站中：{recipe_id}（先恢复或彻底删除）")
+            continue
+        version = row.get("version")
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            version = 1
+        kind = "updated" if existing else "imported"
+        stamp = datetime.now().isoformat(timespec="seconds")
+        try:
+            if existing:
+                existing.name = name
+                existing.description = row.get("description")
+                existing.stages = stages
+                existing.version = version
+                existing.updated_at = stamp
+            else:
+                db.add(FrameRecipe(
+                    id=recipe_id, name=name, description=row.get("description"),
+                    stages=stages, version=version, created_at=stamp, updated_at=stamp,
+                ))
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            _skip(sink, index, row, f"唯一约束冲突：{exc.orig}")
+            continue
+        report[kind] += 1
+    return report
+
+
+def import_sequences(db: Session, payload) -> dict:
+    """回灌 `sequences.json`：序列 + **内嵌步骤**整行进退（宿主-从属同进同出）。
+
+    任一步骤的宿主指令不在（回收站 / 没搬过来）→ **整条序列跳过**，不写一条缺步的
+    序列。归一走 `sequence.normalize_sequence`、步骤整体替换走 `write_steps`（删旧写新，
+    镜像 `update_sequence` 的单事务口径）；实际写入步数回报在 `steps.written`。
+    """
+    rows = sequences_rows(payload)
+    report = _domain_report("sequences")
+    report["steps"] = {"written": 0}
+    sink = report["skipped"]
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            _skip(sink, index, row, "条目必须是对象")
+            continue
+        sequence_id = row.get("id")
+        raw_steps = row.get("steps")
+        if not sequence_id:
+            _skip(sink, index, row, "缺 id")
+            continue
+        if not isinstance(raw_steps, list):
+            _skip(sink, index, row, "steps 必须是数组")
+            continue
+
+        broken = None
+        for pos, raw in enumerate(raw_steps):
+            if not isinstance(raw, dict) or not raw.get("instruction_id"):
+                broken = f"steps[{pos}] 缺 instruction_id"
+                break
+            instruction_id = raw["instruction_id"]
+            if alive(db.query(Instruction), Instruction).filter(
+                Instruction.id == instruction_id
+            ).first() is None:
+                broken = f"指令不存在：{instruction_id}"
+                break
+        if broken:
+            _skip(sink, index, row, broken)
+            continue
+
+        try:
+            specs = [SequenceStepSpec.model_validate(raw) for raw in raw_steps]
+        except ValidationError as exc:
+            _skip(sink, index, row, f"步骤形态非法：{exc.errors()[0].get('msg')}")
+            continue
+        try:
+            name, config, steps = normalize_sequence(
+                db, row.get("name"), row.get("config"), specs, exclude_id=sequence_id
+            )
+        except HTTPException as exc:
+            _skip(sink, index, row, exc.detail)
+            continue
+
+        existing = db.query(Sequence).filter(Sequence.id == sequence_id).first()
+        if existing is not None and existing.deleted_at:
+            _skip(sink, index, row, f"该序列在回收站中：{sequence_id}（先恢复或彻底删除）")
+            continue
+        kind = "updated" if existing else "imported"
+        try:
+            if existing is None:
+                existing = Sequence(
+                    id=sequence_id, name=name,
+                    description=row.get("description"), config=config,
+                )
+                db.add(existing)
+                db.flush()
+            else:
+                existing.name = name
+                existing.description = row.get("description")
+                existing.config = config
+            db.query(SequenceStep).filter(
+                SequenceStep.sequence_id == sequence_id
+            ).delete(synchronize_session=False)
+            write_steps(db, sequence_id, steps)
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            _skip(sink, index, row, f"唯一约束冲突：{exc.orig}")
+            continue
+        report[kind] += 1
+        report["steps"]["written"] += len(steps)
+    return report
+
+
+def import_transport_settings(db: Session, payload) -> dict:
+    """回灌 `transport.json`：单行约定（`id` 恒为 `current`）逐行 upsert。
+
+    `config` 走 `validate_config` 归一（ValueError → 单行跳过）；`active_profile_id`
+    是**逻辑指针** —— 目标机上没有那个活档案时**置空并记警告**，不带一个悬空指针进来
+    （镜像 R6「指针删除期解除」的读侧降级口径）。
+    """
+    rows = transport_rows(payload)
+    report = _domain_report("transport")
+    sink = report["skipped"]
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            _skip(sink, index, row, "条目必须是对象")
+            continue
+        setting_id = row.get("id")
+        if setting_id != "current":
+            _skip(sink, index, row, f"只支持单行配置（id 必须是 current，收到 {setting_id!r}）")
+            continue
+        if not isinstance(row.get("config"), dict):
+            _skip(sink, index, row, "config 必须是对象")
+            continue
+        try:
+            config = transport.validate_config(row["config"])
+        except ValueError as exc:
+            _skip(sink, index, row, f"配置非法：{exc}")
+            continue
+        profile_id = row.get("active_profile_id") or None
+        if profile_id and alive(db.query(DeviceProfile), DeviceProfile).filter(
+            DeviceProfile.id == profile_id
+        ).first() is None:
+            report["warnings"].append(
+                f"传输配置的档案指针已置空：{profile_id}（目标机无此活档案）"
+            )
+            profile_id = None
+
+        existing = db.query(TransportSetting).filter(
+            TransportSetting.id == setting_id
+        ).first()
+        if existing is not None and existing.deleted_at:
+            _skip(sink, index, row, "该传输配置在回收站中（先恢复或彻底删除）")
+            continue
+        kind = "updated" if existing else "imported"
+        try:
+            if existing:
+                existing.config = config
+                existing.active_profile_id = profile_id
+            else:
+                db.add(TransportSetting(
+                    id=setting_id, config=config, active_profile_id=profile_id,
+                ))
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            _skip(sink, index, row, f"唯一约束冲突：{exc.orig}")
+            continue
+        report[kind] += 1
+    return report
+
+
+def import_profiles(db: Session, payload) -> dict:
+    """回灌 `profiles.json`：按 id upsert，**档案名撞车 → 跳过**（`label` 是 inline UNIQUE）。"""
+    rows = profiles_rows(payload)
+    report = _domain_report("profiles")
+    sink = report["skipped"]
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            _skip(sink, index, row, "条目必须是对象")
+            continue
+        profile_id = row.get("id")
+        label = str(row.get("label") or "").strip()
+        if not profile_id or not label:
+            _skip(sink, index, row, "缺 id / label")
+            continue
+        if not isinstance(row.get("config"), dict):
+            _skip(sink, index, row, "config 必须是对象")
+            continue
+        try:
+            config = transport.validate_config(row["config"])
+        except ValueError as exc:
+            _skip(sink, index, row, f"配置非法：{exc}")
+            continue
+        clash = db.query(DeviceProfile).filter(
+            DeviceProfile.label == label, DeviceProfile.id != profile_id
+        ).first()
+        if clash is not None:
+            _skip(sink, index, row, f"档案名已存在（行 {clash.id}）")
+            continue
+        existing = db.query(DeviceProfile).filter(DeviceProfile.id == profile_id).first()
+        if existing is not None and existing.deleted_at:
+            _skip(sink, index, row, f"该档案在回收站中：{profile_id}（先恢复或彻底删除）")
+            continue
+        kind = "updated" if existing else "imported"
+        try:
+            if existing:
+                existing.label = label
+                existing.config = config
+            else:
+                db.add(DeviceProfile(id=profile_id, label=label, config=config))
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            _skip(sink, index, row, f"唯一约束冲突：{exc.orig}")
+            continue
+        report[kind] += 1
+    return report
+
+
+def import_operator_templates(db: Session, payload) -> dict:
+    """回灌 `templates.json`：`op_code` 既是主键也是自然键 → 天然 upsert。
+
+    算子模板是参考数据（`operator.py` 只读 + 启动播种），没有删除入口，
+    因此这里只做**形态校验 + 覆盖**，不涉及回收站。
+    """
+    rows = templates_rows(payload)
+    report = _domain_report("templates")
+    sink = report["skipped"]
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            _skip(sink, index, row, "条目必须是对象")
+            continue
+        op_code = str(row.get("op_code") or "").strip()
+        name = str(row.get("name") or "").strip()
+        category = str(row.get("category") or "").strip()
+        if not op_code or not name or not category:
+            _skip(sink, index, row, "缺 op_code / name / category")
+            continue
+        param_template = row.get("param_template")
+        if not isinstance(param_template, dict):
+            _skip(sink, index, row, "param_template 必须是对象")
+            continue
+        existing = db.query(OperatorTemplate).filter(
+            OperatorTemplate.op_code == op_code
+        ).first()
+        kind = "updated" if existing else "imported"
+        try:
+            if existing:
+                existing.name = name
+                existing.category = category
+                existing.param_template = param_template
+                existing.description = row.get("description")
+            else:
+                db.add(OperatorTemplate(
+                    op_code=op_code, name=name, category=category,
+                    param_template=param_template, description=row.get("description"),
+                ))
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            _skip(sink, index, row, f"唯一约束冲突：{exc.orig}")
+            continue
+        report[kind] += 1
+    return report
+
+
+def run_domain_import(db: Session, payload, validator, importer) -> dict:
+    """按域导入三段式（**所有 `/datahub/import/*` 域端点共用**）：
+
+    ① 顶层校验（纯函数，400 不落快照）→ ② `pre-import` 快照（失败 500 中止、
+    库未被改）→ ③ 逐行回灌。`preImportSnapshot` 只做加法；`null` = 库文件不存在。
+    """
+    validator(payload)
+    snapshot = safety_snapshot("pre-import", "导入")
+    report = importer(db, payload)
+    if isinstance(report, dict):
+        report["preImportSnapshot"] = snapshot
+    return report
+
+
+# --------------------------------------------------------------------------
 # 端点
 # --------------------------------------------------------------------------
 
@@ -1046,6 +1455,42 @@ def import_relations_endpoint(payload: dict = Body(...), db: Session = Depends(g
     if isinstance(report, dict):
         report["preImportSnapshot"] = snapshot
     return report
+
+
+# ---- R8（PLAN §8.46）：按域导入端点 —— 与 `/import/relations` 同形同纪律 ----
+# 每个端点都只是一行 `run_domain_import`：① 顶层校验（纯函数）→ ② pre-import
+# 快照 → ③ 逐行 upsert / 逐行报告。回执统一
+# `{domain, imported, updated, skipped, warnings, preImportSnapshot}`。
+
+
+@router.post("/import/recipes")
+def import_recipes_endpoint(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """回灌 `recipes.json`（配方）：父协议缺失 / 阶段非法 → 单行跳过。"""
+    return run_domain_import(db, payload, recipes_rows, import_recipes)
+
+
+@router.post("/import/sequences")
+def import_sequences_endpoint(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """回灌 `sequences.json`（序列 + 内嵌步骤）：任一步骤宿主缺失 → 整条跳过。"""
+    return run_domain_import(db, payload, sequences_rows, import_sequences)
+
+
+@router.post("/import/transport")
+def import_transport_endpoint(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """回灌 `transport.json`（单行 current）：档案指针缺失 → 置空并记警告。"""
+    return run_domain_import(db, payload, transport_rows, import_transport_settings)
+
+
+@router.post("/import/profiles")
+def import_profiles_endpoint(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """回灌 `profiles.json`（设备档案）：`label` 撞车 → 单行跳过。"""
+    return run_domain_import(db, payload, profiles_rows, import_profiles)
+
+
+@router.post("/import/templates")
+def import_templates_endpoint(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """回灌 `templates.json`（算子模板）：`op_code` 即主键 → 天然 upsert。"""
+    return run_domain_import(db, payload, templates_rows, import_operator_templates)
 
 
 @router.post("/backup")
