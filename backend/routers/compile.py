@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from backend.core import diagnostics as diag
 from backend.core.frame_builder import build_wrapped
 from backend.core.orchestrator import Orchestrator
 from backend.core.recipe_compile import compile_recipe
@@ -36,9 +37,11 @@ async def compile_frame(request: FrameRequest):
             debug_info=debug_info
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise diag.http_from(
+            e, 400, str(e), "encode", "ENCODE_REJECTED", data_sent=False
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise diag.http(500, str(e), "encode", "ENCODE_ERROR", data_sent=False)
 
 
 @router.post("/compile/wrapped", response_model=WrappedCompileResponse)
@@ -58,8 +61,10 @@ def compile_wrapped_frame(
     400；单协议路径（旧调用方）逐字段逐字节不变。
     """
     if request.recipe_id and request.protocol_id:
-        raise HTTPException(
-            status_code=400, detail="protocol_id 与 recipe_id 互斥，只能指定一个"
+        raise diag.http(
+            400, "protocol_id 与 recipe_id 互斥，只能指定一个",
+            "wrap", "WRAP_SPEC_EXCLUSIVE",
+            target=request.recipe_id or request.protocol_id, data_sent=False,
         )
 
     if request.recipe_id:
@@ -72,7 +77,11 @@ def compile_wrapped_frame(
             )
         except ValueError as e:
             # 逐层 build_wrapped 的语义错误（detail 已带「第 N 层（协议）」前缀）
-            raise HTTPException(status_code=400, detail=str(e))
+            # → http_from 保留 DiagError 的 layer/target 诊断
+            raise diag.http_from(
+                e, 400, str(e), "wrap", "WRAP_REJECTED",
+                target=request.recipe_id, data_sent=False,
+            )
         return WrappedCompileResponse(
             hex_string=result["hex"],
             total_length=result["total_length"],
@@ -82,14 +91,19 @@ def compile_wrapped_frame(
         )
 
     if not request.protocol_id:
-        raise HTTPException(
-            status_code=400, detail="protocol_id 与 recipe_id 必须指定其一"
+        raise diag.http(
+            400, "protocol_id 与 recipe_id 必须指定其一",
+            "wrap", "WRAP_SPEC_MISSING", data_sent=False,
         )
 
     protocol = db.query(ProtocolTemplate) \
         .filter(ProtocolTemplate.id == request.protocol_id).first()
     if protocol is None:
-        raise HTTPException(status_code=404, detail="Protocol not found")
+        raise diag.http(
+            404, "Protocol not found",
+            "wrap", "WRAP_PROTOCOL_NOT_FOUND",
+            target=request.protocol_id, data_sent=False,
+        )
     try:
         result = build_wrapped(
             protocol.children or [],
@@ -98,7 +112,10 @@ def compile_wrapped_frame(
             start_order=request.start_order,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise diag.http_from(
+            e, 400, str(e), "wrap", "WRAP_REJECTED",
+            target=request.protocol_id, data_sent=False,
+        )
     return WrappedCompileResponse(
         hex_string=result["hex"],
         total_length=result["total_length"],

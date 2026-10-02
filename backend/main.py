@@ -95,6 +95,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="YoRHa-HexFlow API", lifespan=lifespan)
 
+# 关键链路统一诊断（PLAN §8.32）：DiagHTTPException → {"detail": 原文, "diagnostic": {...}}，
+# 其余 HTTPException 走 FastAPI 默认形状（只做加法）。
+from backend.core import diagnostics as _diagnostics
+
+_diagnostics.install(app)
+
 # Setup CORS
 app.add_middleware(
     CORSMiddleware,

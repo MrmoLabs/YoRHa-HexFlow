@@ -4,6 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from backend.core import diagnostics as diag
 from backend.core import sequence_runner
 from backend.core.recipe_compile import (
     compile_recipe,
@@ -121,14 +122,18 @@ def _freeze_wrap(db: Session, where: str, recipe_id: str, data: bytes, plan):
     """
     recipe = db.query(FrameRecipe).filter(FrameRecipe.id == recipe_id).first()
     if recipe is None:
-        raise HTTPException(status_code=400, detail=f"{where}: 配方不存在：{recipe_id}")
+        raise diag.http(
+            400, f"{where}: 配方不存在：{recipe_id}",
+            "wrap", "RECIPE_NOT_FOUND", target=recipe_id, data_sent=False,
+        )
     kernel = kernel_slice(data, plan).hex().upper()
     try:
         result = compile_recipe(db, recipe_id, [kernel])
     except HTTPException as e:
-        raise HTTPException(status_code=400, detail=f"{where}: {e.detail}")
+        # 内层 400/404 包一层 `steps[i]:` 定位 —— 层号/协议诊断跟着往上传
+        raise diag.with_detail(e, 400, f"{where}: {e.detail}", target=where)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"{where}: {e}")
+        raise diag.with_detail(e, 400, f"{where}: {e}", target=where)
     fingerprint = stages_fingerprint(
         [s.get("definition_hash") for s in (result.get("stages") or [])]
     )
@@ -138,7 +143,7 @@ def _freeze_wrap(db: Session, where: str, recipe_id: str, data: bytes, plan):
         base = core_plan(plan) or {}
         frozen, plan_with_shell = normalize_plan(result["hex"], {**base, "shell": shell})
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"{where}: {e}")
+        raise diag.with_detail(e, 400, f"{where}: {e}", target=where)
     return frozen, plan_with_shell, fingerprint
 
 
@@ -177,7 +182,10 @@ def _normalize_steps(db: Session, steps: List[SequenceStepSpec]) -> List[dict]:
         try:
             data, plan = normalize_plan(step.payload, step.plan)
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=f"{where}: {e}")
+            raise diag.http_from(
+                e, 400, f"{where}: {e}", "plan", "STEP_PLAN_INVALID",
+                target=where, step=i + 1, data_sent=False,
+            )
 
         fingerprint = None
         if wrap is not None:
@@ -190,7 +198,10 @@ def _normalize_steps(db: Session, steps: List[SequenceStepSpec]) -> List[dict]:
                 kernel = kernel_slice(data, plan)
                 data, plan = normalize_plan(kernel.hex().upper(), core_plan(plan))
             except ValueError as e:
-                raise HTTPException(status_code=400, detail=f"{where}: {e}")
+                raise diag.http_from(
+                    e, 400, f"{where}: {e}", "wrap", "STEP_SHELL_STRIP_INVALID",
+                    target=where, step=i + 1, data_sent=False,
+                )
 
         normalized.append({
             "instruction_id": instruction_id,
@@ -420,10 +431,16 @@ def start_sequence(sequence_id: str, db: Session = Depends(get_db)) -> SequenceS
         raise HTTPException(status_code=404, detail="Sequence not found")
     # 互斥第一道（快速失败）；claim 内的锁为兜底（竞态 → SequenceBusy 同 409）
     if sequence_runner.is_running():
-        raise HTTPException(status_code=409, detail="序列运行中，先停止当前序列再启动")
+        raise diag.http(
+            409, "序列运行中，先停止当前序列再启动",
+            "sequence", "SEQUENCE_RUNNING", data_sent=False,
+        )
     step_rows = _step_rows(db, row.id)
     if not step_rows:
-        raise HTTPException(status_code=400, detail="序列没有步骤，无法启动")
+        raise diag.http(
+            400, "序列没有步骤，无法启动",
+            "sequence", "SEQUENCE_EMPTY", target=str(sequence_id), data_sent=False,
+        )
 
     steps = []
     for i, step in enumerate(step_rows):
@@ -431,8 +448,10 @@ def start_sequence(sequence_id: str, db: Session = Depends(get_db)) -> SequenceS
             # 启动前重归一（防库内脏数据直连改库绕过保存口校验）
             data, plan = normalize_plan(step.payload, step.plan)
         except ValueError as e:
-            raise HTTPException(
-                status_code=400, detail=f"步骤 {i + 1} 数据非法：{e}"
+            raise diag.http_from(
+                e, 400, f"步骤 {i + 1} 数据非法：{e}",
+                "plan", "STEP_DATA_INVALID",
+                target=step.id or f"steps[{i}]", step=i + 1, data_sent=False,
             )
         steps.append({
             "id": step.id,
@@ -449,5 +468,7 @@ def start_sequence(sequence_id: str, db: Session = Depends(get_db)) -> SequenceS
             row.id, row.name, steps, config, compile_wrap=_compile_wrap_factory()
         )
     except sequence_runner.SequenceBusy as e:
-        raise HTTPException(status_code=409, detail=str(e))
+        raise diag.http(
+            409, str(e), "sequence", "SEQUENCE_RUNNING", data_sent=False,
+        )
     return SequenceStatus(**snap)

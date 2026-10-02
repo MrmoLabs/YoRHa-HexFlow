@@ -22,9 +22,9 @@
 """
 from typing import Dict, List, Optional
 
-from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from backend.core import diagnostics as diag
 from backend.core.definition_hash import protocol_definition_hash
 from backend.core.frame_builder import build_wrapped
 from backend.db.models import FrameRecipe, ProtocolTemplate
@@ -34,7 +34,10 @@ def load_recipe(db: Session, recipe_id: str) -> FrameRecipe:
     """按 id 取配方，缺失 404（对齐 protocol.py "Protocol not found" 先例）。"""
     recipe = db.query(FrameRecipe).filter(FrameRecipe.id == recipe_id).first()
     if recipe is None:
-        raise HTTPException(status_code=404, detail="Recipe not found")
+        raise diag.http(
+            404, "Recipe not found",
+            "wrap", "RECIPE_NOT_FOUND", target=str(recipe_id), data_sent=False,
+        )
     return recipe
 
 
@@ -71,7 +74,10 @@ def compile_recipe(
     recipe = load_recipe(db, recipe_id)
     stages = list(recipe.stages or [])
     if not stages:
-        raise HTTPException(status_code=400, detail="配方没有可编译的阶段")
+        raise diag.http(
+            400, "配方没有可编译的阶段",
+            "wrap", "RECIPE_EMPTY", target=str(recipe_id), data_sent=False,
+        )
 
     warnings: List[str] = []
     echo: List[Dict[str, object]] = []
@@ -85,7 +91,13 @@ def compile_recipe(
             .first()
         )
         if protocol is None:
-            raise HTTPException(status_code=404, detail="Protocol not found")
+            # 层号一并给出：多层配方里「哪层协议被删了」比一句 404 更有用
+            raise diag.http(
+                404, "Protocol not found",
+                "wrap", "WRAP_PROTOCOL_NOT_FOUND",
+                target=str(stage.get("protocol_id") or ""),
+                layer=index + 1, data_sent=False,
+            )
 
         # ---- hash 比对（D7-A：不符出 warning 不阻断，不回写 DB —— 回写会让
         # 比对失去意义；「回写」发生在 /recipes 保存期）----
@@ -104,8 +116,21 @@ def compile_recipe(
                 strict_fit=True,   # 配方路径缺省 reject（§9.5-2，主动偏离 D3）
             )
         except ValueError as exc:
-            # 层号 + 协议 label 前缀：多层下 400 detail 直接指到出错层
-            raise ValueError(f"第 {index + 1} 层（{protocol.label}）：{exc}")
+            # 层号 + 协议 label 前缀：多层下 400 detail 直接指到出错层（文案不变）
+            # DiagError 是 ValueError 子类 → 调用方既有 except ValueError 照常接住，
+            # 关心层号的路由用 diag.http_from 把 layer/target 继续往上传。
+            message = f"第 {index + 1} 层（{protocol.label}）：{exc}"
+            raise diag.DiagError(
+                message,
+                diag.Diagnostic(
+                    stage="wrap",
+                    code="WRAP_LAYER_REJECT",
+                    message=message,
+                    target=str(protocol.id),
+                    layer=index + 1,
+                    data_sent=False,
+                ),
+            ) from exc
 
         layer_warnings: List[str] = list(out.get("warnings") or [])
         if stale:
@@ -165,14 +190,26 @@ def shell_plan(
     """
     stages = list(result.get("stages") or [])
     if not stages:
-        raise ValueError("配方没有可编译的阶段")
+        raise diag.DiagError(
+            "配方没有可编译的阶段",
+            diag.Diagnostic(
+                stage="wrap", code="RECIPE_EMPTY",
+                message="配方没有可编译的阶段", data_sent=False,
+            ),
+        )
 
     heads: List[int] = []
     for stage in stages:
         offset = (stage.get("shell") or {}).get("payload_offset")
         if offset is None:
-            raise ValueError(
-                f"第 {int(stage.get('index', 0)) + 1} 层无可用插槽，无法定位内核"
+            idx = int(stage.get("index", 0))
+            message = f"第 {idx + 1} 层无可用插槽，无法定位内核"
+            raise diag.DiagError(
+                message,
+                diag.Diagnostic(
+                    stage="wrap", code="WRAP_SHELL_MISSING",
+                    message=message, layer=idx + 1, data_sent=False,
+                ),
             )
         heads.append(int(offset))
 

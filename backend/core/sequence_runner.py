@@ -26,7 +26,9 @@
 running / result(idle|running|completed|failed|stopped) / sequence_id /
 sequence_name / total_steps / current_step(1-based 进行中步) / started_at /
 finished_at / stop_requested / error / steps[](逐步 n/step_id/label/
-instruction_id/status(OK|ERROR|SKIPPED)/sent/received/rtt_ms/error)。
+instruction_id/status(OK|ERROR|SKIPPED)/sent/received/rtt_ms/error；
+ERROR 步额外带 `diagnostic` = {stage, code, message, step, target, data_sent,
+[layer], [byte_count]} —— 失败在哪一层、哪一步、字节是否已发出，§8.32)。
 
 模块级可变状态均在锁内读写（CPython GIL 下 record 先整备后 append、
 snapshot 持锁浅拷贝，逐条记录恒为完整对象）。
@@ -36,6 +38,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from backend.core import diagnostics as diag
 from backend.core import transport
 from backend.core.escape import escape_bytes, table_from_config
 from backend.core.sequence_plan import apply_plan, core_plan, kernel_slice
@@ -48,7 +51,15 @@ class SequenceBusy(Exception):
 class WrapError(Exception):
     """CP3 3c (D6-B): 序列封装步出线重算失败（配方/协议缺失、语义错误）。
     独立异常类型 → 记步 `WRAP: {原因}`，与 `PLAN:`（补丁/计划脏数据）、
-    `TRANSPORT:`（链路）三分，便于操作员定位层。"""
+    `TRANSPORT:`（链路）三分，便于操作员定位层。
+
+    §8.32：可携带来源异常的结构化诊断（配方 reject 的层号/协议定位），
+    由 `diag.diagnostic_of` 取用并落到步记录 `diagnostic`。"""
+
+    def __init__(self, message: str, diagnostic: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        if diagnostic:
+            self.diagnostic = diagnostic
 
 
 class _Run:
@@ -205,6 +216,39 @@ def _step_record(step: Dict[str, Any], n: int, status: str) -> Dict[str, Any]:
     }
 
 
+def _step_diagnostic(
+    exc: BaseException,
+    *,
+    stage: str,
+    code: str,
+    n: int,
+    step: Dict[str, Any],
+    data_sent: bool,
+    byte_count: Optional[int] = None,
+) -> Dict[str, Any]:
+    """错误步 → 结构化诊断（PLAN §8.32：失败在哪一步 / 哪一层 / 字节出没出去）。
+
+    来源异常自带诊断（`DiagError` 层号、`WrapError` 透传的配方定位）就保留，
+    否则用调用方给的 stage/code 兜底；`step`（1-based 步号）与 `data_sent`
+    恒由本函数补上 —— 任何一条 ERROR 步都必须能回答「第几步、哪层、发了没」。
+    """
+    base = diag.diagnostic_of(exc)
+    payload: Dict[str, Any] = dict(base) if base else {}
+    payload.setdefault("stage", stage)
+    payload.setdefault("code", code)
+    payload.setdefault("message", str(exc))
+    payload["step"] = n
+    # 定位：来源诊断的具体目标（配方/协议 id）优先，否则落到步 id/标签
+    if not payload.get("target"):
+        step_target = step.get("id") or step.get("label")
+        if step_target:
+            payload["target"] = str(step_target)
+    payload["data_sent"] = data_sent
+    if byte_count is not None:
+        payload["byte_count"] = byte_count
+    return payload
+
+
 def _skip_remaining(run: _Run, from_n: int) -> None:
     """把尚未执行的步补成 SKIPPED（n = from_n 起，1-based，已有的跳过）。"""
     for index in range(from_n - 1, len(run.steps)):
@@ -263,7 +307,10 @@ def _frame_for_send(step: Dict[str, Any], run: _Run, now_ms: float) -> bytes:
     try:
         full = run.compile_wrap(recipe_id, kernel.hex().upper())
     except Exception as e:  # 配方/协议被删、fit reject、无插槽 …
-        raise WrapError(str(getattr(e, "detail", None) or e)) from e
+        # §8.32: 来源异常若带诊断（层号/协议定位），跟着 WrapError 一起往上传
+        raise WrapError(
+            str(getattr(e, "detail", None) or e), diag.diagnostic_of(e)
+        ) from e
     try:
         return bytes.fromhex(str(full).replace(" ", "").replace("\n", ""))
     except ValueError as e:
@@ -300,12 +347,24 @@ def execute(run: _Run) -> None:
             except ValueError as e:
                 record["status"] = "ERROR"
                 record["error"] = f"PLAN: {e}"
+                record["diagnostic"] = _step_diagnostic(
+                    e, stage="plan", code="PLAN_REJECTED",
+                    n=n, step=step, data_sent=False,
+                )
             except WrapError as e:
                 record["status"] = "ERROR"
                 record["error"] = f"WRAP: {e}"
+                record["diagnostic"] = _step_diagnostic(
+                    e, stage="wrap", code="WRAP_REJECTED",
+                    n=n, step=step, data_sent=False,
+                )
             except transport.TransportError as e:
                 record["status"] = "ERROR"
                 record["error"] = f"TRANSPORT: {e}"
+                record["diagnostic"] = _step_diagnostic(
+                    e, stage="transport", code="TRANSPORT_ERROR",
+                    n=n, step=step, data_sent=False, byte_count=len(data),
+                )
             else:
                 record["received"] = response.hex().upper()
                 record["rtt_ms"] = round((time.perf_counter() - started) * 1000, 2)

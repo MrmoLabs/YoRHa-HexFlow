@@ -1,3 +1,4 @@
+import re
 import time
 from collections import deque
 from datetime import datetime, timezone
@@ -7,10 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from backend.core import diagnostics as diag
 from backend.core import response_match, sequence_runner, transport
 from backend.core.escape import escape_hex, table_from_config
 from backend.core.frame_builder import build_wrapped
 from backend.core.recipe_compile import compile_recipe
+from backend.core.diagnostics import Diagnostic
 from backend.db.database import get_db
 from backend.db.log_store import safe_log
 from backend.db.models import ResponseSpec, ProtocolTemplate
@@ -91,6 +94,49 @@ def _spaced(data: bytes) -> str:
     return " ".join(f"{b:02X}" for b in data)
 
 
+def _transaction_diagnostic(last, byte_count: int) -> Optional[Diagnostic]:
+    """失败事务 → 结构化诊断（成功 / 广播 OK → None）。
+
+    三态是硬件联调最常问的三件事：**帧到底出没出去**（`data_sent`）、
+    **出去了有没有回**（NO_RESPONSE）、**回了但对不上哪一条**（MATCH_FAILED，
+    `STAGE[i]` 前缀翻译成层号，与「第 N 层」/配方 stage 同序：1 = stage 0）。
+    """
+    if last.status == "TRANSPORT_ERROR":
+        return Diagnostic(
+            stage="transport",
+            code="TRANSPORT_ERROR",
+            message=last.error or "transport error",
+            data_sent=False,
+            byte_count=byte_count,
+        )
+    if last.status == "NO_RESPONSE":
+        return Diagnostic(
+            stage="match",
+            code="NO_RESPONSE",
+            message=f"第 {last.n} 次尝试无应答（帧已发送 {byte_count} 字节）",
+            data_sent=True,
+            byte_count=byte_count,
+        )
+    if last.status == "MATCH_FAILED":
+        reasons = list(last.reasons or [])
+        layer = None
+        for reason in reasons:
+            m = re.match(r"STAGE\[(\d+)\]", str(reason))
+            if m:
+                layer = int(m.group(1)) + 1
+                break
+        return Diagnostic(
+            stage="match",
+            code="MATCH_FAILED",
+            message="; ".join(str(r) for r in reasons) or "match failed",
+            target=str(reasons[0]) if reasons else None,
+            layer=layer,
+            data_sent=True,
+            byte_count=byte_count,
+        )
+    return None
+
+
 def append_history(record: DispatchRecord) -> None:
     """公开入栈口：/logs 回放复用三事件口径（不外泄 _history 私有态）。"""
     _history.appendleft(record)
@@ -113,8 +159,10 @@ def _apply_wrap(
     与 `protocol_id` 互斥、都不给 → 400。配方路径下 `slot_ids`/`slot_order`
     归配方阶段所有（此处忽略），`start_order` 只作用于第 0 层。"""
     if wrap.recipe_id and wrap.protocol_id:
-        raise HTTPException(
-            status_code=400, detail="protocol_id 与 recipe_id 互斥，只能指定一个"
+        raise diag.http(
+            400, "protocol_id 与 recipe_id 互斥，只能指定一个",
+            "wrap", "WRAP_SPEC_EXCLUSIVE",
+            target=wrap.recipe_id or wrap.protocol_id, data_sent=False,
         )
     if wrap.recipe_id:
         return compile_recipe(
@@ -124,13 +172,18 @@ def _apply_wrap(
             start_order=start_order or 0,
         )
     if not wrap.protocol_id:
-        raise HTTPException(
-            status_code=400, detail="wrap 须指定 protocol_id 或 recipe_id"
+        raise diag.http(
+            400, "wrap 须指定 protocol_id 或 recipe_id",
+            "wrap", "WRAP_SPEC_MISSING", data_sent=False,
         )
     protocol = db.query(ProtocolTemplate) \
         .filter(ProtocolTemplate.id == wrap.protocol_id).first()
     if protocol is None:
-        raise HTTPException(status_code=404, detail="Protocol not found")
+        raise diag.http(
+            404, "Protocol not found",
+            "wrap", "WRAP_PROTOCOL_NOT_FOUND",
+            target=wrap.protocol_id, data_sent=False,
+        )
     if slot_ids is None:
         slot_ids = [wrap.slot_id] if wrap.slot_id else None
     if start_order is None:
@@ -143,14 +196,21 @@ def _apply_wrap(
             start_order=start_order,
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # 单协议路径无层号；配方路径的 DiagError（带层号）由 http_from 保留
+        raise diag.http_from(
+            e, 400, str(e), "wrap", "WRAP_REJECTED",
+            target=wrap.protocol_id, data_sent=False,
+        )
 
 
 @router.post("/", response_model=DispatchRecord)
 def dispatch_frame(request: DispatchRequest, db: Session = Depends(get_db)):
     # P3 互斥：序列运行期禁止手动发送（Runner 直连 transport 不经此路由，无自锁）
     if sequence_runner.is_running():
-        raise HTTPException(status_code=409, detail="序列运行中，手动发送已互斥（先停止序列）")
+        raise diag.http(
+            409, "序列运行中，手动发送已互斥（先停止序列）",
+            "sequence", "SEQUENCE_RUNNING", data_sent=False,
+        )
     # 批次一 1c: wrap 存在 → hex_string 视作内核载荷，先封装再终检 hex
     # （wrap 缺省 → 下方裸帧路径与既有行为逐字节一致，§0 硬约束）。
     # N4 (G3): 出线前先对**内核**按转义表转义、再套壳（外壳 FA…ED 字面不转；
@@ -165,10 +225,24 @@ def dispatch_frame(request: DispatchRequest, db: Session = Depends(get_db)):
     # 转义/封装，避免拿 None 去 escape）
     multi = request.wrap.payloads if (request.wrap is not None and request.wrap.payloads is not None) else None
     if multi is None and request.hex_string is None:
-        raise HTTPException(status_code=400, detail="hex_string 与 wrap.payloads 至少提供一个")
+        raise diag.http(
+            400, "hex_string 与 wrap.payloads 至少提供一个",
+            "encode", "PAYLOAD_MISSING", data_sent=False,
+        )
+    # 诊断分层（PLAN §8.32）：转义与封装拆成两段 try —— detail 文案与操作顺序
+    # 与拆分前逐字一致，只是 400 现在能说清是**转义层**还是**封装层**拒的。
     try:
         if multi is not None:
             escaped = [escape_hex(p, table) for p in multi]
+        else:
+            escaped = escape_hex(request.hex_string, table)
+    except ValueError as e:
+        raise diag.http_from(
+            e, 400, f"Invalid payload: {e}",
+            "escape", "ESCAPE_REJECTED", data_sent=False,
+        )
+    try:
+        if multi is not None:
             wrapped = _apply_wrap(
                 request.wrap,
                 escaped,
@@ -178,18 +252,24 @@ def dispatch_frame(request: DispatchRequest, db: Session = Depends(get_db)):
             )
             hex_string = wrapped["hex"]
             warnings = wrapped["warnings"]
+        elif request.wrap is not None:
+            wrapped = _apply_wrap(request.wrap, [escaped], db)
+            hex_string = wrapped["hex"]
+            warnings = wrapped["warnings"]
         else:
-            hex_string = escape_hex(request.hex_string, table)
-            if request.wrap is not None:
-                wrapped = _apply_wrap(request.wrap, [hex_string], db)
-                hex_string = wrapped["hex"]
-                warnings = wrapped["warnings"]
+            hex_string = escaped
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
+        raise diag.http_from(
+            e, 400, f"Invalid payload: {e}",
+            "wrap", "WRAP_REJECTED", data_sent=False,
+        )
     try:
         data = hex_to_bytes(hex_string)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
+        raise diag.http_from(
+            e, 400, f"Invalid payload: {e}",
+            "encode", "PAYLOAD_INVALID", data_sent=False,
+        )
 
     channel = transport.get_config()["mode"].upper()
     payload_spaced = _spaced(data)
@@ -222,7 +302,12 @@ def dispatch_frame(request: DispatchRequest, db: Session = Depends(get_db)):
             hex_string=payload_spaced, echo="", byte_count=len(data),
             instruction_name=request.instruction_name, error=str(e),
         )
-        raise HTTPException(status_code=502, detail=f"Transport error: {e}")
+        # 诊断（§8.32）：传输层抛错 → data_sent=False（send 未完整返回，可能部分写入）
+        raise diag.http(
+            502, f"Transport error: {e}",
+            "transport", "TRANSPORT_ERROR",
+            data_sent=False, byte_count=len(data),
+        )
 
     record = DispatchRecord(
         status="SENT",
@@ -309,17 +394,23 @@ class TransactionRecord(BaseModel):
     echo: str  # 末次应答 compact hex（无 → ""）
     attempts: List[TransactionAttempt]
     stats: TransactionStats
+    # §8.32 统一诊断：失败时给结构化定位（成功 = null）—— 区分「帧没出去」
+    # （transport, data_sent=false）/「出去了没应答」（NO_RESPONSE, data_sent=true）
+    # /「应答来了但失配」（MATCH_FAILED, data_sent=true，layer = STAGE[i] 层号）。
+    diagnostic: Optional[Dict[str, Any]] = None
 
 
 def _bounded_int(value, name: str, lo: int, hi: int) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
-        raise HTTPException(
-            status_code=400, detail=f"Invalid transaction params: {name} 必须是整数"
+        raise diag.http(
+            400, f"Invalid transaction params: {name} 必须是整数",
+            "param", "PARAM_INVALID", target=name, data_sent=False,
         )
     if not (lo <= value <= hi):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid transaction params: {name} 必须在 {lo}..{hi} 范围内",
+        raise diag.http(
+            400,
+            f"Invalid transaction params: {name} 必须在 {lo}..{hi} 范围内",
+            "param", "PARAM_INVALID", target=name, data_sent=False,
         )
     return value
 
@@ -330,7 +421,10 @@ def _resolve_spec(request: TransactionRequest, db) -> tuple:
         try:
             return response_match.normalize_spec(request.response_spec), "inline"
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=f"Invalid response spec: {e}")
+            raise diag.http_from(
+                e, 400, f"Invalid response spec: {e}",
+                "spec", "SPEC_INVALID", target="response_spec", data_sent=False,
+            )
     if request.instruction_id:
         row = (
             db.query(ResponseSpec)
@@ -341,8 +435,10 @@ def _resolve_spec(request: TransactionRequest, db) -> tuple:
             try:
                 return response_match.normalize_spec(row.spec), "instruction"
             except ValueError as e:
-                raise HTTPException(
-                    status_code=400, detail=f"Stored response spec invalid: {e}"
+                raise diag.http_from(
+                    e, 400, f"Stored response spec invalid: {e}",
+                    "spec", "SPEC_INVALID_STORED",
+                    target=request.instruction_id, data_sent=False,
                 )
     return response_match.default_spec(), "default"
 
@@ -351,7 +447,10 @@ def _resolve_spec(request: TransactionRequest, db) -> tuple:
 def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_db)):
     # P3 互斥：序列运行期禁止手动事务发送（与 dispatch_frame 同口径）
     if sequence_runner.is_running():
-        raise HTTPException(status_code=409, detail="序列运行中，手动发送已互斥（先停止序列）")
+        raise diag.http(
+            409, "序列运行中，手动发送已互斥（先停止序列）",
+            "sequence", "SEQUENCE_RUNNING", data_sent=False,
+        )
     # 批次一 1c: 与 dispatch_frame 同口径 —— wrap 先封装、hex 终检在后
     # N4 (G3): 与 dispatch_frame 同口径 —— 内核先转义再套壳（缺省关闭原样）
     try:
@@ -359,13 +458,19 @@ def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_
             request.hex_string, table_from_config(transport.get_config())
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
+        raise diag.http_from(
+            e, 400, f"Invalid payload: {e}",
+            "escape", "ESCAPE_REJECTED", data_sent=False,
+        )
     if request.wrap is not None:
         hex_string = _apply_wrap(request.wrap, [hex_string], db)["hex"]
     try:
         data = hex_to_bytes(hex_string)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid payload: {e}")
+        raise diag.http_from(
+            e, 400, f"Invalid payload: {e}",
+            "encode", "PAYLOAD_INVALID", data_sent=False,
+        )
 
     timeout_ms = _bounded_int(request.timeout_ms, "timeout_ms", 1, 60000)
     retries = _bounded_int(request.retries, "retries", 0, 10)
@@ -424,6 +529,7 @@ def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_
     status = "OK" if attempts[-1].status == "OK" else "FAILED"
     last = attempts[-1]
     rtts = [a.rtt_ms for a in attempts if a.received]
+    failure_diag = _transaction_diagnostic(last, len(data))
     record = TransactionRecord(
         id=int(time.time() * 1000),
         timestamp=datetime.now(timezone.utc).isoformat(),
@@ -443,6 +549,7 @@ def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_
             rtt_ms_avg=round(sum(rtts) / len(rtts), 2) if rtts else None,
             rtt_ms_max=max(rtts) if rtts else None,
         ),
+        diagnostic=failure_diag.to_dict() if failure_diag else None,
     )
 
     # 写 /dispatch/history：状态与事件类型沿用 SENT/ERROR + raw/response/error 口径
