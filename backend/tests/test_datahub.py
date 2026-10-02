@@ -18,6 +18,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.db.database import Base, ensure_binding_columns, ensure_response_spec_columns
 from backend.db.models import Instruction, InstructionField, ProtocolBinding, ProtocolTemplate, ResponseSpec
+from backend.routers import datahub
 from backend.routers.datahub import (
     RELATIONS_SCHEMA_VERSION,
     build_bundle,
@@ -27,10 +28,12 @@ from backend.routers.datahub import (
     format_hex_text,
     frame_bytes,
     import_relations,
+    import_relations_endpoint,
     instructions_export_payload,
     list_backups,
     relations_export_payload,
     replace_database_file,
+    safety_snapshot,
     sanitize_filename,
     validate_backup_name,
 )
@@ -473,6 +476,107 @@ class TestImportRelations(RelationsTestCase):
         self.assertEqual(report["bindings"]["imported"], 1)
         self.assertEqual(len(report["bindings"]["skipped"]), 1)
         self.assertEqual(self.db.query(ProtocolBinding).count(), 1)
+
+
+class TestImportPreSnapshot(RelationsTestCase):
+    """PLAN §8.37 R1：关系回灌**前**的 pre-import 自动快照（端点层，直调路由函数）。
+
+    钉四件事：快照在写库之前留下并回报 / 400 不留垃圾快照 / 快照失败即中止且一行
+    都没写 / 库文件不存在时静默跳过；另钉 `_backup_entry` 把 pre-import 也认成
+    安全快照（否则备份列表里它长得和手建备份一样，用户看不出该拿哪个回退）。
+    """
+
+    def setUp(self):
+        super().setUp()
+        # 端点读的是模块级 DB_PATH / BACKUP_DIR —— 替换后必须在 tearDown 还原
+        # （同 §8.35 的教训：只替换不还原会泄漏到后续用例）。
+        self._saved_paths = (datahub.DB_PATH, datahub.BACKUP_DIR)
+        self.db_file = Path(self.tmp.name) / "yorha.db"
+        self.db_file.write_bytes(b"ORIGINAL")
+        self.backup_dir = Path(self.tmp.name) / "backups"
+        datahub.DB_PATH = self.db_file
+        datahub.BACKUP_DIR = self.backup_dir
+
+    def tearDown(self):
+        datahub.DB_PATH, datahub.BACKUP_DIR = self._saved_paths
+        super().tearDown()
+
+    def _snapshot_names(self):
+        if not self.backup_dir.is_dir():
+            return []
+        return sorted(p.name for p in self.backup_dir.glob("pre-import-*.db"))
+
+    def test_snapshot_taken_before_write_and_reported(self):
+        report = import_relations_endpoint({"bindings": [relation_binding()]}, db=self.db)
+
+        names = self._snapshot_names()
+        self.assertEqual(len(names), 1)
+        self.assertTrue(names[0].startswith("pre-import-"))
+        self.assertEqual(report["preImportSnapshot"], names[0])
+        # 快照字节 = 写库之前的库文件（本用例造的 ORIGINAL），不是回灌后的状态
+        self.assertEqual((self.backup_dir / names[0]).read_bytes(), b"ORIGINAL")
+        # 回灌照常进行，响应只做加法（原有键一个不少）
+        self.assertEqual(report["bindings"]["imported"], 1)
+        self.assertEqual(report["warnings"], [])
+
+    def test_invalid_payload_400_leaves_no_snapshot_and_no_write(self):
+        with self.assertRaises(HTTPException) as ctx:
+            import_relations_endpoint({"nope": 1}, db=self.db)
+
+        self.assertEqual(ctx.exception.status_code, 400)
+        self.assertEqual(self._snapshot_names(), [])  # 校验先行 → 不产生垃圾快照
+        self.assertEqual(self.db.query(ProtocolBinding).count(), 0)
+
+    def test_snapshot_failure_aborts_import_with_500(self):
+        # 让快照目录位置被同名**文件**占住 → mkdir 抛 OSError（FileExistsError）
+        blocker = Path(self.tmp.name) / "blocked"
+        blocker.write_bytes(b"I AM A FILE")
+        datahub.BACKUP_DIR = blocker
+
+        with self.assertRaises(HTTPException) as ctx:
+            import_relations_endpoint({"bindings": [relation_binding()]}, db=self.db)
+
+        self.assertEqual(ctx.exception.status_code, 500)
+        self.assertTrue(ctx.exception.detail.startswith("安全快照失败，已中止导入："))
+        self.assertIn("blocked", ctx.exception.detail)
+        # 关键不变量：快照失败 → 一行都没写（库保持原样，不需要回退）
+        self.assertEqual(self.db.query(ProtocolBinding).count(), 0)
+
+    def test_missing_db_file_skips_snapshot_but_import_works(self):
+        datahub.DB_PATH = Path(self.tmp.name) / "no-such-db.db"
+
+        report = import_relations_endpoint({"bindings": [relation_binding()]}, db=self.db)
+
+        self.assertIsNone(report["preImportSnapshot"])
+        self.assertEqual(self._snapshot_names(), [])
+        self.assertEqual(report["bindings"]["imported"], 1)
+
+    def test_helper_maps_oserror_and_tolerates_missing_db(self):
+        # 库不存在 → None、不报错
+        self.assertIsNone(
+            safety_snapshot("pre-import", "导入",
+                            db_path=Path(self.tmp.name) / "nope.db",
+                            backup_dir=self.backup_dir)
+        )
+        # 快照失败 → 500、消息带场景词
+        blocker = Path(self.tmp.name) / "blocked2"
+        blocker.write_bytes(b"I AM A FILE")
+        with self.assertRaises(HTTPException) as ctx:
+            safety_snapshot("pre-import", "导入",
+                            db_path=self.db_file, backup_dir=blocker)
+        self.assertEqual(ctx.exception.status_code, 500)
+        self.assertTrue(ctx.exception.detail.startswith("安全快照失败，已中止导入："))
+        self.assertIn("blocked2", ctx.exception.detail)
+
+    def test_pre_import_flagged_as_safety_snapshot(self):
+        self.backup_dir.mkdir()
+        (self.backup_dir / "pre-import-1.db").write_bytes(b"A")
+        (self.backup_dir / "pre-restore-1.db").write_bytes(b"B")
+        (self.backup_dir / "yorha-1.db").write_bytes(b"C")
+        flags = {e["name"]: e["isSafetySnapshot"] for e in list_backups(self.backup_dir)}
+        self.assertTrue(flags["pre-import-1.db"])
+        self.assertTrue(flags["pre-restore-1.db"])
+        self.assertFalse(flags["yorha-1.db"])
 
 
 if __name__ == "__main__":

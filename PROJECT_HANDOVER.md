@@ -1322,6 +1322,39 @@
     - **状态**：**C 组 5 项 + R6 方案全部关闭**，无待拍板项残留；下一步 = 按排期开跑
       **R1**（导入 pre-import 自动快照，BE 小批，= C-3 选 C 的第一件事）。
 
+47. **R1 数据导入 pre-import 自动快照落地（排期首项 · PLAN §8.38）**（2026-10-02，
+    **零 DDL、后端 only、零前端改动** —— 未改 `models.py`/`database.py`，`yorha.db`
+    不随本批提交；未碰 `processor.py`/`graph.py`/`Blueprint.jsx`；`/dispatch` 缺省
+    口径不变）：
+    - **起因**：§8.34 B2-5 → §8.37 **R1** —— 恢复前有 `pre-restore` 快照、**导入没有**
+      （风险不对称）；C-3 选 C 后它又成为 **R7/R8 的硬前置**，故排首项。
+    - **实现**（`backend/routers/datahub.py` 3 处）：① 新 `safety_snapshot(prefix,
+      scenario, db_path, backup_dir)` 把「先快照、失败即中止」收成一处（缺省读模块级
+      `DB_PATH`/`BACKUP_DIR`、缺库 → `None` 不报错、`OSError` → 500 +
+      `安全快照失败，已中止{场景}：{exc}`）—— R8 复用；② `/import/relations` 顺序改
+      **校验 → 快照 → 回灌**（400 不落垃圾快照；快照失败 500 且一行未写），响应新增
+      **`preImportSnapshot`**（只做加法）；③ `isSafetySnapshot` 前缀改常量
+      `SAFETY_SNAPSHOT_PREFIXES = ("pre-restore-", "pre-import-")` —— 否则 `pre-import-*`
+      在备份列表里与手建备份无从区分（FE 徽标只渲染 `[快照]`、恢复按钮对所有条目可点，
+      **不改现有语义**）。
+    - **测试**：`backend/tests/test_datahub.py` 新 `TestImportPreSnapshot` **6 例**
+      （直调路由函数不走 TestClient，沿 `test_bindings.py` 惯例）：快照先于写库且字节
+      = 回灌前 / 400 零快照零写入 / 快照失败 500 且零写入 / 缺库 → `null` 照常导入 /
+      helper 两分支 / `pre-import`+`pre-restore` 同打徽标而手建备份不打。**setUp 替换
+      模块级 `DB_PATH`/`BACKUP_DIR` 必须在 tearDown 还原**（沿 §8.35 教训）。
+    - **验收**：**BE 636/636**（基线 630 + 6）、**FE 973/973（66 文件）**、
+      `npx vite build` EXIT=0、yorha-ui 校验器 `DataHub.jsx` **0 违规**（零前端改动）；
+      零 DDL → 无 `chore(db)` 提交。
+    - **文档同步**：`pageStatus.json` 数据中心页「关系数据回灌」补快照口径 +
+      `PAGE_STATUS.md` 再生、PLAN 新 **§8.38** + §8.37 R1 行标已办 + §1 `R1–R10`
+      行状态 + §8.34 B2-5 标已办、本条。
+    - **范围说明**：只覆盖 `POST /datahub/import/*`（B2-5 原文口径，该前缀下当前只有
+      `relations`）；**指令页 / 协议页逐条 JSON 导入走别的端点、不在本批**（逐条 create
+      + 冲突跳过，语义不同，需要时另立批次）。
+    - **状态**：**R1 ✅**，余 **R2–R10**（R2 传输配置上一配置回退 → R3 ESLint →
+      R4 拖拽 → R5 float64 → R6 软删除（13 表加 `deleted_at`）→ R7/R8 C-3 补域 →
+      R9/R10 C-2 解码入库）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

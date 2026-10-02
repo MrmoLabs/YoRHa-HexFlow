@@ -206,7 +206,7 @@
 - 指令管理页已支持指令 JSON 导入（结构校验与冲突分流预览，2026-09-22）。
 - 环境状态面板：DB 路径 / 大小 / 修改时间、七表行数（含绑定 / 应答规格）、后端版本，可手动刷新（GET /datahub/status）。
 - 聚合导出：ZIP 打包 instructions.json（与指令页导入格式对称）+ relations.json（绑定 + 应答规格，批次四 4a）+ manifest.json + 逐指令 frames/*.bin|hex（Orchestrator 编译骨架帧）。
-- 关系数据回灌：POST /datahub/import/relations 按 id upsert、逐行报告（父缺失跳过、槽悬空置空带警告、出处指纹原样回填、部分成功即部分落库），页面选文件 → 二次确认 → 回显新增/更新/跳过/警告计数。
+- 关系数据回灌：POST /datahub/import/relations 按 id upsert、逐行报告（父缺失跳过、槽悬空置空带警告、出处指纹原样回填、部分成功即部分落库），页面选文件 → 二次确认 → 回显新增/更新/跳过/警告计数；回灌**前**自动留 pre-import-* 安全快照并在响应回报 preImportSnapshot（PLAN §8.37 R1，2026-10-02）—— 校验 400 不落垃圾快照、快照失败即 500 中止且一行未写，与恢复前的 pre-restore 对称。
 - 绑定矩阵 (BINDING MATRIX)（批次四 4b）：只读总览「指令 → 默认协议 → 槽位」，一行一条指令（含未绑定的），摘要给出 有默认协议/无绑定/悬空槽/协议已删/失效绑定/重复默认六项计数；孤儿关系不静默抹平（协议已删、槽悬空、definition_hash 失效一律琥珀标出），数据随刷新与关系数据导入同拍重读（GET /bindings · /instructions/ · /protocols/）。
 - 数据库备份 / 恢复：新建备份复制到 backend/db/backups/（已 gitignore）；恢复前自动留 pre-restore 安全快照、释放连接池、清理 WAL/SHM 残留后原子替换，并有二次确认与文件名防穿越校验。
 

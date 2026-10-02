@@ -39,7 +39,7 @@
 | CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | **已提交 ✅ 3a `e63d76f`（代码+文档）/ `438f3af`（db 同步）、3b `c4b1f7f`（代码+文档，零 DDL）、3c `fbad083`（代码+文档）/ `17c6830`（db 同步）、3d `77dd389`（代码+文档）/ `bb7a0ba`（db 同步），2026-10-01 —— CP3 四个子批全数完成**。硬前置 CP2 ✅；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**。**3a 含 DDL**（`frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈）→ yorha.db 单独同步提交；**3a 提前并入了原属 3b 的 `dispatch` `wrap.recipe_id` 接线**（加工页预览/TRANSMIT/事务三路须同字节，缺接线则预览帧与出线帧不同）。3a 终态：BE 466/466（基线 426 + 40）、FE 920/920（63 文件，基线 915 + 5）、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、**真路由冒烟 25 项 PASS**；明细见 §8.21。**3b 终态**：**纯前端批、零 DDL**（未改 `models.py`/`database.py`，`yorha.db` 未随本批提交）—— FE **924/924（63 文件，基线 920 + 4）**、既有「属性面板四分区 select = 3」用例**零改全绿**（未建配方时编辑器不占 select）、BE 466/466、`npx vite build` EXIT=0、yorha-ui 校验器 3 文件 0 违规、**真 curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；明细见 §8.22。**3c 终态（2026-10-01）**：**含 DDL** —— `sequence_steps` 新增 `wrap JSON` 单列自愈（`database.ensure_sequence_step_columns`，镜像 3a `ensure_recipe_columns` 先例）→ yorha.db **单独同步提交**；BE **496/496（基线 466 + 30）**、FE **932/932（63 文件，基线 924 + 8）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**真路由冒烟 30 项 ALL PASS** + **真浏览器 UI 验证 6 项通过**；明细见 §8.23。**3d 终态（2026-10-01）**：**含 DDL** —— **3 列仅新增**<br>（`response_specs.stage` / `response_specs.definition_hash` /<br>`protocol_bindings.definition_hash`，`ensure_response_spec_columns` 新建 +<br>`ensure_binding_columns` 扩列自愈，lifespan 接线）→ yorha.db 沿先例<br>**手工只跑 3 条 ALTER 后单独同步提交**；BE **537/537（基线 496 + 41）**、<br>FE **944/944（63 文件，基线 932 + 12）**、`npx vite build` EXIT=0、yorha-ui<br>校验器 8 文件 0 违规、**真路由冒烟 43 项 ALL PASS**；明细见 §8.24。**§9.7 人工验证收口（2026-10-02）**：3a①②③ + 3b①②③ + 编排页「洞位填装 → 封装试发」**8 项真浏览器 + `/dispatch/history` 对账复跑全过**（含 400 逐槽拦截与「未选配方 = 建配方前基线 28B 逐字节相同」），三处文档（§9.7 / `pageStatus.json` / HANDOVER 35·36 待办①）口径已统一，明细 §8.27 |
 | CP4 | Core Pipeline 批次四（治理）：**4a** 关系数据导入导出（`bindings` + `response_specs` 并入 DataHub ZIP `relations.json` + `POST /datahub/import/relations`）/ **4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 回执」+ D9/D10 划界落 README/PAGE_STATUS / **4c** D8 校验表全量核对（逐行销项，纯文档）（明细 `DESIGN_CorePipeline.md` §7 批次四） | 🔄 **4a 已提交 ✅ `54620ab`（代码+文档，零 DDL），2026-10-02**：导出 ZIP 增 `relations.json`（`manifest` 增 `relations` 计数、`/status` 增 `protocolBindings`/`responseSpecs` 两行计数）+ 回灌端点按 `id` upsert、逐行报告（父缺失 → `skipped` 带 reason、槽悬空 → 置 NULL + warning、默认唯一冲突清旧行、`spec` 过 `normalize_spec` / `stage` 重算镜像 / 出处原样回填）、**部分成功即部分落库不整批回滚**；前端 DataHub 增「关系数据」面板（选文件 → 解析校验 → 确认弹窗 → 回显 新增/更新/跳过/警告 计数 + 刷新）。终态 BE **549/549**（基线 537 + 12）、FE **948/948**（63 文件，基线 944 + 4）、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**；明细见 §8.25。**4b+4c 已提交 ✅ `03b25d3`（代码+文档，零 DDL），2026-10-02**：**4b** 绑定矩阵只读面板（`utils/bindingMatrix.js` 纯函数 + DataHub 页六列表 + 摘要八项计数；孤儿不静默 —— 协议已删 / 槽悬空 / `stale===true` 琥珀标出；三读与状态面板同拍、单读失败互不拖垮）+ D9/D10 划界落 `README.md` §6 Scope Boundaries 与 `pageStatus.json` 四页条目（`PAGE_STATUS.md` 再生）；**4c** 全量核对新增 `DESIGN_CorePipeline.md` §6.3 销项表 —— 8 行**全「已有」、0 待补**，§6.2 槽节点行复核为批次二已落地（`dangling_slots_cleared`）→ **本批零后端改动**（BE 用例数持平），`DESIGN_Decisions.md` D8/D9/D10 三表行 + 三处实施注（D9-B/D10-B 重开条件已具备**仍取 A**）。终态 BE **549/549**（持平）、FE **958/958（64 文件，基线 948 + 10）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**人工验证 3 项通过**；明细见 §8.26。**批次四三子批（4a/4b/4c）全数完成** |
 | C 已拍 | **5 项拍板已收齐**（§8.36 拍板结果表：C-1 自动选指令路由 / C-2 响应解码为字段 / C-3 全量项目包迁移 / C-4 应答带转义 / C-5 三项暂缓；另含 R6 方案） | ✅ **2026-10-02 全部拍定**：C-1=**A 不立项** / C-2=**C** / C-3=**C** / C-4=**确认接受** / C-5=**①② 触发式、③ 不做** / R6=**13 表加 `deleted_at`** → 编入 **R7–R10** |
-| R1–R10 | **B2 六项功能缺口 + 拍板选中项排期**（导入 pre-import 快照 / 传输配置上一配置回退 / ESLint 存量 / 编排页绑定拖拽 / float64 双端 / 软删除回收站 + C-3 补域 2 批 + C-2 解码 2 批）—— 顺序 = 先安全网 → 清欠账 → 体验 → 正确性 → 最后动 DDL | 📅 **已排期未开始**（§8.37；R1–R6 = 7–8 批 + R7–R10 = 4 批 → 合计 **11–12 批**，R6/R10 含 DDL 仅新增列） |
+| R1–R10 | **B2 六项功能缺口 + 拍板选中项排期**（导入 pre-import 快照 / 传输配置上一配置回退 / ESLint 存量 / 编排页绑定拖拽 / float64 双端 / 软删除回收站 + C-3 补域 2 批 + C-2 解码 2 批）—— 顺序 = 先安全网 → 清欠账 → 体验 → 正确性 → 最后动 DDL | 🔄 **R1 ✅ 已完成（§8.38，2026-10-02）**，余 R2–R10 未开始（§8.37；R1–R6 = 7–8 批 + R7–R10 = 4 批 → 合计 **11–12 批**，R6/R10 含 DDL 仅新增列） |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -2614,8 +2614,10 @@ hash + 本批）。
   4. **float64 编码仍不可用**（FE 走整数路径 / BE 保持 zeros，两端不一致；N1 已摘
      静默 → `FLOAT64_UNSUPPORTED` 提醒，G7 定案「提醒而非改模板」），真正修复 = 双端
      float64 分支，未立项；
-  5. 数据导入 `POST /datahub/import/*` **无 pre-import 自动快照**（恢复有
-     `pre-restore` 快照、导入没有 —— 风险不对称，§8.33 登记）；
+  5. ~~数据导入 `POST /datahub/import/*` **无 pre-import 自动快照**（恢复有
+     `pre-restore` 快照、导入没有 —— 风险不对称，§8.33 登记）~~ → **✅ 已由 §8.38
+     （R1）收口**（2026-10-02：`safety_snapshot()` + 响应 `preImportSnapshot` +
+     `pre-import-*` 打 `[快照]` 徽标）；
   6. 删除类操作**无软删除 / 回收站**（引用检查 + 前端确认齐全，误删只能靠 DataHub
      备份回退）；
   7. 传输配置**无「上一配置」一键回退**（改错手动改回；持久化失败已可从
@@ -2959,7 +2961,7 @@ R9–R10（C-2，2 批）—— 明细与追加理由见 §8.37。
 
 | 批 | 缺口（§8.34 B2 编号） | 层 | 量级 | DDL | 关键纪律 / 依赖 |
 |---|---|---|---|---|---|
-| **R1** | 5 · 数据导入无 **pre-import 自动快照** | BE | 小（1 批） | 否 | 镜像 `pre-restore` 先例（§8.33）：导入前 `create_backup` → 响应加 `preImportSnapshot`（**只做加法**）；补「恢复有快照、导入没有」的风险不对称；**与 §8.36 C-3 选 C 的前置是同一件事** |
+| ~~**R1**~~ ✅ | 5 · 数据导入无 **pre-import 自动快照** → **已落地（§8.38）** | BE | 小（1 批） | 否 | ✅ **2026-10-02 完成**：镜像 `pre-restore` 先例，新增 `safety_snapshot()` 收口「先快照、失败即中止」；顺序 = 校验 → 快照 → 回灌（**400 不落垃圾快照**、快照失败 500 且一行未写）；响应加 `preImportSnapshot`（只做加法）；`pre-import-*` 与 `pre-restore-*` 同打 `[快照]` 徽标。**与 §8.36 C-3 选 C 的前置是同一件事** → R7/R8 可直接复用 |
 | **R2** | 7 · 传输配置无**上一配置回退** | BE+FE | 小（1 批） | 否 | 复用 `transport_store` 存取钩子；保留最近 N 版 + 回退端点 + 通讯调试页按钮；口径对齐 §8.33 的 `transportConfigRestored` |
 | **R3** | 8 · **ESLint 存量**清理 | FE | 中（1 批，**60 problems / 26 文件**） | 否 | **先纠正 §8.34 的失实数字**（原文「1 error 2 warnings」，实测 `npm run lint` = **60 problems（42 errors / 18 warnings）**，见下方分布）；纪律 = **只删未用变量 / 加带理由的 disable，不改行为**；`no-control-regex` 是**有意的**（控字符校验）→ 注释 disable；`rules-of-hooks` 1 条**需人工看**（可能是真 bug）。**验收自本批起加 `npm run lint` EXIT=0** |
 | **R4** | 3 · 编排页**绑定拖拽排序** | FE | 中（1 批） | 否 | 现状 = 上移/下移按钮 + `slot_order` 洞位下拉回写**已落地**，只缺拖拽手势；**先拍「拖完改展示序还是持久序」**（建议 = 拖完调同一个 PUT，语义与现有下拉一致，**零 BE 改动**） |
@@ -3004,6 +3006,61 @@ R1 的快照函数。**排期合计 R1–R10 = 11–12 批**。
 
 **仍排期外**：**C-1 = A（不立项）**；**C-5 ①② = 触发式**（真机提出即插队）、**③ = 不做**；
 §8.34 B1 组 2 项仍需真机（D13 载荷含定界字节的出线方向 / §9.7 ①）。
+
+### 8.38 R1 · 数据导入 pre-import 自动快照（排期首项落地）
+
+**批次**：2026-10-02 · **零 DDL**（未改 `models.py` / `database.py`，`yorha.db` 不随本批
+提交）；未碰 `processor.py` / `graph.py` / `Blueprint.jsx`；`/dispatch` 缺省口径不变；
+**后端 only、零前端改动** —— 快照文件名可从 `GET /datahub/status` 的 `backups` 列表看到
+（带 `[快照]` 徽标），不必改前端。
+
+**背景**：§8.34 B2-5 → §8.37 **R1** —— 恢复前有 `pre-restore` 快照、**导入没有**，属
+风险不对称；C-3 选 C（§8.36 拍板）之后「导入前必须能回退」又成了 R7/R8 的硬前置，
+所以排在首项。
+
+**实现（3 处，全在 `backend/routers/datahub.py`）**
+
+1. **新 `safety_snapshot(prefix, scenario, db_path=None, backup_dir=None)`** —— 把
+   「先快照、失败即中止」这条不变量收成一处：`db_path` / `backup_dir` 缺省取模块级
+   `DB_PATH` / `BACKUP_DIR`（**运行时**取值，测试可替换）；库文件不存在 → 返回 `None`
+   **不报错**（首次使用前无从快照）；`OSError` → HTTPException **500** +
+   `安全快照失败，已中止{场景}：{exc}`。R8 要补的其它导入端点直接复用。
+2. **`POST /datahub/import/relations` 顺序改为 ① 顶层校验 → ② 快照 → ③ 逐行回灌**：
+   ① `_relations_payload()` 是纯函数，**400 时既不落快照也不写库**（不留垃圾快照）；
+   ② 失败 → 500 中止且**一行未写**（此时压根不需要回退）；③ 内部再校验一次（同一纯
+   函数，幂等）。响应新增 **`preImportSnapshot`**（只做加法，`null` = 库文件不存在）。
+3. **`_backup_entry.isSafetySnapshot` 改用常量 `SAFETY_SNAPSHOT_PREFIXES =
+   ("pre-restore-", "pre-import-")`** —— 否则 `pre-import-*` 在备份列表里长得和手建
+   备份一模一样，用户看不出该拿哪个回退。FE 该徽标只渲染 `[快照]` 文字、恢复按钮对所有
+   条目都可点 → **不改任何现有语义**。
+
+**测试（`backend/tests/test_datahub.py` 新 `TestImportPreSnapshot`，6 例，直调路由
+函数不走 TestClient，沿 `test_bindings.py` 惯例）**
+
+| 用例 | 钉住的不变量 |
+|---|---|
+| `test_snapshot_taken_before_write_and_reported` | 快照在写库**之前**留下、名字 `pre-import-*`、字节 = **回灌前**的库、响应回报该名；回灌照常 `imported=1`，原有键一个不少 |
+| `test_invalid_payload_400_leaves_no_snapshot_and_no_write` | 400 → **零快照文件**且零写入（校验先行） |
+| `test_snapshot_failure_aborts_import_with_500` | 快照目录位被同名文件占住 → 500、文案 `安全快照失败，已中止导入：`、**一行都没写** |
+| `test_missing_db_file_skips_snapshot_but_import_works` | 库文件不存在 → `preImportSnapshot=null`，导入照常 |
+| `test_helper_maps_oserror_and_tolerates_missing_db` | helper 两条分支（缺库 → `None`；快照失败 → 500 带场景词） |
+| `test_pre_import_flagged_as_safety_snapshot` | `pre-import` 与 `pre-restore` 都打 `[快照]`、手建备份不打 |
+
+（`setUp` 替换模块级 `DB_PATH` / `BACKUP_DIR` 后**必须在 `tearDown` 还原** —— 沿 §8.35
+`transport.send` 泄漏的教训。）
+
+**验收**：BE **636/636**（基线 630 + 6）、FE **973/973（66 文件）** EXIT=0、
+`npx vite build` EXIT=0、yorha-ui 校验器 `DataHub.jsx` **0 违规**（本批零前端改动）；
+零 DDL → 无 `chore(db)` 提交。
+
+**文档同步（同批）**：`pageStatus.json` 数据中心页「关系数据回灌」补 pre-import 快照
+口径（`PAGE_STATUS.md` 再生）、本节 §8.38、§8.37 R1 行标已办、§1 `R1–R10` 行状态、
+§8.34 B2-5 标已办、`PROJECT_HANDOVER.md` 条目 47。
+
+**范围说明（口径，不是缺口）**：本批只覆盖 `POST /datahub/import/*`（§8.34 B2-5 原文
+口径）—— 该前缀下当前只有 `relations` 一个端点。**指令页 / 协议页的逐条 JSON 导入走
+`POST /instructions/` 等端点，不在本批**：它们是逐条 create + 唯一冲突跳过，语义与
+「整包回灌」不同；需要同等快照时另立批次。
 
 ## 9. 保留勿动（非任务，勿清理）
 

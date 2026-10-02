@@ -13,6 +13,10 @@
 - 批次四 4a 关系数据：`relations.json`（protocol_bindings + response_specs）
   并入聚合导出 ZIP，`POST /datahub/import/relations` 按 id 回灌（逐行报告）。
   见 `DESIGN_CorePipeline.md` §7 批次四。
+- PLAN §8.37 R1：关系数据回灌**前**自动留 `pre-import-*` 安全快照（镜像 D2 恢复前的
+  `pre-restore` 先例，补「恢复有快照、导入没有」的风险不对称），响应新增
+  `preImportSnapshot`；快照逻辑收在 `safety_snapshot()` —— R8 要补的其它导入端点
+  直接复用。
 
 纯函数（fields_to_blocks / compile_blocks / frame_bytes / format_hex_text /
 build_bundle / sanitize_filename / validate_backup_name / create_backup /
@@ -403,14 +407,42 @@ def list_backups(backup_dir):
     return items
 
 
+# 安全快照的文件名前缀（危险写操作前自动留）：`_backup_entry` 据此打 [快照] 徽标，
+# 备份列表里一眼能看出「这是出事时回退用的，不是手建的备份」。
+SAFETY_SNAPSHOT_PREFIXES = ("pre-restore-", "pre-import-")
+
+
 def _backup_entry(path):
     stat = path.stat()
     return {
         "name": path.name,
         "sizeBytes": stat.st_size,
         "modifiedAt": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
-        "isSafetySnapshot": path.name.startswith("pre-restore-"),
+        "isSafetySnapshot": path.name.startswith(SAFETY_SNAPSHOT_PREFIXES),
     }
+
+
+def safety_snapshot(prefix, scenario, db_path=None, backup_dir=None):
+    """危险写操作**之前**留安全快照（PLAN §8.37 R1）→ 快照文件名；无可快照 → None。
+
+    镜像 `/datahub/restore` 里 `pre-restore` 的先例，把「先快照、失败即中止」这条
+    不变量收在一处（本批接关系数据回灌用的 `pre-import`；R8 要补的其它导入端点直接
+    复用，不必各写一遍）。
+
+    - `db_path` / `backup_dir` 缺省取模块级 `DB_PATH` / `BACKUP_DIR`（**运行时**取值，
+      测试可替换）；
+    - 库文件还不存在 → 返回 `None` 且**不报错**（首次使用前无从快照）；
+    - `OSError` → HTTPException 500、消息带场景词 —— 此时**库一个字节都没动**：
+      「先快照后写库」比「先写库再补快照」才真能兜底。
+    """
+    path = DB_PATH if db_path is None else Path(db_path)
+    directory = BACKUP_DIR if backup_dir is None else Path(backup_dir)
+    if not path.exists():
+        return None
+    try:
+        return create_backup(path, directory, prefix=prefix).name
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"安全快照失败，已中止{scenario}：{exc}")
 
 
 # --------------------------------------------------------------------------
@@ -739,8 +771,22 @@ def import_relations_endpoint(payload: dict = Body(...), db: Session = Depends(g
 
     逐行 upsert、逐行报告（缺父 / 槽悬空 / 唯一冲突 → skipped 或 warning），
     部分成功即部分落库，**不整批回滚**；顶层未知键 / 非法 schemaVersion → 400。
+
+    PLAN §8.37 R1：**回灌前先留 `pre-import` 快照**（镜像 `/restore` 的 `pre-restore`
+    先例）。顺序 = ① 顶层校验 → ② 快照 → ③ 逐行回灌：
+    ① 的 400 **不产生快照文件**（纯函数，还没碰库）；② 失败 → 500 中止且**库未被
+    改动**（此时拿 `pre-import-*` 一键回退都不需要，因为压根没写）。响应新增
+    `preImportSnapshot`（只做加法；`null` = 库文件不存在、无从快照）。
     """
-    return import_relations(db, payload)
+    # ① 顶层校验先行：`_relations_payload` 是纯函数，400 时既不落快照也不写库
+    _relations_payload(payload)
+    # ② 快照（失败 → 500 中止）
+    snapshot = safety_snapshot("pre-import", "导入")
+    # ③ 逐行回灌（内部会再校验一次 —— 同一纯函数，幂等）
+    report = import_relations(db, payload)
+    if isinstance(report, dict):
+        report["preImportSnapshot"] = snapshot
+    return report
 
 
 @router.post("/backup")
