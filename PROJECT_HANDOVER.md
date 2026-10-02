@@ -676,7 +676,8 @@
     重算），配方链沿用该层位（只在第 0 层之前转义）；**新发现**：编排页「封装
     试发」走 `/compile/wrapped` → `/dispatch` **不带 wrap**，`escape` 收到的是
     已封装整帧 → 与带 `wrap` 的"只转内核"语义不一致（缺省关闭时无影响），
-    **建议并入批次二**，见 `DESIGN_Decisions.md` D13「边界（转义）」。
+    **建议并入批次二**（→ **已随 CP2 落地，层位项见条目 33**），见
+    `DESIGN_Decisions.md` D13「边界（转义）」。
     文档：`DESIGN_Decisions.md` D13（+ §0 回填 + D2 交叉引用 + 审批状态）、
     `DESIGN_CorePipeline.md` §9（9.1 DDL / 9.2 阶段载荷取甲案 / 9.3 端点契约与
     降级链 / 9.4 UI 归属：编排页配方编辑器 + 加工页分层堆叠 / 9.5 防错四条 /
@@ -685,7 +686,7 @@
     **排批（2026-10-01 拍板）= 并入批次三**，硬前置批次二（复用其 reject 分支）。
     残余风险进人工验证清单：「有 LEN = 不需要转义」为经验判定，需在真实链路帧上
     核对载荷出现定界字节时设备是否异常。→ **CP2 已实现（层位项随批落地，见 33）
-    → 待办：CP3-3a。**
+    → CP3 已全部收口（3a–3d = 条目 35–38，人工验证复跑 = 条目 41）。**
 
 32. **D14 / D15 / D11 分段（三缺口复核代码后起草并拍板，纯文档）**（2026-10-01）：
     - **同批修正**：D13「边界（转义）」原写 `output_transform` 待建 → 实为
@@ -766,7 +767,7 @@
       CP3-3d 参照）。
       → **已提交 `5afe706`（2026-10-01，代码+文档，零 DDL 未提交 `yorha.db`）
       → 待办：CP2b（D11-① 共享 fixture，需先定跨语言特殊值约定）→ CP3。
-      → CP2b 已于同日完成，见条目 34。**
+      → CP2b 已于同日完成，见条目 34；CP3 亦已全部收口（见条目 35–41）。**
 
 34. **CP2b D11-① 双端共享向量表实现完成（单一真相源 = 根目录 `vectors/`）**
     （2026-10-01，**零 DDL** —— 纯测试/数据重构，**不改任何生产代码路径**）：
@@ -796,8 +797,8 @@
       D11 实施注、`DESIGN_CorePipeline.md` §1/§7 拆批注状态、`vectors/README.md`
       新增；**无 UI 改动 → `pageStatus.json` / `PAGE_STATUS.md` 不动**。
       → **已提交 `da0179d`（2026-10-01，代码+文档，零 DDL 未提交 `yorha.db`）
-      → 待办：CP3（3a 含 DDL：`frame_recipes` 新表 + `instructions.
-      default_recipe_id`，`yorha.db` 单独同步提交）。**
+      → CP3 已全部收口（3a `e63d76f` + `438f3af` 含 DDL 落库 / 3b / 3c / 3d，
+      见条目 35–38，人工验证复跑 = 条目 41）。**
 35. **CP3-3a 封装配方数据层 + 串行编译 + 加工页分层预览实现完成**
     （2026-10-01，**含 DDL** —— `frame_recipes` 新表 + `instructions.default_recipe_id`
     补列自愈；`models.py` 只增表/列，`/dispatch` 裸发缺省口径逐字节不变，未碰
@@ -848,7 +849,7 @@
     - **提交**：→ **已提交 `e63d76f`（代码+文档）→ `438f3af`（chore(db) DDL 落库）
       → 本回填，2026-10-01**。**待办**：① ~~**人工验证必查 3 项**（§9.7：三层真实
       链路帧目视核对 / 分层堆叠逐层字节与协议页卡面一致 / 改动中间层协议 → 失效
-      徽标点亮，通过后补记）~~ —— **已销，2026-10-02 复跑通过（见 41）**；② CP3 剩余子批 3b / 3c / 3d。
+      徽标点亮，通过后补记）~~ —— **已销，2026-10-02 复跑通过（见 41）**；② ~~CP3 剩余子批 3b / 3c / 3d~~ —— **已销（3b = 36、3c = 37、3d = 38）**。
 36. **CP3-3b 编排页配方编辑器 + 试发改线实现完成**
     （2026-10-01，**纯前端批、零 DDL** —— 未改 `models.py`/`database.py`（故**无
     `chore(db)` 提交**）、未碰 `processor.py`/`graph.py`/`Blueprint.jsx`；3a 已提前
@@ -1165,6 +1166,60 @@
     - **状态**：**协议页人工复测项全数销**；全仓遗留仅 §9.7 ④（应答是否带转义字节，需
       真实设备帧或单独拍板）+ 编排页「绑定拖拽排序（拖拽交互未做）」**功能项**（非验证项）。
 
+43. **本会话六批（五实现 + 一文档）：共享向量收口 / DB 版本化升级 / README 单一事实来源 /
+    关键链路诊断 / 危险操作可恢复性 / 评审清单收口**（2026-10-02；**零 DDL** —— 未改
+    `models.py`、未碰 `processor.py` / `graph.py` / `Blueprint.jsx`、`/dispatch`
+    缺省裸帧口径逐字节不变；仅批 2 有 `chore(db)` 同步提交）：
+    - **批 1 共享向量收口** → **`f76d406`**：`backend/tests/test_vectors_manifest.py`
+      五道闸（manifest ↔ vectors/ 双向齐 / hash 一致 / 无孤儿向量 / 目录纪律 /
+      README 一节一锚）+ `frontend/src/utils/__tests__/vectorsLoader.test.js` 五例 +
+      `vectors/README.md` §6；此后**新增向量只写一处**。
+    - **批 2 SQLite 版本化升级机制** → **`8b8fcfc`**（代码+文档）+ **`9dad0e1`**
+      （`chore(db)`：`schema_migrations` 版本表 + `0001_baseline` 记录，v1、
+      integrity ok）：`backend/db/migrate.py`（裸 SQL 版本表**不动 `models.py`** /
+      `Migration` 注册表从 1 连续 / 既有库 apply 前整库快照到 `backend/db/backups/`
+      / apply+verify+记版本同一事务 / `PRAGMA integrity_check` 终检 / CLI
+      `python -m backend.db.migrate status|up`）+ `test_migrate.py` 18 例 + lifespan
+      接入（`create_all` 与 5 个 `ensure_*` 之后、fresh 判定在 `create_all` 之前）。
+      **关键发现**：pysqlite「非 DML 前隐式 COMMIT」使 DDL 落在事务外、回滚撤不掉
+      （实测残留 `probe` 表）→ 迁移专用引擎用 SQLAlchemy 官方 recipe（连接
+      `isolation_level=None` + `BEGIN` 事件显式 `BEGIN`，`NullPool` 跑完 dispose），
+      **只作用于迁移连接，主 engine 语义不动**。
+    - **批 3 README 单一事实来源** → **`62fb68a`**：EN/ZH README 状态节改纯指路
+      （唯一数据源 `frontend/src/config/pageStatus.json`，`docs/PAGE_STATUS.md` 为
+      生成物禁手改），纠正两处过期占位页说法 + Run Tests 补后端命令 + 目录结构补
+      lifespan 顺序与 `migrate.py`。
+    - **批 4 关键链路可诊断反馈** → **`46f65a4`**：新增 `backend/core/diagnostics.py`
+      （`Diagnostic` / `DiagError` / `DiagHTTPException` / `http` / `http_from` /
+      `with_detail` / `diagnostic_of` / `install`）→ 错误体 `{"detail": 原文,
+      "diagnostic": {…}}`；**只做加法**：`detail` 字符串与文案逐字不变、普通
+      `HTTPException` 仍走 FastAPI 默认形状、成功路径零改动。四条链路接线：组帧
+      （`dispatch` 拆转义/封装/hex 三段 + 配方逐层 `layer`）、发送（502 +
+      `byte_count`、序列互斥 409）、应答匹配（`spec`/`param` + 失败事务
+      `TransactionRecord.diagnostic` 三态）、序列执行（ERROR 步必带 `diagnostic`，
+      成功步不加键）；前端 `client.js::handleResponse` 挂 `error.diagnostic` + 消息
+      前压摘要（`formatDiagnostic`）。**BE +33、FE +10**。
+    - **批 5 危险操作可恢复性** → **`f1e38ef`**：restore **当场 schema 自愈**
+      （`create_all` + 5×`ensure_*` + 迁移 `do_backup=False` + integrity，失败报错带
+      `pre-restore` 快照名，响应新增 `schema{applied,version,integrity}`）/
+      **序列运行中禁止恢复 409** / 恢复后传输配置**当场对齐且不抹
+      `active_profile_id`**（摘钩→交回→挂回，响应新增 `transportConfigRestored`）/
+      迁移**拒绝更高版本的库**（`version > target` 动列前抛错）/ 配置**持久化失败
+      留痕**（error 事件可见）。**BE +8**（`test_recoverability.py` 7 +
+      `test_migrate.NewerDbTest` 1），全部临时库不碰真库。
+    - **批 6 文档评审清单收口（本条 + 同批）**：PLAN 新 **§8.34**（A 组 9 处过期说法
+      纠正 / B 组 8 项真实缺口 + 暂缓挂账 / C 组 5 项待拍板）+ 就地改正
+      `DESIGN_CorePipeline.md` §9.8、`DESIGN_Decisions.md` D13 边界与「拍板后的下一步」、
+      本文件条目 31/33/34/35 的「待办 CP3」旧话 + §6 目录地图补 `migrate.py` /
+      `backups/` / `diagnostics.py` / `tests/` 四行与 `main.py` lifespan 新顺序。
+    - **验收**：批 4/5 跑 **BE 613/613**、**FE 973/973（66 文件）**、`npx vite build`
+      EXIT=0、yorha-ui 校验器 0 违规；uvicorn 实测 4 例（400 / 404 带 `diagnostic`、
+      200 缺省记录**零新增字段**）；批 1/2/3 见各自 §8.29–§8.31（BE 572、FE 963 基线）。
+    - **状态**：**本会话六批（五实现 + 一文档）全部提交**；遗留 = PLAN §8.34
+      C 组五项**待用户拍板**（自动选指令路由 / 响应解码为字段 / 全量项目包迁移 /
+      应答反转义口径 / 三项暂缓是否重启）+ B 组功能缺口（编排页拖拽排序、float64
+      编码、pre-import 快照、回收站、上一配置回退、ESLint 存量）+ §9.7 ④ 需真机帧。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
@@ -1182,7 +1237,7 @@
 ### backend/
 | 文件 | 职责 | 状态 |
 |---|---|---|
-| `backend/main.py` | FastAPI 入口；`lifespan`（create_all + 3 个种子）；注册全部路由（`/compile` 本体已拆至 `routers/compile.py`） | ✅ 权威入口 |
+| `backend/main.py` | FastAPI 入口；`lifespan`（`create_all` → 5 个 `ensure_*` 自愈 → `db/migrate.run_pending_migrations` 版本化升级 → 3 个种子 → 传输配置恢复 → `core/diagnostics.install`）；注册全部路由（`/compile` 本体已拆至 `routers/compile.py`） | ✅ 权威入口 |
 | `backend/routers/instruction.py` | 指令 CRUD；`save_field_flat` 持久化 bits；`serialize_instruction` 返回 bits | ✅ |
 | `backend/routers/protocol.py` | 协议 CRUD + 种子 | ✅ |
 | `backend/routers/operator.py` | 算子模板 + `seed_operator_templates`（含 BITFIELD） | ✅ |
@@ -1190,12 +1245,16 @@
 | `backend/routers/export.py` | `/export/hex`、`/export/binary`、`hex_to_bytes` | ✅ 新增 |
 | `backend/routers/dispatch.py` | `/dispatch` 环回通道 + 有界历史 | ✅ 新增 |
 | `backend/core/orchestrator.py` | 块森林 → hex 编译（`/compile`、`/export/binary` 使用） | ✅ |
+| `backend/core/diagnostics.py` | 统一诊断：`Diagnostic` / `DiagError` / `DiagHTTPException` + `install(app)` → 错误体 `{"detail": 原文, "diagnostic": {…}}`（`detail` 逐字不变，只做加法） | ✅ 新增（§8.32） |
+| `backend/tests/` | 后端全量测试（stdlib `unittest`，**直调路由不用 TestClient**、不触 lifespan；共享向量读根目录 `vectors/`） | ✅ `python -m unittest discover -s backend/tests -t backend/tests` |
 | `backend/handlers/length.py`、`checksum.py` | 扁平流区间长度 / 校验计算 | ✅ |
 | `backend/db/models.py` | SQLAlchemy 模型（含 `BitField`） | ✅ |
 | `backend/db/database.py` | SQLite engine / Session / Base | ✅ |
 | `backend/db/seed.py` | 示例指令种子 | ✅ |
 | `backend/db/yorha.db` | SQLite 数据库文件 | ✅ 已被 git 跟踪（保留） |
-| `backend/db/migrations/*.sql` | `schema.sql` / `seed_data.sql` **非权威参考**（见同目录 `README.md`），无自动执行、无迁移框架 | ⚠️ 仅供参考 |
+| `backend/db/migrate.py` | **版本化迁移**（`schema_migrations` 裸 SQL 表 + `Migration` 注册表 + 升级前整库快照到 `backups/` + 单事务 apply/verify + `integrity_check` 终检 + CLI `python -m backend.db.migrate status\|up`） | ✅ 权威升级机制（§8.30） |
+| `backend/db/backups/` | 迁移/恢复的整库快照落点（`pre-restore-*` 为恢复前安全快照） | ✅ gitignore，不入库 |
+| `backend/db/migrations/*.sql` | `schema.sql` / `seed_data.sql` **非权威参考**（见同目录 `README.md`），无自动执行 | ⚠️ 仅供参考（真正的版本化迁移在 `backend/db/migrate.py`） |
 | `backend/core/processor.py` | 旧编译链 | ⚠️ **未接线**（Phase-2 遗留，保留勿删，勿引入新依赖） |
 | `backend/core/graph.py` | 旧 GraphEngine 拓扑排序 | ⚠️ **未接线**（同上） |
 | `backend/debug_db.py` | MySQL 调试脚本，唯一使用 pymysql 的地方 | ⚠️ 独立脚本 |

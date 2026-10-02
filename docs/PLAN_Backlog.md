@@ -2572,6 +2572,75 @@ DDL 三列落真库、无链 400 / 不存在 404、三层协议 + 配方挂默�
 **终态**：BE **613/613**（605 + 8）、FE **973/973（66 文件）** 不变（本批零前端改动，
 FE 相关断言全部复跑通过）、`npx vite build` EXIT=0；**零 DDL → 无 `chore(db)` 提交**。
 
+### 8.34 评审清单收口：过期说法纠正 + 真实缺口登记 + 待拍板项（文档批 · 零代码）
+
+**背景**：把散在三份评审性清单里的说法**逐条与代码、git log 对账**（方法 = grep 代码 +
+`git log` 核提交），先把过期说法就地纠正，再登记复核属实的真实缺口，最后单列**需用户
+拍板、不可自行推进**的项。同批回填 `PROJECT_HANDOVER.md` 条目 43（本会话五实现批
+hash + 本批）。
+
+**A 组 · 过期说法纠正（本批就地改，9 处）**
+
+| 位置 | 原说法 | 纠正后（事实） |
+|---|---|---|
+| `DESIGN_CorePipeline.md` §9.8 转义条 | 「已知层位不一致…**建议并入批次二**」 | ✅ 已随 CP2 落地（§1 CP2 行「转义层位统一（封装试发改带 `wrap` 下发）」+ §8.19），两条路径同为「套壳前转义内核」 |
+| `DESIGN_Decisions.md` D13「边界（转义）」 | 「已知层位不一致（…**待收**）…建议并入批次二（防错）」 | ✅ 已随批次二收口，处置动作写全（复用 1c 改线） |
+| `DESIGN_Decisions.md` §拍板后的下一步 | 三条「下一步」当待办列 | 三条**已全部完成**（§0 决策列 D1–D15 已回填 / `DESIGN_CorePipeline.md` 已生成并随 CP1–CP4 更新 / §1 批次表已同步）→ 改存档注 |
+| `PROJECT_HANDOVER.md` 条目 31 | 「→ **待办：CP3-3a**」 | CP3 已全部收口（3a–3d = 条目 35–38，人工验证复跑 = 41） |
+| `PROJECT_HANDOVER.md` 条目 33 | 「→ 待办：CP2b…→ CP3」 | CP2b = 条目 34；CP3 = 条目 35–41 |
+| `PROJECT_HANDOVER.md` 条目 34 | 「→ **待办：CP3（3a 含 DDL…）**」 | CP3 四子批全数收口（3a `e63d76f`+`438f3af` 含 DDL 落库 / 3b / 3c / 3d） |
+| `PROJECT_HANDOVER.md` 条目 35 待办② | 「CP3 剩余子批 3b / 3c / 3d」 | 已销（36 / 37 / 38） |
+| `PROJECT_HANDOVER.md` §6 目录地图 | `main.py`「lifespan = create_all + 3 种子」；`migrations/*.sql`「无迁移框架」 | lifespan = `create_all` → 5×`ensure_*` → `run_pending_migrations` → 3 种子 → 传输配置恢复 → `diagnostics.install`；版本化迁移在 `backend/db/migrate.py`；**补四行**（`migrate.py` / `backups/` / `diagnostics.py` / `tests/`） |
+| EN/ZH `README.md` 页面状态节（**§8.31 批已改，`62fb68a`**） | 「Communication Terminal 仍为占位页」「通讯调试 / 数据中心仍为占位页」 | 改纯指路，唯一数据源 `frontend/src/config/pageStatus.json`（`PAGE_STATUS.md` 为生成物，禁手改） |
+
+**复核属实、不改的说法**（避免把对的「纠正」成错的）：
+- **「CP3 已完成」属实** —— 四子批提交齐：3a `e63d76f`+`438f3af` / 3b `c4b1f7f` /
+  3c `fbad083`+`17c6830` / 3d `77dd389`+`bb7a0ba`，人工验证复跑见 §8.27；
+- **「`definition_hash` 已落地」属实** —— 三个消费方（配方 `core/recipe_compile.py` /
+  `routers/binding.py` / `routers/response_spec.py`）全在代码里，grep 命中 21 个 py
+  文件；`DESIGN_CorePipeline.md` §9.8 里已划线的「未做」两句正是对的；
+- **「`processor.py` / `graph.py` / `Blueprint.jsx` 未接线」属实**（§9 保留勿动）。
+
+**B 组 · 真实缺口登记（复核属实、当前未做）**
+
+- **B1 需真机 / 真实数据才能推进**：
+  1. `escape` 反转义**未接进 `response_match`**（`backend/core/response_match.py` grep
+     零命中）→ 「应答是否也带转义字节」在环回下无法定论（§9.7 ④ / D15 关联项 1）；
+  2. D13「有 LEN = 不需要转义」是经验判定 → 载荷含定界字节时真实设备是否异常，
+     需真机帧目视（§9.7 ① 的观察对象）。
+- **B2 纯功能缺口（可排期，尚未排）**：
+  3. 编排页「绑定拖拽排序」**拖拽交互未实现**（现状 = 上移 / 下移按钮；§8.28 标为
+     功能项而非验证项）；
+  4. **float64 编码仍不可用**（FE 走整数路径 / BE 保持 zeros，两端不一致；N1 已摘
+     静默 → `FLOAT64_UNSUPPORTED` 提醒，G7 定案「提醒而非改模板」），真正修复 = 双端
+     float64 分支，未立项；
+  5. 数据导入 `POST /datahub/import/*` **无 pre-import 自动快照**（恢复有
+     `pre-restore` 快照、导入没有 —— 风险不对称，§8.33 登记）；
+  6. 删除类操作**无软删除 / 回收站**（引用检查 + 前端确认齐全，误删只能靠 DataHub
+     备份回退）；
+  7. 传输配置**无「上一配置」一键回退**（改错手动改回；持久化失败已可从
+     `GET /transport/status` 的 error 事件看到，§8.33 批修）；
+  8. ESLint **存量 1 error 2 warnings**（HEAD 存量，各批不计入验收）→ 要清需单独批。
+- **B3 已立暂缓 / 挂账（只列名，不重复排期）**：§8.14 四项暂缓（CRC 多算法 CCITT /
+  CRC32 / LRC、长度域 BE/LE、varint/COBS 组帧、解码回程 bytes→fields）；
+  `BUSINESS_SCENARIOS.md` 挂账三项（epoch 模板、加扰 / 混淆、创建后切 op）。
+
+**C 组 · 需用户拍板（不实现，只登记 —— 自主推进到此为止）**
+
+1. **自动选指令路由**：按输入值选指令 / 报文（G1 运行期形态；N3 已明确「多指令
+   自动路由为 N3 范围外」）→ 是否立项？
+2. **响应报文解码为字段**：bytes→fields 回程（encode-only 既有边界，§8.14 暂缓）
+   → 是否立项？
+3. **全量项目包迁移**：DataHub 现只出 `instructions + relations + frames`，
+   整库 / 全量工程包是否立项？
+4. **应答是否带转义字节**（B1-1）：要么给一帧**真实设备应答**，要么拍板「环回口径 =
+   不带转义」并据此把反转义接进 `response_match` —— 二选一，需一句话定；
+5. **三项暂缓是否重启**：CRC 多算法 / 长度域 BE/LE / varint-COBS。
+
+**终态**：纯文档批（零代码、零 DDL、`pageStatus.json` 未动 → `PAGE_STATUS.md` 不重生成）；
+同批 `PROJECT_HANDOVER.md` 新增条目 43（本会话**五实现批** hash：`f76d406` /
+`8b8fcfc`+`9dad0e1` / `62fb68a` / `46f65a4` / `f1e38ef`，另含本批）+ 目录地图补行。
+
 ## 9. 保留勿动（非任务，勿清理）
 
 - `backend/core/processor.py` / `graph.py` 未接线（Phase-2 遗留，保留勿删，

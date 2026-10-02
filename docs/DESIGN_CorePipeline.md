@@ -622,8 +622,10 @@ return {hex: frame, total_length, warnings, stages: [...]}
 - **转义（不新建能力）**：**已有 N4 实现**（`backend/core/escape.py`，配置骑传输
   配置 `escape` 段、**缺省关闭**、先转内核再套壳、壳域按线上字节重算），**不属配方
   范围** —— 配方链固定在第 0 层之前转义、stage 1…n 不再转义；不新建
-  `output_transform`（满足 D13 重开条件 ④ 才另议）。**已知层位不一致**（封装试发
-  路径对整帧转义，与 `/dispatch` 带 `wrap` 语义不同）建议并入批次二，详见
+  `output_transform`（满足 D13 重开条件 ④ 才另议）。**层位不一致**（封装试发
+  路径对整帧转义，与 `/dispatch` 带 `wrap` 语义不同）**已随批次二落地**——原
+  「建议并入批次二」已执行：CP2「转义层位统一（封装试发改带 `wrap` 下发）」，
+  两条路径同为「套壳前转义内核」（`PLAN_Backlog.md` §1 CP2 行 + §8.19），详见
   `DESIGN_Decisions.md` D13「边界（转义）」；
 - **多载荷 stage（9.2 乙案）**：形态丙单承载槽够用；
 - 传输层进配方（D9 划界）；`PROTOCOL_REF`（D13 重开条件四条）；
