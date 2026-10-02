@@ -42,11 +42,19 @@
 
 ## 📌 当前页面实现状态
 
-页面导航、占位说明和实现状态现在统一以 `frontend/src/config/pageStatus.json` 为单一来源。
+**本 README 不维护页面状态，请勿在此追加「某页是否落地」的说明。**
 
-- 当前页面状态总览请查看: [docs/PAGE_STATUS.md](./docs/PAGE_STATUS.md)
-- 其中 `协议定义`、`指令管理`、`指令加工`、`编排绑定` 已接入当前 SQLite / FastAPI 主链路。
-- `通讯调试` 与 `数据中心` 仍为占位页，文档与页面说明已按同一份状态清单对齐。
+导航名称、占位文案与实现状态的唯一数据源是
+[`frontend/src/config/pageStatus.json`](./frontend/src/config/pageStatus.json)；
+[docs/PAGE_STATUS.md](./docs/PAGE_STATUS.md) 由它**生成**，不要手工编辑：
+
+```bash
+node scripts/generate-page-status.mjs   # 修改 pageStatus.json 后重新生成
+```
+
+「哪一页已落地 / 还是占位页」只看那份状态清单；进行中的工作看
+[docs/PLAN_Backlog.md](./docs/PLAN_Backlog.md) 与 [PROJECT_HANDOVER.md](./PROJECT_HANDOVER.md)。
+本文件只做项目介绍与指路，页面上线时**只需改一处**。
 
 ---
 
@@ -93,8 +101,12 @@ npm run dev
 确保代码修改的安全性与稳定性。
 
 ```bash
+# 前端（Vitest）
 cd frontend
 npm run test
+
+# 后端（unittest，仓库根目录执行）
+python -m unittest discover -s backend/tests -t backend/tests
 ```
 
 ---
@@ -128,12 +140,13 @@ graph TD
 
 ```
 /backend
-    main.py              # FastAPI 入口（lifespan：建表 + 三个种子函数）
+    main.py              # FastAPI 入口（lifespan：建表 + ensure_* 补列自愈 + 版本化迁移 + 三个种子函数）
     requirements.txt     # Python 依赖（含 pymysql，仅 debug_db.py 使用）
     /routers             # HTTP 路由（instruction / protocol / operator / compile / export / dispatch）
     /handlers            # 区间逻辑（length、checksum）
     /core                # orchestrator.py（在用）；processor.py / graph.py（遗留，未接线）
     /db                  # SQLAlchemy 模型 + SQLite 文件 backend/db/yorha.db（migrations/*.sql 非权威）
+                         # migrate.py = 版本化升级器（schema_migrations 版本表，PLAN §8.30）；运行期备份落 /db/backups（已 gitignore）
     debug_db.py          # 独立 MySQL 调试脚本（唯一使用 pymysql 的地方）
 
 /frontend

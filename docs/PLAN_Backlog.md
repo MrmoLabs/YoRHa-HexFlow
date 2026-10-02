@@ -2436,6 +2436,30 @@ DDL 三列落真库、无链 400 / 不存在 404、三层协议 + 配方挂默�
   （版本表 + 基线行）。`migrations/README.md` 同步改写（原「没有迁移框架」→ 现机制 +
   新增表/列固定动作）。
 
+### 8.31 README 页面状态收敛为单一事实来源（文档批）
+
+**诉求**：项目文档只留一个事实来源。`docs/PAGE_STATUS.md` 已显示通讯调试、数据中心
+落地，README 却仍写「占位页」—— 两份手工维护的页面清单迟早分叉。
+
+- **核对结果（两处确实过期）**：① EN README「Current Page Status」列 5 页「接入主链路」
+  +「`Communication Terminal` is still a placeholder page」（终端页 2026-09-23 已落地，
+  09-30 真机反馈已走完）；② ZH README 同节写「`通讯调试` 与 `数据中心` 仍为占位页」
+  （两页均早已落地）。而 `pageStatus.json` 是 7 页全有状态，README 属于第三份清单。
+- **改法（两份 README 状态节 → 纯指路）**：明写「**本 README 不维护页面状态**」；
+  唯一数据源 = `frontend/src/config/pageStatus.json`，`docs/PAGE_STATUS.md` 是**生成物**
+  （附再生命令 `node scripts/generate-page-status.mjs`，禁手改）；「哪页落地/占位」只看
+  那份矩阵，进行中工作看 `PLAN_Backlog.md` / `PROJECT_HANDOVER.md`；页面上线**只改一处**。
+- **顺带准确性修正**（同一处小改）：① Data Hub「row counts of all seven tables」→ 改为
+  **七张被统计的表**逐项列名（status 面板实际就是 7 个 counter：instructions / fields /
+  bit fields / protocols / operator templates / bindings / response specs，库内表更多，
+  原文会被读成「库里只有七张表」）；② Run Tests 补后端命令
+  `python -m unittest discover -s backend/tests -t backend/tests`（原只给前端，与仓库
+  实际双端测试口径不符）；③ 目录结构 `main.py` 行改成 lifespan 真实顺序
+  （`create_all` + `ensure_*` 自愈 + 版本化迁移 + 种子，见 §8.30），`/db` 行补
+  `migrate.py` 版本化升级器。
+- **口径**：纯文档批（README / README_ZH / 本节），**不跑测试**；未改
+  `pageStatus.json` → 无需再生 `PAGE_STATUS.md`。
+
 ## 9. 保留勿动（非任务，勿清理）
 
 - `backend/core/processor.py` / `graph.py` 未接线（Phase-2 遗留，保留勿删，

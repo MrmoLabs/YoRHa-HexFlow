@@ -34,7 +34,7 @@
 - **Dispatch + Transport**: `POST /dispatch/` sends frames through the transport abstraction and keeps a bounded in-memory history (max 100) with three event kinds — raw / response / error. **The default mode is the in-process loopback channel (`/dispatch` contract unchanged); `POST /transport/config` switches to real TCP (stdlib socket) or serial (pyserial) transport, and `GET /transport/status` reports connection-state events.**
 
 ### 4. Data Hub (数据中心)
-- **Environment Status Panel**: `GET /datahub/status` reports the DB path / size / mtime, row counts of all seven tables (incl. bindings / response specs), and the backend version.
+- **Environment Status Panel**: `GET /datahub/status` reports the DB path / size / mtime, row counts for seven tracked tables (instructions / fields / bit fields / protocols / operator templates / bindings / response specs), and the backend version.
 - **Aggregate Export**: `GET /datahub/export/bundle` packages `instructions.json` (import-format symmetric with the Instruction page), `relations.json` (protocol bindings + response specs, batch 4a), `manifest.json`, and per-instruction skeleton frames (`frames/*.bin|.hex`, compiled by the Orchestrator) into one ZIP.
 - **Relations Import**: `POST /datahub/import/relations` re-imports the ZIP's `relations.json` — upsert by `id` with a per-row report (missing parent → skipped with reason, dangling `slot_id` → cleared with a warning, `definition_hash` preserved as-is), partial success is kept instead of rolling back the whole batch.
 - **Backup & Restore**: `POST /datahub/backup` copies `yorha.db` into `backend/db/backups/` (gitignored); `POST /datahub/restore` takes an automatic `pre-restore-*` snapshot, releases the pool, clears WAL/SHM leftovers, and atomically replaces the file (filename traversal is rejected).
@@ -53,11 +53,21 @@
 
 ## 📌 Current Page Status
 
-Page navigation labels, placeholder descriptions, and implementation status now use `frontend/src/config/pageStatus.json` as the single source of truth.
+**This README does not track page status — do not add rollout notes here.**
 
-- See the current page matrix in [docs/PAGE_STATUS.md](./docs/PAGE_STATUS.md)
-- `Protocol Definition`, `Instruction Management`, `Instruction Processing`, `Orchestration Binding`, and `Data Hub` are connected to the current SQLite / FastAPI main flow.
-- `Communication Terminal` is still a placeholder page, and the documentation now reflects that explicitly.
+The single source of truth for navigation labels, placeholder copy, and implementation
+status is [`frontend/src/config/pageStatus.json`](./frontend/src/config/pageStatus.json);
+[docs/PAGE_STATUS.md](./docs/PAGE_STATUS.md) is **generated** from it and must not be
+edited by hand:
+
+```bash
+node scripts/generate-page-status.mjs   # after editing pageStatus.json
+```
+
+Anything about *which page landed / is still a placeholder* lives only in that matrix;
+work in progress is tracked in [docs/PLAN_Backlog.md](./docs/PLAN_Backlog.md) and
+[PROJECT_HANDOVER.md](./PROJECT_HANDOVER.md). This file stays a project introduction
+plus pointers, so there is exactly one place to update when a page ships.
 
 ---
 
@@ -101,8 +111,12 @@ npm run dev
 Ensures the safety and stability of code modifications.
 
 ```bash
+# Frontend (Vitest)
 cd frontend
 npm run test
+
+# Backend (unittest, from the repo root)
+python -m unittest discover -s backend/tests -t backend/tests
 ```
 
 ---
@@ -136,12 +150,13 @@ For detailed technical specifications, please refer to: [SPECIFICATION.md](./SPE
 
 ```
 /backend
-    main.py              # FastAPI entry (lifespan: create_all + seeds)
+    main.py              # FastAPI entry (lifespan: create_all + ensure_* self-heal + versioned migrations + seeds)
     requirements.txt     # Python deps (includes pymysql, used only by debug_db.py)
     /routers             # HTTP routes (instruction, protocol, operator, compile, export, dispatch, datahub)
     /handlers            # Range logic (length, checksum)
     /core                # orchestrator.py (wired); processor.py / graph.py (legacy, unwired)
     /db                  # SQLAlchemy models + SQLite file backend/db/yorha.db (migrations/*.sql = non-authoritative)
+                         # migrate.py = versioned upgrade runner (schema_migrations table, PLAN §8.30)
                          # runtime backups land in /db/backups (gitignored)
     debug_db.py          # Standalone MySQL debug script (only pymysql consumer)
 
