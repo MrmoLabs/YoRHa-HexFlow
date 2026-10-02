@@ -1729,6 +1729,82 @@
       BE 全量 + FE 全量 + `npx vite build` + **`npm run lint` EXIT=0** + yorha-ui
       校验器改动文件 0 违规。
 
+56. **R9 · 解码展示面板 —— 命中应答逆向还原成「字段 = 值」（C-2 选 C 前半）—— PLAN §8.47**
+    （2026-10-03，**纯 FE · 零 DDL** —— `models.py` 一个字符未改；未碰 `processor.py` /
+    `graph.py` / `Blueprint.jsx`，`/dispatch` 缺省口径逐字节不变，`vectors/` 未动）：
+    - **它是什么问题**：编码一直是单向的 —— 全仓 `decodeFields` / `decodeResponse` /
+      `parseResponse` **0 命中**，`response_match` 只输出 pass/fail + reasons（字节
+      差异），**从不回填字段值**。`vectors/float_ieee.json` 里 `3.14 → 4048F5C3` 有一
+      整组编码向量，反方向 `4048F5C3 → 3.14` 却没有任何实现。于是发「读电压」收到
+      应答，页面只给 MATCH OK + raw hex，人要自己对照协议心算 —— 排「发对了但值不对」
+      时每条都要手工换算。
+    - **它现在怎么解决**：新 `utils/InstructionDecoder.js`。
+      **布局与编码器共用一份** —— 把 `encodeInstruction` 里的树布局（扁平字段 →
+      `roots` + 逐节点 `childrenOf`）抽成公开的 `InstructionEncoder.buildLayout()`，
+      编码与解码同调一处（**改一必改二**）；`emitNode` 的组 `align` / `pad_to` /
+      `repeat` / `presence` 判定逐字镜像进解码游标；**叶字节长度不自己算**，向
+      `getFieldBytes(field, …).length` 要（唯一真相源），值再从响应帧里**读** ⇒
+      布局是**结构对偶**，不是第二套实现。搬移当时 `src/utils` **607 例全绿**。
+      **值分派与 `_encodeFieldBytes` 同序**：静态 hex（`FIXED` / `HEADER` / `TAIL` /
+      `HEX_RAW` / 协议叶 `hex_value`）→ 文本（ascii 逐字节、utf8 走 `TextDecoder`）→
+      旧 `float` / `decimal` → 纯 hex → BITFIELD 聚合整数 → `INT_SIGNED` 两补码（宽帧
+      BigInt 防精度丢失）→ BCD packed 十进制 → `FLOAT_IEEE` 大端（f32/f64 按
+      `byte_len` 分水岭）→ 缺省无符号 + `SCALED_DECIMAL` **反定标** `raw/factor −
+      offset`；**LITTLE 先整体还原**（对偶 `getFieldBytes` wrapper，组容器不逆序）。
+      返回 `{fields, consumed, total, residual, warnings}` —— 短帧逐字段标
+      `truncated`、尾部残字节计入 `residual` 并告警，**不静默给错值**。
+      `presence` / `repeat` 走同一份值链：给了 `inputs` / `computedValues` / `now`
+      就与编码期逐字一致；不给（真机应答手上没有表单输入）走静态链 +
+      `_presenceHit` fail-open → 缺省照读、不吞字节。
+    - **反向验证 = `encode ∘ decode = id` 不动点**（拍板原话「拿 `vectors/*.json`
+      反向验证」）：取共享向量表的已知帧 → 解成值 → 用**同一个编码器**把这个值编回
+      同一帧 → 必须逐字节相同。它比「解出的值 = 向量里的原始输入」更强也更诚实：
+      编码本身有归一（bool → 1、非法字符串 → 0、NaN → 0、定长补齐、LITTLE 逆序），
+      不动点不要求解码器猜回**编码前**的原始输入，只要求它把**帧里真实存的信息**还原
+      到能被原样复现。覆盖 `float_ieee` f32/f64、`int_signed`、`bcd_scaled`（bcd +
+      scaled 反定标）、`string`（含 `pad_char` 补齐的 NUL）、`little_endian`、
+      `bitfield.pack`、`time_counter`（time 以解出的秒数反推墙钟编回原帧、auto 以
+      状态回推合法前态），外加一例整帧（组 `align` + `repeat ×3` + `presence` +
+      LITTLE 混排，解出来的值原样重编 = 命中应答逐字节相同）。
+    - **两处接入**：① **指令加工 · 事务面板** —— `TXN_OK` 后取最后一次成功 attempt
+      的 `received` 按指令字段布局解码 → 新组件 `DecodedFields` 出 `字段 = 值`（带
+      字段数 / 字节数统计头）；② **通讯调试 · 发送历史** ——
+      `historyRows(records, { instructionsByName })` 多出的第二个参数（**缺省时行形状
+      逐字不变**）把**响应帧**解成 `字段 = 值`：表格新增「字段 FIELDS」列（单行预览 +
+      `title` 看全量），详情「响应与错误日志」面板出完整字段表（名称 · 值 · 字节区间 ·
+      警告）。`Terminal` 挂载时拉一次 `api.getInstructions()` 建 name → instruction
+      映射；**解响应而非发送帧**（值在应答里），raw hex 列仍显示发送帧。
+    - **边界与降级（都登记，不藏）**：**无字段布局 → 不解码** —— 指令没有 `fields` 时
+      不出面板、也**不出**「尾部残字节」警告，那是空布局的假警报而不是应答的问题
+      （本批实测踩过一次：三字节应答 + 空布局 → 出了一条假 `residual` 警告）；
+      **解不出就不出** —— 无指令名 / 指令已删 / 无响应 / 映射里没有这条 → 视图模型
+      **不加键**（历史列显示 `—`），不加假数据、不报错。三条**已知不可逆**（各有断言
+      锚定，不是 bug）：① **f32 溢出位型**（`1e300 → 7F800000` 即 +Inf）解得出
+      `Infinity` 却编不回去 —— 编码器把非有限输入归 0 是既有 byte-equal 契约
+      （`orchestrator._float_number` 同口径，f64 也绝不写出 Inf 位型）；② **utf8 定长
+      截断**（`'中'@2B` 只留半个码点 `E4B8`）解出 `U+FFFD` 再编码成 `EFBFBD`（ascii
+      截断反而可逆：`'中' &0xFF → 2D` 解回 `'-'` 再编仍是 `2D`）；③ **`AUTO_COUNTER`
+      是状态机**（`(Current+Step)%Max`），解出的是「编码那一刻的计数状态」而非输入
+      （`TIME_ACCUMULATOR` 反之可逆）。**展示层收敛 ≠ 值**：`formatFieldValue` 对非整数
+      按 7 位有效数字收敛（`3.1399998664855957` → `3.14`，拍板举例就是
+      `voltage = 3.14 V`）并剥掉定长补齐的 NUL / 尾空格，**解码值本身一个字节不动**
+      （round-trip 以原值为准）；整数与 `>1e10` 的值不碰。
+    - **测试**：新 `utils/__tests__/InstructionDecoder.test.js` **21 例**（三段：反向
+      验证不动点 / 整帧对偶 / 入口口径与异常帧）+ `DecodedFields.test.jsx` **3 例** +
+      `TransactionPanel.test.jsx` **+2** + `terminalPanes.test.js` **+4** →
+      **FE 1036 → 1066/1066（71 文件）**；BE **685/685**（本批未碰后端，全量复跑）；
+      `npx vite build` EXIT=0、`npm run lint` **EXIT=0**、yorha-ui 校验器改动文件
+      **0 违规**；`pageStatus.json` 指令加工 + 通讯调试两页补「解码展示」口径 →
+      `PAGE_STATUS.md` 已重生成；`vectors/` 未动；`frontend/red-report.json` 不入库。
+    - **留到 R10**：`dispatch_logs.fields_json`（**仅新增列**）+ `/dispatch/history`
+      回填 `fields` —— 把解码结果入库，历史跨会话可查（C-2 后半，全计划唯一 DDL 批）。
+    - **文档同步**：PLAN 新 **§8.47** + §8.37 **R9 行标已办** + §8.36 **C-2 行状态**
+      （R9 已办、R10 待办）+ §1 `R1–R10` 状态 + `docs/PAGE_STATUS.md`（重生成）；本条。
+    - **状态**：**R1 ✅ R2 ✅ R3 ✅ R4 ✅ R5 ✅ R6 ✅ R7 ✅ R8 ✅ R9 ✅**，余 **R10
+      `fields_json` 入库（DDL）**。每批验收项固定为：
+      BE 全量 + FE 全量 + `npx vite build` + **`npm run lint` EXIT=0** + yorha-ui
+      校验器改动文件 0 违规。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api';
 import NieRModal from '../components/ui/NieRModal';
+import DecodedFields from '../components/InstructionForm/DecodedFields';
 import { PAGE_STATUS_BY_KEY } from '../config/pageRegistry';
 import {
+    decodeHistoryRow,
     errorMessageOf,
     hexDump,
     hexInputInfo,
@@ -18,6 +20,8 @@ import { escapeHex, escapeWarnings, toEscapeDraft } from '../utils/escapeTable';
 // 日志（数据源 /dispatch 有界历史，raw/response/error 三类事件）。
 // P1 设备档案区（/profiles 命名快照 + 激活切换）：传输配置经 lifespan 钩子
 // 落库（transport_settings），重启恢复；档案视图模型在 utils/profileView.js。
+// R9（PLAN §8.46）：发送历史新增「字段 FIELDS」列 + 详情面板解码展示 ——
+// 响应帧按指令字段布局逆向还原成「字段 = 值」（C-2 选 B，只展示不入库）。
 // 状态与历史为手动刷新；报文视图纯函数在 utils/terminalPanes.js。
 
 const PanelTitle = ({ children, hint }) => (
@@ -110,6 +114,8 @@ export default function Terminal() {
     const [configError, setConfigError] = useState('');
     const [statusError, setStatusError] = useState('');
     const [historyError, setHistoryError] = useState('');
+    // R9: 指令名 → 指令 映射（发历史行的响应帧解码用），取不到则退化不出解码
+    const [instructionsByName, setInstructionsByName] = useState({});
     const [sendHex, setSendHex] = useState('');
     const [busy, setBusy] = useState(''); // 'config' | 'revert' | 'send' | 'clear' | 'profile'
     const [confirmClear, setConfirmClear] = useState(false);
@@ -159,12 +165,29 @@ export default function Terminal() {
         }
     }, []);
 
+    // R9: 指令名 → 指令（含 fields）映射，供发送历史把响应帧逆向解成「字段 = 值」。
+    // 解码是展示增强、不参与收发主链路 —— 取不到就退化成不出解码列（不新增错误条）。
+    const refreshInstructions = useCallback(async () => {
+        try {
+            const list = await api.getInstructions();
+            const map = {};
+            (Array.isArray(list) ? list : []).forEach((inst) => {
+                if (inst && inst.name) map[inst.name] = inst;
+            });
+            setInstructionsByName(map);
+        } catch {
+            // 取指令失败 → 退化（解码列不出值），不打断收发主链路、不新增错误条
+            setInstructionsByName({});
+        }
+    }, []);
+
     useEffect(() => {
         refreshConfig();
         refreshStatus();
         refreshHistory();
         refreshProfiles();
-    }, [refreshConfig, refreshStatus, refreshHistory, refreshProfiles]);
+        refreshInstructions();
+    }, [refreshConfig, refreshStatus, refreshHistory, refreshProfiles, refreshInstructions]);
 
     const handleApplyConfig = async () => {
         setBusy('config');
@@ -308,8 +331,10 @@ export default function Terminal() {
         }
     };
 
-    const rows = historyRows(history);
+    const rows = historyRows(history, { instructionsByName });
     const selected = history.find((record) => record.id === selectedId) || history[0] || null;
+    // R9: 选中行的响应帧解码（与行内 FIELDS 列同一口径，详情面板出完整字段表）
+    const selectedDecoded = selected ? decodeHistoryRow(selected, instructionsByName) : null;
     const errorRecords = history.filter((record) => record.status === 'ERROR');
     const sendInfo = hexInputInfo(sendHex);
     const rawLines = selected ? hexDump(rawHexOf(selected)) : [];
@@ -747,6 +772,7 @@ export default function Terminal() {
                                             <th className="text-left py-1 font-bold">状态 ST</th>
                                             <th className="text-right py-1 font-bold">字节 B</th>
                                             <th className="text-left py-1 font-bold">报文 HEX</th>
+                                            <th className="text-left py-1 font-bold">字段 FIELDS</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -761,6 +787,13 @@ export default function Terminal() {
                                                 <td className={`py-1 ${row.isError ? 'text-red-300' : 'text-yellow-300'}`}>{row.status}</td>
                                                 <td className="py-1 text-right">{row.byteCount}</td>
                                                 <td className="py-1 truncate max-w-[10rem]" title={row.hexPreview}>{row.hexPreview}</td>
+                                                {/* R9: 命中应答解出来的「字段 = 值」；无指令名/无响应 → — */}
+                                                <td
+                                                    className="py-1 truncate max-w-[14rem] text-nier-light/70"
+                                                    title={row.fieldsText || ''}
+                                                >
+                                                    {row.fieldsText || '—'}
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -822,6 +855,10 @@ export default function Terminal() {
                                             <div className="border border-red-400/40 bg-red-400/5 px-3 py-2 text-[11px] text-red-300 break-all">
                                                 {selectedError}
                                             </div>
+                                        )}
+                                        {/* R9: 命中应答 → 字段 = 值（无指令可对 / 解不出则不出） */}
+                                        {selectedDecoded && (
+                                            <DecodedFields decoded={selectedDecoded} title="字段解码 (RESPONSE FIELDS)" />
                                         )}
                                     </>
                                 )}

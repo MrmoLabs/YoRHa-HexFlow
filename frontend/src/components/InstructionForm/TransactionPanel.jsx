@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api';
+import DecodedFields from './DecodedFields';
+import { InstructionDecoder } from '../../utils/InstructionDecoder';
 import {
     attemptLabel,
     defaultSpec,
@@ -13,6 +15,8 @@ import {
 // P2 事务发送面板：应答规格编辑（按指令持久化 → /response-specs）+ 事务发送
 //（POST /dispatch/transaction：超时/重发/间隔、广播无应答、逐次 attempt + RTT 统计）。
 // 自包含直连 api（同 InstructionRunner 直连 export 的先例）；props 只吃 instruction + 当前帧。
+// R9（PLAN §8.46）：命中应答按指令字段布局**逆向解码**成「字段 = 值」（C-2 选 B），
+// 展示用、不入库（入库回写 = R10）。
 
 const DEFAULT_SETTINGS = { timeoutMs: '500', retries: '2', intervalMs: '50', broadcast: false };
 
@@ -95,6 +99,20 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
     }, [instructionId]);
 
     const rangesInvalid = useMemo(() => parseIgnoreRanges(rangesText) === null, [rangesText]);
+
+    // R9: 命中应答（status === 'OK' 的最后一次成功 attempt 的 received）按指令
+    // 字段布局逆向解码。无指令 / 无命中 / 未成功 → null（不出面板，不是错误）。
+    // 不给 inputs：真机应答的取值不在本页手上，走静态链 + presence fail-open，
+    // 布局仍由编码器同一份 `buildLayout` 决定（改一必改二）。
+    const decoded = useMemo(() => {
+        // 无字段布局（旧指令 / 只有 frames 没展开成 fields）→ 没东西可解，
+        // 不出面板也不出「尾部残字节」警告（那是空布局的假警报，不是应答的问题）。
+        if (!result || !instruction?.fields?.length || !Array.isArray(result.attempts)) return null;
+        const hit = [...result.attempts].reverse().find(a => a.status === 'OK' && a.received);
+        if (!hit) return null;
+        const r = InstructionDecoder.decodeInstruction(instruction, hit.received, {});
+        return r.fields.length || r.warnings.length ? r : null;
+    }, [result, instruction]);
 
     const patchSpec = (patch) => {
         setSpec(prev => ({ ...prev, ...patch }));
@@ -277,6 +295,9 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
                     ))}
                 </div>
             )}
+
+            {/* R9 解码展示：命中应答按字段布局逆向还原成「字段 = 值」（与编码器对偶） */}
+            {decoded && <DecodedFields decoded={decoded} />}
 
             {/* 应答规格编辑器（折叠）：五要素 = 帧头回显 / 长度自洽 / 校验反算 / 掩码忽略 / 前缀后缀 */}
             {specOpen && (

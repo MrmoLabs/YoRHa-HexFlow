@@ -607,27 +607,20 @@ export const InstructionEncoder = {
     /**
      * Generates the final Hex string.
      */
-    encodeInstruction: function (instruction, inputs, computedValues, opts) {
-        let hexParts = [];
-        let byteMap = [];
-        let currentByteIndex = 0;
-
-        // E1-6 (B8): 墙钟注入 —— TIME_ACCUMULATOR 的 Current 恒取此刻（ms）。
-        // opts.now 供测试/回放固定时间（后端 fields_to_blocks(now=…) 同名同义，
-        // 双端注入同值 → byte-equal）；缺省 Date.now()。
-        const now = Number.isFinite(opts?.now) ? opts.now : Date.now();
-
-        if (!instruction) return { hexString: '', byteMap: [] };
-
-        const rawFields = instruction.fields || instruction.blocks || [];
+    /**
+     * R9（PLAN §8.46）: 树布局 —— 扁平字段 → 根集合 + 逐节点子表。
+     *
+     * **编码器与解码器共用这一份**（`InstructionDecoder` 要与 `emitNode` 逐字对偶，
+     * 布局算法只能有一处）：E1-5 (B7) 按树发射使重复副本交叠正确 —— (ab)×N 而非
+     * (a×N)(b×N)。子节点来自嵌套 `fields`，缺则走 `parent_id` 链（扁平入参）；
+     * 递归自顶向下携带有效份数（嵌套组相乘），镜像 backend datahub.to_block resolve
+     * 与 orchestrator._flatten_recursive。
+     */
+    buildLayout: function (instruction) {
+        const rawFields = (instruction && (instruction.fields || instruction.blocks)) || [];
         // Flatten ALL to encode
         const allFields = this.flattenAll(rawFields);
 
-        // E1-5 (B7): emit by TREE walk so repeat copies interleave correctly —
-        // (ab)×N, never (a×N)(b×N). Children come from nested `fields` when
-        // present, else from parent_id links (flat input); the recursion carries
-        // the effective copy count top-down (nested groups multiply), mirroring
-        // backend datahub.to_block resolve + orchestrator._flatten_recursive.
         const bySeq = (a, b) => (a.sequence ?? a.order ?? 0) - (b.sequence ?? b.order ?? 0);
         const idSet = new Set(allFields.map(f => f.id));
         const kidsOf = new Map();
@@ -656,6 +649,23 @@ export const InstructionEncoder = {
             const kids = kidsOf.get(field.id);
             return kids && kids.length > 0 ? kids : null;
         };
+
+        return { allFields, roots, childrenOf };
+    },
+
+    encodeInstruction: function (instruction, inputs, computedValues, opts) {
+        let hexParts = [];
+        let byteMap = [];
+        let currentByteIndex = 0;
+
+        // E1-6 (B8): 墙钟注入 —— TIME_ACCUMULATOR 的 Current 恒取此刻（ms）。
+        // opts.now 供测试/回放固定时间（后端 fields_to_blocks(now=…) 同名同义，
+        // 双端注入同值 → byte-equal）；缺省 Date.now()。
+        const now = Number.isFinite(opts?.now) ? opts.now : Date.now();
+
+        if (!instruction) return { hexString: '', byteMap: [] };
+
+        const { allFields, roots, childrenOf } = this.buildLayout(instruction);
 
         const emitNode = (field, copies) => {
             if (copies <= 0) return;

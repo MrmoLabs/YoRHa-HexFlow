@@ -1,6 +1,10 @@
 // E3 通讯调试页的纯函数视图模型：把 /dispatch 记录（raw/response/error 三类
 // 事件）拆给三面板，并提供 hex 格式化与发送输入校验。
 // 后端口径见 backend/routers/dispatch.py；改一须核对另一端。
+// R9（PLAN §8.46 · §8.37 R9 行）：响应帧按指令字段布局**逆向解码**成
+// 「字段 = 值」（C-2 选 B 前半 · 只做展示、不入库，入库回写 = R10）。
+
+import { InstructionDecoder, fieldsText } from './InstructionDecoder';
 
 const splitBytes = (hexString) => String(hexString || '').trim().split(/\s+/).filter(Boolean);
 
@@ -34,16 +38,36 @@ export const hexPreview = (hexString, maxBytes = 10) => {
 };
 
 // 发送历史表格行视图。时间戳取 UTC ISO 的前 19 位（秒精度）。
-export const historyRows = (records = []) => (records || []).map((record) => ({
-    id: record.id,
-    time: String(record.timestamp || '').replace('T', ' ').slice(0, 19) || '—',
-    channel: record.channel || '—',
-    status: record.status || '—',
-    byteCount: record.byte_count ?? 0,
-    hexPreview: hexPreview(record.hex_string),
-    name: record.instruction_name || '—',
-    isError: record.status === 'ERROR'
-}));
+//
+// R9：给了 `ctx.instructionsByName`（`instruction_name` → 指令，含 fields）就把
+// **响应帧**按该指令的字段布局解成 `字段 = 值`。解不出（无指令名 / 指令已删 /
+// 无响应 / 布局解出 0 字段）→ **不加键**，行形状对不传 ctx 的旧调用逐字不变。
+// 解码只吃「响应」而非「发送帧」—— 值在应答里，raw hex 列仍显示发送帧。
+export const decodeHistoryRow = (record, instructionsByName) => {
+    if (!instructionsByName || !record?.instruction_name) return null;
+    const instruction = instructionsByName[record.instruction_name];
+    // 无字段布局 → 没东西可解（空布局只会生出「尾部残字节」假警报，不出）
+    if (!instruction || !Array.isArray(instruction.fields) || instruction.fields.length === 0) return null;
+    const hex = responseHexOf(record);
+    if (!hex) return null;
+    const decoded = InstructionDecoder.decodeInstruction(instruction, hex, {});
+    return decoded.fields.length || decoded.warnings.length ? decoded : null;
+};
+
+export const historyRows = (records = [], ctx = {}) => (records || []).map((record) => {
+    const decoded = decodeHistoryRow(record, ctx.instructionsByName);
+    return {
+        id: record.id,
+        time: String(record.timestamp || '').replace('T', ' ').slice(0, 19) || '—',
+        channel: record.channel || '—',
+        status: record.status || '—',
+        byteCount: record.byte_count ?? 0,
+        hexPreview: hexPreview(record.hex_string),
+        name: record.instruction_name || '—',
+        isError: record.status === 'ERROR',
+        ...(decoded ? { decoded, fieldsText: fieldsText(decoded) } : {})
+    };
+});
 
 // 发送输入校验：与后端 hex_to_bytes 同款清洗（空格/下划线/逗号/连字符），
 // 非 hex 或奇数位 → invalid（发送按钮禁用）。

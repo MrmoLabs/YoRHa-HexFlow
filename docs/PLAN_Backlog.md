@@ -39,7 +39,7 @@
 | CP3 | Core Pipeline 批次三（演进 · 2026-10-01 **扩容并入 D13 封装配方**）：3a `frame_recipes` 数据层 + 串行编译 + 加工页分层预览 + `definition_hash` / 3b 编排页配方编辑器 + 发送接线 / 3c 序列封装帧 D6-B / 3d D5-A 生成 response_spec（**按 D15-A：`response_specs` 增 `stage` 列 + 按层生成 + 逆序解包**）+ D7-A 余下徽标（明细 `DESIGN_CorePipeline.md` §7 批次三 + §9.7） | **已提交 ✅ 3a `e63d76f`（代码+文档）/ `438f3af`（db 同步）、3b `c4b1f7f`（代码+文档，零 DDL）、3c `fbad083`（代码+文档）/ `17c6830`（db 同步）、3d `77dd389`（代码+文档）/ `bb7a0ba`（db 同步），2026-10-01 —— CP3 四个子批全数完成**。硬前置 CP2 ✅；D13 于 2026-10-01 拍板 = A（封装配方）、**3d 前置 D15 于 2026-10-01 拍板 = A**。**3a 含 DDL**（`frame_recipes` 新表 + `instructions.default_recipe_id` 补列自愈）→ yorha.db 单独同步提交；**3a 提前并入了原属 3b 的 `dispatch` `wrap.recipe_id` 接线**（加工页预览/TRANSMIT/事务三路须同字节，缺接线则预览帧与出线帧不同）。3a 终态：BE 466/466（基线 426 + 40）、FE 920/920（63 文件，基线 915 + 5）、`npx vite build` EXIT=0、yorha-ui 校验器 0 违规、**真路由冒烟 25 项 PASS**；明细见 §8.21。**3b 终态**：**纯前端批、零 DDL**（未改 `models.py`/`database.py`，`yorha.db` 未随本批提交）—— FE **924/924（63 文件，基线 920 + 4）**、既有「属性面板四分区 select = 3」用例**零改全绿**（未建配方时编辑器不占 select）、BE 466/466、`npx vite build` EXIT=0、yorha-ui 校验器 3 文件 0 违规、**真 curl 冒烟 13 项 ALL PASS**（真 uvicorn + `curl.exe`：带 recipe 往返 / 不带 wrap 裸帧回归 / 组协议回归 / 残留清零）；明细见 §8.22。**3c 终态（2026-10-01）**：**含 DDL** —— `sequence_steps` 新增 `wrap JSON` 单列自愈（`database.ensure_sequence_step_columns`，镜像 3a `ensure_recipe_columns` 先例）→ yorha.db **单独同步提交**；BE **496/496（基线 466 + 30）**、FE **932/932（63 文件，基线 924 + 8）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**真路由冒烟 30 项 ALL PASS** + **真浏览器 UI 验证 6 项通过**；明细见 §8.23。**3d 终态（2026-10-01）**：**含 DDL** —— **3 列仅新增**<br>（`response_specs.stage` / `response_specs.definition_hash` /<br>`protocol_bindings.definition_hash`，`ensure_response_spec_columns` 新建 +<br>`ensure_binding_columns` 扩列自愈，lifespan 接线）→ yorha.db 沿先例<br>**手工只跑 3 条 ALTER 后单独同步提交**；BE **537/537（基线 496 + 41）**、<br>FE **944/944（63 文件，基线 932 + 12）**、`npx vite build` EXIT=0、yorha-ui<br>校验器 8 文件 0 违规、**真路由冒烟 43 项 ALL PASS**；明细见 §8.24。**§9.7 人工验证收口（2026-10-02）**：3a①②③ + 3b①②③ + 编排页「洞位填装 → 封装试发」**8 项真浏览器 + `/dispatch/history` 对账复跑全过**（含 400 逐槽拦截与「未选配方 = 建配方前基线 28B 逐字节相同」），三处文档（§9.7 / `pageStatus.json` / HANDOVER 35·36 待办①）口径已统一，明细 §8.27 |
 | CP4 | Core Pipeline 批次四（治理）：**4a** 关系数据导入导出（`bindings` + `response_specs` 并入 DataHub ZIP `relations.json` + `POST /datahub/import/relations`）/ **4b** 绑定矩阵视图（指令 → 默认协议 → 槽位）+ §6.2「槽节点删除 → `slot_id` 悬空置 NULL 回执」+ D9/D10 划界落 README/PAGE_STATUS / **4c** D8 校验表全量核对（逐行销项，纯文档）（明细 `DESIGN_CorePipeline.md` §7 批次四） | 🔄 **4a 已提交 ✅ `54620ab`（代码+文档，零 DDL），2026-10-02**：导出 ZIP 增 `relations.json`（`manifest` 增 `relations` 计数、`/status` 增 `protocolBindings`/`responseSpecs` 两行计数）+ 回灌端点按 `id` upsert、逐行报告（父缺失 → `skipped` 带 reason、槽悬空 → 置 NULL + warning、默认唯一冲突清旧行、`spec` 过 `normalize_spec` / `stage` 重算镜像 / 出处原样回填）、**部分成功即部分落库不整批回滚**；前端 DataHub 增「关系数据」面板（选文件 → 解析校验 → 确认弹窗 → 回显 新增/更新/跳过/警告 计数 + 刷新）。终态 BE **549/549**（基线 537 + 12）、FE **948/948**（63 文件，基线 944 + 4）、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规；**零 DDL**；明细见 §8.25。**4b+4c 已提交 ✅ `03b25d3`（代码+文档，零 DDL），2026-10-02**：**4b** 绑定矩阵只读面板（`utils/bindingMatrix.js` 纯函数 + DataHub 页六列表 + 摘要八项计数；孤儿不静默 —— 协议已删 / 槽悬空 / `stale===true` 琥珀标出；三读与状态面板同拍、单读失败互不拖垮）+ D9/D10 划界落 `README.md` §6 Scope Boundaries 与 `pageStatus.json` 四页条目（`PAGE_STATUS.md` 再生）；**4c** 全量核对新增 `DESIGN_CorePipeline.md` §6.3 销项表 —— 8 行**全「已有」、0 待补**，§6.2 槽节点行复核为批次二已落地（`dangling_slots_cleared`）→ **本批零后端改动**（BE 用例数持平），`DESIGN_Decisions.md` D8/D9/D10 三表行 + 三处实施注（D9-B/D10-B 重开条件已具备**仍取 A**）。终态 BE **549/549**（持平）、FE **958/958（64 文件，基线 948 + 10）**、`npx vite build` EXIT=0、yorha-ui 校验器 4 文件 0 违规、**人工验证 3 项通过**；明细见 §8.26。**批次四三子批（4a/4b/4c）全数完成** |
 | C 已拍 | **5 项拍板已收齐**（§8.36 拍板结果表：C-1 自动选指令路由 / C-2 响应解码为字段 / C-3 全量项目包迁移 / C-4 应答带转义 / C-5 三项暂缓；另含 R6 方案） | ✅ **2026-10-02 全部拍定**：C-1=**A 不立项** / C-2=**C** / C-3=**C** / C-4=**确认接受** / C-5=**①② 触发式、③ 不做** / R6=**13 表加 `deleted_at`** → 编入 **R7–R10** |
-| R1–R10 | **B2 六项功能缺口 + 拍板选中项排期**（导入 pre-import 快照 / 传输配置上一配置回退 / ESLint 存量 / 编排页绑定拖拽 / float64 双端 / 软删除回收站 + C-3 补域 2 批 + C-2 解码 2 批）—— 顺序 = 先安全网 → 清欠账 → 体验 → 正确性 → 最后动 DDL | 🔄 **R1 ✅ §8.38 / R2 ✅ §8.39 / R3 ✅ §8.40 / R4 ✅ §8.41 / R5 ✅ §8.42 / R6 ✅ §8.43+§8.44 / R7 ✅ §8.45 / R8 ✅ §8.46 已完成（2026-10-02）**，余 **R9–R10** 未开始（**R4 ✅ 已按拍板落地**：拖完只改展示序、点保存按钮才改持久序；**R5 ✅ 已落地**：float64 双端 + 向量 `f64` 组、缺省 `f32` 逐字节不变（§8.42）；**R6 ✅ 已落地（两批）**：R6-1 = 13 表统一 `deleted_at`（仅新增列）+ 软删/恢复/彻底删除 + `/trash` 统一入口（§8.43）；R6-2 = FE 回收站页 `/trash` + 五处删除确认改「移入回收站、可恢复」+ 页面状态登记与 `PAGE_STATUS.md` 重生成（§8.44）；**R7 ✅ 已落地（§8.45）**：`bundle` 3 域 → 8 域（补 recipes / sequences / transport / profiles / templates）+ `manifest.domainVersion` 8 域清单 + 读侧 `alive()` 收口，**零 DDL**、测试 +8 → 676；**R8 ✅ 已落地（§8.46）**：`POST /datahub/import/` 补 5 域（recipes / sequences / transport / profiles / templates），三段式 400 不落快照 → pre-import 快照 → 逐行提交，校验复用各域 SSOT；FE 一个选择器按顶层数组键识别域名；**零 DDL**、测试 +9 → 685；**自 R3 起 `npm run lint` EXIT=0 进验收门槛**；§8.37；R1–R8 = **9 批已全数完成** + R9–R10 = 2 批 → 合计 **11 批**，R6/R10 含 DDL 仅新增列） |
+| R1–R10 | **B2 六项功能缺口 + 拍板选中项排期**（导入 pre-import 快照 / 传输配置上一配置回退 / ESLint 存量 / 编排页绑定拖拽 / float64 双端 / 软删除回收站 + C-3 补域 2 批 + C-2 解码 2 批）—— 顺序 = 先安全网 → 清欠账 → 体验 → 正确性 → 最后动 DDL | 🔄 **R1 ✅ §8.38 / R2 ✅ §8.39 / R3 ✅ §8.40 / R4 ✅ §8.41 / R5 ✅ §8.42 / R6 ✅ §8.43+§8.44 / R7 ✅ §8.45 / R8 ✅ §8.46 / R9 ✅ §8.47 已完成（R8 = 2026-10-02、R9 = 2026-10-03）**，余 **R10** 未开始（**R4 ✅ 已按拍板落地**：拖完只改展示序、点保存按钮才改持久序；**R5 ✅ 已落地**：float64 双端 + 向量 `f64` 组、缺省 `f32` 逐字节不变（§8.42）；**R6 ✅ 已落地（两批）**：R6-1 = 13 表统一 `deleted_at`（仅新增列）+ 软删/恢复/彻底删除 + `/trash` 统一入口（§8.43）；R6-2 = FE 回收站页 `/trash` + 五处删除确认改「移入回收站、可恢复」+ 页面状态登记与 `PAGE_STATUS.md` 重生成（§8.44）；**R7 ✅ 已落地（§8.45）**：`bundle` 3 域 → 8 域（补 recipes / sequences / transport / profiles / templates）+ `manifest.domainVersion` 8 域清单 + 读侧 `alive()` 收口，**零 DDL**、测试 +8 → 676；**R8 ✅ 已落地（§8.46）**：`POST /datahub/import/` 补 5 域（recipes / sequences / transport / profiles / templates），三段式 400 不落快照 → pre-import 快照 → 逐行提交，校验复用各域 SSOT；FE 一个选择器按顶层数组键识别域名；**零 DDL**、测试 +9 → 685；**R9 ✅ 已落地（§8.47）**：对偶解码器 `InstructionDecoder` —— 布局与编码器共用 `buildLayout()`、值分派同序，反向验证 = `encode ∘ decode = id` 不动点扫七组 `vectors/` 向量 + 整帧；接入事务面板命中应答（`DecodedFields`）与发送历史「字段 FIELDS」列 + 详情完整字段表；**纯 FE 零 DDL**、测试 +30 → 1066；**自 R3 起 `npm run lint` EXIT=0 进验收门槛**；§8.37；R1–R9 = **10 批已全数完成** + R10 = 1 批 → 合计 **11 批**，R6/R10 含 DDL 仅新增列） |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -2952,7 +2952,7 @@ D15 关联项 1（17 例 + BE 630/630）。**本项无需再拍**，此处只留
 | 项 | 拍板 | 落地含义 | 编入 |
 |---|---|---|---|
 | **C-1 自动选指令路由** | **A · 本轮不立项** | 维持「人工选 + N3 设计期双支并列」，序列仍严格线性 | 不排批（重启条件 = 真出现跨代设备 / 多设备族共用入口，届时须一并论证 §0「`/dispatch` 缺省口径不变」） |
-| **C-2 响应解码为字段** | **C · 入库回写** | 按选项 C 的定义 = B（解码面板）+ C（`dispatch_logs.fields_json`，**仅新增列**）两步做完 | **R9（B 展示）→ R10（C 入库）** |
+| **C-2 响应解码为字段** | **C · 入库回写** | 按选项 C 的定义 = B（解码面板）+ C（`dispatch_logs.fields_json`，**仅新增列**）两步做完 | **R9（B 展示 ✅ §8.47）→ R10（C 入库）** |
 | **C-3 全量项目包迁移** | **C · 补域 + manifest 折中** | `bundle` 扩 8 域 + 按域导入端点 + `manifest.domainVersion`；**整机/跨版本迁移仍走 backup/restore**；不选 B（重复造 backup） | **R1（pre-import 快照 ✅ §8.38）→ R7（导出补域 ✅ §8.45）→ R8（导入补端点 ✅ §8.46）** |
 | **C-4 应答是否带转义** | **确认接受** | 「应答带转义字节 + 先线上、后逻辑双口径」正式定案，§9.7 ④ 与 D15 关联项 1 销项 | 已落地（§8.35，提交 `dbe15a4`） |
 | **C-5 ① CRC 多算法** | **触发式** | 真机提出 CCITT/CRC32 即做，且**出线 / 收侧 `VALID_ALGOS` 两处白名单同批改**（否则发得出去、判不了） | 不排批 —— 触发即插队 |
@@ -3009,7 +3009,7 @@ EXIT=0**（R1/R2 不提前引入 lint 门槛，避免把存量债转嫁到功能
 |---|---|---|---|---|---|
 | ~~**R7**~~ ✅ | C-3 选 C · **导出补域** → **已落地（§8.45）** | **BE（FE 仅文案 + 注释）** | 中 | 否 | **拍板 = `bundle` 增 `recipes / sequences / transport / profiles / templates` 5 域（原 3 域 → 8 域）+ `manifest.domainVersion` 域清单 —— 本批只做出线，不碰导入。** ✅ **2026-10-02（§8.45）**：ZIP 顶层 8 个数据域 = 既有 `instructions.json` / `relations.json` / `frames/*` + 新增 5 个（`recipes` / `sequences` 内嵌步骤 / `transport` 单行 / `profiles` / `templates`）；**读侧一律 `alive()`** —— 六类回收站行不进包、序列步骤靠 `sequence_id IN (导出序列)` 天然跟随宿主；**列子集不含 `deleted_at`**（回灌后恒活行）+ 行序显式排序（序列 `(name,id)`、步骤 `(step_order,id)`、档案 `(label,id)`、算子 `op_code`、配方与绑定 `id`）→ 导出可 diff。`manifest` 加 `domainVersion`（8 域清单，键序 = 导出序）与 `domainCounts`（**键集与 domainVersion 严格相等**，纯函数 `bundle_manifest()` + 漂移守卫 `ValueError: 域清单不一致`），存量三键 `instructionCount` / `relations` / `frames` 只做加法。**同批修回 R6-1 丢失的 `export_bundle` 指令 / 绑定 / 应答规格 `alive()`**（该批编辑报成功未落盘且当时无测试盯，本批端到端测试把六处排除钉死）。**零 DDL、零新端点**（按域导入 = R8）。已知观察：拍板 5 域**不含 `protocols`** —— 换机须先经协议页导入协议，配方与绑定才认得出宿主（是否加第 9 域留 R8 决策）。测试 **668 → 676（+8）**。 |
 | ~~**R8**~~ ✅ | C-3 选 C · **导入补端点** → **已落地（§8.46）** | BE+FE | 中 | 否 | **拍板 = 按域 upsert / 跳过 / 逐行报告（复用 CP4-4a `import/relations` 口径），导入前自动快照直接复用 R1 成果。** ✅ **2026-10-02（§8.46）**：`POST /datahub/import/` 补 5 条路径（`recipes` / `sequences` / `transport` / `profiles` / `templates`），回执统一 `{domain, imported, updated, skipped, warnings, preImportSnapshot}`（sequences 另带 `steps.written`）；三段式收在 `run_domain_import()` —— ① 纯函数顶层校验（非对象 / 未知键 / schemaVersion 不符 / 缺数组 → **400 不落快照**）→ ② `pre-import` 快照（复用 R1，失败 500 中止且库未被改）→ ③ 逐行独立提交（`IntegrityError` 只回滚该行 → `skipped` 带 index+id+reason，**部分成功即部分落库**）。**校验复用各域 SSOT 不写第二套**：配方 = `recipe.resolve_stages`（**definition_hash 按目标机重算**，不采信载荷）；序列 = `routers/sequence` 新抽的共用入口 `normalize_sequence`（`create` / `update` 改调之、行为逐字不变）+ 公开 `write_steps`，任一步骤宿主缺失则**整条跳过**；传输与档案 = `core.transport.validate_config`（**悬空档案指针置空并记警告**）；算子 = 形态校验 + 按 `op_code` 天然 upsert。**回收站边界**：宿主在站里 → 跳过；**自己的 id 在站里 → 跳过并提示先恢复或彻底删除**（软删行继续占唯一键，否则写出一条看不见的行）；`label` / `name` 撞车（含被回收站行占着）→ 跳过并指出占用行。FE：DataHub 新增「按域导入」面板，一个选择器按**顶层数组键**自动识别域名（`settings` → `transport`），二次确认后 POST，识别不出域不出弹窗；`api.importDomain` **不兜白名单第二层**。测试 BE **676 → 685（+9）**、FE **1033 → 1036（+3）**；**零 DDL**。回灌路径全景见 §8.46 五（协议仍走协议页导入，C-3「8 域」未扩为 9）。 |
-| **R9** | C-2 选 C（前半） | **解码展示面板**：命中应答按 `stages` 逆向取值（**与编码器对偶**，拿 `vectors/*.json` 反向验证）+ 发送历史显示 `字段 = 值` | FE | 中 | 否 |
+| ~~**R9**~~ ✅ | C-2 选 C · **解码展示面板** → **已落地（§8.47）** | FE | 中 | 否 | **拍板 = 命中应答按 `stages` 逆向取值（**与编码器对偶**，拿 `vectors/*.json` 反向验证）+ 发送历史显示 `字段 = 值`，层 = FE、零 DDL。** ✅ **2026-10-03（§8.47）**：新增 `utils/InstructionDecoder.js` —— 布局与编码器**共用一份**（树布局抽成公开 `InstructionEncoder.buildLayout()`；组 `align` / `pad_to` / `repeat` / `presence` 逐字镜像进解码游标；**叶字节长度向 `getFieldBytes` 要**、值从帧里读，故是结构对偶而非第二套实现），值分派与 `_encodeFieldBytes` 同序（静态 hex → 文本 → 旧 float/decimal → 纯 hex → BITFIELD → 两补码 → BCD → FLOAT_IEEE 大端 → 缺省无符号 + `SCALED_DECIMAL` 反定标，LITTLE 先整体还原）；反向验证 = **`encode ∘ decode = id` 不动点**，扫 `float_ieee` / `int_signed` / `bcd_scaled` / `string` / `little_endian` / `bitfield` / `time_counter` 七组向量 + 一例整帧（组 `align` + `repeat ×3` + `presence` + LITTLE 混排）；接入两处 —— 事务面板 `TXN_OK` 出 `DecodedFields`、发送历史加「字段 FIELDS」列 + 详情完整字段表（解**响应**帧、`historyRows` 缺 ctx 时行形状逐字不变）；短帧标 `truncated`、尾部残字节计 `residual` 并告警，无字段布局 / 解不出一律不出面板（登记三条已知不可逆：f32 溢出位型、utf8 定长截断、AUTO_COUNTER 状态机）；**纯 FE 零 DDL**，测试 +30 → 1066 |
 | **R10** | C-2 选 C（后半） | **入库回写**：`dispatch_logs` 加 `fields_json`（**仅新增列，合 §0**）+ `/dispatch/history` 回填 `fields` | BE+FE | 中 | 是（仅新增列） |
 
 **为什么排在 R6 之后**：R1–R6 的顺序是你已批准的「安全网 → 清欠账 → 体验 → 正确性
@@ -3787,6 +3787,107 @@ C-3 拍板的「8 域」未扩为 9 —— 若日后要一条命令搬干净，�
 
 **文档同步（同批）**：本节 §8.46、§8.37 R8 行标已办、§8.36 C-3 行状态、
 §1 `R1–R10` 状态、`PROJECT_HANDOVER.md` 条目 55。
+
+### 8.47 R9 · 解码展示面板 —— 命中应答逆向还原成「字段 = 值」（C-2 选 C 前半 · 纯 FE · 零 DDL）
+
+**它是什么问题**（§8.36 C-2 现状）：编码一直是单向的 —— 全仓 `decodeFields` /
+`decodeResponse` / `parseResponse` **0 命中**，`response_match` 只输出 pass/fail +
+reasons（字节差异），**从不回填字段值**。`vectors/float_ieee.json` 里 `3.14 → 4048F5C3`
+有一整组编码向量，反方向 `4048F5C3 → 3.14` 却没有任何实现。于是发「读电压」收到应答，
+页面只给 MATCH OK + raw hex，人要自己对照协议心算 —— 排「发对了但值不对」时每条都要
+手工换算。
+
+**拍板（§8.37 R9 行）** = C-2 选 C 的**前半**：命中应答按 `stages` 逆向取值
+（**与编码器对偶**，拿 `vectors/*.json` 反向验证）+ 发送历史显示 `字段 = 值`；
+层 = **FE**、零 DDL（入库回写 = R10）。
+
+#### 一 · 对偶解码器 `utils/InstructionDecoder.js`
+
+**布局与编码器共用一份** —— 把 `encodeInstruction` 里的树布局（扁平字段 → `roots` +
+逐节点 `childrenOf`）抽成公开的 `InstructionEncoder.buildLayout()`，编码与解码同调一处
+（**改一必改二**）；`emitNode` 的组 `align` / `pad_to` / `repeat` / `presence` 判定逐字
+镜像进解码游标：组对齐补零在首副本前一次、`pad_to` 在末副本后一次，叶按 copies 逐份
+align → 内容 → pad。
+
+**叶字节长度不自己算，向编码器要**：`getFieldBytes(field, …).length` 是唯一真相源
+（长度随 op / `params.hex` / `byte_len` / 定长串而定，自算必然漂移），值再从响应帧里
+**读**。⇒ 布局是**结构对偶**，不是第二套实现。
+
+**值解码分派与 `_encodeFieldBytes` 同序**：静态 hex（`FIXED` / `HEADER` / `TAIL` /
+`HEX_RAW` / 协议叶 `hex_value`）→ 文本（ascii 逐字节、utf8 走 `TextDecoder`）→ 旧
+`float` / `decimal` 路径 → 纯 hex → BITFIELD 聚合整数 → INT_SIGNED 两补码（宽帧走
+BigInt 防精度丢失）→ BCD packed 十进制 → FLOAT_IEEE 大端（f32/f64 按 `byte_len`
+分水岭）→ 缺省无符号 + `SCALED_DECIMAL` **反定标** `raw/factor − offset`。**LITTLE 先
+整体还原**（对偶 `getFieldBytes` 的 wrapper；组容器不整体逆序，与编码一致）。
+
+**presence / repeat 走同一份值链**：调用方给了 `inputs` / `computedValues` / `now`
+就与编码期**逐字一致**；不给（真机应答手上没有表单输入）走静态链，`_presenceHit`
+fail-open → 缺省照读、不吞字节。返回 `{fields, consumed, total, residual, warnings}`，
+把「帧长与字段布局不一致」**看得见**：短帧逐字段标 `truncated` + 警告、尾部多出的字节
+计入 `residual` 并告警 —— 不静默给错值。
+
+#### 二 · 反向验证 = `encode ∘ decode = id` 不动点（vectors 单一真相源）
+
+拍板要求「拿 `vectors/*.json` 反向验证」，做法是**不动点断言**：取共享向量表的已知帧
+→ 解成值 → 用**同一个编码器**把这个值编回同一帧 → 必须逐字节相同。它比「解出的值等于
+向量里的原始输入」更强也更诚实 —— 编码本身有归一（bool → 1、非法字符串 → 0、NaN → 0、
+定长补齐、LITTLE 逆序），不动点不要求解码器猜回**编码前**的原始输入，只要求它把**帧里
+真实存的信息**还原到能被编码器原样复现。
+
+覆盖表：`float_ieee.f32` 与 `f64`、`int_signed`、`bcd_scaled.bcd`、`bcd_scaled.scaled`
+（反定标）、`string`（含 `pad_char` 补齐的 NUL）、`little_endian`（LITTLE 逆序的对偶）、
+`bitfield.pack`、`time_counter.time`（以解出的秒数反推墙钟编回原帧）、
+`time_counter.auto`（以状态回推合法前态编回原帧）。另加一例整帧：组 `align` +
+`repeat ×3` + `presence` + LITTLE 混排，**解出来的值原样重编 = 命中应答逐字节相同**。
+
+#### 三 · 两处接入
+
+1. **指令加工 · 事务面板**：`TXN_OK` 后取「最后一次成功 attempt 的 `received`」按指令
+   字段布局解码 → `DecodedFields` 面板出 `字段 = 值`（带字段数 / 字节数统计头）。
+   指令无 `fields`、未命中（FAILED）、解不出 → **不出面板**（不是错误）。
+2. **通讯调试 · 发送历史**：`historyRows(records, { instructionsByName })` 多出的第二个
+   参数（**缺省时行形状逐字不变**）把**响应帧**解成 `字段 = 值` —— 表格新增「字段 FIELDS」
+   列（单行预览 + `title` 看全量），详情「响应与错误日志」面板出完整字段表（名称 · 值 ·
+   字节区间 · 警告）。解**响应**而非发送帧（值在应答里），raw hex 列仍显示发送帧。
+
+#### 四 · 边界与降级（都登记，不藏）
+
+- **无字段布局 → 不解码**：指令没有 `fields`（或 `fields: []`）时不出面板、也**不出**
+  「尾部残字节」警告 —— 那是空布局的假警报，不是应答的问题（本批实测踩过一次，
+  三字节应答 + 空布局 → 出了一条假的 `residual` 警告）。
+- **解不出就不出**：无指令名 / 指令已删 / 无响应 / 映射里没有这条 → 视图模型**不加键**
+  （历史列显示 `—`），不加假数据、不报错。
+- **已知不可逆三条**（都有断言锚定，不是 bug）：① **f32 溢出位型**（`1e300 → 7F800000`
+  即 +Inf）解得出 `Infinity` 却编不回去 —— 编码器把非有限输入归 0 是既有 byte-equal
+  契约（`orchestrator._float_number` 同口径，f64 也绝不写出 Inf 位型）；② **utf8 定长
+  截断**（`'中'@2B` 只留半个码点 `E4B8`）解出 `U+FFFD`、再编码成 `EFBFBD` —— 截断的
+  UTF-8 天然不可逆（ascii 截断反而可逆：`'中' &0xFF → 2D` 解回 `'-'` 再编仍是 `2D`）；
+  ③ **AUTO_COUNTER 是状态机**（`(Current+Step)%Max`），解出的是「编码那一刻的计数状态」
+  而非输入；TIME_ACCUMULATOR 反之可逆（解出秒数、以 `base + 秒×1000` 反推墙钟即可编回
+  原帧）。
+- **展示层收敛 ≠ 值**：`formatFieldValue` 对非整数按 7 位有效数字收敛
+  （`3.1399998664855957` → `3.14`，拍板举例就是 `voltage = 3.14 V`）并剥掉定长补齐的
+  NUL / 尾空格；**解码值本身一个字节不动**（round-trip 以原值为准）。整数与 `>1e10` 的
+  值不碰（免得 `12345678901` 被写成 `12345680000`）。
+
+#### 五 · 测试与验收
+
+- **新 `utils/__tests__/InstructionDecoder.test.js` 21 例**（三段：反向验证不动点 /
+  整帧对偶 / 入口口径与异常帧）+ `DecodedFields.test.jsx` **3 例** +
+  `TransactionPanel.test.jsx` **+2**（命中出面板且无警告 / 未命中与无 `fields` 均不出）+
+  `terminalPanes.test.js` **+4**（解码路径 / 三种降级不加键 / 短帧标 `truncated` /
+  `decodeHistoryRow` 空入参不抛）。
+- **验收**：**FE 1036 → 1066/1066（71 文件）**、BE 685/685（本批未碰后端，全量复跑）、
+  `npx vite build` EXIT=0、`npm run lint` **EXIT=0**、yorha-ui 校验器改动文件
+  **0 违规**；**零 DDL**（`models.py` 一个字符未改）、未碰 `processor.py` / `graph.py` /
+  `Blueprint.jsx`、`/dispatch` 缺省口径逐字节不变、`vectors/` 未动、
+  `frontend/red-report.json` 不入库。
+- **顺手清理**：把 `encodeInstruction` 的树布局抽成 `buildLayout()` 属**纯搬移**
+  （搬移当时 `src/utils` 607 例全绿），不是行为改动。
+
+**文档同步（同批）**：本节 §8.47、§8.37 R9 行标已办、§1 `R1–R10` 状态、
+`pageStatus.json` 指令加工 + 通讯调试两页补「解码展示」口径 → `PAGE_STATUS.md`
+重生成、`PROJECT_HANDOVER.md` 条目 56。
 
 ## 9. 保留勿动（非任务，勿清理）
 

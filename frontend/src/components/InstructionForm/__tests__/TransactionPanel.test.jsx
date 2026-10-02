@@ -217,4 +217,62 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
         expect(await screen.findByText('RESPONSE_SPEC')).toBeDefined();
         expect(screen.queryByTestId('response-spec-stale')).toBeNull();
     });
+
+    // ─── R9（PLAN §8.46 · C-2 选 B 前半）: 命中应答逆向解码展示 ───────────
+    const DECODE_INSTRUCTION = {
+        id: 'instr-1',
+        name: '示例指令',
+        code: '0x10',
+        fields: [
+            {
+                id: 'h', name: 'HEADER', op_code: 'FIXED', byte_len: 2, sequence: 0,
+                parameter_config: { hex: 'AABB' }
+            },
+            {
+                id: 'v', name: 'VOLTAGE', op_code: 'FLOAT_IEEE', byte_len: 4, sequence: 1,
+                parameter_config: {}
+            }
+        ]
+    };
+    const DECODED_RECORD = {
+        ...OK_RECORD,
+        attempts: [{
+            n: 1, status: 'OK', sent: 'AA BB 40 48 F5 C3', received: 'AA BB 40 48 F5 C3',
+            rtt_ms: 0.3, reasons: [], error: null
+        }]
+    };
+    const nf404 = () => Object.assign(new Error('nf'), { response: { status: 404 } });
+
+    it('R9 命中应答 → 出「字段 = 值」解码面板（4048F5C3 → 3.14），无警告', async () => {
+        api.getResponseSpec.mockRejectedValue(nf404());
+        api.sendTransaction.mockResolvedValue(DECODED_RECORD);
+
+        render(<TransactionPanel instruction={DECODE_INSTRUCTION} payload={PAYLOAD} />);
+        fireEvent.click(await screen.findByRole('button', { name: /SEND_TRANSACTION/ }));
+
+        const box = await screen.findByTestId('decoded-fields');
+        expect(box.textContent).toContain('HEADER');
+        expect(box.textContent).toContain('"AABB"');
+        expect(box.textContent).toContain('VOLTAGE');
+        expect(box.textContent).toContain('3.14'); // float32 尾噪在展示层收敛
+        expect(screen.queryByTestId('decoded-warnings')).toBeNull();
+    });
+
+    it('R9 未命中（FAILED）→ 不出解码面板；指令无 fields 也降级不出', async () => {
+        api.getResponseSpec.mockRejectedValue(nf404());
+
+        api.sendTransaction.mockResolvedValue(FAILED_RECORD);
+        const first = render(<TransactionPanel instruction={DECODE_INSTRUCTION} payload={PAYLOAD} />);
+        fireEvent.click(await screen.findByRole('button', { name: /SEND_TRANSACTION/ }));
+        await screen.findByText(/TXN_FAILED/);
+        expect(screen.queryByTestId('decoded-fields')).toBeNull();
+        first.unmount();
+
+        // 无字段布局（字段列表为空）→ 一帧也解不出，静默降级不报错
+        api.sendTransaction.mockResolvedValue(OK_RECORD);
+        render(<TransactionPanel instruction={INSTRUCTION} payload={PAYLOAD} />);
+        fireEvent.click(await screen.findByRole('button', { name: /SEND_TRANSACTION/ }));
+        await screen.findByText(/TXN_OK/);
+        expect(screen.queryByTestId('decoded-fields')).toBeNull();
+    });
 });

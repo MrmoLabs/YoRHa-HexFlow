@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+    decodeHistoryRow,
     errorMessageOf,
     findEvent,
     hexDump,
@@ -117,6 +118,73 @@ describe('terminalPanes — historyRows', () => {
     it('空数组与非数组输入', () => {
         expect(historyRows([])).toEqual([]);
         expect(historyRows(undefined)).toEqual([]);
+    });
+});
+
+// ─── R9（PLAN §8.46 · C-2 选 B 前半）: 发送历史显示「字段 = 值」 ───────────
+describe('terminalPanes — R9 发送历史逆向解码', () => {
+    const READ_VOLTAGE = {
+        id: 'i1',
+        name: 'read_voltage',
+        fields: [
+            {
+                id: 'h', name: 'HEADER', op_code: 'FIXED', byte_len: 2, sequence: 0,
+                parameter_config: { hex: 'AA55' }
+            },
+            {
+                id: 'v', name: 'VOLTAGE', op_code: 'FLOAT_IEEE', byte_len: 4, sequence: 1,
+                parameter_config: {}
+            }
+        ]
+    };
+    const INSTRUCTIONS = { read_voltage: READ_VOLTAGE };
+    const HIT_RECORD = {
+        ...SENT_RECORD,
+        id: 4242,
+        byte_count: 6,
+        hex_string: 'AA 55 40 48 F5 C3',
+        instruction_name: 'read_voltage',
+        events: [
+            { type: 'raw', hex_string: 'AA 55 40 48 F5 C3', message: null },
+            { type: 'response', hex_string: 'AA 55 40 48 F5 C3', message: null }
+        ]
+    };
+
+    it('给了指令映射 → 响应帧解成「字段 = 值」（4048F5C3 → 3.14）', () => {
+        const [row] = historyRows([HIT_RECORD], { instructionsByName: INSTRUCTIONS });
+        expect(row.decoded.fields).toHaveLength(2);
+        expect(row.decoded.residual).toBe(0);
+        expect(row.fieldsText).toBe('HEADER = "AA55" · VOLTAGE = 3.14');
+    });
+
+    it('不给 ctx / 指令名对不上 / 无响应 → 不加解码键（行形状逐字不变）', () => {
+        const [noCtx] = historyRows([HIT_RECORD]);
+        expect('fieldsText' in noCtx).toBe(false);
+        expect('decoded' in noCtx).toBe(false);
+
+        const [noMatch] = historyRows([HIT_RECORD], { instructionsByName: { other: READ_VOLTAGE } });
+        expect('fieldsText' in noMatch).toBe(false);
+
+        const [noResponse] = historyRows(
+            [{ ...HIT_RECORD, events: [{ type: 'raw', hex_string: 'AA 55', message: null }] }],
+            { instructionsByName: INSTRUCTIONS });
+        expect('fieldsText' in noResponse).toBe(false);
+
+        const [errRow] = historyRows([ERROR_RECORD], { instructionsByName: INSTRUCTIONS });
+        expect('fieldsText' in errRow).toBe(false);
+    });
+
+    it('短帧 → 标 truncated + 警告进 row.decoded（看得见，不是静默错值）', () => {
+        const short = { ...HIT_RECORD, events: [{ type: 'response', hex_string: 'AA 55', message: null }] };
+        const [row] = historyRows([short], { instructionsByName: INSTRUCTIONS });
+        expect(row.decoded.fields[1].truncated).toBe(true);
+        expect(row.decoded.warnings.join(' ')).toContain('比字段布局短');
+    });
+
+    it('decodeHistoryRow 直接入口：空入参 → null（不抛）', () => {
+        expect(decodeHistoryRow(null, INSTRUCTIONS)).toBeNull();
+        expect(decodeHistoryRow(HIT_RECORD, null)).toBeNull();
+        expect(decodeHistoryRow(SENT_RECORD, INSTRUCTIONS)).toBeNull(); // 指令名 'probe' 不在映射里
     });
 });
 
