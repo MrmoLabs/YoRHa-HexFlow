@@ -199,7 +199,7 @@
 - 路径: `/datahub`
 - 快捷键: `E`
 - 当前状态: 已接入 SQLite / FastAPI 环境状态与备份链路
-- 摘要: 数据中心页提供数据的工程化操作台：环境状态面板展示数据库路径、行数与后端版本；聚合导出把全量指令 JSON、关系数据 relations.json 与逐指令骨架帧打包为 ZIP，关系数据可按 id 回灌；备份/恢复通过后端端点复制与替换 yorha.db（恢复前自动留安全快照）。
+- 摘要: 数据中心页提供数据的工程化操作台：环境状态面板展示数据库路径、行数与后端版本；聚合导出把全量指令 JSON、关系数据 relations.json、逐指令骨架帧，以及配方 / 序列 / 传输配置 / 设备档案 / 算子模板 5 个新域打包为 ZIP（R7 起 8 域），关系数据可按 id 回灌；备份/恢复通过后端端点复制与替换 yorha.db（恢复前自动留安全快照）。
 
 ### 已具备
 - 协议、指令和算子模板已经由 SQLite 持久化。
@@ -207,7 +207,7 @@
 - 指令加工页已支持导出 .hex、编排页支持导出 .bin（由 /export 提供）。
 - 指令管理页已支持指令 JSON 导入（结构校验与冲突分流预览，2026-09-22）。
 - 环境状态面板：DB 路径 / 大小 / 修改时间、七表行数（含绑定 / 应答规格）、后端版本，可手动刷新（GET /datahub/status）。
-- 聚合导出：ZIP 打包 instructions.json（与指令页导入格式对称）+ relations.json（绑定 + 应答规格，批次四 4a）+ manifest.json + 逐指令 frames/*.bin|hex（Orchestrator 编译骨架帧）。
+- 聚合导出（R7 · PLAN §8.45，2026-10-02）：ZIP 打包 **8 域** —— instructions.json（与指令页导入格式对称）+ relations.json（绑定 + 应答规格，批次四 4a）+ 新增 recipes.json / sequences.json（序列**内嵌步骤**，宿主-从属同进同出）/ transport.json（单行 current）/ profiles.json / templates.json + 逐指令 frames/*.bin|hex（Orchestrator 编译骨架帧）；manifest.json 给出 domainVersion（8 域清单，键序 = 导出序）与 domainCounts（逐域行数，**键集与 domainVersion 严格相等**），存量三键只做加法；回收站里的行不进包（读端点一律 alive()）。本批**只做出线**，按域导入端点 = R8（快照复用 R1 的 safety_snapshot()）。
 - 关系数据回灌：POST /datahub/import/relations 按 id upsert、逐行报告（父缺失跳过、槽悬空置空带警告、出处指纹原样回填、部分成功即部分落库），页面选文件 → 二次确认 → 回显新增/更新/跳过/警告计数；回灌**前**自动留 pre-import-* 安全快照并在响应回报 preImportSnapshot（PLAN §8.37 R1，2026-10-02）—— 校验 400 不落垃圾快照、快照失败即 500 中止且一行未写，与恢复前的 pre-restore 对称。
 - 绑定矩阵 (BINDING MATRIX)（批次四 4b）：只读总览「指令 → 默认协议 → 槽位」，一行一条指令（含未绑定的），摘要给出 有默认协议/无绑定/悬空槽/协议已删/失效绑定/重复默认六项计数；孤儿关系不静默抹平（协议已删、槽悬空、definition_hash 失效一律琥珀标出），数据随刷新与关系数据导入同拍重读（GET /bindings · /instructions/ · /protocols/）。
 - 数据库备份 / 恢复：新建备份复制到 backend/db/backups/（已 gitignore）；恢复前自动留 pre-restore 安全快照、释放连接池、清理 WAL/SHM 残留后原子替换，并有二次确认与文件名防穿越校验。

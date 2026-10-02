@@ -17,6 +17,12 @@
   `pre-restore` 先例，补「恢复有快照、导入没有」的风险不对称），响应新增
   `preImportSnapshot`；快照逻辑收在 `safety_snapshot()` —— R8 要补的其它导入端点
   直接复用。
+- PLAN §8.45 R7（C-3 选 C · 导出补域）：聚合导出从 **3 域 → 8 域** —— 新增
+  `recipes.json` / `sequences.json` / `transport.json` / `profiles.json` /
+  `templates.json`；`manifest.json` 加 `domainVersion`（8 域清单，键序 = 导出序）
+  与 `domainCounts`（逐域行数，**键集与 domainVersion 严格相等**）。既有三键
+  （`instructionCount` / `relations` / `frames`）只做加法。**本批只做出线**，
+  按域导入端点 = R8（快照复用 R1 的 `safety_snapshot()`）。
 
 纯函数（fields_to_blocks / compile_blocks / frame_bytes / format_hex_text /
 build_bundle / sanitize_filename / validate_backup_name / create_backup /
@@ -63,12 +69,17 @@ from backend.db.database import (
 from backend.db.migrate import MigrationError, run_pending_migrations
 from backend.db.models import (
     BitField,
+    DeviceProfile,
+    FrameRecipe,
     Instruction,
     InstructionField,
     OperatorTemplate,
     ProtocolBinding,
     ProtocolTemplate,
     ResponseSpec,
+    Sequence,
+    SequenceStep,
+    TransportSetting,
 )
 from backend.db.transport_store import restore_transport_config
 from backend.routers.binding import find_slot_node
@@ -677,6 +688,197 @@ def import_relations(db: Session, payload) -> dict:
 
 
 # --------------------------------------------------------------------------
+# R7（PLAN §8.45 · §8.37 R7 行 · C-3 选 C）：导出补域 —— 原 3 域 → 8 域
+# --------------------------------------------------------------------------
+# 本批**只做出线，不碰导入**（按域导入端点 = R8；pre-import 快照已在 R1 复用）。
+#
+# 域清单 = `BUNDLE_DOMAIN_VERSIONS` 的键（8 个，键序即导出序）：
+#   instructions / relations / frames 是改前就有的 3 域；
+#   recipes / sequences / transport / profiles / templates 是本批新增的 5 域
+#   （拍板「bundle 增 5 域」的那 5 张缺表 → 5 个新 JSON 文件）。
+#
+# 纪律一：**读端点只出活行**（R6 §8.43）—— 回收站行不进包，`sequence_steps`
+#   随宿主同进同出（宿主已删则其步骤一步都不出）。
+# 纪律二：**列子集不含 `deleted_at`** —— 日后按域回灌得到的恒是活行，
+#   不会把源机的回收站状态搬过去（与 R6-1「导出列子集本无 deleted_at」一致）。
+# 纪律三：既有三键（`instructionCount` / `relations` / `frames`）**只做加法**，
+#   旧消费方读 manifest 一个字段都不用改。
+RECIPES_SCHEMA_VERSION = 1
+SEQUENCES_SCHEMA_VERSION = 1
+TRANSPORT_SCHEMA_VERSION = 1
+PROFILES_SCHEMA_VERSION = 1
+TEMPLATES_SCHEMA_VERSION = 1
+
+# 8 域清单（键序 = 导出序 = manifest.domainVersion 的键序）。值 = 该域自己的
+# schemaVersion：instructions/relations 直接取各自文件内的 `schemaVersion`，
+# 三个既有域本批不改版（仍是 1），新域从 1 起。
+BUNDLE_DOMAIN_VERSIONS = {
+    "instructions": 1,
+    "relations": 1,
+    "frames": 1,
+    "recipes": RECIPES_SCHEMA_VERSION,
+    "sequences": SEQUENCES_SCHEMA_VERSION,
+    "transport": TRANSPORT_SCHEMA_VERSION,
+    "profiles": PROFILES_SCHEMA_VERSION,
+    "templates": TEMPLATES_SCHEMA_VERSION,
+}
+
+
+def recipe_export_row(row) -> dict:
+    """FrameRecipe → recipes.json 条目（stages 原样，列序与 models.py 一致）。"""
+    return {
+        "id": row.id,
+        "name": row.name,
+        "description": row.description,
+        "stages": row.stages,
+        "version": row.version,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+def recipes_export_payload(recipes) -> dict:
+    """recipes.json 载荷（形状镜像 relations.json：schemaVersion + 单一数组）。"""
+    return {
+        "schemaVersion": RECIPES_SCHEMA_VERSION,
+        "recipes": [recipe_export_row(r) for r in recipes],
+    }
+
+
+def sequence_step_export_row(row) -> dict:
+    """SequenceStep → sequences.json 内嵌步骤（冻结帧快照整行带走，不拆列）。"""
+    return {
+        "id": row.id,
+        "step_order": row.step_order,
+        "instruction_id": row.instruction_id,
+        "label": row.label,
+        "delay_ms": row.delay_ms,
+        "params": row.params,
+        "payload": row.payload,
+        "plan": row.plan,
+        "wrap": row.wrap,
+    }
+
+
+def sequence_export_row(row, steps) -> dict:
+    """Sequence + 其步骤 → sequences.json 条目（步骤内嵌，宿主-从属同进同出）。"""
+    return {
+        "id": row.id,
+        "name": row.name,
+        "description": row.description,
+        "config": row.config,
+        "steps": [sequence_step_export_row(s) for s in steps],
+    }
+
+
+def sequences_export_payload(sequences, steps) -> dict:
+    """sequences.json 载荷：序列按 (name, id) 排（镜像 `GET /sequences`）。
+
+    `steps` = 已查出的步骤（调用方限定 `sequence_id IN (导出序列)`），此处按
+    `sequence_id` 分组后内嵌；**步骤不单独成域** —— 宿主不在包里则其步骤不出现，
+    组内保持调用方给定的 (step_order, id) 顺序。
+    """
+    grouped = {}
+    for step in steps:
+        grouped.setdefault(step.sequence_id, []).append(step)
+    return {
+        "schemaVersion": SEQUENCES_SCHEMA_VERSION,
+        "sequences": [
+            sequence_export_row(seq, grouped.get(seq.id, [])) for seq in sequences
+        ],
+    }
+
+
+def transport_export_payload(settings) -> dict:
+    """transport.json 载荷（单行约定：id 恒为 `current`，仍用数组统一形状）。
+
+    `active_profile_id` 是逻辑指针 —— 本批只出线、原样带走；目标机上档案是否存在
+    （以及指针是否该清空）由 R8 的按域导入决定。
+    """
+    return {
+        "schemaVersion": TRANSPORT_SCHEMA_VERSION,
+        "settings": [
+            {"id": row.id, "config": row.config, "active_profile_id": row.active_profile_id}
+            for row in settings
+        ],
+    }
+
+
+def profile_export_row(row) -> dict:
+    """DeviceProfile → profiles.json 条目（label 唯一，是档案的自然键）。"""
+    return {
+        "id": row.id,
+        "label": row.label,
+        "config": row.config,
+    }
+
+
+def profiles_export_payload(profiles) -> dict:
+    """profiles.json 载荷（行序 = 调用方给定的 label 升序，导出可 diff）。"""
+    return {
+        "schemaVersion": PROFILES_SCHEMA_VERSION,
+        "profiles": [profile_export_row(p) for p in profiles],
+    }
+
+
+def template_export_row(row) -> dict:
+    """OperatorTemplate → templates.json 条目（op_code 是主键）。"""
+    return {
+        "op_code": row.op_code,
+        "name": row.name,
+        "category": row.category,
+        "param_template": row.param_template,
+        "description": row.description,
+    }
+
+
+def templates_export_payload(templates) -> dict:
+    """templates.json 载荷（行序 = op_code 升序，导出可 diff）。"""
+    return {
+        "schemaVersion": TEMPLATES_SCHEMA_VERSION,
+        "templates": [template_export_row(t) for t in templates],
+    }
+
+
+def bundle_manifest(instruction_payload, relations, extra_payloads, frames) -> dict:
+    """manifest.json 载荷（**纯函数**，便于单测钉「8 域清单」）。
+
+    - `domainVersion`：8 域清单（键序 = 导出序），值 = 该域 schemaVersion。
+      下游按它判断「这包能不能按域回灌」—— 版本不同即拒（R8 的按域导入用）。
+    - `domainCounts`：**键集必须与 `domainVersion` 严格相等**（少一域、多一域
+      都算 bug），值 = 该域行数；`sequences` 计的是序列数（步骤数看该文件本身）。
+    - `instructionCount` / `relations` / `frames` 三键为存量键，**只做加法不变**。
+    """
+    counts = {
+        "instructions": len(instruction_payload["instructions"]),
+        "relations": len(relations["bindings"]) + len(relations["responseSpecs"]),
+        "frames": len(frames),
+        "recipes": len(extra_payloads["recipes"]["recipes"]),
+        "sequences": len(extra_payloads["sequences"]["sequences"]),
+        "transport": len(extra_payloads["transport"]["settings"]),
+        "profiles": len(extra_payloads["profiles"]["profiles"]),
+        "templates": len(extra_payloads["templates"]["templates"]),
+    }
+    expected = list(BUNDLE_DOMAIN_VERSIONS)
+    if list(counts) != expected:
+        raise ValueError(
+            f"域清单不一致：counts={list(counts)} vs domains={expected}"
+        )
+    return {
+        "generatedAt": datetime.now().isoformat(timespec="seconds"),
+        "appVersion": APP_VERSION,
+        "domainVersion": {name: BUNDLE_DOMAIN_VERSIONS[name] for name in expected},
+        "domainCounts": counts,
+        "instructionCount": len(instruction_payload["instructions"]),
+        "relations": {
+            "bindings": len(relations["bindings"]),
+            "responseSpecs": len(relations["responseSpecs"]),
+        },
+        "frames": frames,
+    }
+
+
+# --------------------------------------------------------------------------
 # 端点
 # --------------------------------------------------------------------------
 
@@ -719,19 +921,61 @@ def datahub_status():
 
 @router.get("/export/bundle")
 def export_bundle():
-    """D1 聚合导出 ZIP：instructions.json + relations.json + manifest.json + frames/*。
+    """D1 聚合导出 ZIP：**8 域** + manifest.json + frames/*（R7 · PLAN §8.45）。
 
-    每条指令都产出帧文件；单条编译失败只在 manifest 标记 error，
-    不阻断整包导出（JSON 始终完整）。relations.json = 批次四 4a 的关系数据
-    （protocol_bindings + response_specs），与 `POST /datahub/import/relations` 对称。
+    域文件 = `instructions.json` + `relations.json` + 本批新增 5 域
+    （`recipes.json` / `sequences.json` / `transport.json` / `profiles.json` /
+    `templates.json`）+ 派生物 `frames/*`；`manifest.json` 写 `domainVersion`
+    （8 域清单）与 `domainCounts`（逐域行数），既有三键只做加法。
+
+    每条指令都产出帧文件；单条编译失败只在 manifest 标记 error，不阻断整包导出
+    （JSON 始终完整）。**读端点只出活行**（R6 §8.43）：指令 / 绑定 / 应答规格 /
+    配方 / 序列 / 档案 / 传输配置 / 算子模板一律 `alive()`，回收站行不进包；
+    序列步骤随宿主同进同出（宿主在站里则其步骤一步都不出）。
+
+    本批**只做出线，不碰导入**：按域导入端点 = R8。
     """
     db = SessionLocal()
     try:
-        instructions = db.query(Instruction).all()
+        instructions = alive(db.query(Instruction), Instruction).all()
         payload = instructions_export_payload(instructions)
         relations = relations_export_payload(
-            db.query(ProtocolBinding).order_by(ProtocolBinding.id).all(),
-            db.query(ResponseSpec).order_by(ResponseSpec.id).all(),
+            alive(db.query(ProtocolBinding), ProtocolBinding).order_by(ProtocolBinding.id).all(),
+            alive(db.query(ResponseSpec), ResponseSpec).order_by(ResponseSpec.id).all(),
+        )
+        # R7 补域：5 个新域（列子集不含 deleted_at → 回灌后恒是活行）
+        recipes = recipes_export_payload(
+            alive(db.query(FrameRecipe), FrameRecipe).order_by(FrameRecipe.id).all()
+        )
+        sequence_rows = (
+            alive(db.query(Sequence), Sequence)
+            .order_by(Sequence.name.asc(), Sequence.id.asc())
+            .all()
+        )
+        step_rows = []
+        if sequence_rows:
+            step_rows = (
+                db.query(SequenceStep)
+                .filter(SequenceStep.sequence_id.in_([s.id for s in sequence_rows]))
+                .order_by(SequenceStep.step_order.asc(), SequenceStep.id.asc())
+                .all()
+            )
+        sequences = sequences_export_payload(sequence_rows, step_rows)
+        # 局部名不能叫 `transport`：会遮蔽本模块已导入的 backend.core.transport
+        transport_payload = transport_export_payload(
+            alive(db.query(TransportSetting), TransportSetting)
+            .order_by(TransportSetting.id)
+            .all()
+        )
+        profiles = profiles_export_payload(
+            alive(db.query(DeviceProfile), DeviceProfile)
+            .order_by(DeviceProfile.label.asc(), DeviceProfile.id.asc())
+            .all()
+        )
+        templates = templates_export_payload(
+            alive(db.query(OperatorTemplate), OperatorTemplate)
+            .order_by(OperatorTemplate.op_code.asc())
+            .all()
         )
         frames = []
     finally:
@@ -740,6 +984,11 @@ def export_bundle():
     entries = [
         ("instructions.json", json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")),
         ("relations.json", json.dumps(relations, ensure_ascii=False, indent=2).encode("utf-8")),
+        ("recipes.json", json.dumps(recipes, ensure_ascii=False, indent=2).encode("utf-8")),
+        ("sequences.json", json.dumps(sequences, ensure_ascii=False, indent=2).encode("utf-8")),
+        ("transport.json", json.dumps(transport_payload, ensure_ascii=False, indent=2).encode("utf-8")),
+        ("profiles.json", json.dumps(profiles, ensure_ascii=False, indent=2).encode("utf-8")),
+        ("templates.json", json.dumps(templates, ensure_ascii=False, indent=2).encode("utf-8")),
     ]
     for inst in payload["instructions"]:
         base = sanitize_filename(inst.get("code") or inst.get("id"), "instruction")
@@ -753,16 +1002,18 @@ def export_bundle():
         entry["bytes"] = len(data)
         frames.append(entry)
 
-    manifest = {
-        "generatedAt": datetime.now().isoformat(timespec="seconds"),
-        "appVersion": APP_VERSION,
-        "instructionCount": len(payload["instructions"]),
-        "relations": {
-            "bindings": len(relations["bindings"]),
-            "responseSpecs": len(relations["responseSpecs"]),
+    manifest = bundle_manifest(
+        payload,
+        relations,
+        {
+            "recipes": recipes,
+            "sequences": sequences,
+            "transport": transport_payload,
+            "profiles": profiles,
+            "templates": templates,
         },
-        "frames": frames,
-    }
+        frames,
+    )
     entries.append(("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")))
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")

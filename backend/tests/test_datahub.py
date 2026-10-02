@@ -18,11 +18,30 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.db.database import Base, ensure_binding_columns, ensure_response_spec_columns
-from backend.db.models import Instruction, InstructionField, ProtocolBinding, ProtocolTemplate, ResponseSpec
+from backend.db.models import (
+    DeviceProfile,
+    FrameRecipe,
+    Instruction,
+    InstructionField,
+    OperatorTemplate,
+    ProtocolBinding,
+    ProtocolTemplate,
+    ResponseSpec,
+    Sequence,
+    SequenceStep,
+    TransportSetting,
+)
 from backend.routers import datahub
 from backend.routers.datahub import (
+    BUNDLE_DOMAIN_VERSIONS,
+    PROFILES_SCHEMA_VERSION,
+    RECIPES_SCHEMA_VERSION,
     RELATIONS_SCHEMA_VERSION,
+    SEQUENCES_SCHEMA_VERSION,
+    TEMPLATES_SCHEMA_VERSION,
+    TRANSPORT_SCHEMA_VERSION,
     build_bundle,
+    bundle_manifest,
     compile_blocks,
     create_backup,
     fields_to_blocks,
@@ -32,10 +51,15 @@ from backend.routers.datahub import (
     import_relations_endpoint,
     instructions_export_payload,
     list_backups,
+    profiles_export_payload,
+    recipes_export_payload,
     relations_export_payload,
     replace_database_file,
     safety_snapshot,
     sanitize_filename,
+    sequences_export_payload,
+    templates_export_payload,
+    transport_export_payload,
     validate_backup_name,
 )
 
@@ -605,6 +629,279 @@ class TestImportPreSnapshot(RelationsTestCase):
         self.assertTrue(flags["pre-import-1.db"])
         self.assertTrue(flags["pre-restore-1.db"])
         self.assertFalse(flags["yorha-1.db"])
+
+
+# --------------------------------------------------------------------------
+# R7（PLAN §8.45 · §8.37 R7 行）：导出补域 —— 5 个新域载荷 + manifest 8 域清单
+# + export_bundle 端到端（临时库直调，镜像 RelationsTestCase 建库三步）
+# --------------------------------------------------------------------------
+
+
+def recipe_row(id="r1", name="套壳配方", **over):
+    row = FrameRecipe(
+        id=id, name=name, description="两层封装",
+        stages=[{"protocol_id": "p1", "slot_ids": ["s1"], "definition_hash": "sha256:abc"}],
+        version=2, created_at="2026-10-02T00:00:00+00:00",
+        updated_at="2026-10-02T01:00:00+00:00",
+    )
+    for key, value in over.items():
+        setattr(row, key, value)
+    return row
+
+
+def sequence_step_row(id="st1", sequence_id="s1", step_order=0, instruction_id="i1", **over):
+    row = SequenceStep(
+        id=id, sequence_id=sequence_id, step_order=step_order,
+        instruction_id=instruction_id, label="步一", delay_ms=10,
+        params={"f1": 1}, payload="AA55FF", plan={"dynamic": []},
+        wrap={"recipe_id": "r1"},
+    )
+    for key, value in over.items():
+        setattr(row, key, value)
+    return row
+
+
+class TestExportDomainPayloads(unittest.TestCase):
+    """R7 新增 5 域的载荷形（纯函数 + 内存 ORM 行，不碰库）。
+
+    每域断言两件事：**列子集不含 `deleted_at`**（回灌后恒是活行，R6 口径）与
+    **可 JSON 直序列化**（ZIP 入口依赖）。
+    """
+
+    def test_recipes_payload_shape(self):
+        payload = recipes_export_payload([recipe_row()])
+        self.assertEqual(payload["schemaVersion"], RECIPES_SCHEMA_VERSION)
+        self.assertEqual(len(payload["recipes"]), 1)
+        row = payload["recipes"][0]
+        self.assertEqual(row["id"], "r1")
+        self.assertEqual(row["name"], "套壳配方")
+        self.assertEqual(row["stages"][0]["definition_hash"], "sha256:abc")
+        self.assertEqual(row["version"], 2)
+        self.assertNotIn("deleted_at", row)
+        json.dumps(payload)
+
+    def test_sequences_payload_nests_steps_and_drops_foreign(self):
+        seq = Sequence(id="s1", name="冒烟序列", description="d",
+                       config={"stop_on_error": True})
+        steps = [
+            sequence_step_row(id="st1", step_order=0),
+            sequence_step_row(id="st2", step_order=1, instruction_id="i2",
+                              label="步二", delay_ms=0, params=None,
+                              payload="BB", plan=None, wrap=None),
+            # 宿主不在导出列表里的步骤：**必须被丢掉**（分组只认给定序列）
+            sequence_step_row(id="st-foreign", sequence_id="s2"),
+        ]
+        payload = sequences_export_payload([seq], steps)
+        self.assertEqual(payload["schemaVersion"], SEQUENCES_SCHEMA_VERSION)
+        row = payload["sequences"][0]
+        self.assertEqual(row["id"], "s1")
+        self.assertEqual(row["config"], {"stop_on_error": True})
+        self.assertEqual([s["id"] for s in row["steps"]], ["st1", "st2"])
+        self.assertNotIn("deleted_at", row)
+        # 内嵌后子行不再重复宿主列（宿主-从属同进同出，靠外层 id 关联）
+        self.assertNotIn("sequence_id", row["steps"][0])
+        self.assertEqual(row["steps"][1]["label"], "步二")
+        json.dumps(payload)
+
+    def test_sequences_payload_keeps_given_step_order(self):
+        seq = Sequence(id="s1", name="冒烟序列", description=None, config={})
+        payload = sequences_export_payload(
+            [seq], [sequence_step_row(id="st9", step_order=9)]
+        )
+        self.assertEqual([s["id"] for s in payload["sequences"][0]["steps"]], ["st9"])
+        self.assertEqual(payload["sequences"][0]["steps"][0]["step_order"], 9)
+
+    def test_transport_profiles_templates_payloads(self):
+        transport_payload = transport_export_payload([
+            TransportSetting(id="current", config={"mode": "serial"}, active_profile_id="d1")
+        ])
+        self.assertEqual(transport_payload["schemaVersion"], TRANSPORT_SCHEMA_VERSION)
+        row = transport_payload["settings"][0]
+        self.assertEqual(row["id"], "current")  # 单行约定
+        self.assertEqual(row["active_profile_id"], "d1")
+        self.assertNotIn("deleted_at", row)
+
+        profiles = profiles_export_payload([
+            DeviceProfile(id="d1", label="车间A", config={"mode": "serial"})
+        ])
+        self.assertEqual(profiles["schemaVersion"], PROFILES_SCHEMA_VERSION)
+        self.assertEqual(profiles["profiles"][0]["label"], "车间A")
+        self.assertNotIn("deleted_at", profiles["profiles"][0])
+
+        templates = templates_export_payload([
+            OperatorTemplate(op_code="HEX_RAW", name="十六进制原样", category="BASIC",
+                             param_template={"hex": {}}, description="逐字节原样")
+        ])
+        self.assertEqual(templates["schemaVersion"], TEMPLATES_SCHEMA_VERSION)
+        self.assertEqual(templates["templates"][0]["op_code"], "HEX_RAW")
+        self.assertEqual(templates["templates"][0]["param_template"], {"hex": {}})
+        self.assertNotIn("deleted_at", templates["templates"][0])
+
+        for payload in (transport_payload, profiles, templates):
+            json.dumps(payload)
+
+
+class TestBundleManifest(unittest.TestCase):
+    """manifest.domainVersion = 8 域清单（R7 拍板的「原 3 域 → 8 域」）。"""
+
+    def _manifest(self, frames=("f1",)):
+        return bundle_manifest(
+            {"instructions": [1]},
+            {"bindings": [1], "responseSpecs": [1]},
+            {
+                "recipes": {"recipes": [1, 2]},
+                "sequences": {"sequences": [1]},
+                "transport": {"settings": [1]},
+                "profiles": {"profiles": [1, 2]},
+                "templates": {"templates": [1]},
+            },
+            list(frames),
+        )
+
+    def test_eight_domain_inventory(self):
+        manifest = self._manifest()
+        self.assertEqual(
+            list(manifest["domainVersion"]),
+            ["instructions", "relations", "frames", "recipes", "sequences",
+             "transport", "profiles", "templates"],
+        )
+        self.assertEqual(len(manifest["domainVersion"]), 8)
+        self.assertEqual(manifest["domainVersion"], BUNDLE_DOMAIN_VERSIONS)
+        # 域清单与行数表**键集严格相等** —— 少一域、多一域都算 bug
+        self.assertEqual(set(manifest["domainCounts"]), set(manifest["domainVersion"]))
+
+    def test_counts_and_legacy_keys(self):
+        manifest = self._manifest()
+        self.assertEqual(manifest["domainCounts"], {
+            "instructions": 1,
+            "relations": 2,
+            "frames": 1,
+            "recipes": 2,
+            "sequences": 1,
+            "transport": 1,
+            "profiles": 2,
+            "templates": 1,
+        })
+        # 存量三键只做加法 —— 旧消费方读 manifest 一个字段都不用改
+        self.assertEqual(manifest["instructionCount"], 1)
+        self.assertEqual(manifest["relations"],
+                         {"bindings": 1, "responseSpecs": 1})
+        self.assertEqual(manifest["frames"], ["f1"])
+        self.assertIn("generatedAt", manifest)
+        self.assertEqual(manifest["appVersion"], datahub.APP_VERSION)
+
+    def test_guard_catches_domain_inventory_drift(self):
+        # 往域清单里加一域却忘了补 counts → 必须报错，而不是静默出一个缺域的包
+        drifted = {**BUNDLE_DOMAIN_VERSIONS, "protocols": 1}
+        with mock.patch.object(datahub, "BUNDLE_DOMAIN_VERSIONS", drifted):
+            with self.assertRaises(ValueError) as ctx:
+                self._manifest()
+        self.assertIn("域清单不一致", str(ctx.exception))
+
+
+class TestExportBundleEightDomains(RelationsTestCase):
+    """端到端：GET /datahub/export/bundle → 8 个域文件 + manifest 8 域清单。
+
+    同时钉两条既有纪律：**回收站行不进包**（R6 §8.43，指令 / 绑定 / 应答规格 /
+    配方 / 序列 / 档案 六处）与 **序列步骤随宿主同进同出**。
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.db.add(FrameRecipe(id="r1", name="套壳配方", description="d",
+                                stages=[{"protocol_id": "p1",
+                                         "definition_hash": "sha256:abc"}],
+                                version=1))
+        self.db.add(FrameRecipe(id="r-trash", name="回收站配方", description=None,
+                                stages=[], version=1,
+                                deleted_at="2026-10-02T00:00:00+00:00"))
+        self.db.add(Sequence(id="s1", name="冒烟序列", description="d",
+                             config={"stop_on_error": True}))
+        self.db.add(Sequence(id="s-trash", name="回收站序列", description=None,
+                             config={}, deleted_at="2026-10-02T00:00:00+00:00"))
+        self.db.add(sequence_step_row(id="st1", sequence_id="s1", step_order=0,
+                                      instruction_id="i1"))
+        self.db.add(sequence_step_row(id="st-trash", sequence_id="s-trash",
+                                      step_order=0, instruction_id="i1"))
+        self.db.add(TransportSetting(id="current", config={"mode": "serial"},
+                                     active_profile_id=None))
+        self.db.add(DeviceProfile(id="d1", label="车间A", config={"mode": "serial"}))
+        self.db.add(DeviceProfile(id="d-trash", label="回收站档案", config={},
+                                  deleted_at="2026-10-02T00:00:00+00:00"))
+        self.db.add(OperatorTemplate(op_code="HEX_RAW", name="十六进制原样",
+                                     category="BASIC", param_template={"hex": {}},
+                                     description="逐字节原样"))
+        # 回收站行（R6 六类可回收）：指令 / 绑定 / 应答规格 三处也要被挡住
+        self.db.add(Instruction(id="i-trash", device_code="D1", code="CMD_TRASH",
+                                name="回收站指令", type="DYNAMIC",
+                                deleted_at="2026-10-02T00:00:00+00:00"))
+        self.db.add(ProtocolBinding(id="b-trash", protocol_id="p1",
+                                    instruction_id="i1", label="回收站绑定",
+                                    slot_order=9, deleted_at="2026-10-02T00:00:00+00:00"))
+        self.db.add(ResponseSpec(id="rs-trash", instruction_id="i2",
+                                 spec={"mode": "rules"},
+                                 deleted_at="2026-10-02T00:00:00+00:00"))
+        self.db.commit()
+
+        patcher = mock.patch.object(datahub, "SessionLocal", return_value=self.db)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_zip_carries_eight_domains(self):
+        resp = datahub.export_bundle()
+        with zipfile.ZipFile(BytesIO(resp.body)) as zf:
+            names = zf.namelist()
+            for domain in (
+                "instructions.json", "relations.json", "recipes.json",
+                "sequences.json", "transport.json", "profiles.json",
+                "templates.json",
+            ):
+                self.assertIn(domain, names)
+            self.assertIn("manifest.json", names)
+
+            manifest = json.loads(zf.read("manifest.json"))
+            self.assertEqual(list(manifest["domainVersion"]),
+                             list(BUNDLE_DOMAIN_VERSIONS))
+            self.assertEqual(len(manifest["domainVersion"]), 8)
+            self.assertEqual(set(manifest["domainCounts"]),
+                             set(manifest["domainVersion"]))
+
+            # 回收站行不进包 —— 六处逐一钉
+            instructions = json.loads(zf.read("instructions.json"))
+            self.assertEqual([i["id"] for i in instructions["instructions"]],
+                             ["i1", "i2"])
+            relations = json.loads(zf.read("relations.json"))
+            self.assertEqual(relations["bindings"], [])
+            self.assertEqual(relations["responseSpecs"], [])
+            recipes = json.loads(zf.read("recipes.json"))
+            self.assertEqual([r["id"] for r in recipes["recipes"]], ["r1"])
+            self.assertNotIn("deleted_at", recipes["recipes"][0])
+            sequences = json.loads(zf.read("sequences.json"))
+            self.assertEqual([s["id"] for s in sequences["sequences"]], ["s1"])
+            # 站内序列的步骤一步都不出（宿主-从属同进同出）
+            self.assertEqual([s["id"] for s in sequences["sequences"][0]["steps"]],
+                             ["st1"])
+            profiles = json.loads(zf.read("profiles.json"))
+            self.assertEqual([p["id"] for p in profiles["profiles"]], ["d1"])
+            templates = json.loads(zf.read("templates.json"))
+            self.assertEqual([t["op_code"] for t in templates["templates"]],
+                             ["HEX_RAW"])
+
+            self.assertEqual(manifest["domainCounts"], {
+                "instructions": 2,
+                "relations": 0,
+                "frames": 2,
+                "recipes": 1,
+                "sequences": 1,
+                "transport": 1,
+                "profiles": 1,
+                "templates": 1,
+            })
+            # 存量三键仍在
+            self.assertEqual(manifest["instructionCount"], 2)
+            self.assertEqual(manifest["relations"],
+                             {"bindings": 0, "responseSpecs": 0})
+            self.assertEqual(len(manifest["frames"]), 2)
 
 
 if __name__ == "__main__":

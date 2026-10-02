@@ -6,6 +6,8 @@ import { buildBindingMatrix, protocolCellText, slotCellText } from '../utils/bin
 import { triggerBlobDownload } from '../utils/download';
 
 // C3 数据中心一期：环境状态面板 + 聚合导出 ZIP + 数据库备份/恢复。
+// R7（PLAN §8.45）：聚合导出 3 域 → 8 域（补 recipes / sequences / transport /
+// profiles / templates），manifest 加 domainVersion 域清单；本批只做出线，导入 = R8。
 // 端点见 backend/routers/datahub.py；恢复前会自动留 pre-restore 安全快照。
 
 const formatBytes = (bytes) => {
@@ -92,7 +94,7 @@ export default function DataHub() {
             const blob = await api.exportDataBundle();
             const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
             triggerBlobDownload(blob, `yorha-datahub-${stamp}.zip`);
-            setSysMsg(`导出完成：${formatBytes(blob.size)}（instructions.json + relations.json + manifest.json + frames/*.bin|hex）`);
+            setSysMsg(`导出完成：${formatBytes(blob.size)}（8 域：instructions.json + relations.json + recipes.json + sequences.json + transport.json + profiles.json + templates.json + frames/*.bin|hex，清单见 manifest.json）`);
         } catch (err) {
             setSysMsg(`导出失败：${err?.message || '未知错误'}`);
         } finally {
@@ -261,9 +263,15 @@ export default function DataHub() {
                                 <p className="text-xs leading-6 opacity-80">
                                     打包下载全量指令 JSON（与指令管理页「导入」格式对称）、关系数据
                                     <span className="font-mono"> relations.json </span>
-                                    （绑定 + 应答规格，批次四 4a）与逐指令骨架帧
+                                    （绑定 + 应答规格，批次四 4a）、逐指令骨架帧
                                     <span className="font-mono"> .bin / .hex </span>
-                                    （Orchestrator 编译，未实现编码语义以 0x00 占位）。
+                                    （Orchestrator 编译，未实现编码语义以 0x00 占位），
+                                    以及 R7 补进来的 5 个域
+                                    <span className="font-mono"> recipes / sequences / transport / profiles / templates </span>
+                                    （配方、序列含步骤、传输配置、设备档案、算子模板）。
+                                    <span className="font-mono"> manifest.json </span>
+                                    给出 8 域清单（<span className="font-mono">domainVersion</span>
+                                    与逐域行数），回收站里的行不进包。
                                 </p>
                                 <div>
                                     <ActionButton onClick={handleExport} busy={busy === 'export'}>

@@ -1626,6 +1626,48 @@
       BE 全量 + FE 全量 + `npx vite build` + **`npm run lint` EXIT=0** + yorha-ui
       校验器改动文件 0 违规。
 
+54. **R7 · 导出补域 —— `bundle` 3 域 → 8 域 + `manifest.domainVersion` —— PLAN §8.45**
+    （2026-10-02，**零 DDL** —— `models.py` 一个字符未改；未碰 `processor.py` /
+    `graph.py` / `Blueprint.jsx`，`/dispatch` 缺省口径逐字节不变）：
+    - **它是什么问题**：C-3 拍板选 C（§8.36）。换机 / 跨项目时「哪一份东西算项目」
+      此前只剩两条路 —— 整库 `backup/restore`（能搬但**不可读、不可 diff、会覆盖新机
+      已有数据**）与在源机**逐条手工重建**。根因是 `GET /datahub/export/bundle` 只有
+      3 域（`instructions.json` + `relations.json` + `frames/*`）：配方、序列、传输配置、
+      设备档案、算子模板**一个都不进包**，源机上做好的 3 个配方 + 5 条序列搬不到新电脑。
+    - **它现在怎么解决**：按拍板「原 3 域 → 8 域」扩该端点，新增 5 个域文件 ——
+      `recipes.json`（`stages` 原样）、`sequences.json`（**内嵌 `sequence_steps`**，
+      步骤不单独成域、子行不再重复 `sequence_id`）、`transport.json`（单行 `current`
+      仍用数组统一形状）、`profiles.json`、`templates.json`。**8 个域查询一律 `alive()`**
+      （回收站行不进包；序列步骤靠 `sequence_id IN (导出序列)` 天然跟随宿主）；**列子集
+      不含 `deleted_at`** → 日后回灌得到的恒是活行；行序显式排序（序列 `(name,id)`、
+      步骤 `(step_order,id)`、档案 `(label,id)`、算子 `op_code`、配方与绑定 `id`）→
+      导出可 diff。`manifest` 加 **`domainVersion`**（8 域清单，键序 = 导出序，值 = 该域
+      `schemaVersion`）与 **`domainCounts`**（逐域行数，**键集与 `domainVersion` 严格相等**，
+      收在纯函数 `bundle_manifest()` 里），存量三键 `instructionCount` / `relations` /
+      `frames` **只做加法**。**本批只做出线** —— 零新端点、`POST /datahub/import/relations`
+      一字未动，按域导入 = R8（快照复用 R1 的 `safety_snapshot()`）。
+    - **两条关键取舍**：
+      ① **同批修回一处 R6-1 丢失的过滤** —— `export_bundle` 里**指令 / 绑定 / 应答规格**
+      三个查询原本没有 `alive()`，而模块 docstring 已声明「聚合导出一律 `alive()` 过滤」，
+      即上批那次编辑**报成功但没落盘**、且当时没有测试盯这条；本批改这个函数时一并补回，
+      端到端测试把**六处回收站排除**（指令 / 绑定 / 应答规格 / 配方 / 序列 / 档案）逐条钉死。
+      ② **协议不在 8 域内**（严格照拍板的 5 个域实施，不多不少）—— `bundle` 里只有绑定与
+      配方对协议的**引用 id**，没有协议本体；因此换机须**先经协议页导入协议**，配方与绑定
+      才认得出宿主。是否加第 9 域留 R8 决策。
+    - **测试**：`test_datahub.py` 新增 3 类 **8 例**（5 新域载荷形 + `deleted_at` 不出线 /
+      序列内嵌与丢弃外来步骤 / manifest 8 域清单与存量三键 / 域清单漂移守卫 / 临时库端到端
+      ZIP）。**BE 668 → 676**、**FE 1033/1033（69 文件）**、`npx vite build` EXIT=0、
+      `npm run lint` **EXIT=0**、yorha-ui 校验器改动文件 **0 违规**；FE 本批仅改**文案与
+      注释**（导出回显列 8 个域文件名、面板段落补 5 域与 `domainVersion` 说明、
+      `pageStatus.json` 数据中心页口径）→ `docs/PAGE_STATUS.md` 已重生成；
+      `vectors/` 未动；`frontend/red-report.json` 不入库。
+    - **文档同步**：PLAN 新 **§8.45** + §8.37 **R7 行标已办** + §8.36 **C-3 行状态** +
+      §1 `R1–R10` 状态 + `docs/PAGE_STATUS.md`（重生成）；本条。
+    - **状态**：**R1 ✅ R2 ✅ R3 ✅ R4 ✅ R5 ✅ R6 ✅ R7 ✅**，余 **R8 导入补
+      端点 → R9 解码展示面板 → R10 `fields_json` 入库（DDL）**。每批验收项固定为：
+      BE 全量 + FE 全量 + `npx vite build` + **`npm run lint` EXIT=0** + yorha-ui
+      校验器改动文件 0 违规。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

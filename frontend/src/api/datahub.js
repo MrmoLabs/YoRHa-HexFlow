@@ -20,7 +20,8 @@ export const restoreDbBackup = async (name) => {
     return handleResponse(response);
 };
 
-// 聚合导出 ZIP（instructions.json + relations.json + manifest.json + frames/*）→ Blob
+// 聚合导出 ZIP（R7 · PLAN §8.45：**8 域** —— instructions / relations / recipes /
+// sequences / transport / profiles / templates + manifest.json + frames/*）→ Blob
 export const exportDataBundle = async () => {
     const response = await fetch(`${API_BASE}/datahub/export/bundle`);
     if (!response.ok) {
