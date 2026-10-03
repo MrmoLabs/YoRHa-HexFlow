@@ -214,9 +214,10 @@
 - 关系数据回灌：POST /datahub/import/relations 按 id upsert、逐行报告（父缺失跳过、槽悬空置空带警告、出处指纹原样回填、部分成功即部分落库），页面选文件 → 二次确认 → 回显新增/更新/跳过/警告计数；回灌**前**自动留 pre-import-* 安全快照并在响应回报 preImportSnapshot（PLAN §8.37 R1，2026-10-02）—— 校验 400 不落垃圾快照、快照失败即 500 中止且一行未写，与恢复前的 pre-restore 对称。
 - 绑定矩阵 (BINDING MATRIX)（批次四 4b）：只读总览「指令 → 默认协议 → 槽位」，一行一条指令（含未绑定的），摘要给出 有默认协议/无绑定/悬空槽/协议已删/失效绑定/重复默认六项计数；孤儿关系不静默抹平（协议已删、槽悬空、definition_hash 失效一律琥珀标出），数据随刷新与关系数据导入同拍重读（GET /bindings · /instructions/ · /protocols/）。
 - 数据库备份 / 恢复：新建备份复制到 backend/db/backups/（已 gitignore）；恢复前自动留 pre-restore 安全快照、释放连接池、清理 WAL/SHM 残留后原子替换，并有二次确认与文件名防穿越校验。
+- 按域独立导出（R17 · PLAN §8.49，2026-10-03）：`GET /datahub/export/bundle?domains=recipes,sequences` 只出所选域 —— 聚合导出区新增「按域导出 DOMAINS」8 域芯片（**顺序 = 后端 `BUNDLE_DOMAIN_VERSIONS` 键序 = 导出序**，送后端按表排序、不看点击顺序）+「导出所选域」（全不选即禁用、不发请求）。**缺省不带参数 = 现行 8 域逐字不变**（文件集合、manifest 三键、下载文件名一个字节都不动，全量按钮仍是无参调用）；manifest 只列**包里真有的域**（`domainVersion` · `domainCounts` 键序仍按 8 域表），`instructionCount` · `relations` · `frames` 三键描述的是**这个包**（没选中的归 0 / 置空）。`frames` 是独立域可单选（不选就不编译），`relations` 可单选但**协议数据仍走协议页既有导出**、不重开「第 9 域」；非法 `domains`（空项 / 未知 / 重复）→ 400 报错带可选全集原文、不静默忽略；按域包的下载文件名带域名（`yorha-datahub-<域>-<时间戳>.zip`）防几份包混淆。零 DDL。
 
 ### 后续建议
-- 补数据包示例下载与算子模板/协议的独立导出包。
+- 数据包示例下载口径（§8.49 三 已归入「需用户拍板」，未拍板不推进）——算子模板等 8 域的独立导出已由 R17 按域导出覆盖。
 
 ---
 

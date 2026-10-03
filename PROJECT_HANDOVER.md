@@ -2040,8 +2040,44 @@
       （该页只剩「档案自定义排序 = 待拍板」）→ `PAGE_STATUS.md` 已重生成。
     - **文档同步（同批）**：PLAN §8.49 **R16 行标已办 + R16 终态** + §1 行回填 +
       `docs/PAGE_STATUS.md`（重生成）；本条。
-    - **状态**：**R11 ✅ R12 ✅ R13 ✅ R14 ✅ R15 ✅ R16 ✅**，余 **R17 按域独立导出包 →
-      R18 字段引用测试补强**。
+    - **状态**：**R11 ✅ R12 ✅ R13 ✅ R14 ✅ R15 ✅ R16 ✅ R17 ✅**，余 **R18 字段引用
+      测试补强**。
+64. **R17 · 按域独立导出包 `GET /datahub/export/bundle?domains=…`（PLAN §8.49）**
+    （2026-10-03，**零 DDL**）：
+    - **它是什么问题**：导出一次就是全 8 域一个大 ZIP —— 只想把序列或配方下盘到另一台机，
+      也得连指令、关系、帧一起搬；`pageStatus.json` 数据中心页 `nextSteps` 原文挂着「补
+      数据包示例下载与算子模板/协议的独立导出包」。
+    - **后端**（`backend/routers/datahub.py`）：`export_bundle(domains=…)` + 纯函数
+      `parse_bundle_domains`（**缺省 None = 不带该参数**；空项 / 未知域名 / 重复三类一律
+      400，未知域报错带**可选全集**原文，**不静默忽略**）。`bundle_manifest` 加可选
+      `domains` 参数 —— `domainVersion` · `domainCounts` **只列包里真有的域**（键序仍按
+      8 域表，不是用户给的顺序）；`instructionCount` · `relations` · `frames` 三个存量子键
+      描述的是**这个包**（没选中的在调用侧清成 0 行 / 置空）。`frames` 是八键之一的**独立域**
+      （不选就不编译帧），`relations` 可单选但**协议数据仍走协议页既有导出** —— 不借机
+      重开「第 9 域」拍板项。**缺省口径逐字节不变**：文件集合、manifest 三键、
+      下载文件名 `^yorha-datahub-\d{8}-\d{6}\.zip$` 全部与改前一致；按域包的文件名带域名
+      （`yorha-datahub-<域>-<时间戳>.zip`）防几份包在下载目录里打架。
+    - **前端**（`DataHub.jsx` 聚合导出区）：「按域导出 DOMAINS」8 域芯片（**顺序 =
+      `BUNDLE_DOMAIN_VERSIONS` 键序 = 导出序**，送后端按表排序、不看点击顺序；`aria-pressed`
+      标亮）+「导出所选域」—— **全不选即禁用、不发请求**，全量口径只走原「下载 ZIP」按钮。
+      `api/datahub.js` 的 `exportDataBundle(domains)`：传数组才拼 `?domains=a,b`
+      （逗号分隔 + `encodeURIComponent`），不传 / 空数组**不带该参数**。
+    - **测试**：BE 新 `test_datahub_bundle_domains.py` **6 例**（复用 `test_datahub` 的
+      `RelationsTestCase` 临时库）—— `parse_bundle_domains` 缺省 / 顺序保留 / 空项·未知·
+      重复三类 400；端到端缺省 8 域回归、子集只出所选且 manifest 键序按 8 域表、
+      `frames` 与 `instructions` 独立可选（互相不带对方文件）、显式全 8 域 ≡ 缺省
+      （只差 `generatedAt` 时间戳）。FE `DataHub.test` **+2**（芯片按表顺序下载 + 取消到空
+      回到禁用不发请求 / 全量无参回归）+ 新 `api/__tests__/datahub.test.js` **4 例**
+      （不传与空数组都不带 `?domains` / 数组拼串 + `encodeURIComponent` / 400 detail 原样
+      透出）。
+    - **验收**：**BE 727 → 733/733**、**FE 1086 → 1092/1092（72 文件）**、`npx vite build`
+      EXIT=0、`npm run lint` **EXIT=0**、yorha-ui 校验器 6 文件 **0 违规**；
+      `pageStatus.json` 数据中心页 `availableNow` 补 R17 条 + `nextSteps` 收敛成只剩
+      「数据包示例下载口径 = 待拍板」→ `PAGE_STATUS.md` 已重生成。
+    - **文档同步（同批）**：PLAN §8.49 **R17 行标已办 + R17 终态** + §1 行回填 +
+      `docs/PAGE_STATUS.md`（重生成）；本条。
+    - **状态**：**R11 ✅ R12 ✅ R13 ✅ R14 ✅ R15 ✅ R16 ✅ R17 ✅**，余 **R18 字段引用
+      测试补强**。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

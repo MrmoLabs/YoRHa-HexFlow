@@ -10,6 +10,8 @@ import { triggerBlobDownload } from '../utils/download';
 // profiles / templates），manifest 加 domainVersion 域清单。
 // R8（PLAN §8.46）：按域导入 —— R7 出线的 5 个新域补回灌（本批把 R7 的「不碰导入」
 // 收口），入参是 ZIP 里解出来的任一域文件，形态自动识别域名。
+// R17（PLAN §8.49）：按域**导出** —— 8 域芯片只勾想下盘的域（?domains=…），缺省不带参数
+// = 全 8 域逐字不变；协议数据仍走协议页既有导出，不重开「第 9 域」拍板项。
 // 端点见 backend/routers/datahub.py；恢复前会自动留 pre-restore 安全快照，按域导入前留 pre-import。
 
 const formatBytes = (bytes) => {
@@ -48,6 +50,20 @@ const DOMAIN_LABELS = {
     templates: '算子模板'
 };
 
+// R17（PLAN §8.49）：按域独立导出 —— 8 域芯片，**顺序 = 后端 BUNDLE_DOMAIN_VERSIONS
+// 键序 = 导出序**（送后端前按这张表排序，不按点击顺序）。`frames` 是独立域（内容派生
+// 自指令，但 manifest 八键之一），`relations` 可单选（协议页既有导出照旧不动）。
+const BUNDLE_DOMAINS = [
+    ['instructions', '指令'],
+    ['relations', '关系绑定与应答规格'],
+    ['frames', '骨架帧'],
+    ['recipes', '配方'],
+    ['sequences', '序列'],
+    ['transport', '传输配置'],
+    ['profiles', '设备档案'],
+    ['templates', '算子模板']
+];
+
 const PanelTitle = ({ children, hint }) => (
     <div className="flex items-baseline justify-between border-b border-nier-light/30 px-4 py-2 bg-nier-light/5">
         <span className="text-[11px] font-bold tracking-[0.3em] text-nier-light">{children}</span>
@@ -71,7 +87,9 @@ export default function DataHub() {
     const [status, setStatus] = useState(null);
     const [loadError, setLoadError] = useState('');
     const [sysMsg, setSysMsg] = useState('');
-    const [busy, setBusy] = useState(''); // 'export' | 'backup' | 'restore' | 'import'
+    const [busy, setBusy] = useState(''); // 'export' | 'exportDomains' | 'backup' | 'restore' | 'import'
+    // R17（PLAN §8.49）：按域导出的选中集（域名 key）。空 = 不发请求（走上面的全量按钮）。
+    const [exportDomains, setExportDomains] = useState([]);
     const [restoreTarget, setRestoreTarget] = useState(null);
     // 批次四 4a: 已解析待确认的关系数据包（{name, payload}）；确认才 POST。
     const [importTarget, setImportTarget] = useState(null);
@@ -118,6 +136,33 @@ export default function DataHub() {
             const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
             triggerBlobDownload(blob, `yorha-datahub-${stamp}.zip`);
             setSysMsg(`导出完成：${formatBytes(blob.size)}（8 域：instructions.json + relations.json + recipes.json + sequences.json + transport.json + profiles.json + templates.json + frames/*.bin|hex，清单见 manifest.json）`);
+        } catch (err) {
+            setSysMsg(`导出失败：${err?.message || '未知错误'}`);
+        } finally {
+            setBusy('');
+        }
+    };
+
+    // R17（PLAN §8.49）：按域独立导出 —— 选中的域名**按 8 域表顺序**送后端
+    // （`?domains=a,b`，顺序由服务端导出序决定，不看点击顺序）；全不选 = 不发请求
+    // （全量口径只走上面的「下载 ZIP」按钮，存量请求一个字节都不变）。
+    const toggleExportDomain = (key) => {
+        setExportDomains((prev) => (prev.includes(key)
+            ? prev.filter((name) => name !== key)
+            : [...prev, key]));
+    };
+
+    const handleExportDomains = async () => {
+        if (!exportDomains.length) return;
+        const ordered = BUNDLE_DOMAINS
+            .map(([key]) => key)
+            .filter((key) => exportDomains.includes(key));
+        setBusy('exportDomains');
+        try {
+            const blob = await api.exportDataBundle(ordered);
+            const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+            triggerBlobDownload(blob, `yorha-datahub-${ordered.join('-')}-${stamp}.zip`);
+            setSysMsg(`导出完成（${ordered.length} 域：${ordered.join(' + ')}）：${formatBytes(blob.size)}，清单见 manifest.json`);
         } catch (err) {
             setSysMsg(`导出失败：${err?.message || '未知错误'}`);
         } finally {
@@ -342,7 +387,7 @@ export default function DataHub() {
                     <div className="flex flex-col gap-6">
                         {/* D1 聚合导出 */}
                         <section className="border border-nier-light/30 bg-nier-dark/60">
-                            <PanelTitle hint="GET /datahub/export/bundle">聚合导出 (BUNDLE EXPORT)</PanelTitle>
+                            <PanelTitle hint="GET /datahub/export/bundle · ?domains=…">聚合导出 (BUNDLE EXPORT)</PanelTitle>
                             <div className="p-4 flex flex-col gap-3">
                                 <p className="text-xs leading-6 opacity-80">
                                     打包下载全量指令 JSON（与指令管理页「导入」格式对称）、关系数据
@@ -361,6 +406,38 @@ export default function DataHub() {
                                     <ActionButton onClick={handleExport} busy={busy === 'export'}>
                                         下载 ZIP (EXPORT)
                                     </ActionButton>
+                                </div>
+                                {/* R17（PLAN §8.49）：按域独立导出 —— 只勾想下盘的域；
+                                    全不选就禁用（全量口径只走上面那颗按钮） */}
+                                <div className="flex flex-wrap items-center gap-2 border-t border-nier-light/20 pt-3">
+                                    <span className="text-[10px] font-mono tracking-[0.2em] opacity-60">按域导出 DOMAINS</span>
+                                    {BUNDLE_DOMAINS.map(([key, label]) => {
+                                        const on = exportDomains.includes(key);
+                                        return (
+                                            <button
+                                                key={key}
+                                                type="button"
+                                                title={label}
+                                                aria-pressed={on}
+                                                onClick={() => toggleExportDomain(key)}
+                                                className={`border px-2 py-1 text-[10px] font-mono tracking-[0.1em] transition-colors duration-150 ${on
+                                                    ? 'border-nier-light bg-nier-light text-nier-dark'
+                                                    : 'border-nier-light/40 text-nier-light/70 hover:border-nier-light/70'}`}
+                                            >
+                                                {key}
+                                            </button>
+                                        );
+                                    })}
+                                    <ActionButton
+                                        onClick={handleExportDomains}
+                                        disabled={!exportDomains.length}
+                                        busy={busy === 'exportDomains'}
+                                    >
+                                        导出所选域 (EXPORT)
+                                    </ActionButton>
+                                    <span className="text-[10px] opacity-50">
+                                        manifest 只列包里真有的域；协议数据仍走协议页既有导出
+                                    </span>
                                 </div>
                             </div>
                         </section>

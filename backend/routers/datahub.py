@@ -46,6 +46,7 @@ import shutil
 import zipfile
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Response
 from pydantic import BaseModel, ValidationError
@@ -636,7 +637,7 @@ def templates_export_payload(templates) -> dict:
     }
 
 
-def bundle_manifest(instruction_payload, relations, extra_payloads, frames) -> dict:
+def bundle_manifest(instruction_payload, relations, extra_payloads, frames, domains=None) -> dict:
     """manifest.json 载荷（**纯函数**，便于单测钉「8 域清单」）。
 
     - `domainVersion`：8 域清单（键序 = 导出序），值 = 该域 schemaVersion。
@@ -644,6 +645,11 @@ def bundle_manifest(instruction_payload, relations, extra_payloads, frames) -> d
     - `domainCounts`：**键集必须与 `domainVersion` 严格相等**（少一域、多一域
       都算 bug），值 = 该域行数；`sequences` 计的是序列数（步骤数看该文件本身）。
     - `instructionCount` / `relations` / `frames` 三键为存量键，**只做加法不变**。
+
+    R17（§8.49）按域独立导出：`domains` 非 None 时 `domainVersion` · `domainCounts`
+    **只留包里真有的域**（键序仍按 8 域表，不是按用户给的顺序）—— manifest 描述的是
+    **这个包**而不是源库。`domains=None`（缺省）= 现行 8 域**逐字不变**；三个存量子键
+    一律取**传进来的载荷**（未选中的域在 export_bundle 侧已清成 0 行形态）。
     """
     counts = {
         "instructions": len(instruction_payload["instructions"]),
@@ -660,11 +666,16 @@ def bundle_manifest(instruction_payload, relations, extra_payloads, frames) -> d
         raise ValueError(
             f"域清单不一致：counts={list(counts)} vs domains={expected}"
         )
+    # R17：按域导出只留真在包里的域（键序仍按 8 域表，不是按用户给的顺序）；
+    # 缺省 domains=None = 全 8 域，逐字不变。
+    keep = expected if domains is None else [
+        name for name in expected if name in set(domains)
+    ]
     return {
         "generatedAt": datetime.now().isoformat(timespec="seconds"),
         "appVersion": APP_VERSION,
-        "domainVersion": {name: BUNDLE_DOMAIN_VERSIONS[name] for name in expected},
-        "domainCounts": counts,
+        "domainVersion": {name: BUNDLE_DOMAIN_VERSIONS[name] for name in keep},
+        "domainCounts": {name: counts[name] for name in keep},
         "instructionCount": len(instruction_payload["instructions"]),
         "relations": {
             "bindings": len(relations["bindings"]),
@@ -1114,8 +1125,34 @@ def datahub_status():
     }
 
 
+def parse_bundle_domains(raw):
+    """`?domains=a,b` → 域名单；`None`（不带该参数）= 缺省全 8 域。
+
+    R17（§8.49 按域独立导出）的**顶层校验纯函数**：400 口径明确、绝不静默忽略 ——
+    空项（`?domains=`、`a,,b`）/ 未知域名 / 重复域名三类都报错，报错文案带**可选域全集**，
+    方便照抄。合法时保留用户给的顺序（去重已保证无重复）。
+    """
+    if raw is None:
+        return None
+    names = [part.strip() for part in str(raw).split(",")]
+    if not names or any(not name for name in names):
+        raise HTTPException(
+            status_code=400,
+            detail="domains 含空项（形如 ?domains=recipes,sequences）",
+        )
+    unknown = [name for name in names if name not in BUNDLE_DOMAIN_VERSIONS]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"未知域：{'、'.join(unknown)}（可选：{'、'.join(BUNDLE_DOMAIN_VERSIONS)}）",
+        )
+    if len(set(names)) != len(names):
+        raise HTTPException(status_code=400, detail="domains 有重复项")
+    return names
+
+
 @router.get("/export/bundle")
-def export_bundle():
+def export_bundle(domains: Optional[str] = None):
     """D1 聚合导出 ZIP：**8 域** + manifest.json + frames/*（R7 · PLAN §8.45）。
 
     域文件 = `instructions.json` + `relations.json` + 本批新增 5 域
@@ -1123,13 +1160,27 @@ def export_bundle():
     `templates.json`）+ 派生物 `frames/*`；`manifest.json` 写 `domainVersion`
     （8 域清单）与 `domainCounts`（逐域行数），既有三键只做加法。
 
+    R17（§8.49）**按域独立导出**：`?domains=recipes,sequences` 只出所选域 ——
+    ① **缺省不带参数 = 现行 8 域逐字不变**（文件集合、manifest 三键、下载文件名一个字节
+    都不动）；② manifest 的 `domainVersion` · `domainCounts` 只列包里真有的域（键序仍按
+    8 域表），`instructionCount` · `relations` · `frames` 三键描述的是**这个包**（没选中的
+    归 0 / 空）；③ 非法 `domains` 走 `parse_bundle_domains` 的 400，不静默忽略；
+    ④ **协议数据仍走协议页既有导出**（relations 域可单选，但不因此重开「第 9 域」拍板项）。
+
     每条指令都产出帧文件；单条编译失败只在 manifest 标记 error，不阻断整包导出
     （JSON 始终完整）。**读端点只出活行**（R6 §8.43）：指令 / 绑定 / 应答规格 /
     配方 / 序列 / 档案 / 传输配置 / 算子模板一律 `alive()`，回收站行不进包；
     序列步骤随宿主同进同出（宿主在站里则其步骤一步都不出）。
 
-    本批**只做出线，不碰导入**：按域导入端点 = R8。
+    本批**只做出线，不碰导入**：按域导入端点 = R8（导入侧**不读** domains 参数）。
     """
+    wanted = parse_bundle_domains(domains)
+    wanted_set = set(wanted) if wanted is not None else None
+
+    def include(name):
+        """这个域进不进包。缺省（wanted is None）= 全 8 域。"""
+        return wanted_set is None or name in wanted_set
+
     db = SessionLocal()
     try:
         instructions = alive(db.query(Instruction), Instruction).all()
@@ -1176,30 +1227,41 @@ def export_bundle():
     finally:
         db.close()
 
-    entries = [
-        ("instructions.json", json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")),
-        ("relations.json", json.dumps(relations, ensure_ascii=False, indent=2).encode("utf-8")),
-        ("recipes.json", json.dumps(recipes, ensure_ascii=False, indent=2).encode("utf-8")),
-        ("sequences.json", json.dumps(sequences, ensure_ascii=False, indent=2).encode("utf-8")),
-        ("transport.json", json.dumps(transport_payload, ensure_ascii=False, indent=2).encode("utf-8")),
-        ("profiles.json", json.dumps(profiles, ensure_ascii=False, indent=2).encode("utf-8")),
-        ("templates.json", json.dumps(templates, ensure_ascii=False, indent=2).encode("utf-8")),
-    ]
-    for inst in payload["instructions"]:
-        base = sanitize_filename(inst.get("code") or inst.get("id"), "instruction")
-        entry = {"code": inst.get("code"), "name": inst.get("name"), "file": f"frames/{base}", "status": "ok", "bytes": 0}
-        try:
-            data = frame_bytes(compile_blocks(fields_to_blocks(inst.get("fields") or [])))
-        except ValueError as exc:
-            data, entry["status"] = b"", f"error: {exc}"
-        entries.append((f"frames/{base}.bin", data))
-        entries.append((f"frames/{base}.hex", format_hex_text(data).encode("ascii")))
-        entry["bytes"] = len(data)
-        frames.append(entry)
+    # R17 按域导出：未选中的域**连文件都不写**（键序仍按 8 域表 = 导出序）
+    entries = []
+    if include("instructions"):
+        entries.append(("instructions.json", json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")))
+    if include("relations"):
+        entries.append(("relations.json", json.dumps(relations, ensure_ascii=False, indent=2).encode("utf-8")))
+    if include("recipes"):
+        entries.append(("recipes.json", json.dumps(recipes, ensure_ascii=False, indent=2).encode("utf-8")))
+    if include("sequences"):
+        entries.append(("sequences.json", json.dumps(sequences, ensure_ascii=False, indent=2).encode("utf-8")))
+    if include("transport"):
+        entries.append(("transport.json", json.dumps(transport_payload, ensure_ascii=False, indent=2).encode("utf-8")))
+    if include("profiles"):
+        entries.append(("profiles.json", json.dumps(profiles, ensure_ascii=False, indent=2).encode("utf-8")))
+    if include("templates"):
+        entries.append(("templates.json", json.dumps(templates, ensure_ascii=False, indent=2).encode("utf-8")))
+    # `frames` 是 manifest 八键之一（独立域），内容派生自指令 —— 不选它就不编译
+    if include("frames"):
+        for inst in payload["instructions"]:
+            base = sanitize_filename(inst.get("code") or inst.get("id"), "instruction")
+            entry = {"code": inst.get("code"), "name": inst.get("name"), "file": f"frames/{base}", "status": "ok", "bytes": 0}
+            try:
+                data = frame_bytes(compile_blocks(fields_to_blocks(inst.get("fields") or [])))
+            except ValueError as exc:
+                data, entry["status"] = b"", f"error: {exc}"
+            entries.append((f"frames/{base}.bin", data))
+            entries.append((f"frames/{base}.hex", format_hex_text(data).encode("ascii")))
+            entry["bytes"] = len(data)
+            frames.append(entry)
 
+    # manifest 描述**这个包**：没选中的域，三个存量子键（instructionCount /
+    # relations / frames）归零或置空；domainVersion · domainCounts 由 domains 过滤
     manifest = bundle_manifest(
-        payload,
-        relations,
+        payload if include("instructions") else {**payload, "instructions": []},
+        relations if include("relations") else {**relations, "bindings": [], "responseSpecs": []},
         {
             "recipes": recipes,
             "sequences": sequences,
@@ -1208,14 +1270,22 @@ def export_bundle():
             "templates": templates,
         },
         frames,
+        domains=wanted,
     )
     entries.append(("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8")))
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    # 缺省文件名逐字不变（存量消费方按 `^yorha-datahub-\d+\.zip$` 认）；按域导出带上域名，
+    # 免得几份包混在一个下载目录里分不出哪份是哪域
+    filename = (
+        f"yorha-datahub-{stamp}.zip"
+        if wanted is None
+        else f"yorha-datahub-{'-'.join(wanted)}-{stamp}.zip"
+    )
     return Response(
         content=build_bundle(entries),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="yorha-datahub-{stamp}.zip"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

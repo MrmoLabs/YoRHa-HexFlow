@@ -21,9 +21,14 @@ export const restoreDbBackup = async (name) => {
 };
 
 // 聚合导出 ZIP（R7 · PLAN §8.45：**8 域** —— instructions / relations / recipes /
-// sequences / transport / profiles / templates + manifest.json + frames/*）→ Blob
-export const exportDataBundle = async () => {
-    const response = await fetch(`${API_BASE}/datahub/export/bundle`);
+// sequences / transport / profiles / templates + manifest.json + frames/*）→ Blob。
+// R17（PLAN §8.49）：可选 `domains`（数组）→ `?domains=a,b` 只出所选域；
+// **不传 / 传空数组 = 不带该参数**，走后端缺省的全 8 域口径（存量请求逐字不变）。
+export const exportDataBundle = async (domains) => {
+    const query = Array.isArray(domains) && domains.length
+        ? `?domains=${encodeURIComponent(domains.join(','))}`
+        : '';
+    const response = await fetch(`${API_BASE}/datahub/export/bundle${query}`);
     if (!response.ok) {
         const data = await response.json().catch(() => ({ detail: 'Export failed' }));
         throw new Error(formatApiErrorDetail(data.detail));

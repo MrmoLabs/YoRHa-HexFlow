@@ -91,6 +91,55 @@ describe('DataHub Page', () => {
         expect(screen.getByText(/导出完成/)).toBeDefined();
     });
 
+    it('R17 按域导出：芯片按 8 域表顺序带域名下载，全不选即禁用不发请求', async () => {
+        api.getDatahubStatus.mockResolvedValue({ ...STATUS, backups: [] });
+        api.exportDataBundle.mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }));
+
+        render(<DataHub />);
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+
+        // 8 域芯片齐（= 后端 BUNDLE_DOMAIN_VERSIONS 键序），全不选时按钮禁用
+        ['instructions', 'relations', 'frames', 'recipes', 'sequences', 'transport', 'profiles', 'templates']
+            .forEach((key) => expect(screen.getByRole('button', { name: key })).toBeDefined());
+        const exportBtn = screen.getByRole('button', { name: /导出所选域/ });
+        expect(exportBtn.disabled).toBe(true);
+
+        // 先点 sequences 再点 recipes —— 送后端的仍是 8 域表顺序（不看点击顺序）
+        fireEvent.click(screen.getByRole('button', { name: 'sequences' }));
+        fireEvent.click(screen.getByRole('button', { name: 'recipes' }));
+        expect(screen.getByRole('button', { name: 'recipes' }).getAttribute('aria-pressed')).toBe('true');
+        expect(exportBtn.disabled).toBe(false);
+        fireEvent.click(exportBtn);
+
+        await waitFor(() => expect(api.exportDataBundle).toHaveBeenCalledTimes(1));
+        expect(api.exportDataBundle).toHaveBeenCalledWith(['recipes', 'sequences']);
+        const [, filename] = triggerBlobDownload.mock.calls[0];
+        expect(filename).toMatch(/^yorha-datahub-recipes-sequences-\d+\.zip$/);
+        expect(screen.getByText(/导出完成（2 域：recipes \+ sequences）/)).toBeDefined();
+
+        // 取消到空 → 回到禁用，且**不再发请求**
+        fireEvent.click(screen.getByRole('button', { name: 'recipes' }));
+        expect(screen.getByRole('button', { name: 'recipes' }).getAttribute('aria-pressed')).toBe('false');
+        fireEvent.click(screen.getByRole('button', { name: 'sequences' }));
+        expect(screen.getByRole('button', { name: /导出所选域/ }).disabled).toBe(true);
+        expect(api.exportDataBundle).toHaveBeenCalledTimes(1);
+    });
+
+    it('R17 全量导出仍不带参数：缺省 = 后端全 8 域口径，文件名与文案不变', async () => {
+        api.getDatahubStatus.mockResolvedValue({ ...STATUS, backups: [] });
+        api.exportDataBundle.mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }));
+
+        render(<DataHub />);
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+
+        fireEvent.click(screen.getByRole('button', { name: /下载 ZIP/ }));
+        await waitFor(() => expect(api.exportDataBundle).toHaveBeenCalledTimes(1));
+        expect(api.exportDataBundle).toHaveBeenCalledWith(); // 无参 → 不带 ?domains
+        const [, filename] = triggerBlobDownload.mock.calls[0];
+        expect(filename).toMatch(/^yorha-datahub-\d+\.zip$/);
+        expect(screen.getByText(/8 域：instructions\.json/)).toBeDefined();
+    });
+
     it('creates a backup then refreshes the status list', async () => {
         api.getDatahubStatus.mockResolvedValue({ ...STATUS, backups: [] });
         api.createDbBackup.mockResolvedValue({
