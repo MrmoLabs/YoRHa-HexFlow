@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useInstructionData, describeReferences, describeDeletion } from '../useInstructionData';
+import { moveField } from '../../utils/moveField';
 import { api } from '../../api';
 
 // Mock API
@@ -345,6 +346,163 @@ describe('useInstructionData', () => {
         });
     });
 
+    // ─── R18（PLAN §8.49 · §8.49 R18 行）：字段引用测试补强 ───────────────────
+    // 单条路径（计数 / 块移动 / 保存失败）各自已有测试；这里钉**交叉**行为：
+    // references 计数 × 块移动、references 计数 × 删除失败、块移动 × 保存失败恢复。
+    describe('R18 references 计数 × 块移动 / 保存失败恢复（组合面）', () => {
+        const FIELDS = [
+            { id: 'f-a', parent_id: null, sequence: 0, name: 'Alpha', op_code: 'HEX_RAW', byte_len: 1, parameter_config: {} },
+            { id: 'f-b', parent_id: null, sequence: 1, name: 'Beta', op_code: 'HEX_RAW', byte_len: 1, parameter_config: {} }
+        ];
+        const ids = (inst) => (inst?.fields || []).map((f) => f.id);
+        const withFields = () => {
+            api.getInstructions.mockResolvedValue([
+                { ...mockInstructions[0], fields: FIELDS },
+                mockInstructions[1]
+            ]);
+        };
+        const load = async () => {
+            const { result } = renderHook(() => useInstructionData());
+            await waitFor(() => expect(result.current.isLoading).toBe(false));
+            return result;
+        };
+        // 指令页 onMoveItem 的原样组合：纯函数 moveField → updateLocalInstruction
+        const moveBlock = (result, itemId, newIndex) => {
+            const current = result.current.currentInstruction;
+            act(() => {
+                result.current.updateLocalInstruction({
+                    ...current,
+                    fields: moveField(current.fields, itemId, null, newIndex)
+                });
+            });
+        };
+
+        it('块移动只动草稿：删前计数照常按 id 拉，确认后连草稿与脏标一起收口', async () => {
+            withFields();
+            const result = await load();
+            moveBlock(result, 'f-b', 0);
+            expect(ids(result.current.instructions[0])).toEqual(['f-b', 'f-a']); // 草稿 overlay
+            expect(result.current.hasUnsavedChanges).toBe(true);
+
+            api.getInstructionReferences.mockResolvedValue({
+                instruction_id: 'inst-1', bindings: 1, response_specs: 0,
+                sequence_steps: 0, dispatch_logs: 0, total: 1
+            });
+            api.deleteInstruction.mockResolvedValue({});
+
+            let message = null;
+            let action = null;
+            await act(async () => {
+                await result.current.deleteInstruction('inst-1', (msg, cb) => {
+                    message = msg;
+                    action = cb;
+                });
+            });
+
+            // 计数只认后端按 id 拉，**不看本地把块挪到了第几格**
+            expect(api.getInstructionReferences).toHaveBeenCalledWith('inst-1');
+            expect(message).toContain('本指令被 1 处引用');
+            expect(message).toContain('协议绑定 1 条 → 随删入站');
+            expect(message).not.toContain('应答规格'); // 0 分项不列行
+            expect(api.deleteInstruction).not.toHaveBeenCalled();
+
+            await act(async () => { await action(); });
+            expect(api.deleteInstruction).toHaveBeenCalledWith('inst-1');
+            expect(result.current.instructions).toHaveLength(1);
+            expect(result.current.currentInstruction.id).toBe('inst-2'); // 活动切下一条
+            expect(result.current.hasUnsavedChanges).toBe(false); // 删除把草稿与脏标一并清
+            expect(result.current.statusMsg).toContain('已移入回收站');
+        });
+
+        it('取消确认零 DELETE；再点删除重新拉一次计数（不跨次缓存）', async () => {
+            const result = await load();
+            api.getInstructionReferences.mockResolvedValue({
+                bindings: 0, response_specs: 0, sequence_steps: 2,
+                dispatch_logs: 0, total: 2
+            });
+            api.deleteInstruction.mockResolvedValue({});
+
+            let message = null;
+            let action = null;
+            await act(async () => {
+                await result.current.deleteInstruction('inst-1', (msg, cb) => {
+                    message = msg;
+                    action = cb;
+                });
+            });
+            expect(message).toContain('序列步骤 2 条 → 保留');
+            expect(message).not.toContain('协议绑定');
+
+            // 用户点「取消」= 不执行回调 —— 计数拉到了也一行不删
+            expect(action).toBeInstanceOf(Function);
+            expect(api.deleteInstruction).not.toHaveBeenCalled();
+            expect(result.current.instructions).toHaveLength(2);
+
+            await act(async () => {
+                await result.current.deleteInstruction('inst-1', () => { });
+            });
+            expect(api.getInstructionReferences).toHaveBeenCalledTimes(2);
+            expect(api.deleteInstruction).not.toHaveBeenCalled();
+        });
+
+        it('计数拉到、确认后 DELETE 失败 → 报错留台、指令与草稿都在、脏标不清', async () => {
+            withFields();
+            const result = await load();
+            act(() => {
+                result.current.updateLocalInstruction({
+                    ...result.current.currentInstruction,
+                    name: '未保存的名字'
+                });
+            });
+            api.getInstructionReferences.mockResolvedValue({
+                bindings: 0, response_specs: 0, sequence_steps: 0,
+                dispatch_logs: 3, total: 3
+            });
+            api.deleteInstruction.mockRejectedValue(new Error('Network Error'));
+
+            let action = null;
+            await act(async () => {
+                await result.current.deleteInstruction('inst-1', (msg, cb) => {
+                    action = cb;
+                });
+            });
+            await act(async () => { await action(); });
+
+            expect(result.current.instructions).toHaveLength(2);
+            expect(result.current.statusMsg).toContain('删除失败');
+            expect(result.current.hasUnsavedChanges).toBe(true); // 失败不清脏标
+            expect(result.current.currentInstruction.name).toBe('未保存的名字'); // 草稿不丢
+        });
+
+        it('块移动 → PUT 400 → 顺序与脏态都不回滚；撤销回移动前 → 重试成功清横幅与脏标', async () => {
+            withFields();
+            const result = await load();
+            expect(ids(result.current.currentInstruction)).toEqual(['f-a', 'f-b']);
+
+            moveBlock(result, 'f-b', 0);
+            expect(ids(result.current.instructions[0])).toEqual(['f-b', 'f-a']);
+
+            api.updateInstruction.mockRejectedValueOnce({
+                response: { status: 400, data: { detail: '指令名称或代号必须唯一' } }
+            });
+            await act(async () => { await result.current.saveChanges(vi.fn()); });
+
+            expect(result.current.saveError).toContain('服务端拒绝（400）');
+            expect(result.current.hasUnsavedChanges).toBe(true); // 不静默回滚
+            expect(ids(result.current.instructions[0])).toEqual(['f-b', 'f-a']); // 顺序也保留
+            expect(result.current.canUndo).toBe(true);
+
+            act(() => result.current.undo()); // 撤销回到移动前
+            expect(ids(result.current.instructions[0])).toEqual(['f-a', 'f-b']);
+
+            api.updateInstruction.mockResolvedValueOnce({});
+            await act(async () => { await result.current.saveChanges(vi.fn()); });
+            expect(result.current.saveError).toBe(''); // 横幅随成功清空
+            expect(result.current.hasUnsavedChanges).toBe(false);
+            expect(result.current.canUndo).toBe(false); // 保存 = 新基线（历史清空）
+        });
+    });
+
     // ─── 人工验证反馈 #2：管理页工作副本（草稿）不出门 ─────────────────────
     // 共享 instructions 态是加工页/编排页读的真源 —— 草稿编辑只允许存在于
     // hook 内（overlay），saveChanges 成功才写穿共享态。
@@ -535,5 +693,25 @@ describe('describeReferences / describeDeletion 三分口径', () => {
         expect(msg).toContain('绑定 2 条级联');
         expect(msg).toContain('应答规格 1 条级联');
         expect(msg).toContain('序列步骤 3 条留失效');
+    });
+
+    // R18（PLAN §8.49）：只有一类命中时不凑满三段 —— 缺的那一段不报 0、不占位
+    it('describeDeletion：只报非零那一段（部分级联不写「0 条」）', () => {
+        expect(describeDeletion({ deleted_bindings: 0, deleted_response_specs: 2, orphaned_sequence_steps: 0 }))
+            .toBe('已移入回收站（指令） · 应答规格 2 条级联');
+        expect(describeDeletion({ deleted_bindings: 0, deleted_response_specs: 0, orphaned_sequence_steps: 4 }))
+            .toBe('已移入回收站（指令） · 序列步骤 4 条留失效');
+        expect(describeDeletion({ deleted_bindings: 3, deleted_response_specs: 0, orphaned_sequence_steps: 0 }))
+            .toBe('已移入回收站（指令） · 绑定 3 条级联');
+    });
+
+    // R18：只有日志被引用（最轻的一档）也得说清楚「只读保留」，不能掉进无引用分支
+    it('describeReferences：仅日志被引用时列日志行且不冒充无引用', () => {
+        const msg = describeReferences({
+            bindings: 0, response_specs: 0, sequence_steps: 0, dispatch_logs: 5, total: 5
+        });
+        expect(msg).toContain('本指令被 5 处引用');
+        expect(msg).toContain('通讯日志 5 条 → 只读保留');
+        expect(msg).not.toContain('无引用');
     });
 });
