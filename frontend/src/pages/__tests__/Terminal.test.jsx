@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import Terminal from '../Terminal';
 import { api } from '../../api';
 
@@ -550,6 +550,94 @@ describe('Terminal Page（E3 通讯调试）', () => {
         expect(screen.getByText('波特率 BAUDRATE')).toBeDefined();
         expect(screen.getByRole('button', { name: /应用配置/ })).toBeDefined();
         expect(screen.getByRole('button', { name: /刷新端口 REFRESH/ })).toBeDefined();
+    });
+
+    // ── R15 · 档案重命名 + 自动轮询（PLAN §8.49）──────────────────────────────────
+    it('R15 档案重命名：预填当前名 → 确认只 PUT label（不带 config）+ 列表刷新 + 回执', async () => {
+        api.updateProfile.mockResolvedValue({ ...PROFILES[0], label: '环回基准·产线' });
+        render(<Terminal />);
+        await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
+
+        fireEvent.change(screen.getByLabelText(/档案 PROFILE/), { target: { value: 'pf-1' } });
+        fireEvent.click(screen.getByRole('button', { name: /重命名 \(RENAME\)/ }));
+
+        const input = screen.getByPlaceholderText('档案新名称');
+        expect(input.value).toBe('环回基准'); // 预填当前名
+        // 名字没改 → 确认禁用（后端吃得下同名请求，但那是一次白跑的往返）
+        expect(screen.getByRole('button', { name: /确认改名 \(CONFIRM\)/ }).disabled).toBe(true);
+
+        fireEvent.change(input, { target: { value: '环回基准·产线' } });
+        fireEvent.click(screen.getByRole('button', { name: /确认改名 \(CONFIRM\)/ }));
+
+        await waitFor(() => expect(api.updateProfile).toHaveBeenCalledTimes(1));
+        expect(api.updateProfile.mock.calls[0]).toEqual(['pf-1', { label: '环回基准·产线' }]);
+        // 改名**不带 config** —— 不该动配置快照，与「更新（写入配置）」两码事
+        expect(api.updateProfile.mock.calls[0][1].config).toBeUndefined();
+        await waitFor(() => expect(api.getProfiles).toHaveBeenCalledTimes(2));
+        expect(screen.getByText(/档案已重命名：环回基准 → 环回基准·产线/)).toBeDefined();
+        expect(screen.queryByPlaceholderText('档案新名称')).toBeNull(); // 成功即收起
+        expect(api.activateProfile).not.toHaveBeenCalled();
+    });
+
+    it('R15 改名撞名 400：detail 原文显示且行不收起；放弃则零调用', async () => {
+        api.updateProfile.mockRejectedValue(new Error('档案名已存在：产线网关'));
+        render(<Terminal />);
+        await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
+
+        fireEvent.change(screen.getByLabelText(/档案 PROFILE/), { target: { value: 'pf-1' } });
+        fireEvent.click(screen.getByRole('button', { name: /重命名 \(RENAME\)/ }));
+        fireEvent.click(screen.getByRole('button', { name: /放弃 \(CANCEL\)/ }));
+        expect(api.updateProfile).not.toHaveBeenCalled();
+        expect(screen.queryByPlaceholderText('档案新名称')).toBeNull();
+
+        // 再开 → 撞名：后端 detail（含回收站占名口径）原样透出，行**留着**让用户改
+        fireEvent.click(screen.getByRole('button', { name: /重命名 \(RENAME\)/ }));
+        fireEvent.change(screen.getByPlaceholderText('档案新名称'), { target: { value: '产线网关' } });
+        fireEvent.click(screen.getByRole('button', { name: /确认改名 \(CONFIRM\)/ }));
+
+        await waitFor(() => expect(screen.getByText(/档案名已存在：产线网关/)).toBeDefined());
+        expect(screen.getByPlaceholderText('档案新名称')).toBeDefined();
+        expect(api.getProfiles).toHaveBeenCalledTimes(1); // 失败不刷列表
+    });
+
+    it('R15 自动轮询：默认 5s 拉状态与历史，切后台即停、回前台恢复，关开关彻底停', async () => {
+        vi.useFakeTimers();
+        Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+        try {
+            render(<Terminal />);
+            await act(async () => { await Promise.resolve(); });
+            // 挂载同步拉一次（状态 + 历史）
+            expect(api.getTransportStatus).toHaveBeenCalledTimes(1);
+            expect(api.getDispatchHistory).toHaveBeenCalledTimes(1);
+            expect(screen.getByRole('button', { name: /自动刷新 AUTO · 5s/ })).toBeDefined();
+
+            // 5s 一跳：状态与历史各再拉一次
+            await act(async () => { vi.advanceTimersByTime(5000); });
+            expect(api.getTransportStatus).toHaveBeenCalledTimes(2);
+            expect(api.getDispatchHistory).toHaveBeenCalledTimes(2);
+
+            // 切后台 → visibilitychange 清定时器，20s 内不再拉
+            Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+            await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+            await act(async () => { vi.advanceTimersByTime(20000); });
+            expect(api.getTransportStatus).toHaveBeenCalledTimes(2);
+
+            // 回前台 → 恢复轮询
+            Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+            await act(async () => { document.dispatchEvent(new Event('visibilitychange')); });
+            await act(async () => { vi.advanceTimersByTime(5000); });
+            expect(api.getTransportStatus).toHaveBeenCalledTimes(3);
+
+            // 关掉开关 → effect 清理，彻底不再拉（手动刷新按钮仍在）
+            fireEvent.click(screen.getByRole('button', { name: /自动刷新 AUTO · 5s/ }));
+            expect(screen.getByRole('button', { name: /自动刷新停 AUTO OFF/ })).toBeDefined();
+            await act(async () => { vi.advanceTimersByTime(30000); });
+            expect(api.getTransportStatus).toHaveBeenCalledTimes(3);
+            expect(api.getDispatchHistory).toHaveBeenCalledTimes(3);
+        } finally {
+            delete document.hidden;
+            vi.useRealTimers();
+        }
     });
 
 });

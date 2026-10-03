@@ -22,7 +22,9 @@ import { escapeHex, escapeWarnings, toEscapeDraft } from '../utils/escapeTable';
 // 落库（transport_settings），重启恢复；档案视图模型在 utils/profileView.js。
 // R9（PLAN §8.46）：发送历史新增「字段 FIELDS」列 + 详情面板解码展示 ——
 // 响应帧按指令字段布局逆向还原成「字段 = 值」（C-2 选 B，只展示不入库）。
-// 状态与历史为手动刷新；报文视图纯函数在 utils/terminalPanes.js。
+// 状态与历史除手动刷新外，R15（PLAN §8.49）加**自动轮询**：默认开、5s 一次、仅标签页
+// 可见时拉；同批补**档案重命名**入口（后端 PUT /profiles/{id} 早支持 label，前端缺入口）。
+// 报文视图纯函数在 utils/terminalPanes.js。
 
 const PanelTitle = ({ children, hint }) => (
     <div className="flex items-baseline justify-between border-b border-nier-light/30 px-4 py-2 bg-nier-light/5">
@@ -54,6 +56,10 @@ const MODES = [
 // R14（PLAN §8.49）：波特率预设档 —— 点一下填进输入框，**输入仍可任意键入**（预设
 // 只是省事，不构成取值白名单；落库口径仍由后端校验说了算）。
 const BAUD_PRESETS = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200];
+
+// R15（PLAN §8.49）：状态 + 发送历史的自动轮询周期。5s —— 够跟上 dispatch 事件，又不会
+// 把 /transport/status 与 /dispatch/history 压成热路径；标签页切后台即停（见下方 effect）。
+const POLL_MS = 5000;
 
 // 配置 ⇄ 表单草稿：全部字段以字符串入 input，提交时数值字段再转数字，
 // 空串原样交给后端校验（400 detail 为 SSOT）。escape 段见 utils/escapeTable.js。
@@ -133,6 +139,10 @@ export default function Terminal() {
     // 降级原因（缺 pyserial / 枚举炸）进 portsError 原文显示，不静默吞。
     const [ports, setPorts] = useState(null);
     const [portsError, setPortsError] = useState('');
+    // R15（PLAN §8.49）：自动轮询开关（默认开）+ 档案改名行（renaming = 是否展开改名输入）
+    const [autoRefresh, setAutoRefresh] = useState(true);
+    const [renaming, setRenaming] = useState(false);
+    const [renameValue, setRenameValue] = useState('');
 
     const refreshConfig = useCallback(async () => {
         try {
@@ -210,6 +220,36 @@ export default function Terminal() {
         refreshInstructions();
         refreshPorts();
     }, [refreshConfig, refreshStatus, refreshHistory, refreshProfiles, refreshInstructions, refreshPorts]);
+
+    // R15（PLAN §8.49）：状态 + 发送历史自动轮询。默认开、每 POLL_MS 拉一次，**只在标签页
+    // 可见时拉** —— 切后台（visibilitychange）立刻清定时器，不烧无用请求；关掉开关 effect
+    // 重跑即停。轮询失败各走自己 refresh* 的 catch（只写错误条、不打断下一轮）。
+    useEffect(() => {
+        if (!autoRefresh) return undefined;
+        let timer = null;
+        const start = () => {
+            if (timer !== null) return;
+            timer = window.setInterval(() => {
+                refreshStatus();
+                refreshHistory();
+            }, POLL_MS);
+        };
+        const stop = () => {
+            if (timer === null) return;
+            window.clearInterval(timer);
+            timer = null;
+        };
+        const onVisibility = () => {
+            if (document.hidden) stop();
+            else start();
+        };
+        if (!document.hidden) start();
+        document.addEventListener('visibilitychange', onVisibility);
+        return () => {
+            stop();
+            document.removeEventListener('visibilitychange', onVisibility);
+        };
+    }, [autoRefresh, refreshStatus, refreshHistory]);
 
     const handleApplyConfig = async () => {
         setBusy('config');
@@ -330,6 +370,28 @@ export default function Terminal() {
             await refreshProfiles();
         } catch (err) {
             setProfileError(err?.message || '更新档案失败');
+        } finally {
+            setBusy('');
+        }
+    };
+
+    // R15（PLAN §8.49）：档案重命名 —— 后端 PUT /profiles/{id} 早就支持只送 label（过
+    // _checked_label：空名 400、同名 400，且**不过滤回收站** —— 软删档案占的名要先释放），
+    // 前端一直没入口。**只送 label、不带 config**（改名不该动快照内容），撞名 detail 原文
+    // 透出、不改写不静默。
+    const handleProfileRename = async () => {
+        const target = profiles.find((profile) => profile.id === selectedProfileId);
+        const label = renameValue.trim();
+        if (!target || !label || label === target.label) return;
+        setBusy('profile');
+        setProfileError('');
+        try {
+            await api.updateProfile(target.id, { label });
+            setRenaming(false);
+            setSysMsg(`档案已重命名：${target.label} → ${label}`);
+            await refreshProfiles();
+        } catch (err) {
+            setProfileError(err?.message || '重命名失败');
         } finally {
             setBusy('');
         }
@@ -739,8 +801,20 @@ export default function Terminal() {
                                         )}
                                     </div>
                                     {statusError && <div className="text-red-300 text-[11px]">ERR: {statusError}</div>}
-                                    <div className="pt-1">
+                                    <div className="pt-1 flex flex-wrap items-center gap-2">
                                         <ActionButton onClick={refreshStatus}>刷新 (REFRESH)</ActionButton>
+                                        {/* R15（PLAN §8.49）：自动轮询开关 —— 状态 + 发送历史
+                                            一起拉，只在标签页可见时走；关掉即停，手动刷新照旧可用 */}
+                                        <button
+                                            type="button"
+                                            aria-pressed={autoRefresh}
+                                            onClick={() => setAutoRefresh((value) => !value)}
+                                            className={`border px-3 py-1.5 text-[11px] font-bold tracking-[0.2em] transition-colors duration-150 ${autoRefresh
+                                                ? 'border-nier-light bg-nier-light text-nier-dark'
+                                                : 'border-nier-light/50 text-nier-light/70 hover:border-nier-light'}`}
+                                        >
+                                            {autoRefresh ? `自动刷新 AUTO · ${POLL_MS / 1000}s` : '自动刷新停 AUTO OFF'}
+                                        </button>
                                     </div>
                                 </>
                             ) : (
@@ -790,12 +864,53 @@ export default function Terminal() {
                             <ActionButton onClick={handleProfileUpdate} disabled={!selectedProfileId || !config} busy={busy === 'profile'}>
                                 更新 (UPDATE)
                             </ActionButton>
+                            {/* R15（PLAN §8.49）：改名单独入口 —— 展开下面的改名行，
+                                不与「更新（写入配置快照）」混在一起 */}
+                            <ActionButton
+                                onClick={() => {
+                                    setProfileError('');
+                                    setRenameValue(selectedProfile?.label || '');
+                                    setRenaming(true);
+                                }}
+                                disabled={!selectedProfileId}
+                                busy={busy === 'profile'}
+                            >
+                                重命名 (RENAME)
+                            </ActionButton>
                             <ActionButton onClick={() => setConfirmDeleteProfile(true)} disabled={!selectedProfileId} busy={busy === 'profile'}>
                                 删除档案 (DELETE)
                             </ActionButton>
                             <ActionButton onClick={refreshProfiles}>刷新列表 (RELOAD)</ActionButton>
                             <span className="text-[10px] opacity-50">应用 = 档案配置生效；更新 = 当前生效配置写入所选档案</span>
                         </div>
+
+                        {/* R15（PLAN §8.49）：改名行 —— 预填当前名，确认才 PUT；名字没改
+                            就不放行（后端能吃同名请求，但那是一次白跑的往返） */}
+                        {renaming && (
+                            <div className="flex flex-wrap items-center gap-3 border-t border-nier-light/20 pt-3">
+                                <input
+                                    type="text"
+                                    placeholder="档案新名称"
+                                    value={renameValue}
+                                    onChange={(e) => setRenameValue(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && renameValue.trim() && busy !== 'profile' && handleProfileRename()}
+                                    className={`${inputClass} flex-1`}
+                                />
+                                <ActionButton
+                                    onClick={handleProfileRename}
+                                    disabled={!renameValue.trim() || renameValue.trim() === (selectedProfile?.label || '')}
+                                    busy={busy === 'profile'}
+                                >
+                                    确认改名 (CONFIRM)
+                                </ActionButton>
+                                <ActionButton onClick={() => { setRenaming(false); setProfileError(''); }}>
+                                    放弃 (CANCEL)
+                                </ActionButton>
+                                <span className="text-[10px] opacity-50">
+                                    {'改名 = PUT /profiles/{id} 只送 label（不动配置快照）；同名 —— 含回收站里占名的软删档案 —— 会被服务端 400 拒'}
+                                </span>
+                            </div>
+                        )}
 
                         <div className="flex flex-wrap items-center gap-3 border-t border-nier-light/20 pt-3">
                             <input
