@@ -12,6 +12,8 @@ import { triggerBlobDownload } from '../utils/download';
 // 收口），入参是 ZIP 里解出来的任一域文件，形态自动识别域名。
 // R17（PLAN §8.49）：按域**导出** —— 8 域芯片只勾想下盘的域（?domains=…），缺省不带参数
 // = 全 8 域逐字不变；协议数据仍走协议页既有导出，不重开「第 9 域」拍板项。
+// R19（PLAN §8.50 · 用户拍板 ②-2）：数据包**示例下载**走「动态导出」口径 —— 复用 R17 的
+// ?domains= 子集出按域导入那 5 域（当前库现做，不塞仓内静态样例），零后端改动。
 // 端点见 backend/routers/datahub.py；恢复前会自动留 pre-restore 安全快照，按域导入前留 pre-import。
 
 const formatBytes = (bytes) => {
@@ -63,6 +65,13 @@ const BUNDLE_DOMAINS = [
     ['profiles', '设备档案'],
     ['templates', '算子模板']
 ];
+
+// R19（PLAN §8.50 · 2026-10-03 用户拍板 ②-2「动态导出」）：示例包 = **按域导入的 5 域**
+// （recipes / sequences / transport / profiles / templates）—— 与 R8
+// `POST /datahub/import/{domain}` 能吃的范围逐字对齐：下下来就能直接试回灌。
+// 内容用**当前库现做**（不是仓里塞的静态样例，避免与 schema 漂移）；顺序 = `BUNDLE_DOMAIN_VERSIONS`
+// 键序（即 R17 的导出序），走 `exportDataBundle(数组)` 的 `?domains=` 子集口径，**零后端改动**。
+const SAMPLE_DOMAINS = ['recipes', 'sequences', 'transport', 'profiles', 'templates'];
 
 const PanelTitle = ({ children, hint }) => (
     <div className="flex items-baseline justify-between border-b border-nier-light/30 px-4 py-2 bg-nier-light/5">
@@ -165,6 +174,22 @@ export default function DataHub() {
             setSysMsg(`导出完成（${ordered.length} 域：${ordered.join(' + ')}）：${formatBytes(blob.size)}，清单见 manifest.json`);
         } catch (err) {
             setSysMsg(`导出失败：${err?.message || '未知错误'}`);
+        } finally {
+            setBusy('');
+        }
+    };
+
+    // R19（PLAN §8.50）：示例包 —— 走 R17 的 `?domains=` 子集口径（零后端改动）。
+    // 文件名打 `sample` 标记，免得它和手工按域导出的包在下载目录里混成一堆分不清。
+    const handleExportSample = async () => {
+        setBusy('sample');
+        try {
+            const blob = await api.exportDataBundle(SAMPLE_DOMAINS);
+            const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+            triggerBlobDownload(blob, `yorha-datahub-sample-${stamp}.zip`);
+            setSysMsg(`示例包已生成：${formatBytes(blob.size)}（${SAMPLE_DOMAINS.length} 域：${SAMPLE_DOMAINS.join(' + ')}，取自当前库、含 manifest.json，可直接走按域导入试回灌）`);
+        } catch (err) {
+            setSysMsg(`示例包生成失败：${err?.message || '未知错误'}`);
         } finally {
             setBusy('');
         }
@@ -402,10 +427,17 @@ export default function DataHub() {
                                     给出 8 域清单（<span className="font-mono">domainVersion</span>
                                     与逐域行数），回收站里的行不进包。
                                 </p>
-                                <div>
+                                <div className="flex flex-wrap items-center gap-3">
                                     <ActionButton onClick={handleExport} busy={busy === 'export'}>
                                         下载 ZIP (EXPORT)
                                     </ActionButton>
+                                    {/* R19（PLAN §8.50）：示例包 —— 动态取当前库、只出按域导入的 5 域 */}
+                                    <ActionButton onClick={handleExportSample} busy={busy === 'sample'}>
+                                        下载示例包 (SAMPLE)
+                                    </ActionButton>
+                                    <span className="text-[10px] opacity-50">
+                                        示例包 = 按域导入那 5 个域，取自当前库（动态，非仓内静态样例）
+                                    </span>
                                 </div>
                                 {/* R17（PLAN §8.49）：按域独立导出 —— 只勾想下盘的域；
                                     全不选就禁用（全量口径只走上面那颗按钮） */}

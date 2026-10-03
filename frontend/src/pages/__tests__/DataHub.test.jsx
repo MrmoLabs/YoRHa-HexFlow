@@ -140,6 +140,28 @@ describe('DataHub Page', () => {
         expect(screen.getByText(/8 域：instructions\.json/)).toBeDefined();
     });
 
+    it('R19 示例包：动态出「按域导入的 5 域」，文件名打 sample 标记', async () => {
+        api.getDatahubStatus.mockResolvedValue({ ...STATUS, backups: [] });
+        api.exportDataBundle.mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }));
+
+        render(<DataHub />);
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+
+        fireEvent.click(screen.getByRole('button', { name: /下载示例包/ }));
+
+        await waitFor(() => expect(api.exportDataBundle).toHaveBeenCalledTimes(1));
+        // 5 域与 R8 `POST /datahub/import/{domain}` 的范围逐字对齐，
+        // 顺序 = BUNDLE_DOMAIN_VERSIONS 键序（复用 R17 的 ?domains= 子集口径）
+        expect(api.exportDataBundle).toHaveBeenCalledWith([
+            'recipes', 'sequences', 'transport', 'profiles', 'templates'
+        ]);
+        const [, filename] = triggerBlobDownload.mock.calls[0];
+        expect(filename).toMatch(/^yorha-datahub-sample-\d+\.zip$/);
+        expect(screen.getByText(/示例包已生成/)).toBeDefined();
+        // 全量按钮仍是另一条路：不因示例包而改参
+        expect(api.exportDataBundle).not.toHaveBeenCalledWith();
+    });
+
     it('creates a backup then refreshes the status list', async () => {
         api.getDatahubStatus.mockResolvedValue({ ...STATUS, backups: [] });
         api.createDbBackup.mockResolvedValue({
