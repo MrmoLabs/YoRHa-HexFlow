@@ -2128,7 +2128,43 @@
       下载已由 R19 落地，余下仅档案排序 → R20」→ `PAGE_STATUS.md` 已重生成。
     - **文档同步（同批）**：PLAN 新 **§8.50**（三项拍板回执 + R19–R20 排期表 + R19 终态）、
       §8.49 ③ 补拍板回执注、§1 新增 `R19–R20` 行 + `docs/PAGE_STATUS.md`（重生成）；本条。
-    - **状态**：**R19 ✅**；余 **R20 档案自定义排序（含 DDL）** 与 **§9.7 ① 真机一项**。
+    - **状态**：**R19 ✅ R20 ✅**（§8.50 两批全清）；余 **§9.7 ① 真机一项**。
+67. **R20 · 设备档案自定义排序（PLAN §8.50 ②-3 · 全计划第二批 DDL）**（2026-10-03）：
+    - **拍板**：②-3「设备档案自定义排序」= **允许新增 `sort_order` 列**（DDL 明确点头）；
+      同批的 ①（加工页展示传输状态 + 本页切换）拍成 **维持 D9-A 不立项** ——
+      `processing` 页 `nextSteps` 已换成拍板回执，不再列本页待办。
+    - **改了什么（BE + FE）**：
+      · `models.py`：`DeviceProfile.sort_order` **仅新增列**（`Integer NOT NULL DEFAULT 0`，
+        0 = 未重排）；
+      · `migrate.py`：**REGISTRY 4 · 0004** —— `apply` 缺则 `ALTER TABLE … ADD COLUMN
+        sort_order INTEGER NOT NULL DEFAULT 0`、`verify` 钉死「恰好 device_profiles 一张」
+        （照 `migrations/README`「新增列 = 追加版本化迁移」的口径，**不新开 `ensure_*`**）；
+      · `profile.py`：排序键 **`(sort_order, label, id)`**（全 0 = 旧行为 label 升序逐字不变）
+        + **`PUT /profiles/order` 整表一次提交** —— 声明在 `PUT /{profile_id}` **之前**
+        （单测钉死这个顺序，否则字面 `order` 被参数路由吃掉），`ids` 必须**恰好**覆盖全部活档案，
+        重复 / 遗漏 / 未知 / 混入回收站一律 400 且**零写入**；新建档案：未重排给 0 照 label 落位、
+        已有自定义序 `max + 1` 追加末尾（不让 0 顶到最前面）；删中间一条**不重排**其余序号；
+      · `schemas/profile_api.py`：`ProfileResponse.sort_order` + `ProfileOrderUpdate`；
+      · `datahub.py`：`profile_export_row` 随行带 `sort_order`（**行序仍按 label 升序**，
+        一次拖拽不掀整个文件、导出可 diff），`import_profiles` 采纳它 —— 缺席（旧包）
+        **不覆盖**目标库已有的序、非负整数以外的值**整行跳过**不静默降级成 0；
+      · FE：`api.reorderProfiles` + 通讯调试页「排序顺序 (REORDER)」排序区 —— 拖拽（dnd-kit，
+        三行手则同 R12：grip 只挂 `listeners` 不挂 `attributes`）+ 上移/下移**都只改草稿序**，
+        脏标按 id 序比（顺序没动不放行），点「保存顺序 (SAVE ORDER)」才 PUT（端点回的新顺序
+        **直接替换本地状态**，不多拉一次 GET），「放弃」零调用、400 留草稿可改完再存。
+    - **测试**：**BE +10**（新 `test_profile_order.py` 6 例 + `test_migrate` 3 例 +
+      `test_datahub` 1 例）、**FE +7**（`Terminal.test` 3 例 + 新
+      `api/__tests__/profiles.test.js` 4 例）。
+    - **验收**：**BE 733 → 743/743**、**FE 1099 → 1106/1106（73 文件）**、
+      `npx vite build` EXIT=0、`npm run lint` **EXIT=0**、yorha-ui 校验器 6 文件 **0 违规**；
+      `pageStatus.json` 通讯调试页 `availableNow` 补 R20 条 + `nextSteps` 收敛成「无 —— R20 落地」、
+      加工页 `nextSteps` 换拍板回执 → `PAGE_STATUS.md` 已重生成。
+    - **文档同步（同批）**：PLAN §8.50 **R20 行标已办 + R20 终态** + §1 `R19–R20` 行回填 +
+      `docs/PAGE_STATUS.md`（重生成）；本条。
+    - **db 同步（另开一个 `chore(db)` 提交，不混进本 feat）**：`python -m backend.db.migrate up`
+      把真库 **v1 → v4** —— 顺带补齐一直挂着的 0002 软删列 / 0003 `fields_json`（冒烟时发现真库
+      在 `schema_migrations` 里只记到 v1，`migrate status` 长期报 pending 两条，本批一并收掉）。
+    - **状态**：**R19 ✅ R20 ✅**；余 **§9.7 ① 出线方向（需真实设备帧）一项**。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

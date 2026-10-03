@@ -23,7 +23,7 @@ import { getTransportConfig, setTransportConfig, getTransportStatus, revertTrans
 import { getBindings, createBinding, updateBinding, deleteBinding } from './bindings';
 import { getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './recipes';
 import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle, importRelations, importDomain } from './datahub';
-import { getProfiles, createProfile, updateProfile, deleteProfile, activateProfile } from './profiles';
+import { getProfiles, createProfile, updateProfile, deleteProfile, activateProfile, reorderProfiles } from './profiles';
 // R6（PLAN §8.43）：软删除 / 回收站 —— 列条目 / 恢复 / 彻底删除
 import { listTrash, restoreTrashItem, purgeTrashItem } from './trash';
 import { getResponseSpec, saveResponseSpec, deleteResponseSpec, getResponseSpecTargets, generateResponseSpec, sendTransaction } from './responseSpecs';
@@ -103,11 +103,13 @@ export const api = {
     importDomain,
 
     // Profiles (P1: 设备档案 → /profiles CRUD + activate，传输配置命名快照)
+    // R20 (§8.50 ②-3): reorderProfiles → PUT /profiles/order 整表顺序一次提交
     getProfiles,
     createProfile,
     updateProfile,
     deleteProfile,
     activateProfile,
+    reorderProfiles,
 
     // Trash (R6 · PLAN §8.43: 软删除回收站 —— 列条目 / 恢复 / 彻底删除)
     listTrash,

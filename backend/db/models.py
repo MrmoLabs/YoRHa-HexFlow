@@ -182,6 +182,10 @@ class DeviceProfile(Base):
     config = Column(JSON, nullable=False)  # 完整三段传输配置快照（validate_config 归一后入库）
     # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
     deleted_at = Column(String(40), nullable=True)
+    # R20 自定义排序（§8.50 ②-3，2026-10-03 拍板解禁 DDL）：0 = 未重排（照 label
+    # 自然序兜底，存量行为逐字不变），重排后 1..N 稠密覆盖全部活行。
+    # 存量库补列 = migrate.py 0004（仅新增列，合 §0）。
+    sort_order = Column(Integer, nullable=False, default=0, server_default="0")
 
 
 # 9. Response Specs（P2: 事务化发送引擎 — 按指令持久化的应答匹配规格，新表）

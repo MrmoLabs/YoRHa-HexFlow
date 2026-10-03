@@ -9,7 +9,12 @@ from backend.db.database import get_db
 from backend.db.models import DeviceProfile
 from backend.db.soft_delete import alive, mark_deleted
 from backend.db.transport_store import load_settings, save_config, set_active_profile
-from backend.schemas.profile_api import ProfileCreate, ProfileResponse, ProfileUpdate
+from backend.schemas.profile_api import (
+    ProfileCreate,
+    ProfileOrderUpdate,
+    ProfileResponse,
+    ProfileUpdate,
+)
 
 # P1 设备档案：传输配置的命名快照 CRUD + 激活（新表 device_profiles，仅新增）。
 # 无模块级 create_all（同 E4 先例，建表归 lifespan）；单测临时库直调本模块函数。
@@ -52,6 +57,29 @@ def _active_id(db: Session) -> Optional[str]:
     return row.active_profile_id if row is not None else None
 
 
+# R20（§8.50 ②-3）：排序键 = **(sort_order, label, id)**。
+# - 从未重排（活行 sort_order 全 0）→ 退化成 label 升序 + id 兜底 = **存量行为逐字不变**；
+# - 重排后 1..N 稠密覆盖全部活行，首位即用户排的首位。
+# 列表与「保存顺序」的返回值都走它，前端拿到的顺序 = 库里的顺序（单源）。
+def _ordered(query):
+    return query.order_by(
+        DeviceProfile.sort_order.asc(),
+        DeviceProfile.label.asc(),
+        DeviceProfile.id.asc(),
+    )
+
+
+def _next_sort_order(db: Session) -> int:
+    """新建档案的序号（R20）—— 两条路，别让新档案凭空插队：
+
+    - **从未重排过**（活行全是 0）→ 给 0，继续按 label 自然序落位 = 存量插入行为不变；
+    - **已有自定义序**（max ≥ 1）→ max + 1，追加到末尾（不然 0 会把它顶到最前面）。
+    """
+    rows = alive(db.query(DeviceProfile), DeviceProfile).all()
+    current = max((row.sort_order or 0) for row in rows) if rows else 0
+    return current + 1 if current > 0 else 0
+
+
 def _response(profile: DeviceProfile, active_id: Optional[str]) -> ProfileResponse:
     is_active = active_id is not None and profile.id == active_id
     return ProfileResponse(
@@ -60,19 +88,51 @@ def _response(profile: DeviceProfile, active_id: Optional[str]) -> ProfileRespon
         config=profile.config,
         is_active=is_active,
         modified=is_active and profile.config != transport.get_config(),
+        sort_order=profile.sort_order or 0,
     )
 
 
 @router.get("", response_model=List[ProfileResponse])
 def get_profiles(db: Session = Depends(get_db)) -> List[ProfileResponse]:
     # R6: 回收站行不进列表（alive = deleted_at IS NULL）
-    rows = (
-        alive(db.query(DeviceProfile), DeviceProfile)
-        .order_by(DeviceProfile.label.asc(), DeviceProfile.id.asc())
-        .all()
-    )
+    # R20: 排序改 (sort_order, label, id) —— 全 0 时与旧的 label ASC 逐字等价
+    rows = _ordered(alive(db.query(DeviceProfile), DeviceProfile)).all()
     active_id = _active_id(db)
     return [_response(row, active_id) for row in rows]
+
+
+@router.put("/order", response_model=List[ProfileResponse])
+def reorder_profiles(payload: ProfileOrderUpdate, db: Session = Depends(get_db)) -> List[ProfileResponse]:
+    """R20（§8.50 ②-3）：**整表顺序一次提交** —— 前端「拖完只改草稿序、点保存才 PUT」，
+    后端按提交的 id 序落 1..N 稠密序号（单事务一次 commit），返回**新顺序**的列表。
+
+    `ids` 必须**恰好**是全部活档案：重复 / 遗漏 / 混入回收站或不存在的 id 一律 400 且
+    **一个字节都不写**（不做「缺的补在后面」式静默补齐 —— 顺序是用户手排的，
+    悄悄插一行等于替用户做主）。
+
+    ⚠️ 本路由必须**先于** `PUT /{profile_id}` 声明，否则 `/profiles/order` 会被那条
+    吃掉（FastAPI 按注册顺序匹配）。单测钉死了这个顺序。
+    """
+    rows = alive(db.query(DeviceProfile), DeviceProfile).all()
+    alive_ids = [row.id for row in rows]
+    ids = payload.ids
+
+    if len(set(ids)) != len(ids):
+        raise HTTPException(status_code=400, detail="顺序里有重复 id")
+    missing = [pid for pid in alive_ids if pid not in set(ids)]
+    unknown = [pid for pid in ids if pid not in set(alive_ids)]
+    if missing or unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"顺序与在册档案不一致：未列出 {missing} / 不认识 {unknown}",
+        )
+
+    by_id = {row.id: row for row in rows}
+    for index, pid in enumerate(ids, start=1):
+        by_id[pid].sort_order = index
+    db.commit()
+    active_id = _active_id(db)
+    return [_response(by_id[pid], active_id) for pid in ids]
 
 
 @router.post("", response_model=ProfileResponse)
@@ -81,7 +141,9 @@ def create_profile(payload: ProfileCreate, db: Session = Depends(get_db)) -> Pro
     # 省略 config = 快照当前生效配置（天然合法）；显式 config 归一后入库
     config = transport.get_config() if payload.config is None else _validated_config(payload.config)
 
-    profile = DeviceProfile(id=str(uuid.uuid4()), label=label, config=config)
+    profile = DeviceProfile(
+        id=str(uuid.uuid4()), label=label, config=config, sort_order=_next_sort_order(db)
+    )
     db.add(profile)
     db.commit()
     db.refresh(profile)

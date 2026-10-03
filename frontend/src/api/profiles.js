@@ -27,6 +27,17 @@ export const updateProfile = async (id, payload) => {
     return handleResponse(response);
 };
 
+// R20（PLAN §8.50 ②-3）：整表顺序一次提交 —— `ids` 必须恰好覆盖全部活档案
+// （重复 / 遗漏 / 混入回收站一律 400）。返回**新顺序**的档案列表（直接替换本地状态）。
+export const reorderProfiles = async (ids) => {
+    const response = await fetch(`${API_BASE}/profiles/order`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids })
+    });
+    return handleResponse(response);
+};
+
 export const deleteProfile = async (id) => {
     const response = await fetch(`${API_BASE}/profiles/${id}`, {
         method: 'DELETE'

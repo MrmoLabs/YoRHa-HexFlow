@@ -724,11 +724,15 @@ class TestExportDomainPayloads(unittest.TestCase):
         self.assertNotIn("deleted_at", row)
 
         profiles = profiles_export_payload([
-            DeviceProfile(id="d1", label="车间A", config={"mode": "serial"})
+            DeviceProfile(id="d1", label="车间A", config={"mode": "serial"}),
+            DeviceProfile(id="d2", label="车间B", config={"mode": "serial"}, sort_order=5),
         ])
         self.assertEqual(profiles["schemaVersion"], PROFILES_SCHEMA_VERSION)
         self.assertEqual(profiles["profiles"][0]["label"], "车间A")
         self.assertNotIn("deleted_at", profiles["profiles"][0])
+        # R20（§8.50 ②-3）：自定义序随行进包 —— 未重排的行是 0，重排过的行是它落的号；
+        # 行序本身仍按 label 升序（一次拖拽不该把整个文件的行序掀了，导出可 diff）。
+        self.assertEqual([row["sort_order"] for row in profiles["profiles"]], [0, 5])
 
         templates = templates_export_payload([
             OperatorTemplate(op_code="HEX_RAW", name="十六进制原样", category="BASIC",
@@ -1036,6 +1040,50 @@ class TestImportDomains(RelationsTestCase):
         self.assertEqual(len(report["skipped"]), 2)
         self.assertIn("回收站", report["skipped"][0]["reason"])
         self.assertIn("档案名已存在", report["skipped"][1]["reason"])
+
+    def test_profiles_sort_order_roundtrip_and_tolerant_absence(self):
+        """R20（§8.50 ②-3）：`sort_order` 进包即回灌还原，缺席不覆盖、非法整行跳过。"""
+        cfg = default_transport_config()
+
+        # ① 在场且合法 → 采纳（自定义序跨机还原）
+        report = datahub.import_profiles(self.db, {"profiles": [
+            {"id": "p1", "label": "一档", "config": cfg, "sort_order": 3},
+            {"id": "p2", "label": "二档", "config": cfg, "sort_order": 7},
+        ]})
+        self.assertEqual(report["imported"], 2)
+        self.assertEqual(
+            {row.id: row.sort_order for row in self.db.query(DeviceProfile).all()},
+            {"p1": 3, "p2": 7},
+        )
+
+        # ② 旧包缺键 → **保留**目标库已有的序（不被静默打回 0）
+        report = datahub.import_profiles(self.db, {"profiles": [
+            {"id": "p1", "label": "一档", "config": cfg},
+        ]})
+        self.assertEqual(report["updated"], 1)
+        self.assertEqual(
+            self.db.query(DeviceProfile).filter_by(id="p1").one().sort_order, 3
+        )
+
+        # ③ 新行缺键 → 0（= 未重排，照 label 自然序落位）
+        report = datahub.import_profiles(self.db, {"profiles": [
+            {"id": "p3", "label": "三档", "config": cfg},
+        ]})
+        self.assertEqual(report["imported"], 1)
+        self.assertEqual(
+            self.db.query(DeviceProfile).filter_by(id="p3").one().sort_order, 0
+        )
+
+        # ④ 非法值（负数 / 字符串 / bool）→ 整行跳过，**不静默降级成 0**
+        report = datahub.import_profiles(self.db, {"profiles": [
+            {"id": "p4", "label": "四档", "config": cfg, "sort_order": -1},
+            {"id": "p5", "label": "五档", "config": cfg, "sort_order": "3"},
+            {"id": "p6", "label": "六档", "config": cfg, "sort_order": True},
+        ]})
+        self.assertEqual(report["imported"], 0)
+        self.assertEqual(len(report["skipped"]), 3)
+        for item in report["skipped"]:
+            self.assertIn("sort_order", item["reason"])
 
     def test_templates_upsert_by_op_code(self):
         payload = {"templates": [

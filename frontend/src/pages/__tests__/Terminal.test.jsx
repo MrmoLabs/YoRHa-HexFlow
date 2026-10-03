@@ -18,7 +18,9 @@ vi.mock('../../api', () => ({
         createProfile: vi.fn(),
         updateProfile: vi.fn(),
         deleteProfile: vi.fn(),
-        activateProfile: vi.fn()
+        activateProfile: vi.fn(),
+        // R20（PLAN §8.50 ②-3）：整表顺序一次提交 → PUT /profiles/order
+        reorderProfiles: vi.fn()
     }
 }));
 
@@ -664,6 +666,71 @@ describe('Terminal Page（E3 通讯调试）', () => {
         expect(screen.getByText(HEX_PREVIEW)).toBeDefined();
         expect(preTexts()).toContain('AA 55 01 02 03 04 05 06\n07 08 09 0A');
         expect(screen.getByRole('button', { name: 'HEX' }).getAttribute('aria-pressed')).toBe('true');
+    });
+
+    // ---- R20 设备档案自定义排序（PLAN §8.50 ②-3 · 2026-10-03 拍板解禁 DDL）----
+
+    it('R20 排序：只改草稿序、点「保存顺序」才 PUT，成功即用返回的新顺序替换列表', async () => {
+        api.reorderProfiles.mockResolvedValue([PROFILES[1], PROFILES[0]]);
+        render(<Terminal />);
+        await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
+        const select = screen.getByLabelText(/档案 PROFILE/);
+        const optionLabels = () => [...select.options].map((node) => node.textContent);
+        const save = () => screen.getByRole('button', { name: /保存顺序 \(SAVE ORDER\)/ });
+
+        expect(optionLabels()[1]).toContain('环回基准'); // 落位仍是服务端给的原序
+
+        fireEvent.click(screen.getByRole('button', { name: /排序顺序 \(REORDER\)/ }));
+        expect(save().disabled).toBe(true); // 顺序没动 → 不放行
+        expect(screen.getByText(/顺序未改动/)).toBeDefined();
+
+        fireEvent.click(screen.getAllByTitle('下移')[0]); // 草稿里把 pf-1 挪到 pf-2 后面
+        expect(save().disabled).toBe(false);
+        expect(screen.getByText(/顺序已改动/)).toBeDefined();
+        // 拖 / 上移下移**只改草稿序**：此刻一次网络调用都没有（拍板口径）
+        expect(api.reorderProfiles).not.toHaveBeenCalled();
+
+        fireEvent.click(save());
+        await waitFor(() => expect(api.reorderProfiles).toHaveBeenCalledTimes(1));
+        expect(api.reorderProfiles).toHaveBeenCalledWith(['pf-2', 'pf-1']);
+
+        // 成功：排序区收起 + 回执 + 下拉按新顺序渲染（端点回的就是新顺序，不再多拉一次）
+        await waitFor(() => expect(screen.queryByRole('button', { name: /保存顺序/ })).toBeNull());
+        expect(screen.getByText(/档案顺序已保存（2 条）/)).toBeDefined();
+        expect(optionLabels()[1]).toContain('产线网关');
+        expect(optionLabels()[2]).toContain('环回基准');
+    });
+
+    it('R20 排序：挪动后点「放弃」零调用且行收起，列表仍是原顺序', async () => {
+        render(<Terminal />);
+        await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
+        const select = screen.getByLabelText(/档案 PROFILE/);
+
+        fireEvent.click(screen.getByRole('button', { name: /排序顺序 \(REORDER\)/ }));
+        fireEvent.click(screen.getAllByTitle('下移')[0]);
+        fireEvent.click(screen.getByRole('button', { name: /放弃 \(CANCEL\)/ }));
+
+        expect(api.reorderProfiles).not.toHaveBeenCalled(); // 放弃 = 零调用
+        expect(screen.queryByRole('button', { name: /保存顺序/ })).toBeNull();
+        expect([...select.options].map((node) => node.textContent)[1]).toContain('环回基准');
+    });
+
+    it('R20 排序被后端拒（400）：detail 原文显示且草稿留着，可改完再存', async () => {
+        api.reorderProfiles.mockRejectedValue(
+            new Error("顺序与在册档案不一致：未列出 ['pf-3'] / 不认识 []")
+        );
+        render(<Terminal />);
+        await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
+
+        fireEvent.click(screen.getByRole('button', { name: /排序顺序 \(REORDER\)/ }));
+        fireEvent.click(screen.getAllByTitle('下移')[0]);
+        fireEvent.click(screen.getByRole('button', { name: /保存顺序 \(SAVE ORDER\)/ }));
+
+        await waitFor(() => expect(api.reorderProfiles).toHaveBeenCalledTimes(1));
+        expect(screen.getByText(/ERR: 顺序与在册档案不一致/)).toBeDefined();
+        // 草稿不丢：排序区还开着、顺序仍是改过的那版（保存按钮仍亮，可改完再存）
+        expect(screen.getByRole('button', { name: /保存顺序 \(SAVE ORDER\)/ }).disabled).toBe(false);
+        expect(screen.getByText(/顺序已改动/)).toBeDefined();
     });
 
 });

@@ -602,11 +602,17 @@ def transport_export_payload(settings) -> dict:
 
 
 def profile_export_row(row) -> dict:
-    """DeviceProfile → profiles.json 条目（label 唯一，是档案的自然键）。"""
+    """DeviceProfile → profiles.json 条目（label 唯一，是档案的自然键）。
+
+    R20（§8.50 ②-3）：随行带 `sort_order` —— 自定义序进包、按域回灌即还原；
+    **行序仍按 label 升序**（导出可 diff：一次拖拽不该把整个文件的行序掀了），
+    未重排的行是 0。旧包没有这个键 → 回灌按「缺席」处理（不覆盖目标库已有的序）。
+    """
     return {
         "id": row.id,
         "label": row.label,
         "config": row.config,
+        "sort_order": row.sort_order or 0,
     }
 
 
@@ -997,6 +1003,15 @@ def import_profiles(db: Session, payload) -> dict:
         except ValueError as exc:
             _skip(sink, index, row, f"配置非法：{exc}")
             continue
+        # R20：sort_order 是**可选**行字段 —— 缺席（旧包）不覆盖目标库已有的序，
+        # 在场则必须是非负整数（bool 不算数），否则整行跳过（不静默降级成 0）。
+        raw_sort = row.get("sort_order")
+        sort_order = None
+        if raw_sort is not None:
+            if isinstance(raw_sort, bool) or not isinstance(raw_sort, int) or raw_sort < 0:
+                _skip(sink, index, row, "sort_order 必须是非负整数")
+                continue
+            sort_order = raw_sort
         clash = db.query(DeviceProfile).filter(
             DeviceProfile.label == label, DeviceProfile.id != profile_id
         ).first()
@@ -1012,8 +1027,15 @@ def import_profiles(db: Session, payload) -> dict:
             if existing:
                 existing.label = label
                 existing.config = config
+                if sort_order is not None:
+                    existing.sort_order = sort_order  # 缺席 → 保留目标库已有的序
             else:
-                db.add(DeviceProfile(id=profile_id, label=label, config=config))
+                db.add(DeviceProfile(
+                    id=profile_id,
+                    label=label,
+                    config=config,
+                    sort_order=sort_order if sort_order is not None else 0,
+                ))
             db.commit()
         except IntegrityError as exc:
             db.rollback()

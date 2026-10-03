@@ -202,12 +202,56 @@ def _decode_json_verify(conn):
             raise MigrationError(f"解码快照列缺失: {table}.fields_json")
 
 
+# --------------------------------------------------------------------------
+# 0004 · R20 档案自定义排序（PLAN §8.50 ②-3）：`device_profiles.sort_order` 仅新增列
+# --------------------------------------------------------------------------
+
+#: R20 要落 `sort_order` 的表（**仅新增列**）—— 表单从 `models` 派生（加列只写一处，
+#: 同 0002 / 0003 口径），verify 再钉死「恰好 device_profiles 一张」，防有人误删列后
+#: 迁移静默漏改、或误给别的表也加上这列（§0 只允许新增列，不做改列）。
+def profile_sort_tables() -> List[str]:
+    return sorted(
+        name
+        for name, table in Base.metadata.tables.items()
+        if "sort_order" in table.columns
+    )
+
+
+def _profile_sort_apply(conn):
+    """缺则 `ALTER TABLE ... ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`（幂等）。
+
+    `NOT NULL DEFAULT 0` 是 SQLite 允许的常量默认 → 存量行立刻拿到 0 =「未重排」，
+    排序键 `(sort_order, label)` 退化成 label 升序 = **存量行为逐字不变**；
+    全新库由 create_all 直接建出该列 → 跳过（`ALTER` 加已存在的列会直接报错）。
+    """
+    for table in profile_sort_tables():
+        have = _column_names(conn, table)
+        if have and "sort_order" not in have:
+            conn.exec_driver_sql(
+                f"ALTER TABLE {table} ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0"
+            )
+
+
+def _profile_sort_verify(conn):
+    """升级结果检查：R20 恰好只给 `device_profiles` 加列 —— 多一张、少一张都报错。"""
+    tables = profile_sort_tables()
+    if tables != ["device_profiles"]:
+        raise MigrationError(
+            f"R20 sort_order 应且仅应覆盖 device_profiles，实得 {tables}"
+        )
+    for table in tables:
+        if "sort_order" not in _column_names(conn, table):
+            raise MigrationError(f"排序列缺失: {table}.sort_order")
+
+
 REGISTRY: List[Migration] = [
     Migration(1, "baseline", _baseline_apply, _baseline_verify),
     # 13 表统一加 `deleted_at`（仅新增列，合 §0；新库 create_all 已带 → 只验不改）。
     Migration(2, "soft_delete_deleted_at", _soft_delete_apply, _soft_delete_verify),
     # R10：`dispatch_logs.fields_json` 解码快照（仅新增列，全计划唯一 DDL 批）。
     Migration(3, "dispatch_logs_fields_json", _decode_json_apply, _decode_json_verify),
+    # R20：`device_profiles.sort_order` 自定义排序序号（仅新增列）。
+    Migration(4, "device_profiles_sort_order", _profile_sort_apply, _profile_sort_verify),
 ]
 
 #: 当前目标版本（= REGISTRY 最后一条）。升级即把库推进到这个号。

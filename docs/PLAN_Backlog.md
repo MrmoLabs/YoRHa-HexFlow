@@ -42,7 +42,7 @@
 | R1–R10 | **B2 六项功能缺口 + 拍板选中项排期**（导入 pre-import 快照 / 传输配置上一配置回退 / ESLint 存量 / 编排页绑定拖拽 / float64 双端 / 软删除回收站 + C-3 补域 2 批 + C-2 解码 2 批）—— 顺序 = 先安全网 → 清欠账 → 体验 → 正确性 → 最后动 DDL | ✅ **R1–R10 全数完成（R1 ✅ §8.38 / R2 ✅ §8.39 / R3 ✅ §8.40 / R4 ✅ §8.41 / R5 ✅ §8.42 / R6 ✅ §8.43+§8.44 / R7 ✅ §8.45 / R8 ✅ §8.46 / R9 ✅ §8.47 / R10 ✅ §8.48；R8 = 2026-10-02、R9 = R10 = 2026-10-03）**（**R4 ✅ 已按拍板落地**：拖完只改展示序、点保存按钮才改持久序；**R5 ✅ 已落地**：float64 双端 + 向量 `f64` 组、缺省 `f32` 逐字节不变（§8.42）；**R6 ✅ 已落地（两批）**：R6-1 = 13 表统一 `deleted_at`（仅新增列）+ 软删/恢复/彻底删除 + `/trash` 统一入口（§8.43）；R6-2 = FE 回收站页 `/trash` + 五处删除确认改「移入回收站、可恢复」+ 页面状态登记与 `PAGE_STATUS.md` 重生成（§8.44）；**R7 ✅ 已落地（§8.45）**：`bundle` 3 域 → 8 域（补 recipes / sequences / transport / profiles / templates）+ `manifest.domainVersion` 8 域清单 + 读侧 `alive()` 收口，**零 DDL**、测试 +8 → 676；**R8 ✅ 已落地（§8.46）**：`POST /datahub/import/` 补 5 域（recipes / sequences / transport / profiles / templates），三段式 400 不落快照 → pre-import 快照 → 逐行提交，校验复用各域 SSOT；FE 一个选择器按顶层数组键识别域名；**零 DDL**、测试 +9 → 685；**R9 ✅ 已落地（§8.47）**：对偶解码器 `InstructionDecoder` —— 布局与编码器共用 `buildLayout()`、值分派同序，反向验证 = `encode ∘ decode = id` 不动点扫七组 `vectors/` 向量 + 整帧；接入事务面板命中应答（`DecodedFields`）与发送历史「字段 FIELDS」列 + 详情完整字段表；**纯 FE 零 DDL**、测试 +30 → 1066；**R10 ✅ 已落地（§8.48）**：**入库回写** —— `dispatch_logs` **仅新增列** `fields_json`（`migrate.py` 追加 `Migration(3, "dispatch_logs_fields_json")`，**全计划唯一 DDL 批**，verify 钉死「恰好一张表」）；解码**不写第二套布局**（复用 `fields_to_blocks` + `Orchestrator.flatten()`，编译口径纯搬进 `core/field_blocks.py` 后 `datahub` **原名再导出**，测试一行未改）；四条写入缝（manual / transaction / sequence / replay）统一过 `db/log_store.record_log` **单一接缝**自动回填、`resolve_log_fields` **绝不抛**、无应答/查不到指令/无字段布局一律 `NULL`；`/dispatch/history` 回填 `DispatchRecord.fields`（与 `fields_json` **同一次解码**）+ `/logs` 列表与 JSON 导出回填、**CSV 列集逐字不变**；FE `decodeHistoryRow` **优先吃服务端 `record.fields`**、回落 R9 客户端解码（存量行行形状逐字不变）；存量行**不回填**；测试 **BE 685 → 723（+38）、FE 1066 → 1069（+3，71 文件）**；**自 R3 起 `npm run lint` EXIT=0 进验收门槛**；§8.37；**11 批已全数完成**，R6/R10 含 DDL 仅新增列） |
 
 | R11–R18 | **R10 后剩余项盘点与排期**（三处过期说法纠正 + 剩余项四类分流 + 序列步骤拖拽 / 回收站批量 / 串口枚举 / 档案改名·轮询 / 报文格式 / 按域独立导出 / 字段引用测试） | ✅ **R11–R18 八批全部完成（2026-10-03 连续落地）**：**R11 已完成 ✅（§8.49 文档批，2026-10-03）**：`pageStatus.json` 指令页 `availableNow`+`nextSteps`、编排页 `nextSteps` 三处过期说法纠正（B2–B8 标注 / B2–B8 真实语义 / 绑定拖拽）+ §8.14 与 §8.34 B3 补「解码回程由 R9+R10 收口」销项注 + 本节盘点排期 + `PAGE_STATUS.md` 重生成。**R12 已完成 ✅（§8.49：序列步骤拖拽排序 —— 纯 FE 零 DDL，拖完只改草稿序、点「保存定义」才 PUT，FE 1069 → 1072）**、**R13 已完成 ✅（§8.49：回收站类型筛选 + 批量恢复 / 批量彻底删除 —— 纯 FE 零 DDL，逐条串行、半成如实回报，FE 1072 → 1075）**、**R14 已完成 ✅（§8.49：串口端口枚举 + 波特率预设 —— `GET /transport/ports` 只读降级绝不 500、自然序排 COM 口，零 DDL，BE 723 → 727、FE 1075 → 1078）**、**R15 已完成 ✅（§8.49：档案重命名 + 状态/历史自动轮询 —— 纯 FE 零 DDL，改名只 PUT label、轮询仅标签页可见时走，FE 1078 → 1081）**、**R16 已完成 ✅（§8.49：报文格式切换 hex / ascii / bin —— 纯 FE 零 DDL，三面板一个开关、只换显示口径不换字节，FE 1081 → 1086）**、**R17 已完成 ✅（§8.49：按域独立导出包 —— `?domains=…` 只出所选域、缺省不带参数 = 现行 8 域逐字不变，零 DDL，BE 727 → 733、FE 1086 → 1092）**、**R18 已完成 ✅（§8.49：字段引用测试补强 —— 纯测试零代码，`references` 计数 × 块移动 / 保存失败恢复的交叉面 +6 例，FE 1092 → 1098）**；**需拍板 3 项**（加工页传输展示与切换 vs D9-A / 数据包示例下载口径 / 档案自定义排序 = DDL）与**仍需真机 1 项**（§9.7 ① 出线方向）登记在 §8.49 三（**三项拍板已于 2026-10-03 落定 → §8.50**） |
-| R19–R20 | **拍板后追加排期**（§8.50：① 加工页传输展示与切换 = **维持 D9-A 不立项**、② 数据包示例下载 = **动态导出**、③ 档案自定义排序 = **`sort_order` DDL 解禁**） | ✅ **R19 已完成 ✅（§8.50：数据包示例下载 —— 动态出按域导入的 5 域、复用 R17 `?domains=` 子集，零后端改动零 DDL，FE 1098 → 1099）**、**R20 待办（含 DDL）** |
+| R19–R20 | **拍板后追加排期**（§8.50：① 加工页传输展示与切换 = **维持 D9-A 不立项**、② 数据包示例下载 = **动态导出**、③ 档案自定义排序 = **`sort_order` DDL 解禁**） | ✅ **R19 已完成 ✅（§8.50：数据包示例下载 —— 动态出按域导入的 5 域、复用 R17 `?domains=` 子集，零后端改动零 DDL，FE 1098 → 1099）**、**R20 已完成 ✅（§8.50：档案自定义排序 —— `device_profiles.sort_order` 仅新增列 + migration 0004 + `PUT /profiles/order` 整表一次提交，拖完只改草稿序；BE 733 → 743、FE 1099 → 1106；db 同步另开 `chore(db)` 提交）** |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -4153,7 +4153,7 @@ yorha-ui 校验器改动文件 0 违规、`pageStatus.json` 有改动则 `npm ru
 | 编号 | 页面 | 内容 | 类型 | 规模 | DDL |
 |---|---|---|---|---|---|
 | ~~**R19**~~ ✅ | `datahub` 页 | **数据包示例下载（动态导出）** → **已落地**：聚合导出区加「下载示例包 (SAMPLE)」= 复用 R17 的 `?domains=` 子集口径出**按域导入的 5 域**（recipes / sequences / transport / profiles / templates，顺序按 8 域表），与 `POST /datahub/import/{domain}` 能吃的范围逐字对齐、下下来即可试回灌；内容取自当前库现做、文件名打 `sample` 标记。**零后端改动** | FE | 小 | 否 |
-| **R20** | `terminal` 页 | **设备档案自定义排序**：`models.py` 新增 `sort_order` 列 + `ensure_*_columns` 自愈接线（镜像 3a `ensure_recipe_columns` / 3c `ensure_sequence_step_columns` 先例）；列表排序键 **`(sort_order, label)`** —— 未重排过的档案 `sort_order=0` 仍按标签自然序（**存量行为零回归**，导出行序仍有标签兜底可 diff）；**拖拽只改草稿序、点「保存顺序」才提交**（镜像 R12 拍板口径，不做成「拖完即写」） | BE+FE | 中 | **是** |
+| ~~**R20**~~ ✅ | `terminal` 页 | **设备档案自定义排序** → **已落地**：`models.py` **仅新增列** `device_profiles.sort_order` + `migrate.py` **REGISTRY 4 · 0004**（按 README「新增列 = 追加版本化迁移」口径，不新开 `ensure_*`）；列表排序键 **`(sort_order, label, id)`** —— 未重排（全 0）= 旧行为 label 升序**逐字不变**，重排后 1..N 稠密覆盖全部活行；新端点 **`PUT /profiles/order`**（**声明在 `PUT /{profile_id}` 之前**，单测钉死顺序）整表一次提交，`ids` 不**恰好**覆盖全部活档案（重复 / 遗漏 / 未知 / 混入回收站）一律 400 且**零写入**；新建档案未重排给 0、已有自定义序 `max+1` 追加末尾；**拖拽 + 上移下移只改草稿序、点「保存顺序」才 PUT**（镜像 R12 拍板口径）；`sort_order` 随 `profiles.json` 进包、按域回灌即还原 | BE+FE | 中 | **是** |
 
 **R19 终态（2026-10-03）**：**纯 FE、零 DDL、零后端改动**（`backend/routers/datahub.py`
 一行未动，整批只复用 R17 出线的 `?domains=` 能力） —— BE **733/733**（未碰后端，全量复跑）、
@@ -4162,6 +4162,25 @@ FE **1098 → 1099/1099（72 文件，`DataHub.test` +1**：示例包按 5 域�
 `npx vite build` EXIT=0、`npm run lint` **EXIT=0**、yorha-ui 校验器 3 文件 **0 违规**；
 `pageStatus.json` 数据中心页 `availableNow` 补 R19 条 + `nextSteps` 收敛成「无 —— 示例下载
 已由 R19 落地，余下仅档案排序 → R20」→ `PAGE_STATUS.md` 已重生成。
+
+**R20 终态（2026-10-03）**：**全计划第二批 DDL**（第一批是 R10 的 0003）—— `models.py`
+仅新增列 `device_profiles.sort_order` + `migrate.py` **REGISTRY 4 · 0004**（`apply` 缺则
+`ALTER TABLE … ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`，`verify` 钉死「恰好
+device_profiles 一张」—— 多一张少一张都报错；按 `migrations/README`「新增列 = 追加版本化
+迁移」的口径，不新开 `ensure_*`）。存量行拿到 **0 = 未重排** → 排序键退化成 label 升序，
+**存量行为逐字不变**（回归钉子 `test_get_orders_by_label_ascending` 仍绿）。**BE 733 →
+743/743**（新 `test_profile_order.py` 6 例 = 默认序回归 / 1..N 稠密且幂等 / 四类非法提交
+400 且零写入 / 路由注册顺序 / 新建序号两路 / 删中间不重排；`test_migrate` +3 = 存量库补列 ·
+新库只验不改 · verify 钉表与列 —— 顺带把「已记 0001/0002 → applied」的断言改成跟注册表走；
+`test_datahub` +1 = `sort_order` 进包 → 回灌还原、缺席**不覆盖**、非法整行跳过）。
+**FE 1099 → 1106/1106（73 文件，`Terminal.test` +3、新 `api/__tests__/profiles.test.js` +4**
+= 拖 / 上移下移只改草稿序（零网络调用）· 保存才 `PUT /profiles/order` 且用返回序替换列表 ·
+放弃零调用 · 400 留草稿 + 请求口径四条）、`npx vite build` EXIT=0、`npm run lint` **EXIT=0**、
+yorha-ui 校验器 6 文件 **0 违规**；`pageStatus.json` 通讯调试页 `availableNow` 补 R20 条 +
+`nextSteps` 收敛成「无 —— R20 落地」，**加工页 `nextSteps` 换成拍板回执**（① 维持 D9-A 不立项）
+→ `PAGE_STATUS.md` 已重生成。**db 同步另开一个 `chore(db)` 提交**（沿 3a / 3c / 3d 先例）：
+`python -m backend.db.migrate up` 把真库 **v1 → v4**（顺带补齐一直挂着的 0002 软删列 /
+0003 `fields_json`），`backend/db/yorha.db` 不进本 feat 提交。
 
 **为什么是这个顺序**：R19 是**零后端改动**的小批（直接复用 R17 刚出线的 `?domains=`），
 先落；R20 要动 DDL 与拖拽排序、规模更大，单独一批放后面。

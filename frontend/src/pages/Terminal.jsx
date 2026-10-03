@@ -15,6 +15,7 @@ import {
 } from '../utils/terminalPanes';
 import { profileBadges, profileOptionLabel, profileSummary } from '../utils/profileView';
 import { escapeHex, escapeWarnings, toEscapeDraft } from '../utils/escapeTable';
+import { DndContext, PointerSensor, useSensor, useSensors, useDraggable, useDroppable } from '@dnd-kit/core';
 
 // E3 通讯调试页：传输配置模型 UI（发送模式/目标地址/串口参数，接 E2
 // /transport/config|status）+ 三面板 —— 发送历史 / 原始报文 / 响应与错误
@@ -28,6 +29,9 @@ import { escapeHex, escapeWarnings, toEscapeDraft } from '../utils/escapeTable';
 // 报文视图纯函数在 utils/terminalPanes.js。
 // R16（PLAN §8.49）：三面板共用「显示格式」开关（hex / ascii / bin）—— 只换显示口径，
 // 帧内容与发送 / 入库 / 校验逐字节不变。
+// R20（PLAN §8.50 ②-3，2026-10-03 拍板解禁 DDL）：档案**自定义排序** —— 列表顺位由
+// device_profiles.sort_order 定，本页给「排序顺序」草稿 + 拖拽 / 上移下移，点「保存顺序」
+// 才 PUT /profiles/order（镜像 R12 拖拽口径：拖完只改草稿序）。零配置面改动。
 
 const PanelTitle = ({ children, hint }) => (
     <div className="flex items-baseline justify-between border-b border-nier-light/30 px-4 py-2 bg-nier-light/5">
@@ -116,6 +120,58 @@ const toPatch = (draft) => ({
     }
 });
 
+// ── R20 · 档案排序行（PLAN §8.50 ②-3 · 三行手则同 R12 步骤行）──────────────
+//   · 把手是**行首空白 grip**、无文本节点 → 不动行内 button 的 label；
+//   · grip **不是 button** → 行内 button 顺序照旧（上移 / 下移）；
+//   · 只挂 dnd-kit 的 `listeners`、不挂 `attributes` → 不给行加 role=button。
+function ProfileOrderRow({ profile, index, count, onMove }) {
+    const { setNodeRef: setRowRef, isOver } = useDroppable({ id: profile.id });
+    const { setNodeRef: setGripRef, listeners, isDragging } = useDraggable({ id: profile.id });
+    const gripState = (isDragging || isOver) ? 'opacity-100' : 'opacity-0 group-hover:opacity-70';
+    return (
+        <div
+            ref={setRowRef}
+            className={`group flex items-center gap-2 border px-2 py-1 text-[11px] font-mono ${isDragging
+                ? 'border-nier-light/50 bg-nier-light/5 opacity-50'
+                : 'border-nier-light/15'}`}
+        >
+            <span
+                ref={setGripRef}
+                {...listeners}
+                title="拖拽调整档案顺序（仅改草稿序，点「保存顺序」才落库）"
+                aria-hidden="true"
+                className={`shrink-0 inline-flex flex-col gap-[2px] justify-center w-3 cursor-grab active:cursor-grabbing select-none ${gripState}`}
+            >
+                <span className="block w-2 h-px bg-nier-light/70" />
+                <span className="block w-2 h-px bg-nier-light/70" />
+            </span>
+            <span className="opacity-40 w-6">{String(index + 1).padStart(2, '0')}</span>
+            <span className="truncate flex-1">{profileOptionLabel(profile)}</span>
+            <span className="flex gap-1 shrink-0">
+                <button
+                    type="button"
+                    onClick={() => onMove(index, -1)}
+                    disabled={index === 0}
+                    className="border border-nier-light/25 px-1 hover:bg-nier-light/10 transition-all disabled:opacity-25"
+                    title="上移"
+                >
+                    ↑
+                </button>
+                <button
+                    type="button"
+                    onClick={() => onMove(index, 1)}
+                    disabled={index === count - 1}
+                    className="border border-nier-light/25 px-1 hover:bg-nier-light/10 transition-all disabled:opacity-25"
+                    title="下移"
+                >
+                    ↓
+                </button>
+            </span>
+        </div>
+    );
+}
+
+
 export default function Terminal() {
     const page = PAGE_STATUS_BY_KEY.terminal;
     const [config, setConfig] = useState(null);
@@ -146,6 +202,10 @@ export default function Terminal() {
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [renaming, setRenaming] = useState(false);
     const [renameValue, setRenameValue] = useState('');
+    // R20（PLAN §8.50 ②-3）：档案自定义排序 —— reordering = 展开排序区，
+    // orderDraft = **草稿序**（id 数组）；只有点「保存顺序」才 PUT /profiles/order。
+    const [reordering, setReordering] = useState(false);
+    const [orderDraft, setOrderDraft] = useState([]);
     // R16（PLAN §8.49）：三面板共用的报文显示口径 —— 只换怎么摆、不换字节（缺省 hex 逐字不变）
     const [frameFormat, setFrameFormat] = useState('hex');
 
@@ -415,6 +475,65 @@ export default function Terminal() {
             await refreshProfiles();
         } catch (err) {
             setProfileError(err?.message || '删除档案失败');
+        } finally {
+            setBusy('');
+        }
+    };
+
+    // ── R20 · 档案自定义排序（PLAN §8.50 ②-3 · 拍板解禁 DDL）────────────────
+    // 拖拽 / 上移下移**只改草稿序**，点「保存顺序」才 PUT —— 镜像 R12 步骤拖拽口径。
+    // 8px 起拖阈值同 R12：把手是行首空白 grip，阈值保证「点一下」不被误判成拖。
+    const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+
+    const startReorder = () => {
+        setProfileError('');
+        setOrderDraft(profiles.map((profile) => profile.id));
+        setReordering(true);
+    };
+
+    const cancelReorder = () => {
+        setReordering(false);
+        setOrderDraft([]);
+        setProfileError('');
+    };
+
+    // 脏标按 **id 序**比：只有真正挪过才亮（顺序没动 → 保存按钮保持禁用，不白跑一趟）
+    const orderDirty = reordering
+        && orderDraft.join(' ') !== profiles.map((profile) => profile.id).join(' ');
+
+    const moveOrder = (index, dir) => {
+        const to = index + dir;
+        if (to < 0 || to >= orderDraft.length) return;
+        const next = [...orderDraft];
+        const [moved] = next.splice(index, 1);
+        next.splice(to, 0, moved);
+        setOrderDraft(next);
+    };
+
+    const handleOrderDragEnd = ({ active, over }) => {
+        if (!active || !over || active.id === over.id) return;
+        const from = orderDraft.indexOf(active.id);
+        const to = orderDraft.indexOf(over.id);
+        if (from < 0 || to < 0 || from === to) return;
+        const next = [...orderDraft];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        setOrderDraft(next);
+    };
+
+    const saveOrder = async () => {
+        if (!orderDirty || busy) return;
+        setBusy('order');
+        setProfileError('');
+        try {
+            const list = await api.reorderProfiles(orderDraft);
+            setProfiles(Array.isArray(list) ? list : profiles); // 端点回的就是新顺序
+            setReordering(false);
+            setOrderDraft([]);
+            setSysMsg(`档案顺序已保存（${Array.isArray(list) ? list.length : orderDraft.length} 条）`);
+        } catch (err) {
+            // 失败：草稿**不丢**（用户改过的顺序留着），后端 detail 原文透出
+            setProfileError(err?.message || '保存顺序失败');
         } finally {
             setBusy('');
         }
@@ -884,6 +1003,15 @@ export default function Terminal() {
                             >
                                 重命名 (RENAME)
                             </ActionButton>
+                            {/* R20（PLAN §8.50 ②-3）：排序是**列表级**动作，不依赖选中
+                                哪条档案；少于两条没什么可排，已展开时不再开第二遍 */}
+                            <ActionButton
+                                onClick={startReorder}
+                                disabled={reordering || profiles.length < 2}
+                                busy={busy === 'order'}
+                            >
+                                排序顺序 (REORDER)
+                            </ActionButton>
                             <ActionButton onClick={() => setConfirmDeleteProfile(true)} disabled={!selectedProfileId} busy={busy === 'profile'}>
                                 删除档案 (DELETE)
                             </ActionButton>
@@ -916,6 +1044,44 @@ export default function Terminal() {
                                 <span className="text-[10px] opacity-50">
                                     {'改名 = PUT /profiles/{id} 只送 label（不动配置快照）；同名 —— 含回收站里占名的软删档案 —— 会被服务端 400 拒'}
                                 </span>
+                            </div>
+                        )}
+
+                        {/* R20（PLAN §8.50 ②-3）：排序区 —— 拖拽 / 上移下移**只改草稿序**，
+                            点「保存顺序」才 PUT /profiles/order（整表一次提交）；脏标按 id 序比，
+                            顺序没动不放行。行内 grip 只挂 listeners（不挂 attributes），
+                            不给行加 role=button、不动行内 button 顺序 —— 三行手则同 R12。 */}
+                        {reordering && (
+                            <div className="border-t border-nier-light/20 pt-3 space-y-2">
+                                <div className="flex flex-wrap items-center gap-3">
+                                    <ActionButton onClick={saveOrder} disabled={!orderDirty} busy={busy === 'order'}>
+                                        保存顺序 (SAVE ORDER)
+                                    </ActionButton>
+                                    <ActionButton onClick={cancelReorder} busy={busy === 'order'}>
+                                        放弃 (CANCEL)
+                                    </ActionButton>
+                                    <span className="text-[10px] opacity-50">
+                                        {orderDirty
+                                            ? '顺序已改动：拖 / 上移下移只改草稿序，点「保存顺序」才 PUT /profiles/order（整表一次提交）'
+                                            : '顺序未改动 —— 挪动后保存按钮才会亮'}
+                                    </span>
+                                </div>
+                                <DndContext sensors={dragSensors} onDragEnd={handleOrderDragEnd}>
+                                    {orderDraft.map((id, index) => {
+                                        const profile = profiles.find((item) => item.id === id);
+                                        // 列表已被刷新、这条对端没了 → 不渲染（保存时后端仍会 400 兜底）
+                                        if (!profile) return null;
+                                        return (
+                                            <ProfileOrderRow
+                                                key={id}
+                                                profile={profile}
+                                                index={index}
+                                                count={orderDraft.length}
+                                                onMove={moveOrder}
+                                            />
+                                        );
+                                    })}
+                                </DndContext>
                             </div>
                         )}
 

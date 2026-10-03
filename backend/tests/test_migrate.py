@@ -154,7 +154,11 @@ class FieldsJsonMigrationTest(_MigrateCase):
         return {row[1] for row in rows}
 
     def test_legacy_library_gains_fields_json_and_keeps_rows(self):
-        """存量库（无 `fields_json`、已记 0001/0002）→ 0003 补列；存量行照留、新列 NULL。"""
+        """存量库（无 `fields_json`、已记 0001/0002）→ 0003 补列；存量行照留、新列 NULL。
+
+        其后新增的迁移（0004 …）也一并跑掉 —— `device_profiles` 已建列 → 只验不改。
+        断言用 `_ALL_LABELS[2:]` 跟注册表走，不硬编码到 0003 就死。
+        """
         Base.metadata.create_all(bind=self.engine)
         with self.engine.begin() as conn:
             conn.exec_driver_sql("ALTER TABLE dispatch_logs DROP COLUMN fields_json")
@@ -176,7 +180,7 @@ class FieldsJsonMigrationTest(_MigrateCase):
             self.engine, do_backup=False, backups_dir=self.backups
         )
 
-        self.assertEqual(report["applied"], ["0003_dispatch_logs_fields_json"])
+        self.assertEqual(report["applied"], _ALL_LABELS[2:])  # 0003 + 后续新增
         self.assertEqual(report["to_version"], TARGET_VERSION)
         self.assertEqual(report["integrity"], "ok")
         self.assertIn("fields_json", self._cols("dispatch_logs"))
@@ -215,6 +219,74 @@ class FieldsJsonMigrationTest(_MigrateCase):
             encoding="utf-8"
         )
         self.assertIn("backend/db/backups/", ignore)
+
+
+class ProfileSortMigrationTest(_MigrateCase):
+    """R20（PLAN §8.50 ②-3 · 2026-10-03 拍板解禁 DDL）：`device_profiles.sort_order`（0004）。"""
+
+    def _cols(self, table):
+        with self.engine.connect() as conn:
+            rows = conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()
+        return {row[1] for row in rows}
+
+    def test_legacy_library_gains_sort_order_and_rows_default_to_zero(self):
+        """存量库（已记 0001–0003）→ 0004 补列；存量行拿到 0 =「未重排」。"""
+        Base.metadata.create_all(bind=self.engine)
+        with self.engine.begin() as conn:
+            conn.exec_driver_sql("ALTER TABLE device_profiles DROP COLUMN sort_order")
+            ensure_migrations_table(conn)
+            for version, name in (
+                (1, "baseline"),
+                (2, "soft_delete_deleted_at"),
+                (3, "dispatch_logs_fields_json"),
+            ):
+                conn.exec_driver_sql(
+                    "INSERT INTO schema_migrations (version, name, applied_at) "
+                    f"VALUES ({version}, '{name}', '2026-10-03T00:00:00')"
+                )
+            conn.exec_driver_sql(
+                "INSERT INTO device_profiles (id, label, config) "
+                "VALUES ('p1', '车间A', '{}')"
+            )
+        self.assertNotIn("sort_order", self._cols("device_profiles"))
+
+        report = run_pending_migrations(
+            self.engine, do_backup=False, backups_dir=self.backups
+        )
+
+        self.assertEqual(report["applied"], ["0004_device_profiles_sort_order"])
+        self.assertEqual(report["to_version"], TARGET_VERSION)
+        self.assertEqual(report["integrity"], "ok")
+        self.assertIn("sort_order", self._cols("device_profiles"))
+        with self.engine.connect() as conn:
+            row = conn.exec_driver_sql(
+                "SELECT label, sort_order FROM device_profiles WHERE id = 'p1'"
+            ).fetchone()
+        self.assertEqual(row[0], "车间A")  # 存量行原样在
+        self.assertEqual(row[1], 0)  # 未重排 → 排序键 (sort_order, label) 退化成 label 升序
+
+    def test_fresh_library_only_verifies(self):
+        """新库 create_all 已建列 → 0004 的 ALTER 直接跳过（不撞重复列名）。"""
+        Base.metadata.create_all(bind=self.engine)
+        report = run_pending_migrations(
+            self.engine, do_backup=False, backups_dir=self.backups
+        )
+        self.assertIn("0004_device_profiles_sort_order", report["applied"])
+        self.assertEqual(report["integrity"], "ok")
+        self.assertIn("sort_order", self._cols("device_profiles"))
+
+    def test_verify_actually_checks_the_table_and_column(self):
+        """verify 不是走过场：补列范围钉死「恰好 device_profiles 一张」，列缺失即报错。"""
+        from backend.db.migrate import _profile_sort_verify, profile_sort_tables
+
+        Base.metadata.create_all(bind=self.engine)
+        self.assertEqual(profile_sort_tables(), ["device_profiles"])
+        with self.engine.begin() as conn:
+            conn.exec_driver_sql("ALTER TABLE device_profiles DROP COLUMN sort_order")
+        with self.engine.connect() as conn:
+            with self.assertRaises(MigrationError) as ctx:
+                _profile_sort_verify(conn)
+        self.assertIn("sort_order", str(ctx.exception))
 
 
 class FailureRecoveryTest(_MigrateCase):
