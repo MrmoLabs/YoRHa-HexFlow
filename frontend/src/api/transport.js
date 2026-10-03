@@ -20,6 +20,14 @@ export const getTransportStatus = async () => {
     return handleResponse(response);
 };
 
+// R14（PLAN §8.49）：本机串口端口枚举 → {ports:[{device,description}], source, error?}。
+// **只读、不碰配置**；后端缺 pyserial 或枚举炸了会降级成 source='unavailable' + error 原文
+// （仍 200），这里原样透出，让配置页照常用、绝不静默。
+export const getTransportPorts = async () => {
+    const response = await fetch(`${API_BASE}/transport/ports`);
+    return handleResponse(response);
+};
+
 // R2（PLAN §8.37）：一键回退到上一配置 → {config, historyDepth}；无历史 → 400。
 export const revertTransportConfig = async () => {
     const response = await fetch(`${API_BASE}/transport/config/revert`, {

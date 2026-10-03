@@ -10,6 +10,7 @@ vi.mock('../../api', () => ({
         setTransportConfig: vi.fn(),
         getTransportStatus: vi.fn(),
         revertTransportConfig: vi.fn(),
+        getTransportPorts: vi.fn(),
         getDispatchHistory: vi.fn(),
         clearDispatchHistory: vi.fn(),
         dispatchPayload: vi.fn(),
@@ -85,6 +86,11 @@ const mountApis = () => {
     api.getDispatchHistory.mockResolvedValue(RECORDS);
     api.clearDispatchHistory.mockResolvedValue({ status: 'cleared', remaining: 0 });
     api.getProfiles.mockResolvedValue(PROFILES);
+    // R14（PLAN §8.49）：串口端口枚举（只读，挂载即拉一次）
+    api.getTransportPorts.mockResolvedValue({
+        ports: [{ device: 'COM1', description: '通信端口' }],
+        source: 'pyserial'
+    });
 };
 
 describe('Terminal Page（E3 通讯调试）', () => {
@@ -470,6 +476,80 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
         await waitFor(() => expect(screen.getByText(/没有可回退的上一配置/)).toBeDefined());
         expect(api.revertTransportConfig).toHaveBeenCalledTimes(1);
+    });
+
+    // ── R14 · 串口端口枚举 + 波特率预设（PLAN §8.49）────────────────────────────
+    it('R14 串口枚举：挂载即拉一次，切 serial 后出端口芯片，点芯片填表单、点刷新重拉', async () => {
+        api.getTransportPorts.mockResolvedValue({
+            ports: [
+                { device: 'COM1', description: '通信端口' },
+                { device: 'COM3', description: 'USB-SERIAL CH340 (COM3)' }
+            ],
+            source: 'pyserial'
+        });
+        render(<Terminal />);
+        await waitFor(() => expect(api.getTransportPorts).toHaveBeenCalledTimes(1));
+
+        fireEvent.click(screen.getByRole('button', { name: /串口 SERIAL/ }));
+
+        const com3 = screen.getByRole('button', { name: /^COM3$/ });
+        expect(com3.getAttribute('title')).toBe('USB-SERIAL CH340 (COM3)');
+        // 草稿 port = COM3 → 该芯片标亮，说明选中态是派生的、不是写死的
+        expect(com3.getAttribute('aria-pressed')).toBe('true');
+        expect(screen.getByRole('button', { name: /^COM1$/ }).getAttribute('aria-pressed')).toBe('false');
+
+        fireEvent.click(screen.getByRole('button', { name: /^COM1$/ }));
+        expect(screen.getByDisplayValue('COM1')).toBeDefined();
+
+        // 枚举只是给表单省事 —— 点它不触发 APPLY（配置仍需点「应用配置」才落库）
+        expect(api.setTransportConfig).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: /刷新端口 REFRESH/ }));
+        await waitFor(() => expect(api.getTransportPorts).toHaveBeenCalledTimes(2));
+    });
+
+    it('R14 波特率预设：点档位填输入框、随 APPLY 以数字提交（输入仍可任意键入）', async () => {
+        api.setTransportConfig.mockResolvedValue({
+            ...CONFIG,
+            mode: 'serial',
+            serial: { ...CONFIG.serial, baudrate: 115200 }
+        });
+        render(<Terminal />);
+        await waitFor(() => expect(api.getTransportConfig).toHaveBeenCalledTimes(1));
+
+        fireEvent.click(screen.getByRole('button', { name: /串口 SERIAL/ }));
+        const preset = screen.getByRole('button', { name: '115200' });
+        expect(preset.getAttribute('aria-pressed')).toBe('false'); // 草稿是 9600
+
+        fireEvent.click(preset);
+        expect(screen.getByPlaceholderText('9600').value).toBe('115200');
+        expect(screen.getByRole('button', { name: '115200' }).getAttribute('aria-pressed')).toBe('true');
+
+        fireEvent.click(screen.getByRole('button', { name: /应用配置/ }));
+        await waitFor(() => expect(api.setTransportConfig).toHaveBeenCalledTimes(1));
+        const patch = api.setTransportConfig.mock.calls[0][0];
+        expect(patch.mode).toBe('serial');
+        expect(patch.serial.baudrate).toBe(115200); // 预设只改草稿，提交口径仍是数字
+    });
+
+    it('R14 枚举降级：source=unavailable → error 原文显示，配置区照常可用', async () => {
+        api.getTransportPorts.mockResolvedValue({
+            ports: [],
+            source: 'unavailable',
+            error: 'pyserial 未安装：No module named serial'
+        });
+        render(<Terminal />);
+        await waitFor(() => expect(api.getTransportPorts).toHaveBeenCalledTimes(1));
+
+        fireEvent.click(screen.getByRole('button', { name: /串口 SERIAL/ }));
+        // 降级如实报（不静默），且不出任何端口芯片
+        expect(screen.getByText(/枚举降级：pyserial 未安装/)).toBeDefined();
+        expect(screen.queryByRole('button', { name: /^COM3$/ })).toBeNull();
+
+        // 枚举是锦上添花 —— 配置字段与 APPLY 照常
+        expect(screen.getByText('波特率 BAUDRATE')).toBeDefined();
+        expect(screen.getByRole('button', { name: /应用配置/ })).toBeDefined();
+        expect(screen.getByRole('button', { name: /刷新端口 REFRESH/ })).toBeDefined();
     });
 
 });

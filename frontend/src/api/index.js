@@ -19,7 +19,7 @@ import { getOperatorTemplates } from './operators';
 import { exportHexFile, exportBinaryFromBlocks } from './export';
 import { compileWrapped } from './compile';
 import { dispatchPayload, dispatchWrappedGroup, getDispatchHistory, clearDispatchHistory } from './dispatch';
-import { getTransportConfig, setTransportConfig, getTransportStatus, revertTransportConfig } from './transport';
+import { getTransportConfig, setTransportConfig, getTransportStatus, revertTransportConfig, getTransportPorts } from './transport';
 import { getBindings, createBinding, updateBinding, deleteBinding } from './bindings';
 import { getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './recipes';
 import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle, importRelations, importDomain } from './datahub';
@@ -76,6 +76,8 @@ export const api = {
     getTransportStatus,
     // R2（PLAN §8.37）：一键回退到上一配置（进程内回退栈，零 DDL）
     revertTransportConfig,
+    // R14（PLAN §8.49）：本机串口端口枚举（只读，缺 pyserial 降级不抛）
+    getTransportPorts,
 
     // Bindings (E4: 编排绑定持久化 → /bindings CRUD, 槽序 slot_order 由后端分配)
     getBindings,

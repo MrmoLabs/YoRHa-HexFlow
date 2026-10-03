@@ -51,6 +51,10 @@ const MODES = [
     { value: 'serial', label: '串口 SERIAL' }
 ];
 
+// R14（PLAN §8.49）：波特率预设档 —— 点一下填进输入框，**输入仍可任意键入**（预设
+// 只是省事，不构成取值白名单；落库口径仍由后端校验说了算）。
+const BAUD_PRESETS = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200];
+
 // 配置 ⇄ 表单草稿：全部字段以字符串入 input，提交时数值字段再转数字，
 // 空串原样交给后端校验（400 detail 为 SSOT）。escape 段见 utils/escapeTable.js。
 const toDraft = (config) => ({
@@ -125,6 +129,10 @@ export default function Terminal() {
     const [profileName, setProfileName] = useState('');
     const [profileError, setProfileError] = useState('');
     const [confirmDeleteProfile, setConfirmDeleteProfile] = useState(false);
+    // R14（PLAN §8.49）：本机串口端口枚举 —— 只读、不碰配置；ports=null = 尚未拉过，
+    // 降级原因（缺 pyserial / 枚举炸）进 portsError 原文显示，不静默吞。
+    const [ports, setPorts] = useState(null);
+    const [portsError, setPortsError] = useState('');
 
     const refreshConfig = useCallback(async () => {
         try {
@@ -181,13 +189,27 @@ export default function Terminal() {
         }
     }, []);
 
+    // R14（PLAN §8.49）：串口端口枚举。只读一次，接插后可点「刷新」重拉；
+    // 后端缺 pyserial 或枚举炸了会降级成 source='unavailable' + error 原文（仍 200）。
+    const refreshPorts = useCallback(async () => {
+        try {
+            const data = await api.getTransportPorts();
+            setPorts(Array.isArray(data?.ports) ? data.ports : []);
+            setPortsError(data?.source === 'unavailable' ? (data.error || '串口枚举不可用') : '');
+        } catch (err) {
+            setPorts([]);
+            setPortsError(err?.message || '串口枚举失败');
+        }
+    }, []);
+
     useEffect(() => {
         refreshConfig();
         refreshStatus();
         refreshHistory();
         refreshProfiles();
         refreshInstructions();
-    }, [refreshConfig, refreshStatus, refreshHistory, refreshProfiles, refreshInstructions]);
+        refreshPorts();
+    }, [refreshConfig, refreshStatus, refreshHistory, refreshProfiles, refreshInstructions, refreshPorts]);
 
     const handleApplyConfig = async () => {
         setBusy('config');
@@ -508,6 +530,62 @@ export default function Terminal() {
                                                     onChange={(e) => setDraft({ ...draft, serial: { ...draft.serial, read_timeout_ms: e.target.value } })}
                                                     className={inputClass} />
                                             </label>
+                                            {/* R14（PLAN §8.49）：波特率预设 + 本机串口枚举 —— 只改草稿、不自动 APPLY，
+                                                与其余配置字段同一节奏（点 APPLY 才落库生效） */}
+                                            <div className="col-span-2 flex flex-col gap-2 border-t border-nier-light/20 pt-2">
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    <span className="text-[10px] tracking-[0.15em] opacity-60">波特率预设</span>
+                                                    {BAUD_PRESETS.map((baud) => {
+                                                        const on = String(draft.serial.baudrate).trim() === String(baud);
+                                                        return (
+                                                            <button
+                                                                key={baud}
+                                                                type="button"
+                                                                aria-pressed={on}
+                                                                onClick={() => setDraft({ ...draft, serial: { ...draft.serial, baudrate: String(baud) } })}
+                                                                className={`border px-1.5 py-0.5 text-[10px] font-mono transition-colors duration-150 ${on
+                                                                    ? 'border-nier-light bg-nier-light text-nier-dark'
+                                                                    : 'border-nier-light/40 text-nier-light/70 hover:border-nier-light'}`}
+                                                            >
+                                                                {baud}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                                <div className="flex flex-wrap items-center gap-1.5" data-testid="serial-port-enum">
+                                                    <span className="text-[10px] tracking-[0.15em] opacity-60">端口枚举</span>
+                                                    {portsError ? (
+                                                        <span className="text-[10px] font-mono text-red-400">{`枚举降级：${portsError}`}</span>
+                                                    ) : ports === null ? (
+                                                        <span className="text-[10px] font-mono opacity-50">拉取中…</span>
+                                                    ) : ports.length === 0 ? (
+                                                        <span className="text-[10px] font-mono opacity-50">本机未检测到串口（可手输 COMn，接插后点刷新）</span>
+                                                    ) : ports.map((port) => {
+                                                        const on = String(draft.serial.port).trim().toUpperCase() === String(port.device || '').toUpperCase();
+                                                        return (
+                                                            <button
+                                                                key={port.device}
+                                                                type="button"
+                                                                aria-pressed={on}
+                                                                title={port.description || port.device}
+                                                                onClick={() => setDraft({ ...draft, serial: { ...draft.serial, port: port.device } })}
+                                                                className={`border px-1.5 py-0.5 text-[10px] font-mono transition-colors duration-150 ${on
+                                                                    ? 'border-nier-light bg-nier-light text-nier-dark'
+                                                                    : 'border-nier-light/40 text-nier-light/70 hover:border-nier-light'}`}
+                                                            >
+                                                                {port.device}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                    <button
+                                                        type="button"
+                                                        onClick={refreshPorts}
+                                                        className="border border-nier-light/40 px-1.5 py-0.5 text-[10px] font-mono hover:border-nier-light"
+                                                    >
+                                                        刷新端口 REFRESH
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
 
