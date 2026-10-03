@@ -160,10 +160,54 @@ def _soft_delete_verify(conn):
         raise MigrationError(f"软删除列缺失: {missing}")
 
 
+# --------------------------------------------------------------------------
+# 0003 · R10 入库回写（PLAN §8.48）：`dispatch_logs.fields_json` 仅新增列
+# --------------------------------------------------------------------------
+
+#: R10 要落 `fields_json` 的表（**全计划唯一 DDL 批**）—— 与 0002 同款口径：
+#: 表单从 `models` 派生（加列只写一处），verify 再钉死「恰好这一张」，防有人
+#: 误删列后迁移静默漏改、或误给别的表也加上这列（§0 只允许新增列，不做改列）。
+def decode_json_tables() -> List[str]:
+    return sorted(
+        name
+        for name, table in Base.metadata.tables.items()
+        if "fields_json" in table.columns
+    )
+
+
+def _decode_json_apply(conn):
+    """缺则 `ALTER TABLE ... ADD COLUMN fields_json JSON`（幂等）。
+
+    全新库由 create_all 直接建出该列 → 跳过（`ALTER` 加已存在的列会直接报错）；
+    存量库补列（同 0002 的 PRAGMA 先查口径）。SQLite 的 `JSON` 只是类型名
+    （TEXT 亲和），与 `models.DispatchLog.fields_json = Column(JSON)` 同形。
+    """
+    for table in decode_json_tables():
+        have = _column_names(conn, table)
+        if have and "fields_json" not in have:
+            conn.exec_driver_sql(
+                f"ALTER TABLE {table} ADD COLUMN fields_json JSON"
+            )
+
+
+def _decode_json_verify(conn):
+    """升级结果检查：R10 恰好只给 `dispatch_logs` 加列 —— 多一张、少一张都报错。"""
+    tables = decode_json_tables()
+    if tables != ["dispatch_logs"]:
+        raise MigrationError(
+            f"R10 fields_json 应且仅应覆盖 dispatch_logs，实得 {tables}"
+        )
+    for table in tables:
+        if "fields_json" not in _column_names(conn, table):
+            raise MigrationError(f"解码快照列缺失: {table}.fields_json")
+
+
 REGISTRY: List[Migration] = [
     Migration(1, "baseline", _baseline_apply, _baseline_verify),
     # 13 表统一加 `deleted_at`（仅新增列，合 §0；新库 create_all 已带 → 只验不改）。
     Migration(2, "soft_delete_deleted_at", _soft_delete_apply, _soft_delete_verify),
+    # R10：`dispatch_logs.fields_json` 解码快照（仅新增列，全计划唯一 DDL 批）。
+    Migration(3, "dispatch_logs_fields_json", _decode_json_apply, _decode_json_verify),
 ]
 
 #: 当前目标版本（= REGISTRY 最后一条）。升级即把库推进到这个号。

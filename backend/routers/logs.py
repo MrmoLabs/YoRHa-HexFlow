@@ -16,16 +16,16 @@ import io
 import json
 import time
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from pydantic import BaseModel
+from pydantic import AliasChoices, BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.core import sequence_runner, transport
 from backend.db.database import get_db
 from backend.db.models import DispatchLog
-from backend.db.log_store import VALID_SOURCES, VALID_STATUSES, safe_log
+from backend.db.log_store import VALID_SOURCES, VALID_STATUSES, resolve_log_fields, safe_log
 from backend.routers.dispatch import DispatchEvent, DispatchRecord, append_history
 from backend.routers.export import hex_to_bytes
 
@@ -54,6 +54,12 @@ class DispatchLogOut(BaseModel):
     step_order: Optional[int] = None  # 1-based（仅序列路）
     rtt_ms: Optional[float] = None
     error: Optional[str] = None
+    # R10 §8.48：解码快照（列名 `fields_json` → 对外一律 `fields`，与
+    # /dispatch/history 同名同形，FE 直接喂 DecodedFields 不用分两套键名）。
+    # AliasChoices 让 dict 形与 ORM 形两种入参都认得 —— 列值原样透传，不在此改写。
+    fields: Optional[Dict[str, Any]] = Field(
+        default=None, validation_alias=AliasChoices("fields_json", "fields")
+    )
 
 
 def _query(db: Session, source: Optional[str], status: Optional[str], limit: Optional[int] = None):
@@ -74,7 +80,13 @@ def _query(db: Session, source: Optional[str], status: Optional[str], limit: Opt
 
 
 def _row_dict(row: DispatchLog) -> dict:
-    return {key: getattr(row, key) for key in _CSV_COLUMNS}
+    """导出行：**CSV 列集恒为 `_CSV_COLUMNS` 逐字不变**，JSON 导出再带上 R10 的
+    `fields` 解码快照（`export_logs` 的 json = 与列表同形的数组，列表已多这一键）。
+    """
+    return {
+        **{key: getattr(row, key) for key in _CSV_COLUMNS},
+        "fields": row.fields_json,
+    }
 
 
 @router.get("", response_model=List[DispatchLogOut])
@@ -164,6 +176,13 @@ def replay_log(log_id: int, db: Session = Depends(get_db)) -> DispatchRecord:
         safe_log(db, status="ERROR", echo="", error=str(e), **common)
         raise HTTPException(status_code=502, detail=f"Transport error: {e}")
 
+    # R10 §8.48：回放同 manual —— 解一次，回执与落库共用（回放带原行的
+    # instruction_id，解析口径与原日志一致）
+    decoded = resolve_log_fields(
+        db, response.hex().upper(),
+        instruction_id=row.instruction_id,
+        instruction_name=row.instruction_name,
+    )
     record = DispatchRecord(
         status="SENT",
         echo=response.hex().upper(),
@@ -174,10 +193,11 @@ def replay_log(log_id: int, db: Session = Depends(get_db)) -> DispatchRecord:
                 hex_string=" ".join(f"{b:02X}" for b in response),
             ),
         ],
+        fields=decoded,
         **base,
     )
     append_history(record)
-    safe_log(db, status="OK", echo=record.echo, **common)
+    safe_log(db, status="OK", echo=record.echo, fields=decoded, **common)
     return record
 
 

@@ -1805,6 +1805,77 @@
       BE 全量 + FE 全量 + `npx vite build` + **`npm run lint` EXIT=0** + yorha-ui
       校验器改动文件 0 违规。
 
+57. **R10 · 入库回写 —— 应答解码随日志落库（C-2 选 C 后半 · 全计划唯一 DDL 批）—— PLAN §8.48**
+    （2026-10-03，**BE + FE** —— `models.py` **仅新增** `DispatchLog.fields_json` 一列、
+    `db/migrate.py` 追加 migration 0003；未碰 `processor.py` / `graph.py` /
+    `Blueprint.jsx`，`/dispatch` 缺省口径逐字节不变，`vectors/` 未动）：
+    - **它是什么问题**（R9 留下的后半）：R9 的解码是**瞬时**的 —— 结果只活在渲染那一刻。
+      指令后来被删/改，历史里那条应答就再也解不出来（客户端只能查活行）；序列跑在 daemon
+      线程，客户端手上根本没有那帧的上下文；`vectors` 能验「编得出」，但**日志本身不留值**，
+      事后「按应答值决策 / 追溯对账」无据可查。
+    - **它现在怎么解决**（三条取舍，按重要性排）：
+      ① **布局不写第二套** —— 解码复用编译侧 SSOT `fields_to_blocks`（presence 门 /
+      repeat ×N 展开 / endianness / align / `pad_to` / `byte_length` 全在里面）；并把
+      `Orchestrator._flatten_recursive` 外面套一层公开 `flatten()`，编码 `process()` 与
+      解码**共用同一份扁平流**（`_PadMark` 容器补位标记 + 叶块），只是编码往 `final_hex`
+      追加、解码按游标往 `data` 切片 ⇒ **算法只有一处**。值分派与 FE `decodeFieldBytes`
+      **逐条同序**（静态 hex → 文本 → 旧 float/decimal → 纯 hex → BITFIELD → 两补码 →
+      BCD → FLOAT_IEEE 大端 → 缺省无符号 + `SCALED_DECIMAL` 反定标，LITTLE 先整体还原），
+      **非有限浮点落库前必须折字符串**（`"Infinity"` / `-Infinity` / `NaN` ——
+      `json.dumps(float('inf'))` 产出的是非法 JSON，FastAPI 响应层会直接 500）。
+      ② **单一接缝** = `db/log_store.record_log` 自动回填 —— 四条写入缝（manual /
+      transaction / sequence / replay）全过这里；序列跑在 daemon 线程、回放没有表单输入，
+      靠各调用方自己记得算是靠不住的。`fields` 传了就用传的（回执与落库共用**同一次**
+      解码）、没传才自己解。`resolve_log_fields` **绝不抛**（解码炸了会把日志本身一起
+      rollback 掉 ⇒ 异常消息写进 `warnings` 落库，「解不出来」看得见）；无应答 / 指令不可
+      解析 / 无字段布局一律 `NULL`（**空布局不出假 `residual` 警报**，R9 同口径）。指令
+      解析 `instruction_id` 优先且**不看软删**（日志行留存的正是那条指令），无 id 才按名
+      在未软删行里取首个（与 FE 从 `/instructions` 活行取第一个对齐）。
+      ③ **分层** —— 解码在 `core`，编译口径原先躺在 `routers/datahub.py`，而 **core 不能
+      反向依赖 routers** ⇒ `_presence_hit` + `fields_to_blocks` **纯搬进**
+      `backend/core/field_blocks.py`，`datahub` **原名再导出**（`# noqa: F401`）：测试与
+      datahub 内部的 `from backend.routers.datahub import fields_to_blocks` 一行未改，
+      搬移当时 BE 685 例全绿。ORM → 解码器输入在 `log_store` 里做**窄映射**（只列参与布局
+      的列；`bits` 不需要 —— 位域打包是编码期行为，解码侧只回聚合整数）。
+    - **两处回执**：① `/dispatch/history` 的 `DispatchRecord.fields`（manual / transaction /
+      replay 各解一次、**同时**喂回执与 `safe_log` ⇒ 与 `fields_json` 是**同一次解码**，
+      绝不各算一遍 —— 否则同一事件可能因指令后续被改而显示不同值）；② `/logs` 的
+      `DispatchLogOut.fields`（列名 `fields_json` → 对外一律 `fields`，两端同名同形，
+      `AliasChoices` 同认 ORM 形与 dict 形）+ JSON 导出带 `fields`，**CSV 列集
+      `_CSV_COLUMNS` 逐字不变**（导出即归档，不改既有表头）。**内存 deque 与 DB 表不是
+      同一份**，拍板要求两边都回填 —— DB 侧由 `record_log` 自己兜（序列路只走这条）。
+    - **FE：优先消费服务端回填** —— `decodeHistoryRow` **先吃 `record.fields`**，拿不到
+      （`null` / 空壳 = 0 字段且 0 警告 / 存量行）才回落 R9 客户端解码。它比客户端解码强在
+      两处：指令后来被删/改也解得出（值随日志留痕，不依赖当前 `/instructions` 还在不在）；
+      序列 daemon 线程那帧客户端当时没有上下文。**存量行行形状与 R9 逐字不变**。
+    - **边界与降级（都登记，不藏）**：**存量行不回填** —— migration 0003 只
+      `ADD COLUMN`，既有行 `fields_json` 保持 `NULL`、展示层兜底（合 §0「只做加法」）；
+      **解不出就 `NULL` 而不是空对象**（客户端据此回落，不把「解过但空」与「没解」混为
+      一谈）；**BE 只出骨架帧**（`to_block` 不编 `INPUT` 值）是既有现状、与本批无关 ——
+      解码读的本来就是设备回的那几个字节，编译侧只负责给布局与宽度；**告警文案与 FE 逐字
+      相同**（非十六进制 / 奇数位 / 比字段布局短 / 尾部多出 N 字节），两端显示同一句话。
+    - **DDL（全计划唯一一处）**：`migrate.py` 追加
+      `Migration(3, "dispatch_logs_fields_json")` —— apply = 缺则
+      `ALTER TABLE dispatch_logs ADD COLUMN fields_json JSON`（新库 `create_all` 已带 →
+      只验不改），verify = 补列范围**恰好 `dispatch_logs` 一张**、列缺失即报错（多一张、
+      少一张都报错）。存量库升级前照旧整库备份。
+    - **测试**：新 `backend/tests/test_field_decode.py` **35 例**（三段：取值层各算子锚 +
+      布局区间 + 告警与诚实回报；回写侧 `resolve_log_fields` 各条口径 / `record_log`
+      自动回填 / 手动路回执与落库同源 / 序列钩子 / 读侧列表与导出）+ `test_migrate.py`
+      **+3**（存量库补列且存量行留 `NULL`、新库只验不改、verify 真查列）→
+      **BE 685 → 723/723**；`terminalPanes.test.js` **+3** → **FE 1066 → 1069/1069
+      （71 文件）**；`npx vite build` EXIT=0、`npm run lint` **EXIT=0**、yorha-ui
+      校验器改动文件 **0 违规**；`pageStatus.json` 通讯调试页补「入库回写优先」口径 →
+      `PAGE_STATUS.md` 已重生成；`vectors/` 未动；`frontend/red-report.json` 不入库。
+      顺手把 `test_soft_delete` 的 0002 断言改成「从 0001 起的全部待执行迁移、0002 必须
+      排第一」—— 新增迁移不再硬编码进断言。
+    - **文档同步**：PLAN 新 **§8.48** + §8.37 **R10 行标已办** + §8.36 **C-2 行收口**
+      （R9 / R10 两半均完成）+ §1 `R1–R10` **全数完成** + `docs/PAGE_STATUS.md`（重生成）；
+      本条。
+    - **状态**：**R1 ✅ R2 ✅ R3 ✅ R4 ✅ R5 ✅ R6 ✅ R7 ✅ R8 ✅ R9 ✅ R10 ✅ ——
+      §8.37 排期 11 批全数完成**。每批验收项固定为：BE 全量 + FE 全量 + `npx vite build`
+      + **`npm run lint` EXIT=0** + yorha-ui 校验器改动文件 0 违规。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
@@ -1831,6 +1902,8 @@
 | `backend/routers/dispatch.py` | `/dispatch` 环回通道 + 有界历史 | ✅ 新增 |
 | `backend/core/orchestrator.py` | 块森林 → hex 编译（`/compile`、`/export/binary` 使用） | ✅ |
 | `backend/core/diagnostics.py` | 统一诊断：`Diagnostic` / `DiagError` / `DiagHTTPException` + `install(app)` → 错误体 `{"detail": 原文, "diagnostic": {…}}`（`detail` 逐字不变，只做加法） | ✅ 新增（§8.32） |
+| `backend/core/field_blocks.py` | 编译侧字段布局 SSOT（`fields_to_blocks` + `_presence_hit` + 内嵌 `to_block`：presence 门 · repeat ×N · endianness · align · `pad_to`）—— 自 `routers/datahub.py` **纯搬入**、`datahub` 原名再导出 | ✅ 编码与解码共用一份（§8.48，改一必改二） |
+| `backend/core/field_decode.py` | 应答逆向解码（`decode_hex` / `decode_blocks` / `decode_field_bytes` / `field_index`），值分派与 FE `utils/InstructionDecoder.js` 同序；非有限浮点落库前折字符串 | ✅ 写日志时回填 `dispatch_logs.fields_json`（§8.48） |
 | `backend/tests/` | 后端全量测试（stdlib `unittest`，**直调路由不用 TestClient**、不触 lifespan；共享向量读根目录 `vectors/`） | ✅ `python -m unittest discover -s backend/tests -t backend/tests` |
 | `backend/handlers/length.py`、`checksum.py` | 扁平流区间长度 / 校验计算 | ✅ |
 | `backend/db/models.py` | SQLAlchemy 模型（含 `BitField`） | ✅ |

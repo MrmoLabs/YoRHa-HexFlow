@@ -156,7 +156,11 @@ class MigrationDeletedAtTest(unittest.TestCase):
             self.engine, do_backup=True, backups_dir=self.backups
         )
 
-        self.assertEqual(report["applied"], ["0002_soft_delete_deleted_at"])
+        # 从 0001 起的全部待执行迁移（0002 必须排第一 —— 本用例的被测对象；
+        # 后续新增版本不硬编码进断言，避免每加一条迁移就改这里）
+        pending = [f"{m.version:04d}_{m.name}" for m in REGISTRY if m.version >= 2]
+        self.assertEqual(report["applied"][0], "0002_soft_delete_deleted_at")
+        self.assertEqual(report["applied"], pending)
         self.assertEqual(report["from_version"], 1)
         self.assertEqual(report["to_version"], TARGET_VERSION)
         self.assertEqual(report["integrity"], "ok")

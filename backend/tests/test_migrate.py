@@ -144,6 +144,72 @@ class ExistingDbBackupTest(_MigrateCase):
         with self.engine.connect() as conn:
             return current_version(conn)
 
+
+class FieldsJsonMigrationTest(_MigrateCase):
+    """R10（PLAN §8.48 · **全计划唯一 DDL 批**）：`dispatch_logs.fields_json` 仅新增列。"""
+
+    def _cols(self, table):
+        with self.engine.connect() as conn:
+            rows = conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()
+        return {row[1] for row in rows}
+
+    def test_legacy_library_gains_fields_json_and_keeps_rows(self):
+        """存量库（无 `fields_json`、已记 0001/0002）→ 0003 补列；存量行照留、新列 NULL。"""
+        Base.metadata.create_all(bind=self.engine)
+        with self.engine.begin() as conn:
+            conn.exec_driver_sql("ALTER TABLE dispatch_logs DROP COLUMN fields_json")
+            ensure_migrations_table(conn)
+            for version, name in ((1, "baseline"), (2, "soft_delete_deleted_at")):
+                conn.exec_driver_sql(
+                    "INSERT INTO schema_migrations (version, name, applied_at) "
+                    f"VALUES ({version}, '{name}', '2026-10-01T00:00:00')"
+                )
+            conn.exec_driver_sql(
+                "INSERT INTO dispatch_logs (id, created_at, source, channel, status,"
+                " byte_count, hex_string, echo)"
+                " VALUES (1, '2026-10-01T00:00:00', 'manual', 'LOOPBACK', 'OK', 2,"
+                " '12 34', '1234')"
+            )
+        self.assertNotIn("fields_json", self._cols("dispatch_logs"))
+
+        report = run_pending_migrations(
+            self.engine, do_backup=False, backups_dir=self.backups
+        )
+
+        self.assertEqual(report["applied"], ["0003_dispatch_logs_fields_json"])
+        self.assertEqual(report["to_version"], TARGET_VERSION)
+        self.assertEqual(report["integrity"], "ok")
+        self.assertIn("fields_json", self._cols("dispatch_logs"))
+        with self.engine.connect() as conn:
+            self.assertEqual(current_version(conn), TARGET_VERSION)
+            row = conn.exec_driver_sql(
+                "SELECT hex_string, fields_json FROM dispatch_logs WHERE id = 1"
+            ).fetchone()
+        self.assertEqual(row[0], "12 34")  # 存量行原样在
+        self.assertIsNone(row[1])  # 存量行不回填（FE R9 客户端解码兜底）
+
+    def test_fresh_library_only_verifies(self):
+        """新库 create_all 已建列 → 0003 的 ALTER 全部跳过（不撞重复列名）。"""
+        Base.metadata.create_all(bind=self.engine)
+        report = run_pending_migrations(
+            self.engine, do_backup=False, backups_dir=self.backups
+        )
+        self.assertIn("0003_dispatch_logs_fields_json", report["applied"])
+        self.assertEqual(report["integrity"], "ok")
+        self.assertIn("fields_json", self._cols("dispatch_logs"))
+
+    def test_verify_actually_checks_the_column(self):
+        """verify 不是走过场：补列范围钉死「恰好 dispatch_logs 一张」，列缺失即报错。"""
+        from backend.db.migrate import _decode_json_verify, decode_json_tables
+        Base.metadata.create_all(bind=self.engine)
+        self.assertEqual(decode_json_tables(), ["dispatch_logs"])
+        with self.engine.begin() as conn:
+            conn.exec_driver_sql("ALTER TABLE dispatch_logs DROP COLUMN fields_json")
+        with self.engine.connect() as conn:
+            with self.assertRaises(MigrationError) as ctx:
+                _decode_json_verify(conn)
+        self.assertIn("fields_json", str(ctx.exception))
+
     def test_backup_dir_gitignored(self):
         ignore = (Path(__file__).resolve().parents[2] / ".gitignore").read_text(
             encoding="utf-8"

@@ -2,7 +2,10 @@
 // 事件）拆给三面板，并提供 hex 格式化与发送输入校验。
 // 后端口径见 backend/routers/dispatch.py；改一须核对另一端。
 // R9（PLAN §8.46 · §8.37 R9 行）：响应帧按指令字段布局**逆向解码**成
-// 「字段 = 值」（C-2 选 B 前半 · 只做展示、不入库，入库回写 = R10）。
+// 「字段 = 值」（C-2 选 B 前半 · 展示层）。
+// R10（PLAN §8.48 · §8.37 R10 行 · C-2 选 C 后半）：**入库回写** —— 后端在写
+// 日志那一刻已把同一份解码结果挂在 `record.fields`（与 `dispatch_logs.fields_json`
+// 同源），本文件**优先消费它**；拿不到（存量行 / 后端解不出）才回落 R9 客户端解码。
 
 import { InstructionDecoder, fieldsText } from './InstructionDecoder';
 
@@ -43,7 +46,17 @@ export const hexPreview = (hexString, maxBytes = 10) => {
 // **响应帧**按该指令的字段布局解成 `字段 = 值`。解不出（无指令名 / 指令已删 /
 // 无响应 / 布局解出 0 字段）→ **不加键**，行形状对不传 ctx 的旧调用逐字不变。
 // 解码只吃「响应」而非「发送帧」—— 值在应答里，raw hex 列仍显示发送帧。
+//
+// R10：**先吃 `record.fields`** —— 后端 `db/log_store.resolve_log_fields` 在写日志
+// 那一刻解好、与 `dispatch_logs.fields_json` 是同一次解码。它比客户端解码强在两处：
+//   ① 指令后来被删/改也解得出（值随日志留痕，不依赖当前 /instructions 还在不在）；
+//   ② 序列路跑在 daemon 线程里，客户端那时没有那条上下文。
+// 空壳（0 字段且 0 警告 = 后端也没解出来）→ 当它不存在，继续走 R9 客户端解码。
 export const decodeHistoryRow = (record, instructionsByName) => {
+    const served = record?.fields;
+    if (served && ((served.fields?.length || 0) || (served.warnings?.length || 0))) {
+        return served;
+    }
     if (!instructionsByName || !record?.instruction_name) return null;
     const instruction = instructionsByName[record.instruction_name];
     // 无字段布局 → 没东西可解（空布局只会生出「尾部残字节」假警报，不出）

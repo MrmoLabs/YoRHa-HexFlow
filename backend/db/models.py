@@ -267,6 +267,14 @@ class DispatchLog(Base):
     step_order = Column(Integer, nullable=True)  # 1-based 步序（仅序列路）
     rtt_ms = Column(Float, nullable=True)  # 事务=末次样本 / 序列=本步；manual·replay 无
     error = Column(Text, nullable=True)  # ERROR 原因（OK 为 NULL）
+    # R10（§8.48 · C-2 选 C 后半）：命中应答按指令字段布局逆向解出的
+    # `字段 = 值` 快照 —— 形状与 `core.field_decode.decode_hex` 的返回值逐字相同：
+    # {"fields": [{fieldId, name, opCode, byteLen, start, end, truncated, value}],
+    #  "consumed", "total", "residual", "warnings"}。NULL = 解不出（无应答 /
+    # 指令不可解析 / 无字段布局 / 写日志前失败）。**仅新增列**（§0 硬约束）：
+    # 新库 create_all 直接带，存量库由 db/migrate.py 的 0003 补列（幂等）。
+    # 展示层**不改它** —— 解码值原样落库，展示层的 7 位有效数字收敛只发生在 FE。
+    fields_json = Column(JSON, nullable=True)
     # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
     deleted_at = Column(String(40), nullable=True)
 

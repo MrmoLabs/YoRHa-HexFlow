@@ -188,6 +188,89 @@ describe('terminalPanes — R9 发送历史逆向解码', () => {
     });
 });
 
+// ─── R10（PLAN §8.48 · §8.37 R10 行 · C-2 选 C 后半）: 入库回写优先消费 ───────
+// SERVED 是后端 `core/field_decode` 的**真实输出形状**（逐键同
+// `backend/tests/test_field_decode.py` 断言的 payload）—— 两端不同言，靠这组
+// 契约锚钉死「后端解出的那包东西 FE 直接喂 DecodedFields 就能渲染」。
+describe('terminalPanes — R10 服务端解码回填', () => {
+    const SERVED = {
+        fields: [
+            {
+                fieldId: 'h', name: 'HEADER', opCode: 'FIXED', byteLen: 2,
+                start: 0, end: 2, truncated: false, value: 'AA55'
+            },
+            {
+                fieldId: 'v', name: 'VOLTAGE', opCode: 'FLOAT_IEEE', byteLen: 4,
+                start: 2, end: 6, truncated: false, value: 3.14
+            }
+        ],
+        consumed: 6, total: 6, residual: 0, warnings: []
+    };
+
+    it('有 record.fields → 原样直用，**不给 ctx 也解得出**（指令删了照样看值）', () => {
+        const record = { ...SENT_RECORD, fields: SERVED };
+        const [row] = historyRows([record]);
+        expect(row.decoded).toBe(SERVED);
+        expect(row.fieldsText).toBe('HEADER = "AA55" · VOLTAGE = 3.14');
+        // 指令映射为 null（/instructions 里已无此指令）→ 仍靠留痕的 fields 显示
+        expect(decodeHistoryRow(record, null)).toBe(SERVED);
+        expect(decodeHistoryRow({ ...record, instruction_name: null }, null)).toBe(SERVED);
+    });
+
+    it('服务端解不出（fields = null / 空壳）→ 回落 R9 客户端解码，形状不变', () => {
+        // 存量行：R10 之前写下的记录没有这一键 → 行形状与 R9 逐字不变
+        const [legacy] = historyRows([SENT_RECORD]);
+        expect('fieldsText' in legacy).toBe(false);
+        expect('decoded' in legacy).toBe(false);
+
+        // 空壳 = 后端也没解出来 → 当它不存在，客户端解码接管
+        const shell = { fields: [], consumed: 0, total: 0, residual: 0, warnings: [] };
+        expect(decodeHistoryRow({ ...SENT_RECORD, fields: shell }, null)).toBeNull();
+
+        const HIT_RECORD = {
+            ...SENT_RECORD,
+            byte_count: 6,
+            hex_string: 'AA 55 40 48 F5 C3',
+            instruction_name: 'read_voltage',
+            fields: null,
+            events: [
+                { type: 'raw', hex_string: 'AA 55 40 48 F5 C3', message: null },
+                { type: 'response', hex_string: 'AA 55 40 48 F5 C3', message: null }
+            ]
+        };
+        const [row] = historyRows([HIT_RECORD], {
+            instructionsByName: {
+                read_voltage: {
+                    id: 'i1', name: 'read_voltage',
+                    fields: [
+                        {
+                            id: 'h', name: 'HEADER', op_code: 'FIXED', byte_len: 2, sequence: 0,
+                            parameter_config: { hex: 'AA55' }
+                        },
+                        {
+                            id: 'v', name: 'VOLTAGE', op_code: 'FLOAT_IEEE', byte_len: 4, sequence: 1,
+                            parameter_config: {}
+                        }
+                    ]
+                }
+            }
+        });
+        expect(row.decoded.fields).toHaveLength(2);
+        expect(row.decoded.residual).toBe(0);
+    });
+
+    it('服务端只回警告也照吃 —— 「解不出」看得见原因，不是静默空值', () => {
+        const served = {
+            fields: [], consumed: 0, total: 3, residual: 3,
+            warnings: ['字段解码失败: boom']
+        };
+        const [row] = historyRows([{ ...SENT_RECORD, fields: served }]);
+        expect(row.decoded).toBe(served);
+        expect(row.decoded.warnings).toEqual(['字段解码失败: boom']);
+        expect(row.fieldsText).toBe(''); // 预览列只列字段，原因在解码面板里看
+    });
+});
+
 describe('terminalPanes — hexInputInfo', () => {
     it('接受与后端同款分隔符（空格/下划线/逗号/连字符）', () => {
         expect(hexInputInfo('AA 55')).toEqual({ valid: true, byteCount: 2, cleaned: 'AA55' });

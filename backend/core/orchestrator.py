@@ -79,9 +79,7 @@ class Orchestrator:
             self._process_recursive(block)
 
         # 2. Flatten the forest into a linear stream.
-        self.flattened_stream = []
-        for block in self.root_blocks:
-            self._flatten_recursive(block)
+        self.flatten()
 
         # 3. Range-dependent logic (length / checksum) runs on the flattened
         #    stream, because these blocks reference start/end IDs of siblings
@@ -154,6 +152,19 @@ class Orchestrator:
                         cursor += n
 
         return " ".join(final_hex)
+
+    def flatten(self) -> List[object]:
+        """块森林 → 扁平流（`_PadMark` | `Block`）——发射与**解码共用一份**（改一必改二）。
+
+        R10（§8.48）：`core/field_decode` 把一帧逆向还原成「字段 = 值」时，布局算法
+        必须与这里逐字同源（presence 门 → repeat ×N → 容器 pad 标记 → 叶按游标
+        align/content/pad_to），否则解出来的区间会与真实帧错位。故把 flatten 抽成
+        公开方法：编码 `process()` 调它，解码也调它拿同一份流。
+        """
+        self.flattened_stream = []
+        for block in self.root_blocks:
+            self._flatten_recursive(block)
+        return self.flattened_stream
 
     def _process_recursive(self, block: Block):
         # Containers are wrappers: recurse into children, no self-logic needed

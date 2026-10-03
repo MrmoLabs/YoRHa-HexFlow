@@ -15,7 +15,7 @@ from backend.core.frame_builder import build_wrapped
 from backend.core.recipe_compile import compile_recipe
 from backend.core.diagnostics import Diagnostic
 from backend.db.database import get_db
-from backend.db.log_store import safe_log
+from backend.db.log_store import resolve_log_fields, safe_log
 from backend.db.models import ResponseSpec, ProtocolTemplate
 from backend.routers.export import hex_to_bytes
 
@@ -88,6 +88,11 @@ class DispatchRecord(BaseModel):
     # 与 /compile/wrapped 的 warnings 同源同文案；reject 路径已在 400 detail。
     warnings: List[str] = Field(default_factory=list)
     events: List[DispatchEvent] = Field(default_factory=list)
+    # R10（§8.48 · C-2 选 C 后半）：命中应答按**指令字段布局**逆向解出的
+    # 「字段 = 值」快照 —— 形状与 `core.field_decode` 返回值 / `dispatch_logs.fields_json`
+    # 逐字相同（同一次解码，两处落同一份）。缺省 None = 解不出（无应答 / 指令查不到 /
+    # 无字段布局），展示层退回 R9 客户端解码兜底 —— 只做加法，不改任何既有键。
+    fields: Optional[Dict[str, Any]] = None
 
 
 def _spaced(data: bytes) -> str:
@@ -309,6 +314,11 @@ def dispatch_frame(request: DispatchRequest, db: Session = Depends(get_db)):
             data_sent=False, byte_count=len(data),
         )
 
+    # R10 §8.48：解码**一次**，回执（history deque）与落库（fields_json）共用 ——
+    # 两处绝不各算一遍，否则同一事件可能因指令后续被改而显示不同值。
+    decoded = resolve_log_fields(
+        db, response.hex().upper(), instruction_name=request.instruction_name
+    )
     record = DispatchRecord(
         status="SENT",
         echo=response.hex().upper(),
@@ -316,6 +326,7 @@ def dispatch_frame(request: DispatchRequest, db: Session = Depends(get_db)):
             DispatchEvent(type="raw", hex_string=payload_spaced),
             DispatchEvent(type="response", hex_string=_spaced(response)),
         ],
+        fields=decoded,
         **base,
     )
     _history.appendleft(record)
@@ -323,7 +334,7 @@ def dispatch_frame(request: DispatchRequest, db: Session = Depends(get_db)):
     safe_log(
         db, source="manual", status="OK", channel=channel,
         hex_string=payload_spaced, echo=record.echo, byte_count=len(data),
-        instruction_name=request.instruction_name,
+        instruction_name=request.instruction_name, fields=decoded,
     )
     return record
 
@@ -577,6 +588,12 @@ def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_
             DispatchEvent(type="raw", hex_string=payload_spaced),
             DispatchEvent(type="error", message=reason),
         ]
+    # R10 §8.48：同 manual —— 解一次给回执 + 落库共用（事务带 id，解析更准）
+    decoded = resolve_log_fields(
+        db, record.echo,
+        instruction_id=request.instruction_id,
+        instruction_name=request.instruction_name,
+    )
     _history.appendleft(DispatchRecord(
         id=record.id,
         timestamp=record.timestamp,
@@ -587,6 +604,7 @@ def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_
         instruction_name=request.instruction_name,
         echo=record.echo,
         events=history_events,
+        fields=decoded,
     ))
     # P5 落库：事务路（status 归一 OK/ERROR，error 与 history 文案同源）
     safe_log(
@@ -597,6 +615,6 @@ def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_
         instruction_name=request.instruction_name,
         instruction_id=request.instruction_id,
         rtt_ms=record.stats.rtt_ms_last,
-        error=reason,
+        error=reason, fields=decoded,
     )
     return record
