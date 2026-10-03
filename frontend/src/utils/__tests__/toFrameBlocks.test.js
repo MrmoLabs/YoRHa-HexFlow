@@ -76,6 +76,10 @@ describe('toFrameBlocks（批次四: logic 块 config.params 翻译）', () => {
         expect(paramsOf('SUM_8').algorithm).toBe('sum');
         expect(paramsOf('XOR_8').algorithm).toBe('xor');
         expect(paramsOf('CRC_16_MODBUS').algorithm).toBe('crc16_modbus');
+        // R22: 三个新算法的出口翻译（FE ChecksumAlgo → 后端 params.algorithm）
+        expect(paramsOf('CRC_16_CCITT').algorithm).toBe('crc16_ccitt');
+        expect(paramsOf('CRC_32').algorithm).toBe('crc32');
+        expect(paramsOf('LRC').algorithm).toBe('lrc');
         expect(paramsOf(undefined).algorithm).toBe('crc16_modbus');
         expect(paramsOf(undefined).refs).toEqual(['a']);
     });

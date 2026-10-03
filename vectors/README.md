@@ -41,7 +41,7 @@ JSON 没有 `Infinity` / `NaN`，而向量里确实要喂这两个值（如 `[Na
   行注见本文末尾「行注归档」。
 - 迁移时已校验：**无任何大于 2⁵³−1 的整数**，JS `Number` 精度无损。
 
-## 3. 表清单（13 文件 / 17 表）
+## 3. 表清单（14 文件 / 18 表）
 
 | JSON | 表 · 行数 | 后端消费 | 前端消费 |
 |---|---|---|---|
@@ -56,6 +56,7 @@ JSON 没有 `Infinity` / `NaN`，而向量里确实要喂这两个值（如 `[Na
 | `align.json` | 16 | `test_encode_align.py::VECTORS` | `InstructionEncoder.align.test.js` |
 | `presence.json` | `leaf` 13 · `group` 5 | `test_encode_presence.py` | `InstructionEncoder.presence.test.js` |
 | `escape.json` | 7 | `test_escape.py::VECTORS` | `escapeTable.test.js` |
+| `checksum_algo.json` | 30 | `test_checksum_algorithms.py::VECTORS` | `checksumAlgo.test.js` R22 CRC 多算法 |
 | `bitfield.json` | `pack` 7 | `test_protocol_bitfield.py::PACK_VECTORS` | `bitGrid.test.js` |
 | `wrap.json` | `main`：children 4 + payloads 1 + expect | `test_frame_builder.py` · `test_wrap_api.py` | `blockMerge.test.js` |
 
@@ -145,6 +146,20 @@ JSON 只有一种表达，两端原本的记法差异靠 **3 个稳定适配**�
 - `#9` 数字字符串 base
 - `#10` factor 数字字符串
 - `#11` (7+2.5)=9.5 → floor 9
+
+### checksum_algo.json（R22 · CRC 多算法）
+
+- `algo` —— FE `ChecksumAlgo` 编码（`SUM_8` / `XOR_8` / `CRC_16_MODBUS` /
+  `CRC_16_CCITT` / `CRC_32` / `LRC`）；后端经 `frame_builder.BACKEND_ALGO` 翻成
+  `sum` / `xor` / `crc16_modbus` / `crc16_ccitt` / `crc32` / `lrc`。
+- `data` —— 输入字节的紧凑大写 hex，**恒 ≥ 1 字节**（空输入在出线短路全 0、
+  收侧 `crc16(b"") = 0xFFFF` 本就有已知分歧，不入表）。
+- `width` —— 断言用的校验字段宽 = 该算法的 `ALGO_FIELD_WIDTH` 下限。
+- `expected` —— 大写 hex、按 `width` 左侧零填；**期望值取自外部真值**
+  （`crc32 = zlib.crc32`、`crc16_ccitt = binascii.crc_hqx(data, 0xFFFF)`，
+  另用三枚已发布 CRC check 值自校验），**不是照本仓实现抄的表**。
+- 5 组输入：`00`（单零字节，试左侧零填）/ `01` / `0102`（字节序敏感）/
+  `DEADBEEF` / `313233343536373839`（ASCII `123456789`，标准 check 向量）。
 
 ### float_ieee.json[f32]
 

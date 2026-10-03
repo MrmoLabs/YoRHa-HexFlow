@@ -446,7 +446,7 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
                                             patchNested('checksum', {
                                                 algo,
                                                 // crc16 恒 2 字节，切算法时同步字段宽避免 400
-                                                field_byte_length: algo === 'crc16_modbus' ? 2 : 1
+                                                field_byte_length: algo === 'crc32' ? 4 : (algo === 'crc16_modbus' || algo === 'crc16_ccitt') ? 2 : 1  // R22: 随算法切默认字段宽（镜像后端 ALGO_FIELD_WIDTH）
                                             });
                                         }}
                                         className={`${inputClass} w-full`}
@@ -454,6 +454,9 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
                                         <option value="sum">sum</option>
                                         <option value="xor">xor</option>
                                         <option value="crc16_modbus">crc16_modbus</option>
+                                        <option value="crc16_ccitt">crc16_ccitt</option>
+                                        <option value="crc32">crc32</option>
+                                        <option value="lrc">lrc</option>
                                     </select>
                                 </label>
                                 <label>

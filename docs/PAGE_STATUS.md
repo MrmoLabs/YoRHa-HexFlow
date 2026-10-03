@@ -43,7 +43,7 @@
 - 复制块入口已按人工验证第 3 轮 #1 移除：两页属性面板不再出「复制块 (DUPLICATE)」（侧栏「副本」整条协议复制保留）；底座 duplicateNode 纯函数 + 3 单测已按人工验证拍板连删（protocolTree.js 仅存协议级复制与 JSON 导入共用的 cloneTreeWithNewIds）。
 - 协议 JSON 导出/导入：顶栏 导出 = 当前工作副本原样下盘 {schemaVersion, protocols:[…]}；导入 = parse → analyzeProtocolImport（结构校验 + 全树重生 id + refs 自含重映射 + 撞名「(导入)」升序）→ 预览弹窗 → 顺序 POST 追加**不覆盖**，成功切到首个导入项（批次四 P3-2，镜像指令页 importInputRef 范式，importExport 单测锁形）。
 - 协议级属性：属性面板协议级视图新增「协议描述」textarea（schema 既有字段零 DDL，落库走既有 description 载荷 + serializeProtocol 签名 → 手动保存链覆盖；onProtocolLabelChange 改名 onProtocolMetaChange，label/description 共用草稿 commit 入口）（批次四 P3-1）。
-- checksum 算法配置：卡面「校验算法」下拉（SUM8 / XOR8 / CRC16-MODBUS，缺省 CRC16-MODBUS）存 parameter_config.algorithm（前端编码器 PASS2 同源直读）；编排导出 toFrameBlocks 出口把 refs（按数组序展开叶子 id、容器 ref 展开子树文档序、悬空丢弃）+ 算法枚举翻译进 config.params，后端 LengthHandler/ChecksumHandler 新增 refs 集合模式 —— 打通 R2 死 config:{} 恒 00 断点（无 refs 键的旧 range 模式原样保留）；validateProtocol 新增 W4 算法枚举外 warning（批次四 P3-3，toFrameBlocks / 后端 test_logic_refs_config 锁形）。
+- checksum 算法配置：卡面「校验算法」下拉（SUM8 / XOR8 / CRC16-MODBUS / CRC16-CCITT / CRC32 / LRC，缺省 CRC16-MODBUS 不变 —— R22 · 2026-10-03，PLAN §8.54）存 parameter_config.algorithm（前端编码器 PASS2 同源直读）；编排导出 toFrameBlocks 出口把 refs（按数组序展开叶子 id、容器 ref 展开子树文档序、悬空丢弃）+ 算法枚举翻译进 config.params，后端 LengthHandler/ChecksumHandler 新增 refs 集合模式 —— 打通 R2 死 config:{} 恒 00 断点（无 refs 键的旧 range 模式原样保留）；validateProtocol 新增 W4 算法枚举外 warning（批次四 P3-3，toFrameBlocks / 后端 test_logic_refs_config 锁形）。
 - 卡面取值口径：能确定的值直接显示、不确定按字节数出等量 ??（formula.formatUnknown，1B→??、4B→?? ?? ?? ??）—— length 挂可解析 refs 出 `${sigma}B`、checksum refs 全可确定按算法出设计期真值（缺省 CRC_16_MODBUS 同编码器，嵌套容器裹槽同拒）、其余出等量 ??；容器卡中央值 = 嵌套内容逐块拼接（字面 hex 子块出 pretty、未知子块按 byte_length 出等量 ??，如 AA 55 ?? ??，空容器中央 = 空白（第 3 轮 #2：不显 ?? 也不显 0B，页脚仍 `0B @00` 尺寸）；未配置固定块照显存储值（`0000`→`00 00`、`00`→`00`，撤第 2 轮「全 0 → ??」回退，`??` 仅限无法确定内容的卡）；protocolTree.injectContainerContent 链式接入 displayLanes，纯派生不落库；卡面取值口径改造，protocolTree/Block 单测锁形）。
 - version 乐观并发：读取响应带 version（新建恒 1、每次成功写 +1），保存携带本地最后见到的值、服务端不符 409 拒收陈旧写（先于 refs 校验）；保存失败横幅三分类（版本冲突 / 服务端拒绝 / 网络·服务错误），冲突态给「强制覆盖」（按 id 拉最新 version 后带本地负载重发）与「加载最新」（放弃本地、服务端版本替换工作副本并清历史）双动作，非冲突仍走「重试」；不带 version 的直调写跳过比对直接覆盖（旧客户端兼容）；存量库缺列由启动自愈补列回填（批次五）。
 - 位域块（bitfield）结构化位定义：调色板新增「位域 BIT」卡（1 字节叶子块），属性面板复用指令侧位编辑器（位图 + 点击式设段 + 打包预览）；位段存块级 bits 数组（后端 ProtocolNodeSchema 显式透传，走 children JSON 列零 DDL），toFrameBlocks 出口搬进 config.params.bits，后端 Orchestrator 发射期单点打包（handlers/bitfield.py，静态默认值语义、发送期不可改值）；保存前 validateProtocol 拦位域重叠/超容量（镜像后端 _validate_bits 400），卡面显示打包后的真实字节；存量 fixed/长度/校验/槽块逐字不变、无 wrap 裸发路径不回归（批 4）。
@@ -56,7 +56,8 @@
 
 ### 后续建议
 - 无 —— 本页人工复测项已全数销（2026-10-02：跨泳道拖拽落点 + slot refs 新语义 4 子项，明细 PLAN §8.28 / HANDOVER 条目 42）；跨页残留项 §9.7 ④「应答是否带转义字节」亦已销（2026-10-02，PLAN §8.35）。
-- R21 长度字节序已落地（2026-10-03，PLAN §8.53 / HANDOVER 条目 70）；下一批 R22（CRC16-CCITT / CRC32 / LRC 多算法）会动本页校验算法下拉与两端枚举白名单 —— 排期见 PLAN §8.52，待实现。
+- R21 长度字节序已落地（2026-10-03，PLAN §8.53 / HANDOVER 条目 70）。
+- R22 CRC 多算法已落地（2026-10-03，PLAN §8.54 / HANDOVER 条目 71）：本页校验算法下拉扩到六值（SUM8 / XOR8 / CRC16-MODBUS / CRC16-CCITT / CRC32 / LRC，缺省 CRC16-MODBUS 不变）；出线 ChecksumHandler（refs 模式与旧区间模式两个 return 同位扩）、出口翻译 toFrameBlocks ↔ frame_builder、收侧 response_match.VALID_ALGOS + ALGO_FIELD_WIDTH 宽度下限（crc16_modbus 遗留「恰好 2 字节」逐字不变）、序列计划冻结链 PLAN_ALGO_FIELD_WIDTH、指令页 CHECKSUM_CRC 算子模板 同批成对改；共享向量 vectors/checksum_algo.json 30 行双端同读。下一批 R23（epoch 绝对时间戳模板），排期见 PLAN §8.52。
 
 ---
 

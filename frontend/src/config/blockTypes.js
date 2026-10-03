@@ -39,8 +39,9 @@ export const BLOCK_PROPERTY_FIELDS = {
     // 批次四: checksum 算法配置 —— 存点 parameter_config.algorithm（镜像
     // 指令页 B1 aliasChecksumAlgo 的前端编码器存点，PASS2 同源直读），
     // 出口由 toFrameBlocks 翻成后端 config.params.algorithm（sum/xor/
-    // crc16_modbus）。值域 = formula.js ChecksumAlgo 三值（CRC_32 无实现，
-    // 不列入）。key 点路径 + inputType select → 面板专用分支（同 refs 口径）。
+    // crc16_modbus）。值域 = formula.js ChecksumAlgo 六值（R22 §8.52 起含
+    // CRC_16_CCITT/CRC_32/LRC，CRC_32 由「无实现不列入」转正）。
+    // key 点路径 + inputType select → 面板专用分支（同 refs 口径）。
     algo: {
         key: 'parameter_config.algorithm',
         label: '校验算法 (Algorithm)',
@@ -49,7 +50,12 @@ export const BLOCK_PROPERTY_FIELDS = {
         options: [
             { value: 'SUM_8', label: 'SUM8' },
             { value: 'XOR_8', label: 'XOR8' },
-            { value: 'CRC_16_MODBUS', label: 'CRC16-MODBUS' }
+            { value: 'CRC_16_MODBUS', label: 'CRC16-MODBUS' },
+            // R22 (§8.52 排期): CRC 多算法 —— 值域 = formula.js ChecksumAlgo
+            // 全六值；CRC_32 此前「无实现不列入」，本批转正。
+            { value: 'CRC_16_CCITT', label: 'CRC16-CCITT' },
+            { value: 'CRC_32', label: 'CRC32' },
+            { value: 'LRC', label: 'LRC' }
         ]
     },
     // 批次二 (D3/D14①): 插槽溢出/欠载策略 —— 存点 parameter_config.fit_policy

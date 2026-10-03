@@ -2274,6 +2274,49 @@
       `availableNow` / `nextSteps` 回填 + `npm run sync:page-status`；本条。
     - **状态**：**R21 ✅**；余 **R22 → R28 七批**（下一批 **R22 CRC16-CCITT / CRC32 / LRC**）。
 
+71. **R22 · CRC 多算法（CRC16-CCITT / CRC32 / LRC）：六张白名单同批成对改（PLAN §8.54 · §8.52 排期第 2 批）**
+    （2026-10-03，**BE + FE、零 DDL、`models.py` 未动、`/dispatch` 缺省口径逐字节不变**）：
+    - **问题**：出线 `ChecksumHandler` 与收侧 `response_match.VALID_ALGOS` 只认
+      `sum / xor / crc16_modbus`；FE `ChecksumAlgo` 虽已声明 `CRC_32` 却**无实现**
+      （`calculateChecksum` 落 `default:` 打 warn、`mapChecksumAlgo` 把它折回
+      `CRC_16_MODBUS`）→ §8.36 C-5 ① 触发式项「真机提 CCITT/CRC32 即做」。
+    - **六张白名单 + 一处算子模板同批成对改（改一必改七）**：BE
+      `response_match.VALID_ALGOS`、`frame_builder.BACKEND_ALGO`；FE
+      `formula.js ChecksumAlgo`、`blockTypes.algo.options`、`toFrameBlocks.BACKEND_ALGO`、
+      `validateProtocol.VALID_ALGOS`、`sequenceView.PLAN_ALGO`、`TransactionPanel.jsx` 下拉；
+      `backend/routers/operator.py` 指令页 `CHECKSUM_CRC` 算子模板 `algo` 六值。值域 =
+      `SUM_8 / XOR_8 / CRC_16_MODBUS / CRC_16_CCITT / CRC_32 / LRC` ↔
+      `sum / xor / crc16_modbus / crc16_ccitt / crc32 / lrc`。
+    - **算法规范双端同源**：CCITT = **CRC-16/CCITT-FALSE**（poly 0x1021 / init 0xFFFF /
+      非反射 / xorout 0，check `"123456789"` → `0x29B1`）；CRC32 = **IEEE 反射**
+      poly 0xEDB88320 / init = xorout 0xFFFFFFFF（→ `0xCBF43926`）；LRC = `(-sum) & 0xFF`
+      （→ `0x23`）。三处实现同位同源：`formula.js calculateChecksum` 三个 `case`、
+      `handlers/checksum.py` 两分支三方法、`response_match.checksum_value` 三支三函数。
+    - **收侧宽度表 `ALGO_FIELD_WIDTH`**（`sum` / `xor` = `None` 不限、`crc16_modbus` = 2、
+      `crc16_ccitt` = 2、`crc32` = 4、`lrc` = 1）：**保留 `crc16_modbus` 遗留「恰好 2 字节」
+      精确判定逐字不变**；新算法只加「≥ 宽度」**下限**（缺则 `to_bytes` OverflowError → 500，
+      收口 400）；`default_field_bl = ALGO_FIELD_WIDTH.get(algo) or 1`（2 / 4 / 1）；
+      `sequence_plan` 判定路径与 `response_generate` 自动回显**共用同一张表**（不足 →
+      `raise` / 弃生成 + 警告）；`sequenceView` 计划冻结链加同宽下限分支
+      （`PLAN_ALGO_FIELD_WIDTH`，**键 = 后端值域**）；事务面板 `field_byte_length` 三态缺省 4 / 2 / 1。
+    - **`mapChecksumAlgo` 保留旧名折叠**：六个**规范值**直通；**裸名 `CRC32` /
+      `CRC16_CCITT` / unknown / 空串仍折回 `CRC_16_MODBUS`** → `importExport` 既有归一用例
+      与存量草稿的出线字节**不变**。
+    - **共享向量**：新增 `vectors/checksum_algo.json`（6 算法 × 5 输入 = **30 行**，
+      `algo` / `data` / `width` / `expected`）**双端同读** ——
+      `backend/tests/test_checksum_algorithms.py` ↔ `frontend/.../checksumAlgo.test.js`；
+      期望值取自**外部真值**（`zlib.crc32`、`binascii.crc_hqx` + 三枚已发布 CRC check 值
+      自校验），**非照实现抄表**；`vectorsLoader.test.js` `TABLES` 登记 + `vectors/README.md`
+      §3（13 文件 17 表 → **14 文件 18 表**）与 §7 行注归档。
+    - **验收**：**BE 768 → 793/793**（+25）、**FE 1117 → 1127/1127（74 文件）**（+10）、
+      `npx vite build` EXIT=0、`npm run lint` EXIT=0、yorha-ui 校验器改动 js/jsx/json
+      **0 违规**、md 表列数 mismatches = 0、隐形字符 / CRLF / TAB = 0；**零 DDL → 无 `chore(db)`**。
+    - **文档同步（同批）**：PLAN **§8.54 新节** + §1 `R21–R28` 行回填（R22 ✅）+ §8.52 排期表
+      R22 行标已办 + §8.36 C-5 ① 汇总与 §8.14 补记两处销项注；`vectors/README.md` §3 + §7；
+      `BUSINESS_SCENARIOS.md` 校验字段行 `⏸已立` → `✅ 已落地`；`pageStatus.json` 协议页
+      `availableNow` / `nextSteps` 回填 + `npm run sync:page-status`；本条。
+    - **状态**：**R22 ✅**；余 **R23 → R28 六批**（下一批 **R23 epoch 绝对时间戳模板**）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

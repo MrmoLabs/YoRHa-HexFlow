@@ -38,7 +38,7 @@ from sqlalchemy.orm import Session
 from backend.core.definition_hash import protocol_definition_hash
 from backend.core.frame_builder import BACKEND_ALGO
 from backend.core.recipe_compile import stages_fingerprint
-from backend.core.response_match import normalize_spec
+from backend.core.response_match import ALGO_FIELD_WIDTH, normalize_spec
 from backend.db.models import FrameRecipe, Instruction, ProtocolBinding, ProtocolTemplate
 
 # 与 recipe_api.MAX_RECIPE_STAGES 同值（镜像 response_match.MAX_STAGES）。
@@ -287,6 +287,13 @@ def _checksum_element(geo: Dict[str, Any], warnings: List[str], where: str) -> O
     algo = BACKEND_ALGO.get(pc.get("algorithm"), "crc16_modbus")
     if algo == "crc16_modbus" and bl != 2:
         warnings.append(f"{where} crc16_modbus 校验字段须 2 字节（实为 {bl}）→ 未生成 checksum")
+        return None
+    # R22 (§8.52 排期 · CRC 多算法): 固定宽算法（crc16_ccitt=2 / crc32=4 / lrc=1）
+    # 宽度不足 → 出线值放不进字段（帧会变长），生成出来也判不了，与 crc16_modbus
+    # 同口径弃生成 + 警告；宽度更宽（零填充）则放行，出线与收侧同形。
+    required = ALGO_FIELD_WIDTH.get(algo)
+    if required is not None and bl < required:
+        warnings.append(f"{where} {algo} 校验字段须 ≥ {required} 字节（实为 {bl}）→ 未生成 checksum")
         return None
     if _pc_int(pc, "offset") != 0:
         warnings.append(f"{where} checksum 带非零 offset，规格无法表达 → 未生成 checksum")

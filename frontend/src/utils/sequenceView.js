@@ -8,7 +8,20 @@
 export const PLAN_ALGO = Object.freeze({
     SUM_8: 'sum',
     XOR_8: 'xor',
-    CRC_16_MODBUS: 'crc16_modbus'
+    CRC_16_MODBUS: 'crc16_modbus',
+    // R22 (§8.52 排期 · CRC 多算法): 与后端 sequence_plan 的 VALID_ALGOS 同值域；
+    // 不在表内的算法走「已冻结」警告分支，出线不会被计划重算。
+    CRC_16_CCITT: 'crc16_ccitt',
+    CRC_32: 'crc32',
+    LRC: 'lrc'
+});
+
+// R22: 固定宽算法的最窄校验字段宽（镜像后端 response_match.ALGO_FIELD_WIDTH；
+// sum/xor 任意宽度 → 不入表）。**键 = 后端值域**（即 PLAN_ALGO 的 value），因为
+// buildPlan 校验分支拿到的已是映射后的 algo。crc16_modbus 另有遗留「必须恰好
+// 2 字节」精确规则（与本表下限并存），见下方 buildPlan 校验分支。
+export const PLAN_ALGO_FIELD_WIDTH = Object.freeze({
+    crc16_modbus: 2, crc16_ccitt: 2, crc32: 4, lrc: 1
 });
 
 // 缺省 config 与后端 _normalize_config 的服务端归一同形（显式传 null = 不设超时）。
@@ -180,6 +193,10 @@ export function buildPlan(instruction, inputs, computedValues, byteMap) {
                 warnings.push(`校验算法 ${algoKey} 后端计划不支持，校验字段已冻结`);
             } else if (algo === 'crc16_modbus' && fieldLen !== 2) {
                 warnings.push('crc16 校验字段须 2 字节，校验字段已冻结');
+            } else if (PLAN_ALGO_FIELD_WIDTH[algo] && fieldLen < PLAN_ALGO_FIELD_WIDTH[algo]) {
+                // R22: 新增算法的最窄宽度下限（crc16_ccitt≥2 / crc32≥4 / lrc≥1）——
+                // 宽度不足时出线值放不进字段，冻结以免计划重算出错值。
+                warnings.push(`校验字段须 ≥ ${PLAN_ALGO_FIELD_WIDTH[algo]} 字节，校验字段已冻结`);
             } else if (fieldLen > 4) {
                 warnings.push('校验字段超过 4 字节，校验字段已冻结');
             } else {

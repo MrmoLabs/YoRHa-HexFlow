@@ -16,9 +16,9 @@ import { isNestable } from '../config/blockTypes';
 
 const normalizeHex = (h) => String(h ?? '').replace(/\s/g, '');
 
-// W4 (批次四): 算法值域 = formula.js ChecksumAlgo 三值（CRC_32 无实现，
-// mapChecksumAlgo 也把它归到 CRC_16_MODBUS → 不在合法集）。
-const VALID_ALGOS = new Set(['SUM_8', 'XOR_8', 'CRC_16_MODBUS']);
+// W4 (批次四): 算法值域 = formula.js ChecksumAlgo 六值（R22 §8.52 起含
+// CRC_16_CCITT/CRC_32/LRC；CRC_32 原「无实现回落」已转正实现）。
+const VALID_ALGOS = new Set(['SUM_8', 'XOR_8', 'CRC_16_MODBUS', 'CRC_16_CCITT', 'CRC_32', 'LRC']);
 // R21（长度域 BE/LE）：length pc.byte_order 值域 —— 与后端 LengthHandler 的
 // big/little、收侧 response_spec.length.byte_order 的 VALID_BYTE_ORDERS 同集。
 const VALID_BYTE_ORDERS = new Set(['big', 'little']);

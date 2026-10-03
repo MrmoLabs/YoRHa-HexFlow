@@ -16,10 +16,14 @@ export { mergeFieldBitMeta } from './bitMeta';
 // to CRC_16_MODBUS, which is what the encoder has always effectively computed.
 export const mapChecksumAlgo = (algo) => {
     const v = String(algo || '').trim();
-    if (v === 'SUM_8' || v === 'XOR_8' || v === 'CRC_16_MODBUS') return v;
+    // R22: 六个规范值原样放行（CRC_32 由「无实现回落 CRC_16_MODBUS」转正实现）。
+    if (v === 'SUM_8' || v === 'XOR_8' || v === 'CRC_16_MODBUS'
+        || v === 'CRC_16_CCITT' || v === 'CRC_32' || v === 'LRC') return v;
     if (v === 'XOR_SUM') return 'XOR_8';
     if (v === 'ADD_SUM') return 'SUM_8';
-    return 'CRC_16_MODBUS'; // CRC16_CCITT / CRC32 / unknown / empty
+    // 裸名 CRC32 / CRC16_CCITT / unknown / empty 仍回退 —— 存量草稿的出线字节
+    // 不因本批转正而改变（importExport 既有归一用例）。
+    return 'CRC_16_MODBUS';
 };
 
 // B1: alias algo -> algorithm (the key the encoder reads) at payload level so

@@ -9,8 +9,9 @@
 >
 > 调研基线（已成立、不重复盘）：
 > - `PLAN_Backlog.md` §8.14 调研差距表：已做 1-4（BIN 三态 / 位段值表 /
->   有符号位段 / 位号标尺）；**已立暂缓**：CRC 多算法（CCITT/CRC32/LRC）、
->   长度域 BE/LE、varint/COBS 组帧、解码回程（后端 encode-only 边界）。
+>   有符号位段 / 位号标尺）；**已立暂缓 → 已落地**：CRC 多算法（CCITT/CRC32/LRC）
+>   **R22 ✅ PLAN §8.54（2026-10-03）**、长度域 BE/LE **R21 ✅ §8.53（2026-10-03）**；
+>   **仍暂缓**：varint/COBS 组帧（→ R27/R28）、解码回程（后端 encode-only 边界）。
 > - `PROJECT_HANDOVER.md` E1-4：float64 编码~~范围外保留现状（如需另立子项）~~
 >   **已立项并落地 —— R5 / PLAN §8.42（2026-10-02），不再是范围外**。
 > - 定级图例：✅ 覆盖 ｜ ⚠️ 半残（有功能但有坑）｜ 🔴 真缺口 ｜ ⏸ 已立暂缓
@@ -33,7 +34,7 @@
 | 计数器（回绕） | ✅ | AUTO_COUNTER start/step/max |
 | 固定 HEX 值 | ✅ | HEX_RAW + 三态录入（§8.13/8.14） |
 | 长度字段 | ✅ | LENGTH_CALC + 四则公式（`formula.js`：±*/() + [ref]） |
-| 校验字段 | ✅ | SUM_8 / XOR_8 / CRC_16_MODBUS；CRC32/CCITT/LRC ⏸已立（§8.14） |
+| 校验字段 | ✅ | SUM_8 / XOR_8 / CRC_16_MODBUS / CRC_16_CCITT / CRC_32 / LRC（R22 · PLAN §8.54，2026-10-03） |
 
 ## 二、结构组织（字段之间怎么组织）
 

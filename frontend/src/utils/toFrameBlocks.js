@@ -10,7 +10,13 @@
 // 缺省 CRC_16_MODBUS 与前端编码器 `params.algorithm || CRC_16_MODBUS` 同源
 // （后端 handler 自身的 "sum" 缺省只服务旧 range 模式，refs 模式下算法恒由
 // 此处显式给出）。
-const BACKEND_ALGO = { SUM_8: 'sum', XOR_8: 'xor', CRC_16_MODBUS: 'crc16_modbus' };
+const BACKEND_ALGO = {
+    SUM_8: 'sum', XOR_8: 'xor', CRC_16_MODBUS: 'crc16_modbus',
+    // R22 (§8.52 排期): FE ChecksumAlgo → 后端 config.params.algorithm。
+    // 与 backend/core/frame_builder.BACKEND_ALGO、utils/sequenceView.PLAN_ALGO
+    // 同批成对改（出口翻译 → 出线计算 → 收侧判定三处对齐）。
+    CRC_16_CCITT: 'crc16_ccitt', CRC_32: 'crc32', LRC: 'lrc'
+};
 
 // 批 4: bitfield 块的位段透传 —— 打包在后端 Orchestrator 发射期
 // （backend/handlers/bitfield.py），此处只做形状归一 + 脏位段剔除

@@ -39,7 +39,20 @@ plan.shell.layers 同序）。匹配时按 `stages` **逆序**（n-1 → 0）逐
 from typing import Any, Dict, List, Optional, Tuple
 
 VALID_MODES = ("echo", "rules", "any")
-VALID_ALGOS = ("sum", "xor", "crc16_modbus")
+VALID_ALGOS = ("sum", "xor", "crc16_modbus", "crc16_ccitt", "crc32", "lrc")
+# R22 (§8.52 排期 · CRC 多算法): 固定宽算法的**最窄**字段宽。None = 沿用遗留口径
+# 不设限 —— sum 按 256^w 取模、xor 恒单字节值，任意宽度都不溢出，故不补新约束。
+# 只做 ≥ 下限：crc16_modbus 另有遗留「必须恰好 2 字节」精确校验
+# （_normalize_checksum / sequence_plan 各一份），本表对它不起下限作用。
+# 本表缺失会让 crc32(4 字节值) 在 to_bytes(field_bl) 上抛 OverflowError → 500。
+ALGO_FIELD_WIDTH = {
+    "sum": None,
+    "xor": None,
+    "crc16_modbus": 2,
+    "crc16_ccitt": 2,
+    "crc32": 4,
+    "lrc": 1,
+}
 VALID_BYTE_ORDERS = ("big", "little")
 
 # 与 backend/schemas/recipe_api.MAX_RECIPE_STAGES 同值（配方层数上限），镜像
@@ -125,12 +138,19 @@ def _normalize_checksum(value: Any) -> Optional[Dict[str, Any]]:
     byte_order = value.get("byte_order", "big")
     if byte_order not in VALID_BYTE_ORDERS:
         raise ValueError(f"checksum.byte_order 必须是 {'/'.join(VALID_BYTE_ORDERS)} 之一")
-    default_field_bl = 2 if algo == "crc16_modbus" else 1  # crc16 缺省 2 字节（sum/xor 缺省 1）
+    default_field_bl = ALGO_FIELD_WIDTH.get(algo) or 1  # 固定宽算法缺省其宽度（crc16*→2、crc32→4），sum/xor/lrc 缺省 1
     field_byte_length = _require_int(
         value.get("field_byte_length", default_field_bl), "checksum.field_byte_length", 1, 4
     )
     if algo == "crc16_modbus" and field_byte_length != 2:
         raise ValueError("crc16_modbus 的校验字段必须是 2 字节")
+    # R22 (§8.52 排期 · CRC 多算法): 固定宽算法取**最窄**宽度下限 —— 缺了会在
+    # checksum_value 的 to_bytes(field_byte_length) 上抛 OverflowError → 500。
+    # 比遗留 crc16_modbus 的精确校验宽（>width 允许零填充），因为出线格式
+    # f"{result:0{width*2}X}" 也是「字段宽下限」语义，两侧同形。
+    required = ALGO_FIELD_WIDTH.get(algo)
+    if required is not None and field_byte_length < required:
+        raise ValueError(f"{algo} 的校验字段须 ≥ {required} 字节（实为 {field_byte_length}）")
     span_start = _require_int(value.get("span_start", 0), "checksum.span_start", 0, 4095)
     span_end = value.get("span_end", None)
     if span_end is not None:
@@ -337,13 +357,55 @@ def _checksum_span(frame: bytes, cs: Dict[str, Any]) -> Optional[bytes]:
     )
 
 
+def crc16_ccitt(data: bytes, poly: int = 0x1021) -> int:
+    """CRC-16/CCITT-FALSE（R22 · §8.52 排期）：poly 0x1021、init 0xFFFF、
+    refin/refout = false、xorout 0x0000；check "123456789" → 0x29B1。
+    与 handlers/checksum.py、formula.js calculateChecksum(CRC_16_CCITT)
+    逐位同源（三端共享向量 vectors/checksum_algo.json）。
+    """
+    crc = 0xFFFF
+    for b in data:
+        crc ^= (b << 8) & 0xFFFF
+        for _ in range(8):
+            if crc & 0x8000:
+                crc = ((crc << 1) ^ poly) & 0xFFFF
+            else:
+                crc = (crc << 1) & 0xFFFF
+    return crc
+
+
+def crc32(data: bytes) -> int:
+    """CRC-32/ISO-HDLC（R22 · §8.52 排期）：反射 poly 0xEDB88320、
+    init/xorout 0xFFFFFFFF；check "123456789" → 0xCBF43926。三端同源。
+    """
+    crc = 0xFFFFFFFF
+    for b in data:
+        crc ^= b
+        for _ in range(8):
+            if crc & 1:
+                crc = (crc >> 1) ^ 0xEDB88320
+            else:
+                crc >>= 1
+    return crc ^ 0xFFFFFFFF
+
+
+def lrc(data: bytes) -> int:
+    """LRC（R22 · §8.52 排期）：8 位和的二进制补码 = (256 - sum%256) % 256；
+    check "123456789" → 0x23。恒 1 字节值，三端同源。
+    """
+    return (-sum(data)) & 0xFF
+
+
 def checksum_value(algo: str, data: bytes, field_byte_length: int) -> int:
-    """按字段宽度计算 sum/xor/crc16_modbus 校验值（算法 SSOT 的公共入口）。
+    """按字段宽度计算 checksum 算法值（算法 SSOT 的公共入口；R22 起 6 算法）。
 
     - sum：模 256^宽度（与 backend/handlers/checksum.py 同宽语义）；
     - xor：逐字节异或（恒单字节值，宽度补零两侧一致）；
     - crc16_modbus：反射 0xA001 / 初值 0xFFFF（与 checksum.py、
-      formula.js calculateChecksum 同一套）。
+      formula.js calculateChecksum 同一套）；
+    - crc16_ccitt：非反射 0x1021 / 初值 0xFFFF（CCITT-FALSE）；
+    - crc32：反射 0xEDB88320 / init=xorout 0xFFFFFFFF；
+    - lrc：8 位和取二进制补码，恒单字节值。
     formula.js 的 SUM_8/XOR_8 按 8 位定义，字段 ≥2 字节的 sum 属契约外——
     沿 E1-3/E1-4「各自现状锚」先例，此处保持 handler 宽度语义（应答反算与
     P3 序列补丁写入共用本函数 → 自洽）。
@@ -355,6 +417,15 @@ def checksum_value(algo: str, data: bytes, field_byte_length: int) -> int:
         for b in data:
             value ^= b
         return value
+    # R22 (§8.52 排期 · CRC 多算法): 三支新增算法，实现与 handlers/checksum.py、
+    # formula.js calculateChecksum 三端同源（共享向量 vectors/checksum_algo.json
+    # 逐行钉死）。crc16_modbus 仍走缺省 crc16(data) —— 遗留路径不动。
+    if algo == "crc16_ccitt":
+        return crc16_ccitt(data)
+    if algo == "crc32":
+        return crc32(data)
+    if algo == "lrc":
+        return lrc(data)
     return crc16(data)
 
 

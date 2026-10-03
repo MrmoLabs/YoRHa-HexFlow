@@ -31,7 +31,17 @@ from backend.schemas.block import Block
 
 # 镜像 toFrameBlocks.js BACKEND_ALGO：ChecksumAlgo（前端枚举）→ 后端
 # ChecksumHandler 枚举；缺省 CRC_16_MODBUS 与前端编码器同源。
-BACKEND_ALGO = {"SUM_8": "sum", "XOR_8": "xor", "CRC_16_MODBUS": "crc16_modbus"}
+BACKEND_ALGO = {
+    "SUM_8": "sum",
+    "XOR_8": "xor",
+    "CRC_16_MODBUS": "crc16_modbus",
+    # R22 (§8.52 排期 · CRC 多算法): FE ChecksumAlgo → params.algorithm 映射。
+    # 三处必须同批成对改：本表、toFrameBlocks.js BACKEND_ALGO、sequenceView.js
+    # PLAN_ALGO；值域 = response_match.VALID_ALGOS。
+    "CRC_16_CCITT": "crc16_ccitt",
+    "CRC_32": "crc32",
+    "LRC": "lrc",
+}
 
 
 def _normalize_payload(raw) -> str:

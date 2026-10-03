@@ -45,7 +45,7 @@
 | R19–R20 | **拍板后追加排期**（§8.50：① 加工页传输展示与切换 = **维持 D9-A 不立项**、② 数据包示例下载 = **动态导出**、③ 档案自定义排序 = **`sort_order` DDL 解禁**） | ✅ **R19 已完成 ✅（§8.50：数据包示例下载 —— 动态出按域导入的 5 域、复用 R17 `?domains=` 子集，零后端改动零 DDL，FE 1098 → 1099）**、**R20 已完成 ✅（§8.50：档案自定义排序 —— `device_profiles.sort_order` 仅新增列 + migration 0004 + `PUT /profiles/order` 整表一次提交，拖完只改草稿序；BE 733 → 743、FE 1099 → 1106；db 同步另开 `chore(db)` 提交）** |
 | §8.51 | **§9.7 ① 出线方向销项**（「有 LEN = 不需要转义」在载荷含定界字节时是否异常）—— 按 §8.35 同套方法**联网取公开规范真帧 + 仓内仿真**：IEC 60870-5-104 / DL/T 645-2007 / Modbus TCP 三条**有长度域**协议 + 本仓三层壳出线反解 + **无 LEN 反例** | ✅ **已完成（2026-10-03，零代码改动、零 DDL、零 `pageStatus` 变更）**：新 `backend/tests/test_wire_delimiter.py` **10 例**，**BE 743 → 753/753**、FE 1106/1106（未碰前端）；**「需真实设备帧」这一类自此无开放项** |
 
-| R21–R28 | **七项复议拍板全数立项**（§8.52：C-5 ② 长度域 BE/LE → R21、C-5 ① CRC 多算法 → R22、挂账 ① epoch → R23、挂账 ③ 切 op → R24、挂账 ② 加扰 → R25、C-1 B 序列分支 → R26（含 DDL 仅新增列）、C-5 ③ varint/COBS 拆两批 → R27 出线 / R28 解包） | 🔄 **R21 已完成 ✅（2026-10-03，§8.53：长度域 `byte_order` —— BE+FE 零 DDL，收侧本就支持、补出线与出口翻译 + 应答声明；**顺带修**设计期 ≥2 字节真值被空格切坏的存量缺陷；新增共享向量 `vectors/length_order.json` 7 行，BE 753 → 768、FE 1106 → 1117）**；**R22–R28 排期已立、待实现** —— 顺序 = 先小后大、先补不对称再碰解包；加工页传输展示与切换**复议维持 D9-A 不立项** |
+| R21–R28 | **七项复议拍板全数立项**（§8.52：C-5 ② 长度域 BE/LE → R21、C-5 ① CRC 多算法 → R22、挂账 ① epoch → R23、挂账 ③ 切 op → R24、挂账 ② 加扰 → R25、C-1 B 序列分支 → R26（含 DDL 仅新增列）、C-5 ③ varint/COBS 拆两批 → R27 出线 / R28 解包） | 🔄 **R21 已完成 ✅（2026-10-03，§8.53：长度域 `byte_order` —— BE+FE 零 DDL，收侧本就支持、补出线与出口翻译 + 应答声明；**顺带修**设计期 ≥2 字节真值被空格切坏的存量缺陷；新增共享向量 `vectors/length_order.json` 7 行，BE 753 → 768、FE 1106 → 1117）**；**R22 已完成 ✅（2026-10-03，§8.54：CRC16-CCITT / CRC32 / LRC —— 六张白名单 + `operator.py` 算子模板同批成对改；收侧 `ALGO_FIELD_WIDTH` 只加 ≥ 下限、`crc16_modbus` 遗留精确 2 字节逐字不变；共享向量 `vectors/checksum_algo.json` 30 行双端同读，期望值取自 `zlib` / `binascii` 外部真值；BE 768 → 793、FE 1117 → 1127）**；**R23–R28 排期已立、待实现** —— 顺序 = 先小后大、先补不对称再碰解包；加工页传输展示与切换**复议维持 D9-A 不立项** |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -1213,7 +1213,9 @@
 > CRC 多算法 → **R22**、varint/COBS 拆 **R27 出线 / R28 解包**；「触发式 / 暂缓」到此清零。
 >
 > **销项注（2026-10-03 · §8.53）**：**R21 已完成 ✅**（长度域 `byte_order` 双端落地，
-> BE 753 → 768、FE 1106 → 1117）；余 **R22 / R27 / R28** 待排。
+> BE 753 → 768、FE 1106 → 1117）；**R22 已完成 ✅**（2026-10-03 · §8.54：CRC16-CCITT /
+> CRC32 / LRC 三算法，共享向量 `vectors/checksum_algo.json` 30 行双端同读，
+> BE 768 → 793、FE 1117 → 1127）；余 **R27 / R28** 待排。
 
 - **优化 1（纯 FE）三态进制 + 进制前缀识别**：`BlockPropertiesPanel` 录入进制
   HEX|DEC → **+BIN** 三态（`input_base='bin'`，非法值仍回退 hex）；
@@ -2985,7 +2987,7 @@ D15 关联项 1（17 例 + BE 630/630）。**本项无需再拍**，此处只留
 | **C-2 响应解码为字段** | **C · 入库回写** | 按选项 C 的定义 = B（解码面板）+ C（`dispatch_logs.fields_json`，**仅新增列**）两步做完 | **R9（B 展示 ✅ §8.47）→ R10（C 入库 ✅ §8.48）—— 两半均已完成** |
 | **C-3 全量项目包迁移** | **C · 补域 + manifest 折中** | `bundle` 扩 8 域 + 按域导入端点 + `manifest.domainVersion`；**整机/跨版本迁移仍走 backup/restore**；不选 B（重复造 backup） | **R1（pre-import 快照 ✅ §8.38）→ R7（导出补域 ✅ §8.45）→ R8（导入补端点 ✅ §8.46）** |
 | **C-4 应答是否带转义** | **确认接受** | 「应答带转义字节 + 先线上、后逻辑双口径」正式定案，§9.7 ④ 与 D15 关联项 1 销项 | 已落地（§8.35，提交 `dbe15a4`） |
-| **C-5 ① CRC 多算法** | **触发式** | 真机提出 CCITT/CRC32 即做，且**出线 / 收侧 `VALID_ALGOS` 两处白名单同批改**（否则发得出去、判不了） | 不排批 —— 触发即插队 |
+| **C-5 ① CRC 多算法** | ~~触发式~~ | 真机提出 CCITT/CRC32 即做，且**出线 / 收侧 `VALID_ALGOS` 两处白名单同批改**（否则发得出去、判不了） | ~~不排批 —— 触发即插队~~ → **✅ 已销（2026-10-03，§8.52 复议立项 → §8.54 R22 落地）** |
 | **C-5 ② 长度域 BE/LE** | **触发式（可先于 ①）** | 真机要求小端长度即做：`length` 卡加 `byte_order`，**收侧已就绪**，只需证明缺省大端逐字节不变 | 不排批 —— 触发即插队 |
 | **C-5 ③ varint / COBS** | **明确不做** | 保持暂缓；真机真要求时**先出线、解包另批**（动 `stages` 属最高风险档） | 出列 |
 | **R6 方案** | **13 表统一加 `deleted_at`** | **列方案**（**仅新增列，合 §0**）+ 读端点过滤 + 回收站页；**不做 `trash_bin` 新表** | R6 按此实施（原「列 vs 表」待拍项就此关闭） |
@@ -4060,7 +4062,8 @@ LITTLE 先整体还原。**非有限浮点必须在落库前折成字符串**（
 **本类自此无开放项**，真机帧不再承载任何前置用途。
 
 **② 触发式 / 不做（§8.36 拍板，不排批）**：C-1 = **A 不立项**；C-5 ① CRC 多算法、② 长度域
-BE/LE = **真机提出即插队**；③ varint/COBS = **明确不做**；§8.14 余三项同源；
+BE/LE = **真机提出即插队** → **2026-10-03 复议提前立项并落地（② R21 ✅ §8.53、① R22 ✅
+§8.54，两项触发式清零）**；③ varint/COBS = **明确不做**；§8.14 余三项同源；
 `BUSINESS_SCENARIOS.md` 挂账三项（epoch 模板 / 加扰混淆 / 创建后切 op）= 软缺口、有替代、不排期。
 **→ 本类已于 2026-10-03 复议全数立项（§8.52，编入 R21–R28）**；唯一维持不立项的是 ③ 加工页传输（D9-A）。
 
@@ -4287,7 +4290,7 @@ C-4 / §8.49 三·① 与 R18 终态 / §8.27 复跑第 1 项 / §1 新行、`PR
 | 项 | 原拍板 | 本次复议 | 编入 |
 |---|---|---|---|
 | C-5 ② 长度域 BE / LE | 触发式 | **立项**（最小，收侧已就绪） | **R21** |
-| C-5 ① CRC 多算法（CCITT / CRC32 / LRC） | 触发式 | **立项**（出线 + 收侧三处白名单成对改） | **R22** |
+| C-5 ① CRC 多算法（CCITT / CRC32 / LRC） | 触发式 | **立项**（出线 + 收侧三处白名单成对改） | **R22** —— **✅ 已完成（2026-10-03，§8.54）** |
 | 挂账 ① 绝对时间戳 epoch 模板 | 不排期 | **立项** | **R23** |
 | 挂账 ③ 创建后切换 op | 不排期 | **立项** | **R24** |
 | 挂账 ② 加扰 / 混淆字段 | 不排期 | **立项** | **R25** |
@@ -4300,7 +4303,7 @@ C-4 / §8.49 三·① 与 R18 终态 / §8.27 复跑第 1 项 / §1 新行、`PR
 | 编号 | 内容 | 类型 | 规模 | DDL |
 |---|---|---|---|---|
 | **R21** | 长度域 `byte_order`（big / little）—— 修「**能判不能发**」的不对称（`handlers/length.py` 恒大端 vs 收侧 `_normalize_length` 已支持 little）<br>**✅ 已完成（2026-10-03，§8.53）**：length 卡 `byte_order` 下拉 + `LengthHandler` 反转 + `frame_builder`/`toFrameBlocks` 出口翻译 + 应答规格声明 + 设计期卡面同口径；BE 753 → 768、FE 1106 → 1117、共享向量 `length_order.json` 7 行 | BE+FE | 小 | 否 |
-| **R22** | CRC16-CCITT / CRC32 / LRC —— BE `ChecksumHandler` + FE enum / 下拉 / `VALID_ALGOS` + **`response_match` 白名单同批** + 共享向量 2–3 组 | BE+FE | 中 | 否 |
+| **R22** | CRC16-CCITT / CRC32 / LRC —— BE `ChecksumHandler` + FE enum / 下拉 / `VALID_ALGOS` + **`response_match` 白名单同批** + 共享向量 2–3 组<br>**✅ 已完成（2026-10-03，§8.54）**：六张白名单 + `operator.py` 算子模板同批；`ALGO_FIELD_WIDTH` 只加 ≥ 下限（`crc16_modbus` 遗留精确 2 字节不动）；共享向量 `checksum_algo.json` 30 行（期望值取自 `zlib` / `binascii` 外部真值）；BE 768 → 793、FE 1117 → 1127 | BE+FE | 中 | 否 |
 | **R23** | epoch 绝对时间戳模板（替代手填 INT_UNSIGNED） | BE+FE | 小 | 否 |
 | **R24** | 创建后切换 op —— 放开 `op_code` 编辑 + 兼容校验 + 确认回执（现状只能删建重录） | BE+FE | 中 | 否 |
 | **R25** | 加扰 / 混淆字段（异或种子 / 位旋转一类语义化加扰算子） | BE+FE | 中 | 否 |
@@ -4376,8 +4379,69 @@ yorha-ui 校验器改动文件 0 违规 + 文档同步）+ **一批一提交**�
 - **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`pageStatus.json`
   仅协议页 `availableNow`／`nextSteps` 回填 + `npm run sync:page-status`
 
-**下一批：R22 CRC16-CCITT / CRC32 / LRC**（§8.52 排期第 2 批 —— BE `ChecksumHandler`
-+ FE enum／下拉／`VALID_ALGOS` + **`response_match` 白名单同批成对改** + 共享向量 2–3 组）。
+**R22 已完成 ✅（§8.54），下一批 → R23 epoch。**
+
+---
+
+### 8.54 R22 CRC 多算法（CRC16-CCITT / CRC32 / LRC）：六张白名单同批成对改
+
+**批次**：2026-10-03 · **BE + FE，零 DDL、`models.py` 未动、`/dispatch` 缺省口径逐字节不变**
+—— §8.52 排期第 2 批（原 §8.36 C-5 ① 触发式项）。现状：出线 `ChecksumHandler` 与收侧
+`response_match.VALID_ALGOS` 只认 `sum / xor / crc16_modbus` 三值；FE `ChecksumAlgo` 虽已声明
+`CRC_32` 却**无实现**（`calculateChecksum` 落 `default:` 打 warn、`mapChecksumAlgo` 折回
+`CRC_16_MODBUS`）→ 「真机提 CCITT/CRC32 即做」的触发式缺口。
+
+#### 一 · 算法规范（双端同源，三处实现逐位一致）
+
+| 枚举（FE） | 后端值 | 规范 | check `"123456789"` | 字段宽 |
+|---|---|---|---|---|
+| `CRC_16_CCITT` | `crc16_ccitt` | CRC-16/CCITT-FALSE：poly 0x1021、init 0xFFFF、refin/refout = false、xorout 0x0000 | `0x29B1` | 2 |
+| `CRC_32` | `crc32` | CRC-32/ISO-HDLC：反射 poly 0xEDB88320、init = xorout = 0xFFFFFFFF | `0xCBF43926` | 4 |
+| `LRC` | `lrc` | 8 位和的二进制补码 `(-sum) & 0xFF`（恒 1 字节值） | `0x23` | 1 |
+| `SUM_8` / `XOR_8` / `CRC_16_MODBUS` | `sum` / `xor` / `crc16_modbus` | 既有口径逐字不变 | — | 1 / 1 / 2 |
+
+三处实现：`frontend/src/utils/formula.js calculateChecksum`（FE 编码器 + 设计期卡面）、
+`backend/handlers/checksum.py`（出线）、`backend/core/response_match.checksum_value`（收侧判定
++ P3 序列补丁写入）。
+
+#### 二 · 六张白名单 + 一处算子模板（改一必改七）
+
+| # | 位置 | 口径 |
+|---|---|---|
+| ① | `backend/core/response_match.py` | `VALID_ALGOS` 六值 + **新增 `ALGO_FIELD_WIDTH`**（`sum` / `xor` = `None` 不限、`crc16_modbus` = 2、`crc16_ccitt` = 2、`crc32` = 4、`lrc` = 1）。**`crc16_modbus` 遗留「恰好 2 字节」精确判定逐字不变**；新算法只加「≥ 宽度」**下限**（缺则 `to_bytes` 抛 OverflowError → 500，收口 400）；`default_field_bl = ALGO_FIELD_WIDTH.get(algo) or 1`；`checksum_value` 加三支 + 三函数 |
+| ② | `backend/handlers/checksum.py` | refs 模式与旧区间模式**两个 `return` 同位扩**三个 `elif` + 三个方法（与 ① 逐位同源；区间模式原先缩进歪 1 格，本批新分支按正规缩进补） |
+| ③ | `backend/core/frame_builder.BACKEND_ALGO` ↔ `frontend/src/utils/toFrameBlocks.js BACKEND_ALGO` | FE 枚举 → `config.params.algorithm` 出口翻译，两张表同批；值域 = ① 的 `VALID_ALGOS` |
+| ④ | `backend/core/sequence_plan.py` / `backend/core/response_generate.py` | 判定路径与自动回显**共用同一张宽度表**：不足 → `raise`（计划 400）/ 弃生成 + 警告（否则生成出来也判不了 → 必 400） |
+| ⑤ | `frontend/src/utils/formula.js` / `normalizeInstruction.js` | `ChecksumAlgo` 六值（**顺序与其余五处一致**）+ `calculateChecksum` 三个 `case`；`mapChecksumAlgo` **六个规范值直通、裸名 `CRC32` / `CRC16_CCITT` / unknown / 空串仍折回 `CRC_16_MODBUS`**（存量草稿出线字节不变） |
+| ⑥ | `frontend/src/config/blockTypes.js` / `frontend/src/utils/validateProtocol.js` | `algo` 下拉六值（缺省 `CRC_16_MODBUS` 不变）+ `VALID_ALGOS` 六值（W4 只报真·枚举外，裸名 `CRC32` 照旧报） |
+| ⑦ | `frontend/src/utils/sequenceView.js` / `InstructionForm/TransactionPanel.jsx` / `backend/routers/operator.py` | `PLAN_ALGO` + **`PLAN_ALGO_FIELD_WIDTH`（键 = 后端值域）** 冻结链加同宽下限分支；事务面板下拉三选项 → 六 + `field_byte_length` 三态缺省 4 / 2 / 1；指令页 `CHECKSUM_CRC` 算子模板 `algo` 六值 |
+
+#### 三 · 共享向量
+
+`vectors/checksum_algo.json`（顶层数组 **6 算法 × 5 输入 = 30 行**，`algo` / `data` /
+`width` / `expected`）**双端同读**：`backend/tests/test_checksum_algorithms.py::VECTORS` ↔
+`frontend/src/utils/__tests__/checksumAlgo.test.js`；`vectorsLoader.test.js` `TABLES` 登记 +
+`vectors/README.md` §3（13 文件 17 表 → **14 文件 18 表**）与 §7 行注归档。
+
+期望值**不来自本仓实现** —— `crc32 = zlib.crc32`、`crc16_ccitt = binascii.crc_hqx(data, 0xFFFF)`
+（CPython 标准库独立实现）+ 三枚已发布 CRC check 值（`0x4B37` / `0x29B1` / `0xCBF43926` /
+`0x23`）生成期自校验，故对双端都是**外部真值**，不是「照实现抄一份」。
+**空输入不入表**：出线短路全 0、收侧 `crc16(b"") = 0xFFFF` 本就有已知分歧（沿 E1-3「各自现状
+锚」先例不改，记此备查）。
+
+#### 四 · 验收
+
+- **BE 768 → 793/793**（+25：向量出线／收侧逐行 2、覆盖与区间模式 2、白名单与出口映射 4、
+  宽度缺省／遗留精确／新下限／越界 5、计划 4、出线端到端 3、应答声明 3、存量不变 2）
+- **FE 1117 → 1127/1127（74 文件）**（+10：`checksumAlgo.test.js` +8、`toFrameBlocks` +1、
+  `validateProtocol` +1；另修 `sequenceView.test.js` 的「`CRC_32` 不支持 → 冻结」用例：
+  本批 `CRC_32` 转正，改测**真·枚举外 `CRC_64`** 走原分支 + 新增 2 字节冻结 / 4 字节成案两例）
+- `npx vite build` EXIT=0 · `npm run lint` EXIT=0 · yorha-ui 校验器改动 js/jsx/json
+  **0 违规** · md 表列数 mismatches=0 · 隐形字符／CRLF／TAB = 0
+- **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`pageStatus.json`
+  协议页 `availableNow`／`nextSteps` 回填 + `npm run sync:page-status`
+
+**下一批：R23 epoch 绝对时间戳模板**（§8.52 排期第 3 批）。
 
 ## 9. 保留勿动（非任务，勿清理）
 

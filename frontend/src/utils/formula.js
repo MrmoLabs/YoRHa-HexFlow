@@ -78,7 +78,13 @@ export const ChecksumAlgo = {
     SUM_8: 'SUM_8',
     XOR_8: 'XOR_8',
     CRC_16_MODBUS: 'CRC_16_MODBUS',
-    CRC_32: 'CRC_32'
+    // R22 (§8.52 排期 · CRC 多算法): CRC_32 由「声明未实现」转正，CRC_16_CCITT /
+    // LRC 新增。值域 = 后端 response_match.VALID_ALGOS 的 FE 编码，六值必须与
+    // blockTypes.algo.options / validateProtocol.VALID_ALGOS / toFrameBlocks.
+    // BACKEND_ALGO / sequenceView.PLAN_ALGO 同批成对改（**顺序也须一致**）。
+    CRC_16_CCITT: 'CRC_16_CCITT',
+    CRC_32: 'CRC_32',
+    LRC: 'LRC'
 };
 
 export function calculateChecksum(algo, dataBytes) {
@@ -105,6 +111,35 @@ export function calculateChecksum(algo, dataBytes) {
             }
             return crc;
         }
+
+        case ChecksumAlgo.CRC_16_CCITT: {
+            // R22 (§8.52 排期): CCITT-FALSE —— poly 0x1021 / init 0xFFFF / 非反射
+            // (refin=refout=false) / xorout 0；check "123456789" → 0x29B1。
+            // 与后端 checksum.crc16_ccitt、response_match.crc16_ccitt 逐位同源。
+            let crc = 0xFFFF;
+            for (let i = 0; i < dataBytes.length; i++) {
+                crc ^= dataBytes[i] << 8;
+                for (let j = 0; j < 8; j++) {
+                    crc = (crc & 0x8000) !== 0 ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
+                }
+            }
+            return crc;
+        }
+        case ChecksumAlgo.CRC_32: {
+            // R22: CRC-32/ISO-HDLC —— 反射 poly 0xEDB88320 / init=xorout
+            // 0xFFFFFFFF；check "123456789" → 0xCBF43926。三端同源。
+            let crc = 0xFFFFFFFF;
+            for (let i = 0; i < dataBytes.length; i++) {
+                crc ^= dataBytes[i];
+                for (let j = 0; j < 8; j++) {
+                    crc = (crc & 1) !== 0 ? ((crc >>> 1) ^ 0xEDB88320) >>> 0 : crc >>> 1;
+                }
+            }
+            return (crc ^ 0xFFFFFFFF) >>> 0;
+        }
+        case ChecksumAlgo.LRC:
+            // R22: 8 位和的二进制补码，恒单字节值；check "123456789" → 0x23。
+            return (-dataBytes.reduce((a, b) => (a + b) & 0xFF, 0)) & 0xFF;
 
         // Add more as needed
         default:

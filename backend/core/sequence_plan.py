@@ -25,7 +25,7 @@ ValueError（路由映射 400；POST /{id}/start 再走一次，防库内脏数�
 from typing import Any, Dict, List, Optional, Tuple
 
 from backend.core.orchestrator import _iso_ms, encode_auto_counter, encode_time_accumulator
-from backend.core.response_match import VALID_ALGOS, VALID_BYTE_ORDERS, checksum_value
+from backend.core.response_match import ALGO_FIELD_WIDTH, VALID_ALGOS, VALID_BYTE_ORDERS, checksum_value
 
 _MAX_PAYLOAD_BYTES = 4096
 _DYNAMIC_OPS = ("TIME_ACCUMULATOR", "AUTO_COUNTER")
@@ -163,6 +163,11 @@ def _normalize_checksum(payload_len: int, raw: Any) -> Optional[Dict[str, Any]]:
     }
     if algo == "crc16_modbus" and checksum["byte_length"] != 2:
         raise ValueError("crc16_modbus 的校验字段必须是 2 字节")
+    # R22 (§8.52 排期): 固定宽算法下限 —— 缺了会在 checksum_value 的
+    # to_bytes(field_byte_length) 上抛 OverflowError → 500，故收口为 400。
+    required = ALGO_FIELD_WIDTH.get(algo)
+    if required is not None and checksum["byte_length"] < required:
+        raise ValueError(f"{algo} 的校验字段须 ≥ {required} 字节（实为 {checksum['byte_length']}）")
     if checksum["offset"] + checksum["byte_length"] > payload_len:
         raise ValueError("plan.checksum 超出 payload 范围")
 

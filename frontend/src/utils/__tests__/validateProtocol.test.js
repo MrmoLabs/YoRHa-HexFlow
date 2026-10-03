@@ -186,6 +186,10 @@ describe('validateProtocol（协议工作副本结构校验）', () => {
         expect(withAlgo('SUM_8').warnings).toEqual([]);
         expect(withAlgo('XOR_8').warnings).toEqual([]);
         expect(withAlgo('CRC_16_MODBUS').warnings).toEqual([]);
+        // R22: 三个新算法入枚举 → 不再报 ALGO_UNKNOWN
+        expect(withAlgo('CRC_16_CCITT').warnings).toEqual([]);
+        expect(withAlgo('CRC_32').warnings).toEqual([]);
+        expect(withAlgo('LRC').warnings).toEqual([]);
         expect(withAlgo(undefined).warnings).toEqual([]);
     });
 

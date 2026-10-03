@@ -139,15 +139,39 @@ describe('sequenceView.buildPlan', () => {
         expect(PLAN_ALGO.CRC_16_MODBUS).toBe('crc16_modbus');
     });
 
-    it('degrades unsupported CRC_32 to frozen with warning', () => {
+    it('degrades an out-of-enum algorithm to frozen with warning', () => {
+        // R22: CRC_32 已入枚举 → 换真·枚举外样本（CRC_64），冻结分支本身不变。
+        const fields = [
+            { id: 'a', op_code: 'FIXED', byte_len: 4, parameter_config: {} },
+            ckField(['a'], { algorithm: 'CRC_64' })
+        ];
+        const bm = [{ start: 0, end: 4, fieldId: 'a' }, { start: 4, end: 6, fieldId: 'ck' }];
+        const out = run(fields, bm);
+        expect(out.plan).toBeNull(); // 动态为空 + 校验冻结 → 整体无计划
+        expect(out.warnings.some((w) => w.includes('CRC_64'))).toBe(true);
+    });
+
+    it('R22: freezes CRC_32 on a 2-byte field (须 ≥4 字节) with warning', () => {
         const fields = [
             { id: 'a', op_code: 'FIXED', byte_len: 4, parameter_config: {} },
             ckField(['a'], { algorithm: 'CRC_32' })
         ];
         const bm = [{ start: 0, end: 4, fieldId: 'a' }, { start: 4, end: 6, fieldId: 'ck' }];
         const out = run(fields, bm);
-        expect(out.plan).toBeNull(); // 动态为空 + 校验冻结 → 整体无计划
-        expect(out.warnings.some((w) => w.includes('CRC_32'))).toBe(true);
+        expect(out.plan).toBeNull();
+        expect(out.warnings.some((w) => w.includes('≥ 4 字节'))).toBe(true);
+    });
+
+    it('R22: builds a CRC_32 plan on a 4-byte field → algo crc32', () => {
+        const fields = [
+            { id: 'a', op_code: 'FIXED', byte_len: 4, parameter_config: {} },
+            { id: 'ck', op_code: 'CHECKSUM_CRC', byte_len: 4, endianness: 'BIG', parameter_config: { refs: ['a'], algorithm: 'CRC_32' } }
+        ];
+        const bm = [{ start: 0, end: 4, fieldId: 'a' }, { start: 4, end: 8, fieldId: 'ck' }];
+        const out = run(fields, bm);
+        expect(out.plan).not.toBeNull();
+        expect(out.plan.checksum.algo).toBe('crc32');
+        expect(out.plan.checksum.byte_length).toBe(4);
     });
 
     it('honours LITTLE endianness → byte_order little', () => {

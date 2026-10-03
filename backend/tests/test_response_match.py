@@ -88,7 +88,7 @@ class NormalizeSpecTest(unittest.TestCase):
         cs = normalize_spec({"checksum": {"algo": "crc16_modbus", "field_offset": 4}})
         self.assertEqual(cs["checksum"]["field_byte_length"], 2)  # crc16 缺省 2 字节
         with self.assertRaises(ValueError) as ctx:
-            normalize_spec({"checksum": {"algo": "crc32"}})
+            normalize_spec({"checksum": {"algo": "crc_32_legacy"}})  # R22: crc32 已入枚举 → 换真·枚举外样本
         self.assertIn("algo", str(ctx.exception))
         with self.assertRaises(ValueError):
             normalize_spec({"checksum": {"algo": "crc16_modbus", "field_byte_length": 1}})

@@ -39,6 +39,14 @@ class ChecksumHandler(LogicHandler):
                     result ^= b
             elif algo == "crc16_modbus":
                 result = self.crc16(data_bytes)
+            # R22 (§8.52 排期 · CRC 多算法): 三个新算法与 crc16_modbus 同位扩，
+            # 缺省/枚举外仍走上方 sum → 出错路径不变，存量帧逐字节一致。
+            elif algo == "crc16_ccitt":
+                result = self.crc16_ccitt(data_bytes)
+            elif algo == "crc32":
+                result = self.crc32(data_bytes)
+            elif algo == "lrc":
+                result = self.lrc(data_bytes)
             return f"{result:0{block.byte_length * 2}X}"
 
         start_id = block.config.target_start_id
@@ -78,6 +86,14 @@ class ChecksumHandler(LogicHandler):
                 result ^= b
         elif algo == "crc16_modbus":
              result = self.crc16(data_bytes)
+        # R22 (§8.52 排期 · CRC 多算法): 区间模式与上方 refs 模式同步扩（两处口径
+        # 必须一致，否则同一配置换一种引用方式就出不同字节）。
+        elif algo == "crc16_ccitt":
+            result = self.crc16_ccitt(data_bytes)
+        elif algo == "crc32":
+            result = self.crc32(data_bytes)
+        elif algo == "lrc":
+            result = self.lrc(data_bytes)
         
         return f"{result:0{block.byte_length * 2}X}"
 
@@ -91,3 +107,45 @@ class ChecksumHandler(LogicHandler):
                 else:
                     crc >>= 1
         return crc
+
+    def crc16_ccitt(self, data: bytearray, poly=0x1021) -> int:
+        """CRC-16/CCITT-FALSE（R22 · §8.52 排期）。
+
+        poly 0x1021、init 0xFFFF、refin/refout = false、xorout 0x0000 —— 与
+        formula.js calculateChecksum(CRC_16_CCITT)、response_match.crc16_ccitt
+        逐位同源；标准 check 值 input "123456789" → 0x29B1。
+        """
+        crc = 0xFFFF
+        for byte in data:
+            crc ^= (byte << 8) & 0xFFFF
+            for _ in range(8):
+                if crc & 0x8000:
+                    crc = ((crc << 1) ^ poly) & 0xFFFF
+                else:
+                    crc = (crc << 1) & 0xFFFF
+        return crc
+
+    def crc32(self, data: bytearray) -> int:
+        """CRC-32/ISO-HDLC（R22 · §8.52 排期）。
+
+        反射 poly 0xEDB88320、init/xorout 0xFFFFFFFF —— 与 formula.js
+        calculateChecksum(CRC_32)、response_match.crc32 同源；
+        标准 check 值 input "123456789" → 0xCBF43926。
+        """
+        crc = 0xFFFFFFFF
+        for byte in data:
+            crc ^= byte
+            for _ in range(8):
+                if crc & 1:
+                    crc = (crc >> 1) ^ 0xEDB88320
+                else:
+                    crc >>= 1
+        return crc ^ 0xFFFFFFFF
+
+    def lrc(self, data: bytearray) -> int:
+        """LRC（R22 · §8.52 排期）：8 位和的二进制补码 = (256 - sum%256) % 256。
+
+        与 formula.js calculateChecksum(LRC)、response_match.lrc 同源；
+        check 值 input "123456789" → 0x23。恒 1 字节值。
+        """
+        return (-sum(data)) & 0xFF
