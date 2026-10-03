@@ -52,9 +52,11 @@
 - 插槽装填策略（批次二 CP2 · D3/D14①）：槽卡属性面板新增「装填策略 (FIT POLICY)」两下拉 —— 溢出（APPEND 追加帧末尾 / REJECT 拒绝）与欠载（ZERO_FILL 归零发射 / REJECT），值域分侧不给交叉值，任一为 REJECT 即亮 STRICT 徽标（缺省 = 追加 + 归零 = 现状口径，亮 LEGACY）；存点 parameter_config.fit_policy 零 DDL，保存期后端校验取值（非法 400 不 fail-open），执行收口在 frame_builder（REJECT → 400 带槽 id 与实际/允许字节数）。新建槽默认 reject/reject（防错），存量槽不迁移、保持缺省口径。
 - 页面划界（D9/D10 · 批次四 4b 文档落位）：本页只管字节帧格式（帧头 / 字段 / 长度 / 校验 / 插槽的结构与字节排布）—— 传输层参数（loopback/TCP/串口、目标地址、超时、重连、设备档案）归通讯调试页 /transport/config 与 transport 抽象，不进协议树（D9-A）；协议保持设备无关（协议行无 device_code），「哪些指令能进此槽」用插槽 accepts 的 device_code 白名单近似表达（D10-A，绑定期后端校验拦截）。
 - 删槽回执不静默（§6.2 槽节点行）：保存期删掉插槽块 → 引用它的绑定 slot_id 悬空 → 置 NULL 并回执 dangling_slots_cleared 计数（不静默回退），对应关系可到数据中心页「绑定矩阵」核对。
+- 长度域字节序（R21 · 2026-10-03，PLAN §8.53）：length 卡属性面板新增「长度字节序 (BYTE ORDER)」下拉（大端 BIG / 小端 LITTLE，缺省大端 = 现状逐字节不变）存 parameter_config.byte_order —— 出线由后端 LengthHandler 按此反转字节对（refs 模式与旧区间模式同步生效），出口翻译 toFrameBlocks ↔ frame_builder 同形（只在 little 写键，params 形状与存量一致）；validateProtocol 新增 W5 BYTE_ORDER_UNKNOWN 枚举外 warning（镜像 W4），自动生成的回显规则声明 byte_order 跟着出线走（原硬编码大端）。收侧 response_spec.length.byte_order 本就支持两值 → 「能判也能发」。设计期卡面同口径：容器中央值里的 length 字段按字节序排（顺带修 ≥2 字节真值被空格切坏的存量显示缺陷 —— 2 字节 CRC/长度不再多出一个 0 字节）。零 DDL，共享向量 vectors/length_order.json 双端同读。
 
 ### 后续建议
 - 无 —— 本页人工复测项已全数销（2026-10-02：跨泳道拖拽落点 + slot refs 新语义 4 子项，明细 PLAN §8.28 / HANDOVER 条目 42）；跨页残留项 §9.7 ④「应答是否带转义字节」亦已销（2026-10-02，PLAN §8.35）。
+- R21 长度字节序已落地（2026-10-03，PLAN §8.53 / HANDOVER 条目 70）；下一批 R22（CRC16-CCITT / CRC32 / LRC 多算法）会动本页校验算法下拉与两端枚举白名单 —— 排期见 PLAN §8.52，待实现。
 
 ---
 

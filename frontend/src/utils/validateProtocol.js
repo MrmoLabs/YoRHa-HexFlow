@@ -19,6 +19,9 @@ const normalizeHex = (h) => String(h ?? '').replace(/\s/g, '');
 // W4 (批次四): 算法值域 = formula.js ChecksumAlgo 三值（CRC_32 无实现，
 // mapChecksumAlgo 也把它归到 CRC_16_MODBUS → 不在合法集）。
 const VALID_ALGOS = new Set(['SUM_8', 'XOR_8', 'CRC_16_MODBUS']);
+// R21（长度域 BE/LE）：length pc.byte_order 值域 —— 与后端 LengthHandler 的
+// big/little、收侧 response_spec.length.byte_order 的 VALID_BYTE_ORDERS 同集。
+const VALID_BYTE_ORDERS = new Set(['big', 'little']);
 
 export function validateProtocol(protocol) {
     const errors = [];
@@ -151,6 +154,17 @@ export function validateProtocol(protocol) {
         // 保存但必须可见；重新下拉选择即归一。 ---
         if (node.type === 'checksum' && pc.algorithm !== undefined && !VALID_ALGOS.has(pc.algorithm)) {
             warnings.push({ blockId: node.id, code: 'ALGO_UNKNOWN', message: `「${label}」校验算法「${pc.algorithm}」不在枚举内（两端回退口径不一，请重新选择）` });
+        }
+
+        // --- R21 (§8.52 排期 · 长度域 BE/LE): W5 length 字节序枚举外 —— 镜像 W4
+        // 口径：两端对枚举外值一致 fail-open 回大端（FE 卡面 / BE LengthHandler /
+        // 应答规格生成同口径），不阻断保存但必须可见；重新下拉选择即归一。
+        // 大小写归一后再判（两端都 lowercase 收），空串 = 未配置 → 不报。 ---
+        if (node.type === 'length') {
+            const order = String(pc.byte_order ?? '').trim().toLowerCase();
+            if (order && !VALID_BYTE_ORDERS.has(order)) {
+                warnings.push({ blockId: node.id, code: 'BYTE_ORDER_UNKNOWN', message: `「${label}」长度字节序「${pc.byte_order}」不在枚举内（两端回退大端，请重新选择）` });
+            }
         }
     });
 

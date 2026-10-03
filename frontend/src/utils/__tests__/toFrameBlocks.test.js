@@ -114,3 +114,48 @@ describe('toFrameBlocks（批次四: logic 块 config.params 翻译）', () => {
         expect(out[1].config).toEqual({ x: 2 });
     });
 });
+
+// R21（§8.52 排期 · 长度域 BE/LE）：length 字节序出口翻译 —— 镜像后端
+// frame_builder._with_byte_order（两处同形，改一必改二）。只在值为 little 时写键，
+// 缺省 / big / 枚举外不写 → params 形状与存量逐字节一致（§0 缺省口径）。
+describe('toFrameBlocks（R21: length 字节序出口翻译）', () => {
+    const lengthParamsOf = (byte_order) => toFrameBlocks([
+        leaf('a', { type: 'fixed' }),
+        leaf('L', {
+            type: 'length',
+            parameter_config: {
+                type: 'length', refs: ['a'],
+                ...(byte_order !== undefined ? { byte_order } : {})
+            }
+        })
+    ])[1].config.params;
+
+    it('little → params.byte_order = little（后端 LengthHandler 据此反转字节对）', () => {
+        expect(lengthParamsOf('little')).toEqual({ refs: ['a'], byte_order: 'little' });
+    });
+
+    it('big / 缺省 / 枚举外 → 不写键（params 形状与存量逐字节一致）', () => {
+        expect(lengthParamsOf('big')).toEqual({ refs: ['a'] });
+        expect(lengthParamsOf(undefined)).toEqual({ refs: ['a'] });
+        expect(lengthParamsOf('middle')).toEqual({ refs: ['a'] });
+    });
+
+    it('存量行（无 refs 键的直通路径）同样带上字节序', () => {
+        const [b] = toFrameBlocks([
+            leaf('L', { type: 'length', config: { legacy: 1 }, parameter_config: { byte_order: 'little' } })
+        ]);
+        expect(b.config).toEqual({ legacy: 1, params: { byte_order: 'little' } });
+    });
+
+    it('非 length 块不写 byte_order（checksum 仍只出算法枚举）', () => {
+        const b = toFrameBlocks([
+            leaf('a', { type: 'fixed' }),
+            leaf('C', {
+                type: 'checksum',
+                parameter_config: { type: 'checksum', refs: ['a'], byte_order: 'little' }
+            })
+        ])[1];
+        expect(b.config.params).toEqual({ refs: ['a'], algorithm: 'crc16_modbus' });
+        expect(b.config.params.byte_order).toBeUndefined();
+    });
+});

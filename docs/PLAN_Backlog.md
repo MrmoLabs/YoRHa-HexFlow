@@ -45,7 +45,7 @@
 | R19–R20 | **拍板后追加排期**（§8.50：① 加工页传输展示与切换 = **维持 D9-A 不立项**、② 数据包示例下载 = **动态导出**、③ 档案自定义排序 = **`sort_order` DDL 解禁**） | ✅ **R19 已完成 ✅（§8.50：数据包示例下载 —— 动态出按域导入的 5 域、复用 R17 `?domains=` 子集，零后端改动零 DDL，FE 1098 → 1099）**、**R20 已完成 ✅（§8.50：档案自定义排序 —— `device_profiles.sort_order` 仅新增列 + migration 0004 + `PUT /profiles/order` 整表一次提交，拖完只改草稿序；BE 733 → 743、FE 1099 → 1106；db 同步另开 `chore(db)` 提交）** |
 | §8.51 | **§9.7 ① 出线方向销项**（「有 LEN = 不需要转义」在载荷含定界字节时是否异常）—— 按 §8.35 同套方法**联网取公开规范真帧 + 仓内仿真**：IEC 60870-5-104 / DL/T 645-2007 / Modbus TCP 三条**有长度域**协议 + 本仓三层壳出线反解 + **无 LEN 反例** | ✅ **已完成（2026-10-03，零代码改动、零 DDL、零 `pageStatus` 变更）**：新 `backend/tests/test_wire_delimiter.py` **10 例**，**BE 743 → 753/753**、FE 1106/1106（未碰前端）；**「需真实设备帧」这一类自此无开放项** |
 
-| R21–R28 | **七项复议拍板全数立项**（§8.52：C-5 ② 长度域 BE/LE → R21、C-5 ① CRC 多算法 → R22、挂账 ① epoch → R23、挂账 ③ 切 op → R24、挂账 ② 加扰 → R25、C-1 B 序列分支 → R26（含 DDL 仅新增列）、C-5 ③ varint/COBS 拆两批 → R27 出线 / R28 解包） | 🔄 **排期已立、待实现（2026-10-03 拍板，§8.52）** —— 顺序 = 先小后大、先补不对称再碰解包；加工页传输展示与切换**复议维持 D9-A 不立项** |
+| R21–R28 | **七项复议拍板全数立项**（§8.52：C-5 ② 长度域 BE/LE → R21、C-5 ① CRC 多算法 → R22、挂账 ① epoch → R23、挂账 ③ 切 op → R24、挂账 ② 加扰 → R25、C-1 B 序列分支 → R26（含 DDL 仅新增列）、C-5 ③ varint/COBS 拆两批 → R27 出线 / R28 解包） | 🔄 **R21 已完成 ✅（2026-10-03，§8.53：长度域 `byte_order` —— BE+FE 零 DDL，收侧本就支持、补出线与出口翻译 + 应答声明；**顺带修**设计期 ≥2 字节真值被空格切坏的存量缺陷；新增共享向量 `vectors/length_order.json` 7 行，BE 753 → 768、FE 1106 → 1117）**；**R22–R28 排期已立、待实现** —— 顺序 = 先小后大、先补不对称再碰解包；加工页传输展示与切换**复议维持 D9-A 不立项** |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -1211,6 +1211,9 @@
 >
 > **补记（2026-10-03 · §8.52 复议）**：这三项**已全数立项** —— 长度域 BE/LE → **R21**、
 > CRC 多算法 → **R22**、varint/COBS 拆 **R27 出线 / R28 解包**；「触发式 / 暂缓」到此清零。
+>
+> **销项注（2026-10-03 · §8.53）**：**R21 已完成 ✅**（长度域 `byte_order` 双端落地，
+> BE 753 → 768、FE 1106 → 1117）；余 **R22 / R27 / R28** 待排。
 
 - **优化 1（纯 FE）三态进制 + 进制前缀识别**：`BlockPropertiesPanel` 录入进制
   HEX|DEC → **+BIN** 三态（`input_base='bin'`，非法值仍回退 hex）；
@@ -2970,6 +2973,7 @@ D15 关联项 1（17 例 + BE 630/630）。**本项无需再拍**，此处只留
 若必须做则分「出线 / 解包」两批。
 **→ 2026-10-03 复议（§8.52）：三项全数立项** —— ② → **R21**（先做）、① → **R22**、
 ③ → **R27 出线 + R28 解包**（沿用「拆两批」口径）。
+**→ ② 已完成 ✅（2026-10-03，§8.53：R21 长度域 `byte_order`）**；余 R22 / R27 / R28 待排。
 
 ---
 
@@ -4295,7 +4299,7 @@ C-4 / §8.49 三·① 与 R18 终态 / §8.27 复跑第 1 项 / §1 新行、`PR
 
 | 编号 | 内容 | 类型 | 规模 | DDL |
 |---|---|---|---|---|
-| **R21** | 长度域 `byte_order`（big / little）—— 修「**能判不能发**」的不对称（`handlers/length.py` 恒大端 vs 收侧 `_normalize_length` 已支持 little） | BE+FE | 小 | 否 |
+| **R21** | 长度域 `byte_order`（big / little）—— 修「**能判不能发**」的不对称（`handlers/length.py` 恒大端 vs 收侧 `_normalize_length` 已支持 little）<br>**✅ 已完成（2026-10-03，§8.53）**：length 卡 `byte_order` 下拉 + `LengthHandler` 反转 + `frame_builder`/`toFrameBlocks` 出口翻译 + 应答规格声明 + 设计期卡面同口径；BE 753 → 768、FE 1106 → 1117、共享向量 `length_order.json` 7 行 | BE+FE | 小 | 否 |
 | **R22** | CRC16-CCITT / CRC32 / LRC —— BE `ChecksumHandler` + FE enum / 下拉 / `VALID_ALGOS` + **`response_match` 白名单同批** + 共享向量 2–3 组 | BE+FE | 中 | 否 |
 | **R23** | epoch 绝对时间戳模板（替代手填 INT_UNSIGNED） | BE+FE | 小 | 否 |
 | **R24** | 创建后切换 op —— 放开 `op_code` 编辑 + 兼容校验 + 确认回执（现状只能删建重录） | BE+FE | 中 | 否 |
@@ -4317,6 +4321,63 @@ yorha-ui 校验器改动文件 0 违规 + 文档同步）+ **一批一提交**�
 **触发式清单至此清零**：C-5 ①②③、C-1、`BUSINESS_SCENARIOS.md` 挂账三项**全部转立项**；
 **仍不立项的只剩**加工页「展示传输 + 本页切换」（维持 D9-A，已在 `pageStatus.json`
 加工页 `nextSteps` 留拍板回执）。
+
+### 8.53 R21 长度域 `byte_order`（big / little）：补「能判不能发」的不对称
+
+**批次**：2026-10-03 · **BE + FE，零 DDL、`models.py` 未动、`/dispatch` 缺省口径逐字节不变**
+—— §8.52 排期第 1 批（先小后大之首）。现状：收侧 `response_match.VALID_BYTE_ORDERS`
+本就收 `big|little`、事务面板回显规则**能配能判**；出线 `LengthHandler` 却恒
+`f"{total:0{n}X}"` 大端 → 「**能判不能发**」。
+
+#### 一 · 六处改点（改一必改二/三）
+
+| # | 位置 | 口径 |
+|---|---|---|
+| ① | `frontend/src/config/blockTypes.js` | length 卡 `fields` 增 `byte_order`（`BLOCK_PROPERTY_FIELDS.byte_order`：`inputType='select'`、点路径 `parameter_config.byte_order`、`default='big'`、选项 big／little）—— 走**既有通用 select 分支**，`ProtocolPropertiesPanel.jsx` **零改动** |
+| ② | `backend/handlers/length.py` | `byte_order_of()` + `apply_byte_order()`：refs 模式与旧 range 模式**两个 return 同步套用**；little = 字节对反转；缺省／枚举外回大端（镜像算法枚举外回 `crc16_modbus`）；**奇数长度不反转**（值超 `byte_length` 的畸形输出，大端路径本就奇数位，不发明语义） |
+| ③ | `backend/core/frame_builder._with_byte_order` ↔ `frontend/src/utils/toFrameBlocks.js withByteOrder` | `pc.byte_order=little` → `config.params.byte_order`；**只在 little 时写键**（big／缺省／枚举外不写 → params 形状与存量逐字节一致）；**refs 缺失的 config 直通路径同样生效**（存量树只设字节序也走得通）；**checksum 块不吃此键** |
+| ④ | `backend/core/response_generate._length_element` | 自动生成的回显规则 `byte_order` 改从 `pc` 取（原硬编码 `"big"`）—— 否则「出线小端、规则按大端比」必然失配 |
+| ⑤ | `frontend/src/utils/protocolTree.js` `collectDeterministicBytes` | length 分支按 `pc.byte_order` 反转，与 ② 同口径 → **设计期卡面与出线逐字节一致**；大小写不敏感（两端都 lowercase 收） |
+| ⑥ | `frontend/src/utils/validateProtocol.js` | W5 `BYTE_ORDER_UNKNOWN`（大小写归一后判、空串不报），镜像 W4 `ALGO_UNKNOWN` 的 fail-open 口径 |
+
+**仅 length 卡列此字段**（拍板范围 = 长度域；checksum 的 `byte_order` 未立项，需另开）。
+`protocol_api.ProtocolNodeSchema.parameter_config` 是自由 dict → **零 schema 改动、零 DDL**。
+卡片 Σ 回显仍是十进制 `${sigma}B`（字节序只改「出线字节的排法」，不改长度字段的值）。
+
+#### 二 · 顺带修（存量缺陷）：设计期 ≥2 字节真值被空格切坏
+
+`collectDeterministicBytes` 把 `formatToHex()` 的**展示串**（已带空格，如 `"00 06"`）
+直接 `.match(/.{1,2}/g)` → 空格被吃进切片 → `[00, 0x00, 06]` **多出一个 0 字节**。
+单字节值看不出（既有用例全 1 字节），**2 字节 CRC／长度必错**（容器中央值显示成
+`"00 00 06"` 而非 `"00 06"`，嵌套校验的中间字节同理被污染）。length / checksum
+两分支同步 `.replace(/\s/g, '')`（**改一必改二**）并补回归用例（2 字节 CRC 容器
+中央值）。只影响**卡面显示**，出线字节由 BE 侧决定、不受影响 —— 但 R21 的
+「设计期与出线逐字节一致」对 2 字节长度**必须**先修此病才能成立。
+
+#### 三 · 共享向量
+
+新增 `vectors/length_order.json`（顶层数组 = 单表，**7 行**：`byte_order` /
+`byte_length` / `total` / `expected`），**双端同读**：
+后端 `backend/tests/test_length_byte_order.py`（refs 求和 → 大端格式化 → 按序出线）、
+前端 `protocolTree.test.js`（同 Σ 的容器中央值按行断言）；`vectorsLoader.test.js`
+`TABLES` 登记、`vectors/README.md` §3 表清单同步（12 文件 16 表 → **13 文件 17 表**）。
+消费矩阵闸（`test_vectors_manifest.py`）与 FE 表清单闸均绿。
+
+#### 四 · 验收
+
+- **BE 753 → 768/768**（+15：向量逐行 1、缺省／显式 big／枚举外回大端 3、大小写
+  不敏感 1、range 模式 1、`config=None` 零填 1、奇数位不反转 1、frame_builder 三态
+  4（little 帧 + `logic` 回显、big 与缺省逐字节同 + params 不写键、refs 直通路径、
+  checksum 不吃键）、应答声明 little／big／枚举外 3）
+- **FE 1106 → 1117/1117（73 文件）**（+11：`protocolTree` +4、`toFrameBlocks` +4、
+  `validateProtocol` +1、`blockTypes` +2）
+- `npx vite build` EXIT=0 · `npm run lint` EXIT=0 · yorha-ui 校验器改动 js/jsx/json
+  **0 违规** · md 表列数 mismatches=0 · 隐形字符／CRLF／TAB = 0
+- **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`pageStatus.json`
+  仅协议页 `availableNow`／`nextSteps` 回填 + `npm run sync:page-status`
+
+**下一批：R22 CRC16-CCITT / CRC32 / LRC**（§8.52 排期第 2 批 —— BE `ChecksumHandler`
++ FE enum／下拉／`VALID_ALGOS` + **`response_match` 白名单同批成对改** + 共享向量 2–3 组）。
 
 ## 9. 保留勿动（非任务，勿清理）
 

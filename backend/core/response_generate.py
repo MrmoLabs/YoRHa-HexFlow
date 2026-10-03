@@ -238,10 +238,14 @@ def _length_element(geo: Dict[str, Any], warnings: List[str], where: str) -> Opt
     if not -4096 <= offset_val <= 4096:
         warnings.append(f"{where} length offset_val={offset_val} 超出 ±4096 → 未生成 length")
         return None
+    # R21（长度域 BE/LE）：出线 length 卡设了小端时，生成的回显规则必须跟着用
+    # 小端 —— 否则「出线反转、收侧按大端比」必然不匹配（收侧 _normalize_length
+    # 的 VALID_BYTE_ORDERS 本就支持两值，此处只是把声明补上）。枚举外 → 回大端。
+    order = str(pc.get("byte_order") or "").strip().lower()
     out = {
         "byte_length": bl,
         "offset_val": offset_val,
-        "byte_order": "big",
+        "byte_order": "little" if order == "little" else "big",
     }
     out.update(position)
     return out

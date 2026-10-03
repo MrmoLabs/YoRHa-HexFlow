@@ -61,6 +61,22 @@ export const BLOCK_PROPERTY_FIELDS = {
         key: 'parameter_config.fit_policy',
         label: '装填策略 (Fit Policy)',
         inputType: 'fit'
+    },
+    // R21（§8.52 排期 · 长度域 BE/LE）: 长度块字节序 —— 存点
+    // parameter_config.byte_order（big | little，缺省 big），与**收侧**回显规则
+    // response_spec.length.byte_order **同值域**（能判也能发）；出线由后端
+    // LengthHandler 按此反转字节对（toFrameBlocks / frame_builder._build_logic_config
+    // 同形翻译进 config.params），设计期卡面同口径（protocolTree）。仅 length 卡
+    // 列此字段（校验块 byte_order 不在 R21 范围）。
+    byte_order: {
+        key: 'parameter_config.byte_order',
+        label: '长度字节序 (Byte Order)',
+        inputType: 'select',
+        default: 'big',
+        options: [
+            { value: 'big', label: '大端 (BIG)' },
+            { value: 'little', label: '小端 (LITTLE)' }
+        ]
     }
 };
 
@@ -101,7 +117,9 @@ export const BLOCK_TYPES = [
         palette: { title: '添加长度 (Length)', mainLabel: '长度', subLabel: 'LEN', dashed: false },
         // A2: length 卡加 refs 结构引用（选同协议块 → 设计期 Σ 回显 / 编码期
         // PASS1 求和）。
-        fields: ['length', 'refs']
+        // R21: + byte_order 长度字节序下拉（parameter_config.byte_order，出线
+        // 大端/小端；缺省 big = 现状逐字节不变）。
+        fields: ['length', 'refs', 'byte_order']
     },
     {
         type: 'checksum',

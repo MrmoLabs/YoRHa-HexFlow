@@ -41,11 +41,12 @@ JSON 没有 `Infinity` / `NaN`，而向量里确实要喂这两个值（如 `[Na
   行注见本文末尾「行注归档」。
 - 迁移时已校验：**无任何大于 2⁵³−1 的整数**，JS `Number` 精度无损。
 
-## 3. 表清单（12 文件 / 16 表）
+## 3. 表清单（13 文件 / 17 表）
 
 | JSON | 表 · 行数 | 后端消费 | 前端消费 |
 |---|---|---|---|
 | `int_signed.json` | 24 | `test_encode_int_signed.py::VECTORS` | `InstructionEncoder.test.js` E1-1 |
+| `length_order.json` | 7 | `test_length_byte_order.py::VECTORS` | `protocolTree.test.js` R21 长度字节序 |
 | `little_endian.json` | 7 | `test_encode_little_endian.py::VECTORS` | 同上 E1-2 |
 | `bcd_scaled.json` | `bcd` 17 · `scaled` 16 | `test_encode_bcd_scaled.py` | 同上 E1-3 |
 | `float_ieee.json` | `f32` 22 · `f64` 23 | `test_encode_float_ieee.py::VECTORS` / `::VECTORS64` | 同上 E1-4（R5） |
@@ -166,6 +167,19 @@ JSON 只有一种表达，两端原本的记法差异靠 **3 个稳定适配**�
 - `#17` 拒指数记法 `"1e3"` → 0（同 E1-1 正则）
 - `#18` `true` → 1.0、`#19` `false` → 0.0
 - `#20..#22` `{"$v":"NaN"}` / `{"$v":"Infinity"}` / `null` → 全零
+
+### length_order.json
+
+> **R21（§8.53 · 2026-10-03，非迁移、按 §6「新增表固定动作」落的新表）**：
+> 协议 length 卡字节序出线向量。行键 = `byte_order` / `byte_length` / `total` /
+> `expected`；`total` = **引用尺寸之和 Σ**（后端 `LengthHandler` 走 refs 求和、前端
+> `strictSigma` 同值），`expected` = 该 `byte_length` 宽度下按 `byte_order` 出线的字节。
+> 双端消费：`backend/tests/test_length_byte_order.py` ↔ `frontend/.../protocolTree.test.js`。
+
+- `#0` / `#1` 同 Σ=6、同 2 字节：大端 `0006` ↔ 小端 `0600`（最常见形态）
+- `#2` / `#3` Σ=258（0x0102）：高低字节换位最直观（`0102` ↔ `0201`）
+- `#4` / `#5` 1 字节 Σ=255：大小端**同值** `FF`（钉住「单字节无差异」边界）
+- `#6` 4 字节 Σ=300：整串按字节对逆序（`0000012C` → `2C010000`）
 
 ### little_endian.json
 

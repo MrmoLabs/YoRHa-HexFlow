@@ -155,13 +155,35 @@ def _index_nodes(nodes, by_id: dict) -> None:
             _index_nodes(n.get("children"), by_id)
 
 
+def _with_byte_order(config, pc, ntype: str):
+    """R21（长度域 BE/LE）：length 卡 `parameter_config.byte_order=little` →
+    `config.params.byte_order`（镜像 toFrameBlocks buildLogicConfig 同名分支）。
+
+    只在值为 little 时写键 —— 缺省 / big / 枚举外的值一律不写，params 形状与
+    本批之前逐字节一致（§0 缺省口径）；refs 缺失的直通路径同样生效（存量树
+    可只设字节序）。仅 length 块（校验块 byte_order 不在 R21 范围）。
+    """
+    if ntype != "length" or not isinstance(pc, dict):
+        return config
+    order = str(pc.get("byte_order") or "").strip().lower()
+    if order != "little":
+        return config
+    base = config if isinstance(config, dict) else {}
+    params = dict(base.get("params") or {})
+    params["byte_order"] = "little"
+    merged = dict(base)
+    merged["params"] = params
+    return merged
+
+
 def _build_logic_config(node, ntype: str, by_id: dict):
     """镜像 toFrameBlocks buildLogicConfig：pc.refs → params.refs 叶子展开
     （容器 ref 展开为其子树叶子、悬空丢弃）；checksum 算法枚举映射；length
-    offset 仅键存在且为有限数值才带。pc.refs 键缺失 → config 直通。"""
+    offset 仅键存在且为有限数值才带；length pc.byte_order → params.byte_order
+    （R21）。pc.refs 键缺失 → config 直通（byte_order 仍生效）。"""
     pc = node.get("parameter_config")
     if not isinstance(pc, dict) or not isinstance(pc.get("refs"), list):
-        return _js_config(node.get("config"))
+        return _with_byte_order(_js_config(node.get("config")), pc, ntype)
 
     leaf_ids: List[str] = []
 
@@ -190,7 +212,7 @@ def _build_logic_config(node, ntype: str, by_id: dict):
     base = node.get("config")
     merged = dict(base) if isinstance(base, dict) else {}
     merged["params"] = params
-    return merged
+    return _with_byte_order(merged, pc, ntype)
 
 
 def _build_bitfield_config(node):

@@ -390,14 +390,24 @@ const collectDeterministicBytes = (node, byId, root) => {
     if (node.type === 'length') {
         const sigma = strictSigma(node, byId, root);
         if (sigma == null) return null;
-        return (formatToHex(sigma, node.byte_length).match(/.{1,2}/g) || [])
+        // 注意：formatToHex 出的是**已加空格**的展示串（"00 06"），先去掉空格再
+        // 按字节切 —— 否则空格被吃进切片（"00 06" → [00,0x0,06]，多出一个 0 字节），
+        // ≥2 字节的真值一律显示错位（R21 前的存量缺陷：单字节看不出，2 字节 CRC/
+        // 长度必错）。
+        const bytes = (formatToHex(sigma, node.byte_length).replace(/\s/g, '').match(/.{1,2}/g) || [])
             .map(p => parseInt(p, 16));
+        // R21（长度域 BE/LE）：pc.byte_order=little → 字节对反转，与后端
+        // LengthHandler.apply_byte_order 同口径（设计期卡面与出线逐字节一致）；
+        // 缺省 / 枚举外一律大端（fail-open，镜像两端算法枚举口径）。
+        return String(node.parameter_config?.byte_order || '').toLowerCase() === 'little'
+            ? bytes.slice().reverse()
+            : bytes;
     }
     if (node.type === 'checksum') {
         const bytes = collectRefsBytes(node, byId, root);
         if (bytes == null) return null;
         const algo = mapChecksumAlgo(node.parameter_config?.algorithm || node.parameter_config?.algo);
-        return (formatToHex(calculateChecksum(algo, bytes), node.byte_length).match(/.{1,2}/g) || [])
+        return (formatToHex(calculateChecksum(algo, bytes), node.byte_length).replace(/\s/g, '').match(/.{1,2}/g) || [])
             .map(p => parseInt(p, 16));
     }
     const hexVal = String(node.hex_value || node.parameter_config?.hex || '').replace(/\s/g, '');

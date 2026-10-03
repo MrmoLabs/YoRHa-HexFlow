@@ -1,0 +1,9 @@
+[
+  { "byte_order": "big", "byte_length": 2, "total": 6, "expected": "0006" },
+  { "byte_order": "little", "byte_length": 2, "total": 6, "expected": "0600" },
+  { "byte_order": "big", "byte_length": 2, "total": 258, "expected": "0102" },
+  { "byte_order": "little", "byte_length": 2, "total": 258, "expected": "0201" },
+  { "byte_order": "big", "byte_length": 1, "total": 255, "expected": "FF" },
+  { "byte_order": "little", "byte_length": 1, "total": 255, "expected": "FF" },
+  { "byte_order": "little", "byte_length": 4, "total": 300, "expected": "2C010000" }
+]

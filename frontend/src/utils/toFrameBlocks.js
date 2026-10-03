@@ -41,12 +41,22 @@ const buildBitfieldConfig = (node) => ({
 //   组 ref 展开的口径；range 区间模型只认连续区间，非连续 refs 会把区间内
 //   无关块算进来，故不采用 target_start/end）；
 // - params.algorithm = 算法枚举映射（checksum 专属）；
-// - params.offset = 显式数值才带（协议侧无此概念，缺省 0 同两端）。
+// - params.offset = 显式数值才带（协议侧无此概念，缺省 0 同两端）；
+// - params.byte_order = R21（长度域 BE/LE）：length pc.byte_order=little 才带
+//   （缺省 / big / 枚举外不写键 → params 形状与存量逐字节一致，后端
+//   LengthHandler 缺省回大端）。
 // pc.refs 键缺失（存量行无 parameter_config）→ 维持既有 config 直通，
-// 行为与批次四前逐字节一致。
+// 行为与批次四前逐字节一致（byte_order 仍生效，镜像后端 _build_logic_config）。
+const withByteOrder = (config, pc, type) => {
+    if (type !== 'length' || !pc) return config || null;
+    if (String(pc.byte_order || '').toLowerCase() !== 'little') return config || null;
+    const base = config && typeof config === 'object' ? config : {};
+    return { ...base, params: { ...(base.params || {}), byte_order: 'little' } };
+};
+
 const buildLogicConfig = (node, type, byId) => {
     const pc = node.parameter_config;
-    if (!pc || !Array.isArray(pc.refs)) return node.config || null;
+    if (!pc || !Array.isArray(pc.refs)) return withByteOrder(node.config, pc, type);
     const leafIds = [];
     const expand = (id) => {
         const target = byId.get(id);
@@ -62,10 +72,10 @@ const buildLogicConfig = (node, type, byId) => {
     }
     const offset = Number(pc.offset);
     if (type === 'length' && Number.isFinite(offset)) params.offset = offset;
-    return {
+    return withByteOrder({
         ...(node.config && typeof node.config === 'object' ? node.config : {}),
         params
-    };
+    }, pc, type);
 };
 
 export const toFrameBlocks = (nodes) => {

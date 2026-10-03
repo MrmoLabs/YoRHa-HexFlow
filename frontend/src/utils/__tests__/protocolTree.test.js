@@ -15,6 +15,12 @@ import {
 import * as protocolTree from '../protocolTree';
 // 批 4 用：位域块在导入路径的白名单归一
 const { buildImportedProtocolPayload } = protocolTree;
+// R21（§8.52 排期 · 长度域 BE/LE）：长度字节序共享向量 —— 单一真相源 =
+// vectors/length_order.json，与 backend/tests/test_length_byte_order.py 同读一份。
+import { loadVectors } from '../../../../vectors/vectors.js';
+import lengthOrderVec from '../../../../vectors/length_order.json';
+
+const LENGTH_ORDER_VECTORS = loadVectors(lengthOrderVec);
 
 // 构造器：children 树的最小持久化形状（A+B 批协议页内联展开的纯函数层）
 const leaf = (id, extra = {}) => ({ id, label: id, type: 'fixed', byte_length: 1, hex_value: '00', ...extra });
@@ -583,5 +589,73 @@ describe('人工验证第 3 轮 #2 — 容器拼接：?? 仅限无法确定内�
         ]);
         const lanes = protocolTree.injectRefsSigma(buildProtocolLanes(p, ['c']), computeProtocolOffsets(p).byId, p);
         expect(lanes[0].items.find(i => i.id === 'L').parameter_config.computedValue).toBe('4B');
+    });
+});
+
+// ─── R21（§8.52 排期 · 长度域 BE/LE）：length 字节序双端同读向量 ─────────────
+// 单一真相源 = vectors/length_order.json（本文件 + backend/tests/
+// test_length_byte_order.py 同读一份，新增向量只写一处）。卡面口径 =
+// collectDeterministicBytes 的 length 分支（little = 字节对反转，与后端
+// LengthHandler.apply_byte_order 同口径）；取值路径 = 容器中央值注入
+// （injectContainerContent → nodeContent → collectDeterministicBytes）。
+describe('R21 长度域字节序（共享向量 vectors/length_order.json · 双端同读）', () => {
+    const lenTree = (row) => proto([
+        // refs 目标 = row.total 字节的字面块 → Σ = total（与后端 refs 求和同值）
+        leaf('h', { hex_value: 'AA'.repeat(row.total), byte_length: row.total }),
+        cont('g', [{
+            id: 'L', label: 'L', type: 'length', byte_length: row.byte_length, hex_value: '00',
+            parameter_config: { type: 'length', refs: ['h'], byte_order: row.byte_order }
+        }])
+    ]);
+    const containerValue = (p, byId) => protocolTree.injectContainerContent(
+        buildProtocolLanes(p, ['g']), byId, p
+    )[0].items.find(i => i.id === 'g').parameter_config.computedValue;
+
+    it('向量逐行：容器中央值的 length 字段按 byte_order 出线（little = 字节对反转）', () => {
+        for (const row of LENGTH_ORDER_VECTORS) {
+            const p = lenTree(row);
+            expect(containerValue(p, computeProtocolOffsets(p).byId),
+                `${row.byte_order}/${row.byte_length}B Σ=${row.total}`)
+                .toBe(row.expected.match(/.{1,2}/g).join(' '));
+        }
+    });
+
+    it('缺省 / 枚举外 → 按大端出线（fail-open，与后端 byte_order_of 同口径）', () => {
+        const valueOf = (byte_order) => {
+            const p = lenTree({ byte_length: 2, total: 6, byte_order });
+            return containerValue(p, computeProtocolOffsets(p).byId);
+        };
+        expect(valueOf(undefined)).toBe('00 06');
+        expect(valueOf('big')).toBe('00 06');
+        expect(valueOf('middle')).toBe('00 06');
+        expect(valueOf('')).toBe('00 06');
+        expect(valueOf('LITTLE')).toBe('06 00'); // 大小写不敏感（两端同口径）
+    });
+
+    it('Σ 回显口径不受字节序影响：设计期卡面仍是十进制字节数', () => {
+        // 字节序只改「出线字节的排法」，长度字段的**值**（= 引用尺寸之和）不变。
+        const p = lenTree({ byte_order: 'little', byte_length: 2, total: 6 });
+        const lanes = protocolTree.injectRefsSigma(
+            buildProtocolLanes(p, ['g']), computeProtocolOffsets(p).byId, p
+        );
+        expect(lanes[1].items.find(i => i.id === 'L').parameter_config.computedValue).toBe('6B');
+    });
+
+    it('回归（R21 顺带修）：≥2 字节设计期真值不被空格切坏（formatToHex 出的是展示串）', () => {
+        // formatToHex(6, 2) → "00 06"：直接 .match(/.{1,2}/g) 会把空格吃进切片
+        // → [00,0x0,06] 多一个 0 字节。单字节值（既有用例）看不出，2 字节 CRC /
+        // 长度必错 —— 两个分支同步去空格（改一必改二）。
+        const p = proto([
+            leaf('h', { hex_value: 'AA 55', byte_length: 2 }),
+            cont('g', [{
+                id: 'C', label: 'C', type: 'checksum', byte_length: 2, hex_value: '00',
+                parameter_config: { type: 'checksum', refs: ['h'], algorithm: 'CRC_16_MODBUS' }
+            }])
+        ]);
+        const want = formatToHex(calculateChecksum(ChecksumAlgo.CRC_16_MODBUS, [0xAA, 0x55]), 2);
+        expect(want).toContain(' '); // 两字节必然带空格 → 正是切坏的触发条件
+        expect(protocolTree.injectContainerContent(
+            buildProtocolLanes(p, ['g']), computeProtocolOffsets(p).byId, p
+        )[0].items.find(i => i.id === 'g').parameter_config.computedValue).toBe(want);
     });
 });

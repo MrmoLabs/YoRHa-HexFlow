@@ -16,6 +16,7 @@ import bitfieldVec from '../../../../vectors/bitfield.json';
 import escapeVec from '../../../../vectors/escape.json';
 import floatIeeeVec from '../../../../vectors/float_ieee.json';
 import intSignedVec from '../../../../vectors/int_signed.json';
+import lengthOrderVec from '../../../../vectors/length_order.json';
 import littleEndianVec from '../../../../vectors/little_endian.json';
 import presenceVec from '../../../../vectors/presence.json';
 import repeatVec from '../../../../vectors/repeat.json';
@@ -37,6 +38,7 @@ const TABLES = {
     escape: escapeVec,
     float_ieee: floatIeeeVec,
     int_signed: intSignedVec,
+    length_order: lengthOrderVec,
     little_endian: littleEndianVec,
     presence: presenceVec,
     repeat: repeatVec,

@@ -74,3 +74,26 @@ describe('blockTypes 插槽契约（批次二 D3/D14①）', () => {
         expect(createBlock('checksum', () => mk()).parameter_config).toEqual({ type: 'checksum', refs: [] });
     });
 });
+
+// R21（§8.52 排期 · 长度域 BE/LE）：length 卡加字节序下拉 —— 存点
+// parameter_config.byte_order（big|little，缺省 big），与收侧
+// response_spec.length.byte_order 同值域（能判也能发）；仅 length 列此字段。
+describe('blockTypes 长度字节序（R21 长度域 BE/LE）', () => {
+    it('length 字段 = length + refs + byte_order（select 分流 + 点路径存 pc）', () => {
+        expect(BLOCK_TYPES.find(b => b.type === 'length').fields).toEqual(['length', 'refs', 'byte_order']);
+        const f = BLOCK_PROPERTY_FIELDS.byte_order;
+        expect(f.inputType).toBe('select');           // 面板通用 select 分支（零 JSX 改动）
+        expect(f.key).toBe('parameter_config.byte_order');
+        expect(f.default).toBe('big');
+        expect(f.options.map(o => o.value)).toEqual(['big', 'little']);
+        // 面板专用字段不提供 parse（同 refs/fit：直接被 inputType 分流消费）
+        expect(f.parse).toBeUndefined();
+        expect(getBlockFields('length').map(x => x.id)).toEqual(['length', 'refs', 'byte_order']);
+    });
+
+    it('checksum 不列 byte_order（R21 拍板范围 = 长度域）；其它块型字段不变', () => {
+        expect(BLOCK_TYPES.find(b => b.type === 'checksum').fields).toEqual(['length', 'refs', 'algo']);
+        expect(BLOCK_TYPES.find(b => b.type === 'fixed').fields).toEqual(['length', 'hex']);
+        expect(BLOCK_TYPES.find(b => b.type === 'slot').fields).toEqual(['length', 'fit']);
+    });
+});

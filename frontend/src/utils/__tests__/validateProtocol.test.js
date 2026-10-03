@@ -189,6 +189,30 @@ describe('validateProtocol（协议工作副本结构校验）', () => {
         expect(withAlgo(undefined).warnings).toEqual([]);
     });
 
+    // R21 (§8.52 排期 · 长度域 BE/LE): W5 length 字节序枚举外只提醒不阻断 ——
+    // 两端对枚举外值一致 fail-open 回大端，声明与实现必须同口径才可见。
+    it('W5 (R21) length 字节序枚举外 → BYTE_ORDER_UNKNOWN warning；枚举值/缺失/空不报', () => {
+        const withOrder = (byte_order) => validateProtocol(proto([
+            leaf('h'),
+            leaf('L', {
+                type: 'length',
+                parameter_config: {
+                    type: 'length', refs: ['h'],
+                    ...(byte_order !== undefined ? { byte_order } : {})
+                }
+            })
+        ]));
+        const junk = withOrder('middle');
+        expect(junk.errors).toEqual([]);
+        expect(codes(junk.warnings)).toEqual(['BYTE_ORDER_UNKNOWN']);
+        expect(junk.warnings[0].message).toContain('middle');
+        expect(withOrder('big').warnings).toEqual([]);
+        expect(withOrder('little').warnings).toEqual([]);
+        expect(withOrder('BIG').warnings).toEqual([]); // 大小写归一后判（两端 lowercase 收）
+        expect(withOrder('').warnings).toEqual([]);
+        expect(withOrder(undefined).warnings).toEqual([]);
+    });
+
     it('条目带 blockId 可定位；种子协议形态零问题', () => {
         // backend/db/seed.py SAMPLE_PROTOCOLS 的形状（FA FA / ED / 无 hex 的 len·slot）
         const seedLike = proto([

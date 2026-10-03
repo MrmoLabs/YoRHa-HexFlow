@@ -2234,8 +2234,45 @@
     - **文档同步（本批）**：PLAN 新 **§8.52**（拍板结果表 + 排期表 + 硬约束提醒）+ **§1 新行
       R21–R28（🔄 排期已立）** + §8.14 头注 / §8.49 三·② / §8.36 C-1 建议与 C-5 汇总四处
       复议注；`BUSINESS_SCENARIOS.md` 三行状态 `⚪ 挂账` → `⏸ 已立项 R2x` + **挂账清单清零注**。
-    - **状态**：**触发式 / 挂账 / 不做清单自此清零**，待办 = **R21 → R28 八批**；
-      仍不立项的只剩加工页传输（D9-A）。
+    - **状态**：**触发式 / 挂账 / 不做清单自此清零**，待办 = **R21 → R28 八批**
+      （**R21 已完成 → 见条目 70**）；仍不立项的只剩加工页传输（D9-A）。
+
+70. **R21 · 长度域 `byte_order`（big / little）：补「能判不能发」的不对称（PLAN §8.53 · §8.52 排期第 1 批）**
+    （2026-10-03，**BE + FE、零 DDL、`models.py` 未动、`/dispatch` 缺省口径逐字节不变**）：
+    - **问题**：收侧 `response_match.VALID_BYTE_ORDERS` 本就收 `big` / `little`、事务面板
+      回显规则**能配能判**；出线 `backend/handlers/length.py` 却恒 `f"{total:0{n}X}"`
+      大端 → 「**能判不能发**」（§8.36 C-5 ②，原触发式项）。
+    - **存点 + 六处改点（改一必改二/三）**：length 卡 `parameter_config.byte_order`
+      （`blockTypes.js` 新增 `byte_order` 字段，走**既有通用 select 分支** →
+      `ProtocolPropertiesPanel.jsx` **零改动**）；① `LengthHandler.byte_order_of` +
+      `apply_byte_order`（refs 模式与旧 range 模式**两个 return 同步套用**；little =
+      字节对反转；缺省与枚举外回大端；**奇数长度不反转** = 值超 `byte_length` 的畸形
+      输出，不发明语义）；② 出口翻译 `frame_builder._with_byte_order` ↔
+      `toFrameBlocks.withByteOrder`（**只在 little 写键** → params 形状与存量逐字节一致；
+      **refs 缺失的 config 直通路径同样生效**；checksum 块不吃此键）；③
+      `response_generate._length_element` 生成的回显规则改从 pc 取 `byte_order`（原硬编码
+      `"big"`，否则出线小端、规则按大端比必然失配）；④ `protocolTree.collectDeterministicBytes`
+      设计期卡面同口径（**设计期与出线逐字节一致**，大小写不敏感）；⑤ `validateProtocol`
+      W5 `BYTE_ORDER_UNKNOWN`（大小写归一后判、空串不报，镜像 W4 `ALGO_UNKNOWN`）。
+      仅 length 卡列此字段（拍板范围 = 长度域）；`parameter_config` 是自由 dict → **零 schema 改动**。
+    - **顺带修（存量缺陷）**：`collectDeterministicBytes` 把 `formatToHex()` 的**展示串**
+      （已带空格，如 `"00 06"`）直接 `.match(/.{1,2}/g)` → 空格被吃进切片 → **≥2 字节真值
+      多出一个 0 字节**（`"00 06"` → `[00,0x0,06]`；单字节看不出，2 字节 CRC / 长度必错，
+      嵌套校验中间字节同理被污染）；length / checksum 两分支同步 `.replace(/\s/g,'')`
+      （**改一必改二**）+ 2 字节 CRC 回归用例。只影响**卡面显示**，出线字节由 BE 决定、不变。
+    - **共享向量**：新增 `vectors/length_order.json`（顶层数组 7 行：`byte_order` /
+      `byte_length` / `total` / `expected`）**双端同读** —— `backend/tests/test_length_byte_order.py`
+      ↔ `frontend/.../protocolTree.test.js`（同 Σ 的容器中央值按行断言）；
+      `vectorsLoader.test.js` `TABLES` 登记 + `vectors/README.md` §3（12 文件 16 表 →
+      **13 文件 17 表**）与 §7 行注归档。
+    - **验收**：**BE 753 → 768/768**（+15）、**FE 1106 → 1117/1117（73 文件）**（+11）、
+      `npx vite build` EXIT=0、`npm run lint` EXIT=0、yorha-ui 校验器改动 js/jsx/json
+      **0 违规**、md 表列数 mismatches = 0、隐形字符 / CRLF / TAB = 0；**零 DDL → 无 `chore(db)`**。
+    - **文档同步（同批）**：PLAN **§8.53 新节** + §1 `R21–R28` 行回填（R21 ✅）+ §8.52 排期表
+      R21 行标已办 + §8.36 C-5 汇总与 §8.14 补记两处销项注；`vectors/README.md` §3 + §7；
+      `BUSINESS_SCENARIOS.md` C-5 ② 行 `⏸ 已立项` → `✅ 已落地`；`pageStatus.json` 协议页
+      `availableNow` / `nextSteps` 回填 + `npm run sync:page-status`；本条。
+    - **状态**：**R21 ✅**；余 **R22 → R28 七批**（下一批 **R22 CRC16-CCITT / CRC32 / LRC**）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
