@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { DndContext, PointerSensor, useSensor, useSensors, useDraggable, useDroppable } from '@dnd-kit/core';
 import { api } from '../api';
 import { PAGE_STATUS_BY_KEY } from '../config/pageRegistry';
 import NieRModal from '../components/ui/NieRModal';
@@ -75,6 +76,116 @@ const saveBody = (draft) => ({
         return step;
     })
 });
+
+// ── R12 · 步骤拖拽排序（PLAN §8.49 排期 · 拍板口径镜像 R4）────────────────
+// 拖完**只改草稿数组序**，点「保存定义」才 PUT（后端本就按数组序重编 step_order、
+// 整组替换）→ 零 BE 改动。三行手则同 R4：
+//   · 把手是**行首空白 grip**、无文本节点 → 不动「编辑该步骤」按钮里的 label 文本；
+//   · grip **不是 button** → 行内 button 顺序照旧（上移 / 下移 / 移除 三个）；
+//   · 只挂 dnd-kit 的 `listeners`、不挂 `attributes` → 不给行加 role=button 改无障碍角色。
+// 新增步（服务端 id 尚未生成）用与 React key 同源的 `draft-{i}`，拖拽期间序未变故稳定。
+const stepKey = (step, index) => step.id || `draft-${index}`;
+
+function StepRow({
+    step, index, count, active, running, hostMissing,
+    instrLabel, wrapName, planText, onSelect, onMove, onRemove
+}) {
+    const id = stepKey(step, index);
+    const { setNodeRef: setRowRef, isOver } = useDroppable({ id });
+    const { setNodeRef: setGripRef, listeners, isDragging } = useDraggable({ id });
+    const gripState = (isDragging || isOver) ? 'opacity-100' : 'opacity-0 group-hover:opacity-70';
+    return (
+        <div
+            ref={setRowRef}
+            className={`group flex items-center gap-2 border px-2 py-1 text-[11px] font-mono ${active
+                ? 'border-nier-light/50 bg-nier-light/5'
+                : 'border-nier-light/15'}${isDragging ? ' opacity-50' : ''}`}
+        >
+            <span
+                ref={setGripRef}
+                {...listeners}
+                title="拖拽调整步骤顺序（仅改草稿序，点「保存定义」才落库）"
+                aria-hidden="true"
+                className={`shrink-0 inline-flex flex-col gap-[2px] justify-center w-3 cursor-grab active:cursor-grabbing select-none ${gripState}`}
+            >
+                <span className="block w-2 h-px bg-nier-light/70" />
+                <span className="block w-2 h-px bg-nier-light/70" />
+            </span>
+            <button
+                type="button"
+                onClick={() => onSelect(index)}
+                className="flex-1 min-w-0 flex items-center gap-2 text-left"
+                title="编辑该步骤"
+            >
+                <span className="opacity-40 w-6">{String(index + 1).padStart(2, '0')}</span>
+                <span className="truncate w-28">{step.label || `step-${index + 1}`}</span>
+                <span className="truncate opacity-60 flex-1">{instrLabel}</span>
+                {/* CP3 3c (D6-B): 已封装步骤 → WRAP 来源指示 + 配方失效徽标 */}
+                {wrapName && (
+                    <span
+                        data-testid={`step-wrap-${index}`}
+                        className="text-[#E58D28] shrink-0 max-w-[9rem] truncate text-[9px] tracking-widest"
+                        title={`封装配方：${wrapName}（发送期由后端按配方重算外壳）`}
+                    >
+                        {`WRAP :: ${wrapName}`}
+                    </span>
+                )}
+                {step.wrap?.stale && (
+                    <span
+                        data-testid={`step-wrap-stale-${index}`}
+                        className="border border-yellow-500/50 text-yellow-400 px-1 shrink-0 text-[9px] tracking-widest"
+                        title="封装配方已失效：协议定义已变更（步骤冻结帧不受影响，不阻断保存/运行）"
+                    >
+                        失效
+                    </span>
+                )}
+                {/* 批次二 (D14②): 宿主已删 → 失效徽标（帧已冻结仍可运行） */}
+                {hostMissing && (
+                    <span
+                        className="border border-yellow-500/50 text-yellow-400 px-1 shrink-0 text-[9px] tracking-widest"
+                        title="宿主指令已删除：步骤帧已冻结、可继续运行；编辑入口已降为只读"
+                    >
+                        失效
+                    </span>
+                )}
+                <span className="opacity-50">{Number(step.delay_ms) > 0 ? `${step.delay_ms}ms` : '直发'}</span>
+                <span className={step.payload ? 'text-[#E58D28]' : 'text-red-400'}>
+                    {step.payload ? `${payloadByteCount(step.payload)}B` : '未编译'}
+                </span>
+                <span className="opacity-50 hidden lg:inline">{planText}</span>
+            </button>
+            <span className="flex gap-1 shrink-0">
+                <button
+                    type="button"
+                    onClick={() => onMove(index, -1)}
+                    disabled={running || index === 0}
+                    className="border border-nier-light/25 px-1 hover:bg-nier-light/10 transition-all disabled:opacity-25"
+                    title="上移"
+                >
+                    ↑
+                </button>
+                <button
+                    type="button"
+                    onClick={() => onMove(index, 1)}
+                    disabled={running || index === count - 1}
+                    className="border border-nier-light/25 px-1 hover:bg-nier-light/10 transition-all disabled:opacity-25"
+                    title="下移"
+                >
+                    ↓
+                </button>
+                <button
+                    type="button"
+                    onClick={() => onRemove(index)}
+                    disabled={running}
+                    className="border border-red-500/30 px-1 text-red-300 hover:bg-red-500/10 transition-all disabled:opacity-25"
+                    title="移除步骤"
+                >
+                    ×
+                </button>
+            </span>
+        </div>
+    );
+}
 
 export default function Sequences() {
     const page = PAGE_STATUS_BY_KEY.sequences;
@@ -357,6 +468,28 @@ export default function Sequences() {
         else if (editorIndex === to) setEditorIndex(i);
     };
 
+    // ── R12 · 步骤拖拽排序（PLAN §8.49 排期 · 口径镜像 R4：**拖完只改草稿
+    // 数组序，点「保存定义」才 PUT**）—— 后端本就按数组序重编 step_order、
+    // 整组替换，故零 BE 改动；拖拽与上移/下移共用 utils/sequenceView.reorder。
+    // 8px 起拖阈值：把手是行首空白 grip，阈值保证「点一下选步骤」不被误判成拖。
+    const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+
+    const handleDragEnd = ({ active, over }) => {
+        if (!active || !over || active.id === over.id) return;
+        if (running || !draft) return;
+        const from = draft.steps.findIndex((s, i) => stepKey(s, i) === active.id);
+        const to = draft.steps.findIndex((s, i) => stepKey(s, i) === over.id);
+        if (from < 0 || to < 0 || from === to) return;
+        applyDraftSteps(reorder(draft.steps, from, to));
+        // 编辑器开着的那步要跟着走 —— reorder 是「抽出再插回」，故按区间平移
+        if (editorIndex === null) return;
+        let next = editorIndex;
+        if (editorIndex === from) next = to;
+        else if (from < editorIndex && editorIndex <= to) next = editorIndex - 1;
+        else if (to <= editorIndex && editorIndex < from) next = editorIndex + 1;
+        if (next !== editorIndex) setEditorIndex(next);
+    };
+
     const handleApplyStep = () => {
         if (running || !draft || editorIndex === null || !formInstruction || !live?.payload) return;
         const delay = Math.min(60000, Math.max(0, Math.trunc(Number(stepDelay) || 0)));
@@ -551,89 +684,25 @@ export default function Sequences() {
                                             — 无步骤：添加 → 选指令填参 → 应用编译帧 → 保存（空序列不可启动） —
                                         </div>
                                     )}
-                                    {draft.steps.map((s, i) => (
-                                        <div
-                                            key={s.id || `draft-${i}`}
-                                            className={`flex items-center gap-2 border px-2 py-1 text-[11px] font-mono ${editorIndex === i
-                                                ? 'border-nier-light/50 bg-nier-light/5'
-                                                : 'border-nier-light/15'}`}
-                                        >
-                                            <button
-                                                type="button"
-                                                onClick={() => handleSelectStep(i)}
-                                                className="flex-1 min-w-0 flex items-center gap-2 text-left"
-                                                title="编辑该步骤"
-                                            >
-                                                <span className="opacity-40 w-6">{String(i + 1).padStart(2, '0')}</span>
-                                                <span className="truncate w-28">{s.label || `step-${i + 1}`}</span>
-                                                <span className="truncate opacity-60 flex-1">{instrName(s.instruction_id)}</span>
-                                                {/* CP3 3c (D6-B): 已封装步骤 → WRAP 来源指示 + 配方
-                                                    失效徽标（wrap.stale，协议定义已变更 —— 不阻断） */}
-                                                {s.wrap?.recipe_id && (
-                                                    <span
-                                                        data-testid={`step-wrap-${i}`}
-                                                        className="text-[#E58D28] shrink-0 max-w-[9rem] truncate text-[9px] tracking-widest"
-                                                        title={`封装配方：${recipeName(s.wrap.recipe_id)}（发送期由后端按配方重算外壳）`}
-                                                    >
-                                                        {`WRAP :: ${recipeName(s.wrap.recipe_id)}`}
-                                                    </span>
-                                                )}
-                                                {s.wrap?.stale && (
-                                                    <span
-                                                        data-testid={`step-wrap-stale-${i}`}
-                                                        className="border border-yellow-500/50 text-yellow-400 px-1 shrink-0 text-[9px] tracking-widest"
-                                                        title="封装配方已失效：协议定义已变更（步骤冻结帧不受影响，不阻断保存/运行）"
-                                                    >
-                                                        失效
-                                                    </span>
-                                                )}
-                                                {/* 批次二 (D14②): 宿主已删 → 失效徽标
-                                                    （帧已冻结仍可运行，仅编辑入口只读） */}
-                                                {stepHostMissing(s) && (
-                                                    <span
-                                                        className="border border-yellow-500/50 text-yellow-400 px-1 shrink-0 text-[9px] tracking-widest"
-                                                        title="宿主指令已删除：步骤帧已冻结、可继续运行；编辑入口已降为只读"
-                                                    >
-                                                        失效
-                                                    </span>
-                                                )}
-                                                <span className="opacity-50">{Number(s.delay_ms) > 0 ? `${s.delay_ms}ms` : '直发'}</span>
-                                                <span className={s.payload ? 'text-[#E58D28]' : 'text-red-400'}>
-                                                    {s.payload ? `${payloadByteCount(s.payload)}B` : '未编译'}
-                                                </span>
-                                                <span className="opacity-50 hidden lg:inline">{planSummary(s.plan)}</span>
-                                            </button>
-                                            <span className="flex gap-1 shrink-0">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => moveStep(i, -1)}
-                                                    disabled={running || i === 0}
-                                                    className="border border-nier-light/25 px-1 hover:bg-nier-light/10 transition-all disabled:opacity-25"
-                                                    title="上移"
-                                                >
-                                                    ↑
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => moveStep(i, 1)}
-                                                    disabled={running || i === draft.steps.length - 1}
-                                                    className="border border-nier-light/25 px-1 hover:bg-nier-light/10 transition-all disabled:opacity-25"
-                                                    title="下移"
-                                                >
-                                                    ↓
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeStep(i)}
-                                                    disabled={running}
-                                                    className="border border-red-500/30 px-1 text-red-300 hover:bg-red-500/10 transition-all disabled:opacity-25"
-                                                    title="移除步骤"
-                                                >
-                                                    ×
-                                                </button>
-                                            </span>
-                                        </div>
-                                    ))}
+                                    <DndContext sensors={dragSensors} onDragEnd={handleDragEnd}>
+                                        {draft.steps.map((s, i) => (
+                                            <StepRow
+                                                key={stepKey(s, i)}
+                                                step={s}
+                                                index={i}
+                                                count={draft.steps.length}
+                                                active={editorIndex === i}
+                                                running={running}
+                                                hostMissing={stepHostMissing(s)}
+                                                instrLabel={instrName(s.instruction_id)}
+                                                wrapName={s.wrap?.recipe_id ? recipeName(s.wrap.recipe_id) : null}
+                                                planText={planSummary(s.plan)}
+                                                onSelect={handleSelectStep}
+                                                onMove={moveStep}
+                                                onRemove={removeStep}
+                                            />
+                                        ))}
+                                    </DndContext>
                                 </div>
 
                                 {/* 步骤编辑器（选中某步时展开） */}

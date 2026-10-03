@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import Sequences from '../Sequences';
 import { api } from '../../api';
 
@@ -19,6 +19,28 @@ vi.mock('../../api', () => ({
         getInstructions: vi.fn(),
         getRecipes: vi.fn()
     }
+}));
+
+// R12 拖拽（PLAN §8.49）：jsdom 没有真实指针传感器，碰撞检测依赖的
+// getBoundingClientRect 也全是 0 —— 这里只把 DndContext 的 onDragEnd 透到 DOM 上，
+// 测试直接调用它。被测的是我们自己的「换序 / 跟随编辑器 / 零即时 PUT」口径，
+// 不是 dnd-kit 本身（同 R4 的 Orchestration mock）。
+vi.mock('@dnd-kit/core', () => ({
+    DndContext: ({ children, onDragEnd }) => (
+        <div
+            data-testid="dnd-context"
+            ref={(node) => { if (node) node.__dndOnDragEnd = onDragEnd; }}
+        >
+            {children}
+        </div>
+    ),
+    PointerSensor: class PointerSensor {},
+    useSensor: () => ({}),
+    useSensors: (...sensors) => sensors,
+    useDraggable: () => ({
+        setNodeRef: () => {}, listeners: {}, attributes: {}, isDragging: false
+    }),
+    useDroppable: () => ({ setNodeRef: () => {}, isOver: false })
 }));
 
 // ---- 形状对齐 backend/schemas/sequence_api.py 的快照与定义 ------------------
@@ -267,6 +289,72 @@ describe('Sequences Page', () => {
         expect(body.steps.map((s) => s.label)).toEqual(['第二步', '第一步']);
         // 延时随行保留
         expect(body.steps[0].delay_ms).toBe(100);
+    });
+
+    // ── R12 · 步骤拖拽排序（PLAN §8.49，拍板口径镜像 R4：**拖完只改草稿序，
+    // 点「保存定义」才 PUT**）────────────────────────────────────────────────
+    // 行 label 取「编辑该步骤」按钮里的 .w-28 span —— 把手无文本节点，不进这里
+    const stepLabels = () => [...document.querySelectorAll('[title="编辑该步骤"]')]
+        .map((btn) => btn.querySelector('.w-28').textContent);
+
+    const dragRow = (activeId, overId) => {
+        const node = screen.getByTestId('dnd-context');
+        act(() => {
+            node.__dndOnDragEnd({ active: { id: activeId }, over: { id: overId } });
+        });
+    };
+
+    it('R12 拖拽：松手只改草稿序（零即时 PUT），点「保存定义」才 PUT 新序', async () => {
+        await renderPage();
+        expect(stepLabels()).toEqual(['第一步', '第二步']);
+
+        api.updateSequence.mockClear();
+        dragRow('st-2', 'st-1');
+
+        // 草稿序立刻翻转（列表重排），持久序一个字节没写
+        expect(stepLabels()).toEqual(['第二步', '第一步']);
+        expect(api.updateSequence).not.toHaveBeenCalled();
+
+        // 自己拖自己 = 无位移，不改序不发请求
+        dragRow('st-1', 'st-1');
+        expect(stepLabels()).toEqual(['第二步', '第一步']);
+        expect(api.updateSequence).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: /保存定义/ }));
+        await waitFor(() => expect(api.updateSequence).toHaveBeenCalledTimes(1));
+        const body = api.updateSequence.mock.calls[0][1];
+        expect(body.steps.map((s) => s.label)).toEqual(['第二步', '第一步']);
+        // 服务端字段（id / step_order）照旧剥离 —— 后端按数组序重编 step_order
+        expect('id' in body.steps[0]).toBe(false);
+        expect('step_order' in body.steps[0]).toBe(false);
+        expect(body.steps[0].delay_ms).toBe(100); // 延时随行保留
+    });
+
+    it('R12 拖拽：编辑器开着的那步跟着落点走（不会错指到别的步）', async () => {
+        await renderPage();
+        // 选中第二步 → 编辑器开在 index 1、标签输入回填「第二步」
+        fireEvent.click(screen.getAllByTitle('编辑该步骤')[1]);
+        expect(screen.getByText(/STEP 02 \/\/ 编辑器/)).toBeTruthy();
+        expect(screen.getByDisplayValue('第二步')).toBeTruthy();
+
+        // 第一步拖到第二步的位置（from 0 → to 1）→ 第二步落到 index 0，
+        // 编辑器必须跟着指向它，否则编辑器会静默改到「第一步」头上
+        dragRow('st-1', 'st-2');
+        expect(stepLabels()).toEqual(['第二步', '第一步']);
+        expect(screen.getByText(/STEP 01 \/\/ 编辑器/)).toBeTruthy();
+        expect(screen.getByDisplayValue('第二步')).toBeTruthy();
+        expect(api.updateSequence).not.toHaveBeenCalled();
+    });
+
+    it('R12 拖拽：序列运行中拖拽直接忽略（与上移/下移同一禁用口径）', async () => {
+        api.getSequenceStatus.mockResolvedValue(RUNNING_SNAP);
+        await renderPage();
+        expect(stepLabels()).toEqual(['第一步', '第二步']);
+
+        api.updateSequence.mockClear();
+        dragRow('st-2', 'st-1');
+        expect(stepLabels()).toEqual(['第一步', '第二步']);
+        expect(api.updateSequence).not.toHaveBeenCalled();
     });
 
     it('create posts empty definition and selects the result', async () => {

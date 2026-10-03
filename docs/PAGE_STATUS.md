@@ -228,7 +228,7 @@
 - 摘要: 序列编排页维护多步骤发送序列：步骤帧保存时由 encodeInstruction 编译定值（表单参数冻结为 params），TIME/COUNTER/校验字段按 plan 在每次发送时重算；定义持久化到新表 sequences / sequence_steps，运行经单槽后台 Runner（协作式停止、出错即停开关），/sequences/status 每 1.5s 轮询运行快照；序列运行期手动 /dispatch 与事务发送 409 互斥。
 
 ### 已具备
-- 序列定义 CRUD：新建、重命名/描述与配置（出错即停、读超时）、步骤增删与上移下移、整体保存（PUT 替换），删除需二次确认。
+- 序列定义 CRUD：新建、重命名/描述与配置（出错即停、读超时）、步骤增删与上移下移、整体保存（PUT 替换），删除需二次确认；步骤列表另可**拖拽排序**（R12，行首 grip 把手 —— 拖完只改草稿序，点「保存定义」才 PUT，运行中拖拽与上移/下移同为禁用口径）。
 - 步骤编辑器：选择指令 → RunnerFieldTree 动态表单填参 → 实时 hex 帧预览，「应用」编译 payload + 冻结 params + 生成发送计划。
 - 计划编译为纯函数 utils/sequenceView.buildPlan（键集与后端 normalize_plan 严格同形；动态字段计数与校验算法摘要徽标；自含重叠/算法不支持等后端会 400 的形态在生成侧降级为冻结并给警告）。
 - 运行控制：启动（404 缺失 / 400 无步骤 / 409 忙 分流提示）、停止（恒 200 幂等），运行期定义编辑/删除/启动入口前端禁用。
@@ -238,7 +238,7 @@
 - 序列封装配方（批次三 CP3-3c · D6-B，含 sequence_steps.wrap 单列 DDL）：步骤编辑器新增「配方 RECIPE（可选）」选择器（挂载期拉取 GET /recipes，失败静默降级、引用已删配方出占位项），选中即落草稿 wrap.recipe_id 随 APPLY/保存提交；保存期后端切内核 + 串行编译 → 冻结完整封装帧进 payload、plan 扩出 shell（每层 length/checksum 本帧绝对坐标区间）、wrap.definition_hash 落库；卡片与编辑器头部回显「WRAP :: <配方名>」（琥珀），配方或所引协议改动即点亮 wrap.stale 失效徽标（只提示不阻断，冻结帧仍可运行）；PLAN 摘要面板渲染「SHELL L1..LN · LN LEN@x CRC@y」层偏移；发送期按配方重算外壳（先切内核再套壳），故冻结帧与出线帧等价而参数可继续按 plan 重算；请求形只收 {recipe_id}，响应形 definition_hash/stale 严格剥离；未选配方步骤不带 wrap 键、请求形与改前逐字节不变（shell 由后端注入，前端只透传、buildPlan 输出键集零改）。
 
 ### 后续建议
-- 步骤拖拽排序（当前为上移/下移按钮位序回写）。
+- 无 —— 步骤拖拽排序已由 R12 落地（PLAN §8.49，2026-10-03：拖完只改草稿序，点「保存定义」才 PUT，与上移/下移共用 utils/sequenceView.reorder；后端本就按数组序重编 step_order，零 BE 改动）。
 
 ---
 

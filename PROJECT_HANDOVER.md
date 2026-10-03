@@ -1902,6 +1902,37 @@
     - **状态**：**R11 ✅（本文档批，未跑测试 —— 沿 §8.34 / §8.36 / §8.37 文档批先例）**；
       R12–R18 待办，验收口径同 §8.49（BE 全量 + FE 全量 + `npx vite build` +
       **`npm run lint` EXIT=0** + yorha-ui 校验器改动文件 0 违规 + 一批一提交）。
+59. **R12 · 序列步骤拖拽排序 —— 拖完只改草稿序，点「保存定义」才 PUT（PLAN §8.49）**
+    （2026-10-03，**纯 FE · 零 DDL · 零后端改动** —— `models.py` 未动、未碰 `processor.py` /
+    `graph.py` / `Blueprint.jsx`、`/dispatch` 缺省口径逐字节不变）：
+    - **它是什么问题**：`pageStatus.json` 序列页 `nextSteps` 挂着「步骤拖拽排序（当前为上移/
+      下移按钮位序回写）」—— 编排页 R4 已经把拖拽做了，序列页还只能点箭头；步骤一多，
+      连点十几次 ↑ 才能把最后一步挪到最前。
+    - **口径 = 镜像 R4 的拍板**：**拖完只改草稿数组序，点「保存定义」才 PUT**。后端
+      `PUT /sequences/{id}` 本就按数组序重编 `step_order`、整组替换步骤行 → **零 BE 改动**、
+      零 DDL；拖拽与上移/下移**共用** `utils/sequenceView.reorder`，两条路径只差「怎么给位次」。
+    - **实现**：新模块级 `StepRow` 组件（**钩子不进 `.map()`**，同 R4 `BindingRow` 先例）+
+      `stepKey(step, i) = s.id || 'draft-${i}'`（新增步尚无服务端 id，与 React key 同源；拖拽
+      期间序未变故稳定）；把手 = 行首**空白 grip** —— 无文本节点（不动「编辑该步骤」按钮里的
+      label 文本）、**不是 button**（行内三个 button 顺序照旧）、只挂 dnd-kit `listeners` 不挂
+      `attributes`（不给行加 `role=button`）；`DndContext` 只包步骤列表，`PointerSensor`
+      **8px 起拖**（点一下选步骤不会误判成拖）。
+    - **编辑器跟随**：`handleDragEnd` 在 `reorder` 后按**区间平移**修正 `editorIndex`
+      （`from` 段外的元素随「抽出再插回」左/右移一格，跨度可大于 1）—— 否则拖完编辑器会
+      静默改到**别的步骤**头上；运行期 `running` 直接忽略拖拽（与上移/下移同一禁用口径）。
+    - **测试**：`Sequences.test.jsx` **+3**（与 R4 同款 mock：把 `DndContext` 的 `onDragEnd`
+      透到 DOM，测我们自己的换序/跟随/禁用口径而非 dnd-kit）—— ① 草稿序翻转而
+      `updateSequence` **零调用**，点保存才按新序 PUT 且 `id`/`step_order` 照旧剥离、延时随行
+      保留（自己拖自己 = 无位移）；② 编辑器开着第二步、第一步拖到其位置 → 第二步落到 index 0
+      且编辑器跟着显 `STEP 01`、标签输入仍是「第二步」；③ 运行中拖拽忽略。
+    - **验收**：**FE 1069 → 1072/1072（71 文件）**、**BE 723/723**（全量复跑，零改动）、
+      `npx vite build` EXIT=0、`npm run lint` **EXIT=0**、yorha-ui 校验器 3 文件 **0 违规**；
+      `pageStatus.json` 序列页 `availableNow` 补拖拽口径 + `nextSteps` 置「无」→
+      `PAGE_STATUS.md` 已重生成；`vectors/` 未动、`frontend/red-report.json` 不入库。
+    - **文档同步（同批）**：PLAN §8.49 **R12 行标已办 + R12 终态** + §1 `R11–R18` 行回填 +
+      `docs/PAGE_STATUS.md`（重生成）；本条。
+    - **状态**：**R11 ✅ R12 ✅**，余 **R13 回收站筛选与批量恢复 → R14 串口枚举 → R15 档案
+      重命名 + 轮询 → R16 报文格式切换 → R17 按域独立导出 → R18 字段引用测试**。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
