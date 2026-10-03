@@ -119,6 +119,104 @@ describe('回收站页 Trash', () => {
         expect(api.restoreTrashItem).not.toHaveBeenCalled();
     });
 
+    // ── R13 · 类型筛选 + 批量（PLAN §8.49）────────────────────────────────────
+    // 行集合直接问复选框 —— aria-label = `选择 <类型>「<名称>」`
+    const rowLabels = () => [...document.querySelectorAll('input[type="checkbox"][aria-label^="选择 "]')]
+        .map((el) => el.getAttribute('aria-label'));
+
+    const mkItem = (kind, id, label) => ({
+        kind, id, label, deleted_at: '2026-10-02T09:15:00.123456+00:00'
+    });
+
+    it('R13 类型筛选：chips 带计数，点类型只留该类型行；切回「全部」行序不变', async () => {
+        api.listTrash.mockResolvedValue({
+            items: [
+                mkItem('instruction', 'i-1', '指令甲'),
+                mkItem('sequence', 'seq-1', '冒烟序列'),
+                mkItem('instruction', 'i-2', '指令乙'),
+                mkItem('profile', 'p-1', '档案甲')
+            ],
+            count: 4
+        });
+        render(<Trash />);
+        await screen.findByText('冒烟序列');
+
+        // 计数与 chips 同源（items 派生，不另打接口）
+        const allChip = screen.getByRole('button', { name: /^全部 4$/ });
+        expect(screen.getByRole('button', { name: /^指令 2$/ })).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: /^指令 2$/ }));
+        expect(rowLabels()).toEqual(['选择 指令「指令甲」', '选择 指令「指令乙」']);
+        // 筛选只切可见行、不重排 —— 子集内仍是后端「最近删的在前」
+        expect(screen.getByRole('button', { name: /^指令 2$/ }).getAttribute('aria-pressed')).toBe('true');
+
+        fireEvent.click(allChip);
+        expect(rowLabels()).toHaveLength(4);
+        expect(rowLabels()[0]).toBe('选择 指令「指令甲」');
+        expect(rowLabels()[3]).toBe('选择 档案「档案甲」');
+    });
+
+    it('R13 批量恢复：勾两行 → 逐条 POST、回执报成功 N / M、选择清空', async () => {
+        api.listTrash.mockResolvedValue({ items: [ITEM, PURGE_ITEM], count: 2 });
+        api.restoreTrashItem
+            .mockResolvedValueOnce({ status: 'restored', kind: 'sequence', id: 'seq-1', related: {} })
+            .mockResolvedValueOnce({ status: 'restored', kind: 'response_spec', id: 'rs-1', related: {} });
+        render(<Trash />);
+        await screen.findByText('冒烟序列');
+
+        const boxes = screen.getAllByLabelText(/^选择 /);
+        expect(boxes).toHaveLength(2);
+        fireEvent.click(boxes[0]);
+        fireEvent.click(boxes[1]);
+        expect(screen.getByText('已选 2 条')).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: /^批量恢复 \(2\)$/ }));
+        await waitFor(() => expect(api.restoreTrashItem).toHaveBeenCalledTimes(2));
+        expect(api.restoreTrashItem.mock.calls).toEqual([['sequence', 'seq-1'], ['response_spec', 'rs-1']]);
+        expect(api.purgeTrashItem).not.toHaveBeenCalled();
+        // 逐条回报：成功 N / M（失败明细另一条用例覆盖）
+        expect(await screen.findByText(/批量恢复：成功 2 \/ 2 条/)).toBeTruthy();
+        // 选择清空 → 两个批量按钮回到禁用态
+        await waitFor(() => expect(screen.getByRole('button', { name: /^批量恢复 \(0\)$/ }).disabled).toBe(true));
+        expect(screen.getByRole('button', { name: /^批量彻底删除 \(0\)$/ }).disabled).toBe(true);
+    });
+
+    it('R13 批量彻底删除：过弹窗（取消零调用），确认后逐条执行、失败逐条报出', async () => {
+        api.listTrash.mockResolvedValue({ items: [ITEM, PURGE_ITEM], count: 2 });
+        api.purgeTrashItem
+            .mockResolvedValueOnce({ status: 'purged', kind: 'sequence', id: 'seq-1', related: {} })
+            .mockRejectedValueOnce(new Error('被引用中，拒绝彻底删除'));
+        render(<Trash />);
+        await screen.findByText('冒烟序列');
+
+        const boxes = screen.getAllByLabelText(/^选择 /);
+        fireEvent.click(boxes[0]);
+        fireEvent.click(boxes[1]);
+        fireEvent.click(screen.getByRole('button', { name: /^批量彻底删除 \(2\)$/ }));
+
+        // 弹窗先出：把名单摆出来 + 明说半成口径
+        expect(await screen.findByText(/确认彻底删除所选 2 条？/)).toBeTruthy();
+        expect(screen.getByText(/· 序列「冒烟序列」/)).toBeTruthy();
+        expect(screen.getByText(/半成如实回报/)).toBeTruthy();
+        expect(api.purgeTrashItem).not.toHaveBeenCalled();
+
+        fireEvent.click(screen.getByRole('button', { name: /取消 \(CANCEL\)/ }));
+        await waitFor(() => expect(screen.queryByText(/确认彻底删除所选/)).toBeNull());
+        expect(api.purgeTrashItem).not.toHaveBeenCalled();
+
+        // 再开 → 确认才执行
+        fireEvent.click(screen.getByRole('button', { name: /^批量彻底删除 \(2\)$/ }));
+        await screen.findByText(/确认彻底删除所选 2 条？/);
+        fireEvent.click(screen.getByRole('button', { name: /确认 \(CONFIRM\)/ }));
+
+        await waitFor(() => expect(api.purgeTrashItem).toHaveBeenCalledTimes(2));
+        expect(api.purgeTrashItem.mock.calls).toEqual([['sequence', 'seq-1'], ['response_spec', 'rs-1']]);
+        // 半成不静默：成功 N / M + 失败明细逐条列出
+        expect(await screen.findByText(/批量彻底删除：成功 1 \/ 2 条/)).toBeTruthy();
+        expect(await screen.findByText(/被引用中，拒绝彻底删除/)).toBeTruthy();
+        expect(api.restoreTrashItem).not.toHaveBeenCalled();
+    });
+
     it('口径面板常驻：唯一键占用 / 指针不回填 / 日志仍是硬删', async () => {
         render(<Trash />);
         await screen.findByText(/回收站条目/);
