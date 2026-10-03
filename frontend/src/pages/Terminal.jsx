@@ -6,7 +6,8 @@ import { PAGE_STATUS_BY_KEY } from '../config/pageRegistry';
 import {
     decodeHistoryRow,
     errorMessageOf,
-    hexDump,
+    FRAME_FORMATS,
+    frameLines,
     hexInputInfo,
     historyRows,
     rawHexOf,
@@ -25,6 +26,8 @@ import { escapeHex, escapeWarnings, toEscapeDraft } from '../utils/escapeTable';
 // 状态与历史除手动刷新外，R15（PLAN §8.49）加**自动轮询**：默认开、5s 一次、仅标签页
 // 可见时拉；同批补**档案重命名**入口（后端 PUT /profiles/{id} 早支持 label，前端缺入口）。
 // 报文视图纯函数在 utils/terminalPanes.js。
+// R16（PLAN §8.49）：三面板共用「显示格式」开关（hex / ascii / bin）—— 只换显示口径，
+// 帧内容与发送 / 入库 / 校验逐字节不变。
 
 const PanelTitle = ({ children, hint }) => (
     <div className="flex items-baseline justify-between border-b border-nier-light/30 px-4 py-2 bg-nier-light/5">
@@ -143,6 +146,8 @@ export default function Terminal() {
     const [autoRefresh, setAutoRefresh] = useState(true);
     const [renaming, setRenaming] = useState(false);
     const [renameValue, setRenameValue] = useState('');
+    // R16（PLAN §8.49）：三面板共用的报文显示口径 —— 只换怎么摆、不换字节（缺省 hex 逐字不变）
+    const [frameFormat, setFrameFormat] = useState('hex');
 
     const refreshConfig = useCallback(async () => {
         try {
@@ -415,17 +420,19 @@ export default function Terminal() {
         }
     };
 
-    const rows = historyRows(history, { instructionsByName });
+    const rows = historyRows(history, { instructionsByName, frameFormat });
     const selected = history.find((record) => record.id === selectedId) || history[0] || null;
     // R9: 选中行的响应帧解码（与行内 FIELDS 列同一口径，详情面板出完整字段表）
     const selectedDecoded = selected ? decodeHistoryRow(selected, instructionsByName) : null;
     const errorRecords = history.filter((record) => record.status === 'ERROR');
     const sendInfo = hexInputInfo(sendHex);
-    const rawLines = selected ? hexDump(rawHexOf(selected)) : [];
-    const responseLines = selected && selected.status !== 'ERROR' ? hexDump(responseHexOf(selected)) : [];
+    // R16：原始/响应两面板跟随同一个显示口径开关（帧内容不变，只换渲染）
+    const rawLines = selected ? frameLines(rawHexOf(selected), frameFormat) : [];
+    const responseLines = selected && selected.status !== 'ERROR' ? frameLines(responseHexOf(selected), frameFormat) : [];
     const selectedError = selected ? errorMessageOf(selected) : null;
     const connected = Boolean(status?.connected);
     const selectedProfile = profiles.find((profile) => profile.id === selectedProfileId) || null;
+    const formatHint = FRAME_FORMATS.find((item) => item.key === frameFormat)?.hint || FRAME_FORMATS[0].hint;
 
     // N4 (G3): 转义表草稿操作 + 样例预览（转义算法 SSOT 在 BE，样例同口径）
     const escapePairs = draft?.escape?.pairs || [];
@@ -931,6 +938,32 @@ export default function Terminal() {
                     </div>
                 </section>
 
+                {/* R16（PLAN §8.49）：三面板共用的报文显示口径 —— 只换「怎么摆」，不换字节
+                    （发送 / 入库 / 校验口径一律不碰；切回 HEX 与存量逐字相同） */}
+                <div className="flex flex-wrap items-center gap-2 border border-nier-light/30 bg-nier-dark/60 px-4 py-2">
+                    <span className="text-[10px] font-mono tracking-[0.2em] opacity-60">显示格式 FORMAT</span>
+                    {FRAME_FORMATS.map((item) => {
+                        const on = frameFormat === item.key;
+                        return (
+                            <button
+                                key={item.key}
+                                type="button"
+                                aria-pressed={on}
+                                title={item.hint}
+                                onClick={() => setFrameFormat(item.key)}
+                                className={`border px-2 py-1 text-[10px] font-bold tracking-[0.15em] transition-colors duration-150 ${on
+                                    ? 'border-nier-light bg-nier-light text-nier-dark'
+                                    : 'border-nier-light/40 text-nier-light/70 hover:border-nier-light/70'}`}
+                            >
+                                {item.label}
+                            </button>
+                        );
+                    })}
+                    <span className="text-[10px] opacity-50">
+                        {`同作用于发送历史预览 / 原始报文 / 响应三处 · ${formatHint}`}
+                    </span>
+                </div>
+
                 {/* 三面板 */}
                 <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
                     {/* 1 发送历史 */}
@@ -1006,7 +1039,7 @@ export default function Terminal() {
                     <div className="flex flex-col gap-6">
                         {/* 2 原始报文 */}
                         <section className="border border-nier-light/30 bg-nier-dark/60">
-                            <PanelTitle hint="raw 事件 · 8 字节/行">原始报文 (RAW FRAME)</PanelTitle>
+                            <PanelTitle hint={`raw 事件 · ${formatHint}`}>原始报文 (RAW FRAME)</PanelTitle>
                             <div className="p-4 text-xs font-mono">
                                 {!selected ? (
                                     <div className="opacity-50">未选择记录 — 点击左侧历史行。</div>
@@ -1026,7 +1059,7 @@ export default function Terminal() {
 
                         {/* 3 响应与错误日志 */}
                         <section className="border border-nier-light/30 bg-nier-dark/60">
-                            <PanelTitle hint="response / error 事件">响应与错误日志 (RESPONSE · ERROR)</PanelTitle>
+                            <PanelTitle hint={`response / error 事件 · ${formatHint}`}>响应与错误日志 (RESPONSE · ERROR)</PanelTitle>
                             <div className="p-4 space-y-3 text-xs font-mono">
                                 {!selected ? (
                                     errorRecords.length === 0

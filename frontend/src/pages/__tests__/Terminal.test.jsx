@@ -640,4 +640,30 @@ describe('Terminal Page（E3 通讯调试）', () => {
         }
     });
 
+    it('R16 显示格式：三面板共用一个开关 —— ascii 同时换历史预览与原始报文，切回 hex 逐字不变', async () => {
+        render(<Terminal />);
+        await waitFor(() => expect(api.getDispatchHistory).toHaveBeenCalledTimes(1));
+
+        const HEX_PREVIEW = 'AA 55 01 02 03 04 05 06 07 08 …+2';
+        const preTexts = () => [...document.querySelectorAll('pre')].map((node) => node.textContent);
+        expect(screen.getByText(HEX_PREVIEW)).toBeDefined(); // 历史预览（hex 缺省）
+        expect(preTexts()).toContain('AA 55 01 02 03 04 05 06\n07 08 09 0A'); // 原始报文 8 字节/行
+
+        const asciiBtn = screen.getByRole('button', { name: 'ASCII' });
+        expect(asciiBtn.getAttribute('aria-pressed')).toBe('false');
+        fireEvent.click(asciiBtn);
+
+        // 一次点击换三处：历史预览列 + 原始报文（+ 响应面板 'B1 B2 B3' → '...'）
+        expect(screen.queryByText(HEX_PREVIEW)).toBeNull();
+        expect(screen.getByText('.U........ …+2')).toBeDefined();
+        expect(preTexts()).toContain('.U......\n....');
+        expect(screen.getByRole('button', { name: 'ASCII' }).getAttribute('aria-pressed')).toBe('true');
+
+        // 切回 HEX：与存量逐字相同（帧内容从头到尾没变过）
+        fireEvent.click(screen.getByRole('button', { name: 'HEX' }));
+        expect(screen.getByText(HEX_PREVIEW)).toBeDefined();
+        expect(preTexts()).toContain('AA 55 01 02 03 04 05 06\n07 08 09 0A');
+        expect(screen.getByRole('button', { name: 'HEX' }).getAttribute('aria-pressed')).toBe('true');
+    });
+
 });

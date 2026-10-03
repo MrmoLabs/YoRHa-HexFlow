@@ -40,6 +40,57 @@ export const hexPreview = (hexString, maxBytes = 10) => {
     return `${bytes.slice(0, maxBytes).join(' ')} …+${bytes.length - maxBytes}`;
 };
 
+// ── R16（PLAN §8.49）：报文显示口径 —— 三面板共用一个开关 ────────────────────────
+// 只换「怎么摆」，**不换字节**（发送、入库、校验口径一律不碰）：
+//   · hex  → 与 hexDump / hexPreview **逐字相同**（存量默认，切回来零变化）
+//   · ascii→ 每字节一个字符：可打印 ASCII（0x20–0x7E）原样，其余显 `.`（盯定界字节 /
+//            控制符）；非法 token 显 `?`
+//   · bits → 每字节 8 位二进制，**4 字节/行**（8 字节/行会宽到换行失控）
+export const FRAME_FORMATS = [
+    { key: 'hex', label: 'HEX', hint: '十六进制 · 8 字节/行' },
+    { key: 'ascii', label: 'ASCII', hint: '字符 · 每字节 1 字符' },
+    { key: 'bits', label: 'BIN', hint: '二进制 · 4 字节/行' }
+];
+
+const toByte = (token) => (/^[0-9a-f]{1,2}$/i.test(token) ? parseInt(token, 16) : NaN);
+
+const asciiChar = (value) => {
+    if (Number.isNaN(value)) return '?';
+    return value >= 0x20 && value <= 0x7e ? String.fromCharCode(value) : '.';
+};
+
+const bitString = (value) => (Number.isNaN(value) ? '????????' : (value & 0xff).toString(2).padStart(8, '0'));
+
+// 按 perLine 切行渲染（ascii 不加分隔、bits 用空格分隔 —— 两者行宽都可控）
+const chunkLines = (tokens, perLine, render, joiner) => {
+    const lines = [];
+    for (let i = 0; i < tokens.length; i += perLine) {
+        lines.push(tokens.slice(i, i + perLine).map(render).join(joiner));
+    }
+    return lines;
+};
+
+// 全帧行数组（原始报文 / 响应面板用）。缺省或未知口径 = hex（存量行为）。
+export const frameLines = (hexString, format = 'hex') => {
+    const tokens = splitBytes(hexString);
+    if (tokens.length === 0) return [];
+    if (format === 'ascii') return chunkLines(tokens, 8, (token) => asciiChar(toByte(token)), '');
+    if (format === 'bits') return chunkLines(tokens, 4, (token) => bitString(toByte(token)), ' ');
+    return hexDump(hexString);
+};
+
+// 表格单行预览（发送历史用）：截断与 `…+N` 标注同 hexPreview。
+export const framePreview = (hexString, format = 'hex', maxBytes = 10) => {
+    if (format !== 'ascii' && format !== 'bits') return hexPreview(hexString, maxBytes);
+    const tokens = splitBytes(hexString);
+    const shown = tokens.slice(0, maxBytes);
+    const rest = tokens.length - shown.length;
+    const text = format === 'bits'
+        ? shown.map((token) => bitString(toByte(token))).join(' ')
+        : shown.map((token) => asciiChar(toByte(token))).join('');
+    return rest > 0 ? `${text} …+${rest}` : text;
+};
+
 // 发送历史表格行视图。时间戳取 UTC ISO 的前 19 位（秒精度）。
 //
 // R9：给了 `ctx.instructionsByName`（`instruction_name` → 指令，含 fields）就把
@@ -67,6 +118,7 @@ export const decodeHistoryRow = (record, instructionsByName) => {
     return decoded.fields.length || decoded.warnings.length ? decoded : null;
 };
 
+// R16：`ctx.frameFormat` 只换显示口径（hex 缺省逐字不变），详见 framePreview。
 export const historyRows = (records = [], ctx = {}) => (records || []).map((record) => {
     const decoded = decodeHistoryRow(record, ctx.instructionsByName);
     return {
@@ -75,7 +127,7 @@ export const historyRows = (records = [], ctx = {}) => (records || []).map((reco
         channel: record.channel || '—',
         status: record.status || '—',
         byteCount: record.byte_count ?? 0,
-        hexPreview: hexPreview(record.hex_string),
+        hexPreview: framePreview(record.hex_string, ctx.frameFormat),
         name: record.instruction_name || '—',
         isError: record.status === 'ERROR',
         ...(decoded ? { decoded, fieldsText: fieldsText(decoded) } : {})

@@ -2013,8 +2013,35 @@
       `PAGE_STATUS.md` 已重生成。
     - **文档同步（同批）**：PLAN §8.49 **R15 行标已办 + R15 终态** + §1 行回填 +
       `docs/PAGE_STATUS.md`（重生成）；本条。
-    - **状态**：**R11 ✅ R12 ✅ R13 ✅ R14 ✅ R15 ✅**，余 **R16 报文格式切换 →
-      R17 按域独立导出包 → R18 字段引用测试补强**。
+    - **状态**：**R11 ✅ R12 ✅ R13 ✅ R14 ✅ R15 ✅ R16 ✅**，余 **R17 按域独立导出包 →
+      R18 字段引用测试补强**。
+63. **R16 · 报文格式切换 hex / ascii / 二进制位图（PLAN §8.49）**（2026-10-03，**纯 FE ·
+    零 DDL · 后端一行未动**）：
+    - **它是什么问题**：三面板只有一种摆法（hex），盯定界字节 / 控制符得自己脑补字符，
+      看位翻转得一个个数 —— `pageStatus.json` 通讯调试页 `nextSteps` 原文挂着「报文格式
+      切换（hex / ascii / 二进制位图）（当前仅 hex）」。
+    - **一个开关换三处**：三面板上方一条「显示格式 FORMAT」（HEX / ASCII / BIN，
+      `aria-pressed` 标亮）—— 同时换 **发送历史预览列 + 原始报文 + 响应面板**，
+      面板标题 hint 也跟着换口径。
+    - **三种口径**（纯函数 `frameLines` / `framePreview` 在 `utils/terminalPanes.js`）：
+      **hex** = 8 字节/行，与存量 `hexDump` / `hexPreview` **逐字相同**、未知口径也回落 hex
+      （切回来零变化）；**ascii** = 每字节 1 字符、8 字节/行（0x20–0x7E 原样，控制符与高位
+      显 `.`，非法 token 显 `?` 而不是静默装成 00）；**bin** = 每字节 8 位补零、**4 字节/行**
+      （8 字节/行宽到换行失控）。预览超限仍标 `…+N`。
+    - **不换字节**：只动展示层 —— 发送 / 入库 / 校验口径一律不碰；`historyRows` 加
+      `ctx.frameFormat`（**不传 ctx = 逐字不变**，存量调用与旧断言全绿）。
+    - **测试**：`terminalPanes.test.js` **+4**（hex 与 `hexDump`/`hexPreview` 逐字相同 /
+      ascii 含 `?` 防御与 8 字节分行 / bin 补零与 `…+N` / `historyRows` 只换预览列且
+      time·byteCount·decoded 不动）；`Terminal.test.jsx` **+1**（一次点击换三处 + 切回 hex
+      逐字不变 + `aria-pressed` 跟随）。
+    - **验收**：**BE 727/727**（零改动全量复跑）、**FE 1081 → 1086/1086（71 文件）**、
+      `npx vite build` EXIT=0、`npm run lint` **EXIT=0**、yorha-ui 校验器 4 文件 **0 违规**；
+      `pageStatus.json` 通讯调试页 `availableNow` 补 R16 条 + `nextSteps` 删已办的格式项
+      （该页只剩「档案自定义排序 = 待拍板」）→ `PAGE_STATUS.md` 已重生成。
+    - **文档同步（同批）**：PLAN §8.49 **R16 行标已办 + R16 终态** + §1 行回填 +
+      `docs/PAGE_STATUS.md`（重生成）；本条。
+    - **状态**：**R11 ✅ R12 ✅ R13 ✅ R14 ✅ R15 ✅ R16 ✅**，余 **R17 按域独立导出包 →
+      R18 字段引用测试补强**。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

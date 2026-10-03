@@ -3,6 +3,8 @@ import {
     decodeHistoryRow,
     errorMessageOf,
     findEvent,
+    frameLines,
+    framePreview,
     hexDump,
     hexInputInfo,
     hexPreview,
@@ -84,6 +86,58 @@ describe('terminalPanes — hex 格式化', () => {
         expect(hexPreview('AA 55', 10)).toBe('AA 55');
         const long = Array.from({ length: 16 }, (_, i) => i.toString(16).padStart(2, '0').toUpperCase()).join(' ');
         expect(hexPreview(long, 10)).toBe('00 01 02 03 04 05 06 07 08 09 …+6');
+    });
+});
+
+// ── R16（PLAN §8.49）：三面板共用的报文显示口径 ─────────────────────────────────
+describe('terminalPanes — frameLines / framePreview（R16 显示口径）', () => {
+    const LONG = '01 02 03 04 05 06 07 08 09 0A';
+
+    it('hex 口径与 hexDump / hexPreview 逐字相同，缺省也是 hex（切回来零变化）', () => {
+        expect(frameLines(LONG)).toEqual(hexDump(LONG));
+        expect(frameLines(LONG, 'hex')).toEqual(hexDump(LONG));
+        expect(frameLines(LONG, 'weird')).toEqual(hexDump(LONG)); // 未知口径回落 hex
+        expect(frameLines('')).toEqual([]);
+        expect(frameLines(null, 'ascii')).toEqual([]);
+        expect(framePreview(LONG)).toBe(hexPreview(LONG));
+        expect(framePreview(LONG, 'hex')).toBe('01 02 03 04 05 06 07 08 09 0A'); // 10 字节不截断
+        expect(framePreview(`${LONG} 0B`, 'hex')).toBe('01 02 03 04 05 06 07 08 09 0A …+1');
+    });
+
+    it('ascii 口径：每字节 1 字符、8 字节/行；可打印原样、控制符与高位显 .', () => {
+        // 0x41='A' 可打印 / 0x0A 控制符 → '.' / 0x20 是空格 / 0xAA 高位 → '.'
+        expect(frameLines('41 0A 20 AA', 'ascii')).toEqual(['A. .']);
+        expect(frameLines('41 42 43 44 45 46 47 48 49', 'ascii')).toEqual(['ABCDEFGH', 'I']);
+        expect(framePreview('41 42 43', 'ascii')).toBe('ABC');
+        // 非 hex token 不静默装成 00 —— 显 '?'（输入只可能来自后端，属防御）
+        expect(frameLines('ZZ 41', 'ascii')).toEqual(['?A']);
+        // 12 个可打印字节（0x41..0x4C）→ 预览只留 10 个 + …+2
+        const long = Array.from({ length: 12 }, (_, i) => (0x41 + i).toString(16).padStart(2, '0')).join(' ');
+        expect(framePreview(long, 'ascii', 10)).toBe('ABCDEFGHIJ …+2');
+    });
+
+    it('bits 口径：每字节 8 位补零、4 字节/行；预览超限标 …+N', () => {
+        expect(frameLines('01 FF', 'bits')).toEqual(['00000001 11111111']);
+        expect(frameLines('01 02 03 04 05', 'bits')).toEqual([
+            '00000001 00000010 00000011 00000100',
+            '00000101'
+        ]);
+        expect(framePreview('AA 55', 'bits')).toBe('10101010 01010101');
+        const long = Array.from({ length: 12 }, () => '00').join(' ');
+        expect(framePreview(long, 'bits', 4)).toBe('00000000 00000000 00000000 00000000 …+8');
+    });
+
+    it('historyRows 的 ctx.frameFormat 只换预览列；不传 = hex 逐字不变', () => {
+        const [plain] = historyRows([SENT_RECORD]);
+        expect(plain.hexPreview).toBe('AA 55');
+        const [ascii] = historyRows([SENT_RECORD], { frameFormat: 'ascii' });
+        expect(ascii.hexPreview).toBe('.U'); // 0xAA 不可打印 → '.'，0x55 = 'U'
+        const [bits] = historyRows([SENT_RECORD], { frameFormat: 'bits' });
+        expect(bits.hexPreview).toBe('10101010 01010101');
+        // 其余列（时间 / 通道 / 字节 / 字段解码）不受显示口径影响
+        expect(ascii.time).toBe(plain.time);
+        expect(ascii.byteCount).toBe(plain.byteCount);
+        expect(ascii.decoded).toEqual(plain.decoded);
     });
 });
 
