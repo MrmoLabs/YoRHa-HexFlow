@@ -31,7 +31,12 @@ export const SmartInput = ({
     // 第 14 单：字段种类章（label 前小徽标）+ 文本用量徽标（n/N CHARS|BYTES）
     kindLabel = null,
     kindTitle = null,
-    usage = null             // { used, total, unit, over } | null
+    usage = null,            // { used, total, unit, over } | null
+    // R29 (§8.61)：条件存在 (PRESENCE) —— { hit, title } | null（null = 该字段
+    // 未配置 presence → 零渲染，与 R29 之前逐像素一致）。判定与出线编码同源
+    // （runnerRenderRules.resolvePresenceStates → InstructionEncoder._presenceHit），
+    // 角标只陈述结论不改任何编码/限宽行为（maxLength/min/max/usage 一律照旧）。
+    presence = null
 }) => {
     // Local buffer to allow unnatural typing (e.g. "05", "0x", or ".") without immediate state correction
     const [localValue, setLocalValue] = useState(String(value ?? ''));
@@ -180,6 +185,20 @@ export const SmartInput = ({
                                 {kindLabel}
                             </span>
                         )}
+                        {/* R29 (§8.61)：条件存在 IF 角标 —— 琥珀状态章（title =
+                            判定式 + 命中结论 + fail-open 归因）。与编辑器画布
+                            Block.jsx 的 data-presence-chip 同语义、同文案骨架。 */}
+                        {presence && (
+                            <span
+                                data-runner-presence-chip={presence.hit ? 'hit' : 'miss'}
+                                title={presence.title}
+                                className={`text-[8px] font-black font-mono leading-none border px-1 py-[2px] uppercase tracking-tighter shrink-0 select-none cursor-help ${presence.hit
+                                    ? 'text-[#E58D28] border-[#E58D28]/60'
+                                    : 'text-[#4a4a4a]/45 border-[#4a4a4a]/30'}`}
+                            >
+                                IF
+                            </span>
+                        )}
                         <span className={`text-[11px] font-black uppercase tracking-widest truncate ${readOnly && !pickerActive ? 'text-[#4a4a4a]/40' : 'text-[#4a4a4a]'}`}>
                             {label}
                         </span>
@@ -226,7 +245,18 @@ export const SmartInput = ({
                 </div>
 
                 <div className="w-24 shrink-0 flex items-center justify-end px-2">
-                    {readOnly && pickerActive ? (
+                    {presence && !presence.hit ? (
+                        // R29 (§8.61)：presence 未命中 → 本字段本帧 0 字节。该结论
+                        // 优先于 TIME_PICKER / READ_ONLY / 用量 / 长度章 —— 「这行
+                        // 根本不出线」比「这行能不能改」更需要先被看见。
+                        <span
+                            data-runner-presence-skip
+                            title={presence.title}
+                            className="text-[9px] font-black text-[#E58D28] border border-[#E58D28]/60 px-1.5 py-0.5 uppercase tracking-tighter whitespace-nowrap select-none"
+                        >
+                            [SKIP 0B]
+                        </span>
+                    ) : readOnly && pickerActive ? (
                         // 第 4 批 #1：TIME 取值形态 —— 可交互满亮徽标，非锁定板
                         <span
                             className="text-[9px] font-black text-[#4a4a4a] border border-[#4a4a4a]/50 px-1.5 py-0.5 uppercase tracking-tighter whitespace-nowrap select-none"

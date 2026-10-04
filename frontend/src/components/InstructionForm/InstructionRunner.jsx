@@ -14,7 +14,7 @@ import {
     formatByteRanges,
     findFieldLabel
 } from '../../utils/byteHighlight';
-import { advanceAutoCounter } from '../../config/runnerRenderRules';
+import { advanceAutoCounter, resolvePresenceStates } from '../../config/runnerRenderRules';
 
 // 第 4 批 #3：右栏分区标题（en 轨 + 中文 + 用途释义）——让 BYTE_STREAM /
 // WRAP / TRANSMIT 各自的数据用途一眼可读。
@@ -70,6 +70,13 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
     const segments = React.useMemo(
         () => buildHexSegments(hexPreview, byteMap, selectedIds),
         [hexPreview, byteMap, selectedIds]
+    );
+    // R29 (§8.61)：presence 展示状态 —— 与 hexPreview/byteMap 同一组依赖
+    // （指令/输入变 → 判定与字节同时重算），故 IF/SKIP 角标恒与右侧
+    // BYTE_STREAM / LEN 同步，不会出现「角标说 SKIP 但字节还在」。
+    const presenceStates = React.useMemo(
+        () => resolvePresenceStates(normalizedInstruction?.fields, inputs, computedValues),
+        [normalizedInstruction, inputs, computedValues]
     );
     const fieldLabelOf = React.useCallback(
         (id) => findFieldLabel(normalizedInstruction?.fields, id) || id,
@@ -297,6 +304,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                             onOpenDatePicker={onOpenDatePicker}
                             selectedFieldId={selectedFieldId}
                             onSelectField={setSelectedFieldId}
+                            presenceStates={presenceStates}
                         />
                     </div>
                 </div>

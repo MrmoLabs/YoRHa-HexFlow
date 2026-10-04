@@ -2709,6 +2709,50 @@
     - **状态**：**R28 ✅** —— **§8.52 七项复议立项（R21–R28）至此全数销项**；
       提交 = `feat(R28)` 单笔（**零 DDL** → 无 `chore(db)`）。
 
+78. **R29 · 加工页条件存在 (PRESENCE) 展示层 —— 把「这条到底发不发」在加工页看出来（PLAN §8.61 · 人工测试反馈批次）**
+    （2026-10-04，**纯 FE、零 DDL → 无 `chore(db)`**、`models.py` 一行未动、
+    `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、**出线字节逐字不变**）：
+    - **问题（用户原话）**：「满足 IF 条件的与不满足 IF 条件的时候，指令加工中本条指令的字段从肉眼上看不出区别」。
+      改前取证两层 —— ① **显示缺口**：§8.16 第 6 条文件面清单**本就不含 `InstructionForm`**，
+      加工页字段树对 presence 零感知（无 IF 角标 / 无命中态 / 定长章仍按静态 `byte_len` 亮）→ **不是回归，是范围外**；
+      ② **判定链两处**：库内仅 2 条 presence 配置，其中样本指令 ② `枚举映射 == "01"` 因
+      `handleChange` 把选项值 `parseInt(x,16)` 转成数值 → `String(1)="1" ≠ "01"` **选哪支都未命中**，
+      而未动下拉时 `inputs` 无键 + `pc.value` 空 → **fail-open 恒命中**（样本 ① 字节确实 8B↔9B 变，
+      但字段行毫无标识）。**拍板 = 只做显示层**，② 属语义变更另排。
+    - **新纯函数 `resolvePresenceStates`（`config/runnerRenderRules.js`）**：**只委托**
+      `InstructionEncoder._presenceHit`（与出线编码同一套 fail-open，改一必改二），**不造第二套判据**；
+      对象形态 `pc.presence` 才进表（否则不进表 = 不点角标，与改前逐像素一致）；返回
+      `{fieldId: {hit, title}}`，`title` = `条件字段：[ref] == expect` + `· 命中 → 发射本字段` /
+      `· 未命中 → 0 字节（本帧不发）` + **fail-open 归因四支**（缺 ref_id / 缺 expect / ref 悬空 / ref 无值链）
+      —— 把「为什么这条恒发 / 不发」写进 hover，因为存量 ref 无 `pc.value`、ref 悬空这两类静态链断裂
+      **此前在加工页完全不可见**。依赖 `runnerRenderRules → InstructionEncoder`，编码器不回引 → **无环**。
+    - **渲染三处（全为显示层）**：`SmartInput.jsx` 新 prop `presence` → label 区（kind 章后）`IF` 琥珀章 +
+      右徽标槽 `presence && !hit` → **`[SKIP 0B]` 顶到最高优先**（压过 TIME_PICKER / READ_ONLY / 用量 /
+      长度章，「这行根本不出线」比「能不能改」要紧）；`RunnerFieldTree.jsx` 新 prop `presenceStates`
+      → 叶行 / 组头出章、未命中外层 `opacity-50`（**组未命中整棵子树随之降透明**）、递归透传；
+      `InstructionRunner.jsx` `useMemo` 造表，依赖 `[normalizedInstruction, inputs, computedValues]`
+      **与 `hexPreview` / `byteMap` 同一组** → 角标与右侧 BYTE_STREAM、`LEN` **恒同步**，
+      不会出现「角标说 SKIP 但字节还在」。
+    - **边界（三不改）**：`presenceStates` **缺省 `null` = 零渲染** → `Sequences.jsx` 步骤编辑器复用同一
+      组件但不传表，**该页零改动**；被门掉的字段**输入与限宽一律不禁用**（要靠键入把条件改命中，
+      `maxLength`/`min`/`max`/用量徽标全照旧）；`_presence_hit` 口径 / 校验四码 / normalize / 编码分支
+      **一行未动**，**不做 expect 十六进制补零归一**（`"01" ≡ 1` 会翻转存量判定 → 字节变）。
+    - **测试（红测先行有据）**：3 新文件 **24 例** —— `runnerRenderRules.presence.test.js` 12（进表口径 /
+      `String` 归一 / `computed` 优先 / fail-open 四支归因 / **角标结论 == 真实字节**恒等式）、
+      `RunnerFieldTree.presence.test.jsx` 9（不传零渲染 / 表无此字段也不渲染 / 命中 / 未命中 /
+      `[SKIP 0B]` 压过 `[READ_ONLY]` / 组级同权 / 父命中不豁免子）、`InstructionRunner.presence.test.jsx` 3
+      （**装配线**：表真传到字段树 + 改 ref 输入实时翻转 + 未配不出章）。
+      **红测证据**：`git stash` 四个实现文件 → **19 failed / 2 passed**（通过的 2 条是「不传就不渲染」的
+      反向用例，理应在旧代码上也通过），`stash pop` → **24 / 24 绿**。
+    - **验收**：**BE 955/955（持平）**、**FE 1251 → 1275/1275（84 文件，+24）**、`npx vite build` EXIT=0、
+      `npm run lint` EXIT=0、yorha-ui 校验器改动 js/jsx **7 文件 0 违规**、md 表列数 mismatches = 0、
+      隐形字符 / CRLF / TAB = 0、index blob BAD = 0；**零 DDL → 无 `chore(db)`**；不引 pytest、**无新 pip 依赖**。
+    - **文档同步（同批）**：PLAN **§8.61 新节** + §1 新增 `R29` 行 + §8.60 尾行改指 §8.61；
+      `pageStatus.json` 加工页 `instructions` 新增 R29 条 + `npm run sync:page-status`；本条。
+    - **状态**：**R29 ✅** —— 加工页「看不见条件」这条人工反馈已收口；**登记为后续可选项（§8.61 第七节）**
+      = expect/枚举十六进制归一（**会改字节，单独排期**）/ ref 无值链校验提醒 / Sequences 页同款角标。
+      提交 = `feat(R29)` 单笔（**零 DDL** → 无 `chore(db)`）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

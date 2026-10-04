@@ -8,6 +8,9 @@
 import { mapChecksumAlgo } from '../utils/normalizeInstruction';
 import { getParamKeyLimitRef } from '../utils/encoderLimits';
 import { SCRAMBLE_MODES, cleanHexText } from '../utils/scramble';
+// R29 (§8.61): presence 展示状态只**委托**编码端判定（同源 fail-open，改一必改二）。
+// InstructionEncoder 不回引本文件 → 无环。
+import { InstructionEncoder } from '../utils/InstructionEncoder';
 
 // DRY Helper: Get Date object for the field's base time (epoch).
 // Accepts both 'YYYY-MM-DDTHH:mm:ss' and 'YYYY-MM-DD HH:mm:ss'.
@@ -551,4 +554,55 @@ export const parseFloatInput = (raw) => {
     if (!FLOAT_STRICT.test(text.trim())) return { text, value: null };
     const n = Number(text.trim());
     return { text, value: Number.isFinite(n) ? n : null };
+};
+
+// ─── R29 (§8.61): 条件存在 (PRESENCE) —— 加工页展示层状态表 ────────────────
+//
+// 判定**只**委托 InstructionEncoder._presenceHit（与出线编码同一套 fail-open
+// 口径，改一必改二）；本函数不自造第二套判据，只负责「谁配了 presence +
+// 把结果聚合成渲染可用的 {hit, title}」。因此该表与 BYTE_STREAM / LEN 的
+// 真实字节恒同源 —— 角标说 SKIP，字节流里就真的没有那段。
+//
+// 不进表 = 没配 presence（含非对象/数组）→ 渲染层不点 IF 角标，行为与
+// R29 之前逐像素一致（Sequences 步骤编辑器不传本表 → 完全不渲染）。
+//
+// title 是纯展示字符串（判定式 + 命中结论 + fail-open 归因），把「为什么
+// 这条不发/恒发」直接写在 hover 上 —— 存量 ref 无 pc.value、ref 悬空这两类
+// 静态链断裂在加工页此前完全不可见。
+export const resolvePresenceStates = (fields = [], inputs = {}, computedValues = {}) => {
+    const flat = InstructionEncoder.flattenAll(Array.isArray(fields) ? fields : []);
+    const idSet = new Set(flat.filter(f => f && f.id !== undefined && f.id !== null).map(f => f.id));
+    const states = {};
+    flat.forEach((f) => {
+        if (!f || f.id === undefined || f.id === null) return;
+        const cfg = f.parameter_config;
+        const pres = (cfg && typeof cfg === 'object' && !Array.isArray(cfg)) ? cfg.presence : undefined;
+        if (!pres || typeof pres !== 'object' || Array.isArray(pres)) return; // 未配置 → 不点角标
+
+        const refId = pres.ref_id ?? null;
+        const expect = pres.expect ?? null;
+        const hasRef = !(refId === undefined || refId === null || String(refId) === '');
+        const hasExpect = !(expect === undefined || expect === null || String(expect) === '');
+        const dangling = hasRef && !idSet.has(refId);
+        const refVal = (hasRef && !dangling)
+            ? InstructionEncoder._refValue(refId, inputs, computedValues, flat)
+            : undefined;
+
+        // fail-open 归因只在「命中」侧有意义（fail-open 恒命中，未命中必是
+        // 真比对不等）；缺 ref_id / 缺 expect / 悬空 / 无值链 四支与
+        // _presence_hit 的 return True 分支一一对应。
+        let reason = '';
+        if (!hasRef) reason = ' · 缺 ref_id → fail-open 按命中';
+        else if (!hasExpect) reason = ' · 缺 expect → fail-open 按命中';
+        else if (dangling) reason = ' · ref 悬空 → fail-open 按命中';
+        else if (refVal === undefined || refVal === null) reason = ' · ref 无值链 → fail-open 按命中';
+
+        const hit = InstructionEncoder._presenceHit(f, inputs, computedValues, flat);
+        states[f.id] = {
+            hit,
+            title: `条件字段：[${hasRef ? String(refId) : '?'}] == ${hasExpect ? String(expect) : '?'}`
+                + (hit ? ` · 命中 → 发射本字段${reason}` : ' · 未命中 → 0 字节（本帧不发）'),
+        };
+    });
+    return states;
 };

@@ -47,6 +47,8 @@
 
 | R21–R28 | **七项复议拍板全数立项**（§8.52：C-5 ② 长度域 BE/LE → R21、C-5 ① CRC 多算法 → R22、挂账 ① epoch → R23、挂账 ③ 切 op → R24、挂账 ② 加扰 → R25、C-1 B 序列分支 → R26（含 DDL 仅新增列）、C-5 ③ varint/COBS 拆两批 → R27 出线 / R28 解包） | 🔄 **R21 已完成 ✅（2026-10-03，§8.53：长度域 `byte_order` —— BE+FE 零 DDL，收侧本就支持、补出线与出口翻译 + 应答声明；**顺带修**设计期 ≥2 字节真值被空格切坏的存量缺陷；新增共享向量 `vectors/length_order.json` 7 行，BE 753 → 768、FE 1106 → 1117）**；**R22 已完成 ✅（2026-10-03，§8.54：CRC16-CCITT / CRC32 / LRC —— 六张白名单 + `operator.py` 算子模板同批成对改；收侧 `ALGO_FIELD_WIDTH` 只加 ≥ 下限、`crc16_modbus` 遗留精确 2 字节逐字不变；共享向量 `vectors/checksum_algo.json` 30 行双端同读，期望值取自 `zlib` / `binascii` 外部真值；BE 768 → 793、FE 1117 → 1127）**；**R23 已完成 ✅（2026-10-03，§8.55：`TIME_EPOCH` 绝对时间戳算子 —— BE `encode_time_epoch` + 序列计划补丁 + `KNOWN_OPS` 20 → 21 + 算子模板，FE 编码分支 / normalize 保身份 / `EPOCH` 只读章 / 计划条目；共享向量 `vectors/time_epoch.json` 11 行双端同读，BE 793 → 808、FE 1127 → 1139）**；**R24 已完成 ✅（2026-10-03，§8.56：创建后切换 op —— 属性面板 `op_code` 只读 span → 下拉 + 兼容校验 + 确认回执；新建与切换共用 `applyOpDefaults` 单源（顺带修模板数组污染）+ BE `_validate_op_switch` 保存侧兜底，BE 808 → 824、FE 1139 → 1163）**；**R25 已完成 ✅（2026-10-04，§8.57：加扰 / 混淆字段 —— 新算子 `SCRAMBLE`（ENCODING 类目）明文异或种子 / 位旋转，出线只改本字段字节；FE 编码分支 + 卡面显**加扰后线上 hex** + 加工页只读 + 反加扰解码，BE `encode_scramble` / `unscramble_hex` + `_validate_scrambles` 保存侧 400，`KNOWN_OPS` 21 → 22 + 算子模板 `mode` / `seed` / `roll`（缺省种子 A5）；共享向量 `vectors/scramble.json` 14 行双端同读，BE 824 → 843、FE 1163 → 1196）**；**R26 已完成 ✅（2026-10-04，§8.58：序列级分支 —— `sequence_steps.condition` **仅新增列**（Migration 0005 + 启动自愈两列同批 + datahub 导出带条件），受限表达式求值器**双端同语义**（`== != >= <= > < in` 六比较符 + 关键字，**无 eval**，共享向量 `vectors/condition.json` 58 行），runner 四分口径（条件空→原路径 / 真→执行 / 假→`SKIPPED` 不延时不发送不落日志 / 非法→`ERROR` `COND:` 结构化诊断），变量上下文 = `step.<n>.*` 逐步累积 + 应答解码字段平铺，序列页「执行条件」输入**就地校验** + `COND ::` 指示 + 跳过原因进 tooltip；**前置证明 = 无条件序列零解码零增量**（专项测试钉住），BE 843 → 878、FE 1196 → 1213）**；**R27 已完成 ✅（2026-10-04，§8.59：varint / COBS **出线** —— length 卡 `encoding`（LEB128 最小无符号、字节序中立、**出线后回写 `byte_length`**）+ 协议树新组帧元素 `cobs`（`Orchestrator` 第 0 步由内向外前置改写、正文无裸 `00`、**解码不进生产代码**）+ 保存侧 refs 指向 COBS 内部 400 + 偏移尺两遍法回灌精确出线宽；**零 DDL（无 `chore(db)`）**，Phase 0 先证「无变长编码时逐字节不变」；共享向量 `vectors/framing.json` 3 表 35 行双端同读，BE 878 → 917、FE 1213 → 1247）**；**R28 已完成 ✅（2026-10-04，§8.60：varint / COBS **解包** —— 收侧新模块 `backend/core/unframe.py`（`decode_varint` / `cobs_decode`，`framing.py` 一行不改仍纯编码）+ 应答规格 `length.encoding`（fixed/varint）与 `unpack.mode=cobs`（`inner_head` / `inner_trailer`）+ 新 reason 码 `LENGTH_VARINT_INVALID(原因)` / `STAGE[i].UNPACK_COBS_INVALID(原因)` / `STAGE[i].UNPACK_INNER_TOO_SHORT(n<=m)` + 生成侧**逐要素降级**（只少判不误判，多层几何算不出 → 400）；FE 只做规格表单 ENCODING 下拉（**只写非缺省值**），不建无消费者的解码模块；**反向消费既有 `vectors/framing.json`、不新增向量文件**；**零 DDL（无 `chore(db)`）**，Phase 0 金标准先钉「改前形态逐字节不变」；**BE 917 → 955、FE 1247 → 1251）**；**加工页传输展示与切换**复议维持 D9-A 不立项** |
 
+| R29 | **加工页条件存在 (PRESENCE) 展示层** —— 用户人工测试反馈「满足 IF 条件的与不满足 IF 条件的时候，指令加工中本条指令的字段从肉眼上看不出区别」（§8.61；**非 §8.52 复议范围，独立批次**） | ✅ **已完成（2026-10-04，§8.61，纯 FE · 零 DDL → 无 `chore(db)`）**：新纯函数 `resolvePresenceStates`（**只委托** `InstructionEncoder._presenceHit`，与出线编码同源 fail-open，不造第二套判据）+ `SmartInput` 新 prop `presence` → label 区 `IF` 琥珀章 + 右槽 `[SKIP 0B]`（**顶到最高优先**，压过 TIME_PICKER / READ_ONLY / 用量 / 长度）+ `RunnerFieldTree` 新 prop `presenceStates` → 叶行 / 组头出章、未命中 `opacity-50`（组未命中整棵子树随之降透明）+ `InstructionRunner` 造表（依赖与 `hexPreview` / `byteMap` **同组** → 角标与 BYTE_STREAM、`LEN` 恒同步）；**`presenceStates` 缺省 `null` = 零渲染 → `Sequences` 步骤编辑器零改动**；输入与限宽一律不禁用、**判定与字节一行未改**；红测先行（stash 实现后 19 failed / 2 passed → pop 后 24/24 绿）；**BE 955/955（持平）、FE 1251 → 1275/1275（84 文件，+24）**；判定链两处坑（expect `"01"` vs 枚举数值 `1`、无值链 fail-open）**登记为 §8.61 第七节可选项**，不并入本批 |
+
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
 ## 2. M1 明细（实现完成，待人工验证）
@@ -5079,7 +5081,90 @@ expected = len(frame) + offset_val - (width - byte_length)
 - **零 DDL → 本批无 `chore(db)`**；`framing.py` 一行不改（`test_encode_only_module` 仍为真）；
   不引 pytest、**无新 pip 依赖**。
 
-**§8.52 七项复议立项（R21–R28）至此全数销项 ✅。下一批：待用户排期。**
+**§8.52 七项复议立项（R21–R28）至此全数销项 ✅。下一批 → 人工测试反馈另立 R29（§8.61）。**
+
+### 8.61 R29 · 加工页条件存在 (PRESENCE) **展示层** —— 2026-10-04
+
+#### 一 · 来源与定性（人工测试反馈，**非** §8.52 复议范围）
+
+- 用户反馈原文：**「满足 IF 条件的与不满足 IF 条件的时候，指令加工中本条指令的字段从肉眼上看不出区别」**。
+- 改前取证（库内 `instruction_fields` 38 行仅 2 行带 `pc.presence` + 直跑 `InstructionEncoder` 实测字节）：
+  - ① `原始Hex`（HEX_RAW 1B）← `文本字段`（STRING 8B）`== "01"`：初态 `inputs.cmd="ALPHA"` →
+    `414C504841000000`（8B，门掉）、键入 `"01"` → `3031000000000000FF`（9B，发）—— **字节会变，但字段行无任何标识**。
+  - ② `运行秒数`（TIME_ACCUMULATOR 4B）← `枚举映射`（MAPPING 1B）`== "01"`：未动下拉 →
+    `0000000000`（5B，`inputs` 无键 + `pc.value` 空 → fail-open 恒命中）、选「开」（`handleChange` 里
+    `parseInt(x,16)` 转成数值 1）→ `01`（1B，**`String(1)="1" ≠ "01"` → 未命中**）、选「关」（0）→ `00`（1B）、
+    硬喂字符串 `"01"` → `0100000000`（5B）。
+- **两层定性**：
+  1. **显示缺口（本批修）** —— §8.16 第 6 条文件面清单**本就不含 `InstructionForm`**，加工页字段树对 presence
+     零感知（无 IF 角标 / 无命中态 / `n-N BYTES` 定长章仍按静态 `byte_len` 亮）→ **不是回归，是当时划在范围外**；
+  2. **判定链两处（本批不修，见第七节）** —— expect 补零十六进制与枚举数值型**永不相等**、无输入框的 ref
+     初态必落 fail-open。
+- **拍板**：**只做显示层**（用户选定）。判定归一会翻转存量判定 → 出线字节变，属语义变更，另行排期。
+
+#### 二 · 新纯函数 `resolvePresenceStates`（`config/runnerRenderRules.js`）
+
+| 要点 | 口径 |
+|---|---|
+| 判定来源 | **只委托** `InstructionEncoder._presenceHit`（与出线编码同一套 fail-open，改一必改二）；本函数不造第二套判据 |
+| 入表条件 | 字段带**对象形态**的 `pc.presence` 才进表；未配置（含非对象 / 数组）→ 不进表 → 渲染层不点角标，与 R29 之前逐像素一致 |
+| 返回形状 | `{fieldId: {hit, title}}` |
+| `title` 构成 | `条件字段：[ref] == expect` + `· 命中 → 发射本字段` 或 `· 未命中 → 0 字节（本帧不发）` + **fail-open 归因四支**（缺 ref_id / 缺 expect / ref 悬空 / ref 无值链） |
+| 依赖方向 | `runnerRenderRules → InstructionEncoder`，编码器不回引本文件 → **无环** |
+
+- 归因**只在命中侧**有意义（fail-open 恒命中，未命中必是真比对不等）。把「为什么这条恒发 / 不发」写进 hover，
+  正因为**存量 ref 无 `pc.value`、ref 悬空这两类静态链断裂在加工页此前完全不可见**。
+
+#### 三 · 渲染落点（三处，均为显示层）
+
+| 文件 | 改动 | 关键点 |
+|---|---|---|
+| `SmartInput.jsx` | 新 prop `presence = null` | label 区（kind 章之后）出 `IF` 琥珀章；右徽标槽 `presence && !hit` → `[SKIP 0B]` **顶到最高优先**（压过 TIME_PICKER / READ_ONLY / 用量 / 长度章）—— 「这行根本不出线」比「这行能不能改」更要紧 |
+| `RunnerFieldTree.jsx` | 新 prop `presenceStates = null` | 叶行 / 组头查表出章；未命中 → 外层 `opacity-50`（组未命中时**整棵子树**随之降透明）；递归向下透传 |
+| `InstructionRunner.jsx` | `useMemo` 造表 + 传 prop | 依赖 `[normalizedInstruction, inputs, computedValues]`，**与 `hexPreview` / `byteMap` 同一组** → 角标与右侧 BYTE_STREAM、`LEN` 恒同步，不会出现「角标说 SKIP 但字节还在」 |
+
+- **`presenceStates` 缺省 `null` = 零渲染**：`Sequences.jsx` 步骤编辑器复用同一 `RunnerFieldTree` 但**不传表**
+  → 该页零改动（本批严格限于用户选定的加工页）。
+- **输入与限宽一律不禁用**：被门掉的字段仍可键入（要靠它把条件改命中），`maxLength` / `min` / `max` /
+  用量徽标全部照旧 —— 本批**不改任何限宽行为**，角标只陈述结论。
+
+#### 四 · 明确不改（本批边界）
+
+- `_presence_hit` 判定口径、`validateInstruction` 校验四码、`normalizeInstruction` 清洗、编码分支
+  **一行未动** → **出线字节逐字不变**（新 helper 只读不写）。
+- **不做 expect 十六进制补零归一**（`"01" ≡ 1`）—— 会翻转第一节 ② 的存量判定。
+- BE **零改动**（`field_blocks.py` / `field_decode.py` 未碰）；`models.py` 一行未动 → **零 DDL → 无 `chore(db)`**。
+- 应答解码侧不涉及：presence 未命中 → 0 字节 → `field_decode` 本就不产条目（`n <= 0` 早退在 align 之前）。
+
+#### 五 · 测试（红测先行有据）
+
+- 3 个新文件 **24 例**：
+  - `config/__tests__/runnerRenderRules.presence.test.js` **12 例** —— 进表口径 / `String` 归一 /
+    `computed` 优先 / fail-open 四支归因 / **角标结论 == 真实字节**恒等式（叶：`byteMap` 含否 ≡ `hit`；
+    组：命中 4B ↔ 未命中 2B）；
+  - `components/InstructionForm/__tests__/RunnerFieldTree.presence.test.jsx` **9 例** —— 不传零渲染 /
+    表里没有该字段也不渲染 / 命中态 / 未命中态 / `[SKIP 0B]` 压过 `[READ_ONLY]` / 组级同权 / 父命中不豁免子；
+  - `components/InstructionForm/__tests__/InstructionRunner.presence.test.jsx` **3 例** —— **装配线**：
+    表真传到字段树 + 改 ref 输入角标实时翻转 + 未配 presence 的字段不出章。
+- **红测证据**：`git stash` 四个实现文件后跑同批测试 → **19 failed / 2 passed**（通过的 2 条是
+  「不传就不渲染」的反向用例，理应在旧代码上也通过），`stash pop` 后 **24 / 24 绿**。
+
+#### 六 · 验收
+
+- **BE 955/955（持平，本批零后端改动）**、**FE 1251 → 1275/1275（84 文件，+24）**。
+- `npx vite build` EXIT=0 · `npm run lint` EXIT=0 · yorha-ui 校验器改动 js/jsx **7 文件 0 违规** ·
+  md 表列数 **mismatches = 0** · 隐形字符 / CRLF / TAB = 0（终判看 index blob，`ev33_index_hygiene.py`）。
+- **零 DDL → 本批无 `chore(db)`**；不引 pytest、**无新 pip 依赖**。
+
+#### 七 · 登记为后续可选项（本批**不做**）
+
+| 项 | 影响 | 为何不并入本批 |
+|---|---|---|
+| expect / 枚举值十六进制补零归一（`"01" ≡ 1`） | 会翻转存量判定 → **出线字节变** | 语义变更，须双端同步 + 存量影响清单，单独排期论证 |
+| ref 无值链时的校验提醒（新 W 码） | 只提醒、零行为变更 | 用户本轮只选显示层 |
+| `Sequences` 步骤编辑器同款角标 | 该页显示变更 | 本批严格限于加工页 |
+
+**R29 ✅ —— 加工页「看不见条件」这一条人工反馈已收口。下一批：待用户排期。**
 
 ## 9. 保留勿动（非任务，勿清理）
 

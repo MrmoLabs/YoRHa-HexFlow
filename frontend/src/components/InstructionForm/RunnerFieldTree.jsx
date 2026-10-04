@@ -25,7 +25,9 @@ export default function RunnerFieldTree({
     onFieldChange, // (fieldId, value) => void
     onOpenDatePicker, // (iso, callback) => void
     selectedFieldId = null,   // 第 4 批 #2：选中字段（字节流高亮联动）
-    onSelectField = null      // (fieldId) => void
+    onSelectField = null,     // (fieldId) => void
+    presenceStates = null     // R29 (§8.61)：{fieldId: {hit, title}} —— 缺省 null =
+                              // 不渲染任何 IF/SKIP 章（Sequences 步骤编辑器不传 → 零改动）
 }) {
     return fields.map((field) => {
         const params = field.parameter_config || {};
@@ -36,6 +38,11 @@ export default function RunnerFieldTree({
 
         const isSelected = selectedFieldId === field.id;
         const subFields = field.fields || [];
+        // R29 (§8.61)：本字段的 presence 结论（判定来自编码端同源 helper，
+        // 这里只做查表 + 布局）。未命中 → 行/组整块降透明 + 右侧 [SKIP 0B]。
+        const presence = (presenceStates && field.id !== undefined && field.id !== null)
+            ? (presenceStates[field.id] || null) : null;
+        const presenceMiss = !!(presence && !presence.hit);
 
         if (subFields.length > 0) {
             // 第 14 单：组头也出种类章（STRUCT/ARRAY…；身份归一 VAR/IN → GROUP）
@@ -44,7 +51,7 @@ export default function RunnerFieldTree({
                 ? { label: 'GROUP', title: 'GROUP // 字段组：子字段顺序打包' }
                 : gk;
             return (
-                <div key={field.id} className={`${depth > 0 ? 'ml-6' : ''}`}>
+                <div key={field.id} className={`${depth > 0 ? 'ml-6' : ''} ${presenceMiss ? 'opacity-50' : ''}`}>
                     <div
                         className={`border-l pl-4 py-2 my-2 bg-nier-light/[0.02] ${isSelected ? 'border-[#E58D28]' : 'border-nier-light/10'} ${onSelectField ? 'cursor-pointer hover:bg-nier-light/[0.05]' : ''}`}
                         onClick={onSelectField ? (e) => {
@@ -62,6 +69,28 @@ export default function RunnerFieldTree({
                             >
                                 {groupKind.label}
                             </span>
+                            {/* R29 (§8.61)：组级条件存在 —— 命中/未命中同叶字段口径；
+                                未命中 = 整棵子树 0 字节（子树随外层 opacity 一并降透明）。 */}
+                            {presence && (
+                                <span
+                                    data-runner-presence-chip={presence.hit ? 'hit' : 'miss'}
+                                    title={presence.title}
+                                    className={`text-[8px] font-black font-mono leading-none border px-1 py-[2px] uppercase tracking-tighter shrink-0 select-none cursor-help ${presence.hit
+                                        ? 'text-[#E58D28] border-[#E58D28]/60'
+                                        : 'text-nier-light/50 border-nier-light/30'}`}
+                                >
+                                    IF
+                                </span>
+                            )}
+                            {presenceMiss && (
+                                <span
+                                    data-runner-presence-skip
+                                    title={presence.title}
+                                    className="text-[8px] font-black font-mono leading-none border border-[#E58D28]/60 text-[#E58D28] px-1 py-[2px] uppercase tracking-tighter shrink-0 select-none"
+                                >
+                                    [SKIP 0B]
+                                </span>
+                            )}
                             <span className="text-[10px] font-black uppercase tracking-widest text-nier-light">
                                 {field.name || field.label || 'BLOCK'}
                             </span>
@@ -75,6 +104,7 @@ export default function RunnerFieldTree({
                             onOpenDatePicker={onOpenDatePicker}
                             selectedFieldId={selectedFieldId}
                             onSelectField={onSelectField}
+                            presenceStates={presenceStates}
                         />
                     </div>
                 </div>
@@ -151,7 +181,7 @@ export default function RunnerFieldTree({
         return (
             <div
                 key={field.id}
-                className={`${depth > 0 ? 'ml-6' : ''}`}
+                className={`${depth > 0 ? 'ml-6' : ''} ${presenceMiss ? 'opacity-50' : ''}`}
                 onClick={(e) => {
                     // 叶行点击在 SmartInput onSelect 后即止 —— 不冒泡到组容器，
                     // 防止嵌套组内选中被外层组 id 覆盖成「整组高亮」
@@ -179,6 +209,7 @@ export default function RunnerFieldTree({
                         kindLabel={kind.label}
                         kindTitle={kind.title}
                         usage={usage}
+                        presence={presence}
                     />
                     {/* 批 3：BITFIELD 子位录入（与上方整包输入并存；单一真源 = 字段整数） */}
                     {isEditable && field.op_code === 'BITFIELD' && Array.isArray(field.bits) && field.bits.length > 0 && (
