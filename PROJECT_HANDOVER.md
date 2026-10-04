@@ -2366,7 +2366,64 @@
       §8.53／§8.54 尾行推进；`vectors/README.md` §3 + §7；`BUSINESS_SCENARIOS.md`
       绝对时间戳行 `⏸` → `✅`、挂账清单行与 G5 白名单计数回填；`pageStatus.json` 指令页
       `availableNow` / `nextSteps` 回填 + `npm run sync:page-status`；本条。
-    - **状态**：**R23 ✅**；余 **R24 → R28 五批**（下一批 **R24 创建后切换 op**）。
+    - **状态**：**R23 ✅**；**R24 亦已完成 ✅（条目 73）**；余 **R25 → R28 四批**
+      （下一批 **R25 加扰 / 混淆**）。
+
+73. **R24 · 创建后切换 op：属性面板放开 `op_code` 编辑 + 兼容校验 + 确认回执（PLAN §8.56 · §8.52 排期第 4 批）**
+    （2026-10-03，**BE + FE、零 DDL、`models.py` 未动、`/dispatch` 缺省口径逐字不变**）：
+    - **问题**：`BUSINESS_SCENARIOS.md` 挂账 ③ —— 属性面板的 `op_code` 是只读 `<span>`，
+      想换算子只能**删了重建重录**（`PLAN §8.52` 2026-10-03 复议立项 R24）。
+    - **FE 新模块 `utils/opSwitch.js`（纯函数，20 例单测）**：
+      - `switchableOps(templates, current)` = **有算子模板的 OP_CODES**（与调色板同源：
+        `STRUCT` 有口径无模板 → 不提供；encoder legacy 五项无创建入口 → 不列），`HEX_RAW`
+        居首、余按 `OP_PRIORITY`；**当前算子恒列第一**（legacy 字段渲染不出空下拉、也切得走）。
+      - `planOpSwitch(block, next, {childCount, templates})` → `{ok, code, from, to, next,
+        kept, dropped, byteLen, bitsDelta}`；拒绝码 `OP_UNKNOWN`（未知算子）与
+        `GROUP_HAS_CHILDREN`（**容器切成叶算子且下挂子块 → 拦**，文案点名子块数与
+        「孤儿子块」）；同算子 → `SAME_OP`（不产生转换）。
+      - **中性键保留** `value / refs / presence / align / pad_to / pad_byte / endianness /
+        input_base`（组 → 组另留 `max_count`；**进组摘 `value`** —— 组不吃静态值，留着会被
+        `hasFixedValue` 误判成 FIXED 卡面）；**其余键一律丢**（按目标算子重建）。
+      - `describeOpSwitch(plan)` = 确认回执文案（切换方向 / 保留 / 清除 / 位宽 /
+        字节长度变化 / 「确认后写入草稿，仍需 APPLY 保存」）。
+    - **`applyOpDefaults` 单源**：从 `pages/Instruction.jsx handleAddBlock` **原样抽出**
+      （改一必改二）→ 新建与切换共用同一份默认态（模板默认值、`BITFIELD` 播种一段 8-bit、
+      `ARRAY_GROUP` 清零 + `max_count=1`、`bits` 位宽派生 `byte_len`、`HEX_RAW` hex 等长、
+      `STRING` 8B + `type=string` + `encoding` 标量、MAPPING 补 `_kvArray`）；`preferByteLen`
+      参数区分两路 —— **新建恒用模板首项**（既有行为逐条不变，`Instruction.test.jsx` STRING
+      例照旧绿），**切换优先保留原 `byte_len`**（位宽枚举容纳得下就用它，容纳不下才回落首项
+      并同步 `byte_len`，回执报「位宽 + 字节长度」）。
+    - **顺带修（存量缺陷）模板数组污染**：`param_template` 的**数组 = 枚举选项**，旧实现原样
+      复制进 `parameter_config` → 下拉显示取 `[0]` 而编码器走 `default` 分支，两端各读各的。
+      R23 新增的 `TIME_EPOCH unit` 与既有的 `CHECKSUM_CRC algo` 都中招 → `applyOpDefaults`
+      一律**落首个标量**（`bits` / `encoding` 早有特判，等价改写）。
+    - **面板 UI**（`BlockPropertiesPanel.jsx`）：`op_code` 只读 span → **带标签的
+      `算子 (Operator)` 下拉**（值绑 `tempBlockConfig.op_code`，header 同步显示草稿算子）；
+      `handleOpChange` **先 `setTempBlockConfig(prev => ({...prev}))` 强制回弹受控下拉**
+      （取消 = 草稿一字未动，不会出现「显示新算子、草稿还是旧算子」的假态）→ 按 `plan` 弹
+      `openConfirm` 回执（阻断态给空动作），**确认才 `setTempBlockConfig(plan.next)`**。
+    - **BE 保存侧兜底**（`routers/instruction.py`）：新表常量 `GROUP_OPS = {ARRAY_GROUP,
+      STRUCT}`（与 FE `isGroupOp` 同源）+ `_validate_op_switch(old_ops, fields)` ——
+      **只对 op 与存量不同的字段判**（新增字段 / 未切换字段不判 → 存量历史形态不锁）：
+      ① 容器切成叶算子且 payload 下挂子字段 → 400；② 切入 `HEX_RAW` 且 hex 去空白后长度
+      ≠ `byte_len*2` → 400（**FE `validateInstruction` E1 `HEX_LENGTH` 同口径**，堵直连 API
+      绕过面板 APPLY 校验的口子）；调用点在 `update_instruction` 的 `_validate_op_codes`
+      之后、**任何写入之前** → 拒绝即存量原样、无半写状态。
+    - **测试**：`backend/tests/test_op_switch.py` **15 例**（纯函数口径 + 端点接线：拒绝后
+      状态原样、子块先挪出再切组放行、未切换的存量 HEX 长度不拦、新增字段不拦）+
+      `backend/tests/test_operator_templates.py` 新增「模板集 = 可切换算子集」反漂移锁
+      （`KNOWN_OPS` − `STRUCT` − legacy 5，少一个模板就等于那个算子切不过去）；FE
+      `utils/__tests__/opSwitch.test.js` **20 例** + `BlockPropertiesPanel.test.jsx`
+      下拉四例（选项构成、合法切换回执 + 回弹 + 确认播种、取消不动草稿、带子块拦截）。
+    - **验收**：**BE 808 → 824/824**（+16）、**FE 1139 → 1163/1163（76 文件）**（+24）、
+      `npx vite build` EXIT=0、`npm run lint` EXIT=0、yorha-ui 校验器改动 js/jsx
+      **0 违规**、md 表列数 mismatches = 0、隐形字符 / CRLF / TAB = 0；**零 DDL → 无
+      `chore(db)`**；`seed.py` **不改**（无新算子、无新模板字段）。
+    - **文档同步（同批）**：PLAN **§8.56 新节** + §1 `R21–R28` 行回填（R24 ✅）+ §8.52
+      拍板表与排期表两行标已办 + §8.54／§8.55 尾行推进；`BUSINESS_SCENARIOS.md`
+      「创建后切换 op」行 `⏸` → `✅` + 挂账清单行改已落地；`pageStatus.json` 指令页
+      `nextSteps` 回填 + `npm run sync:page-status`；本条。
+    - **状态**：**R24 ✅**；余 **R25 → R28 四批**（下一批 **R25 加扰 / 混淆**）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

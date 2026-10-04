@@ -13,6 +13,7 @@ import { validateInstruction } from '../utils/validateInstruction';
 import { computeByteOffsets } from '../utils/byteOffsets';
 import { moveField } from '../utils/moveField';
 import { analyzeImport } from '../utils/importExport';
+import { applyOpDefaults } from '../utils/opSwitch';
 import InstructionTable from '../components/editor/InstructionTable';
 import { api } from '../api';
 
@@ -209,68 +210,24 @@ export default function Instruction({ instructions: initialInstructions, setInst
         const siblings = currentInstruction.fields.filter(f => (f.parent_id || null) === currentParentId);
         const nextSeq = siblings.length > 0 ? Math.max(...siblings.map(s => Number(s.sequence) || 0)) + 1 : 0;
 
-        const defaultParams = {};
-        if (template.param_template) {
-            const keywords = ['datetime', 'number', 'string', 'field_picker', 'kv_pair_list', 'input', 'bit_editor'];
-            Object.entries(template.param_template).forEach(([key, val]) => {
-                if (typeof val !== 'string' || !keywords.includes(val)) defaultParams[key] = val;
-            });
-        }
-
+        // R24（§8.52 挂账 ③）：新建的「算子默认态」抽到 utils/opSwitch.applyOpDefaults，
+        // 与属性面板的「切算子」共用单源 —— 切换后 ≡ 新建该算子的字段（模板默认值含
+        // 数组选项标量化、BITFIELD 播种位段、ARRAY_GROUP 清零、bits 派生 byte_len、
+        // HEX_RAW hex 等长、STRING 8B/type/encoding）。
         const newBlock = {
             id: uuidv4(),
             parent_id: currentParentId,
             sequence: nextSeq,
             op_code: opCode,
             name: getUniqueName(template?.name || opCode),
-            parameter_config: defaultParams,
+            parameter_config: {},
             children: [],
             repeat_type: template.repeat_type || 'NONE',
             repeat_count: template.repeat_count || 1,
             byte_len: template.byte_len || 1,
         };
 
-        if (opCode === 'BITFIELD') {
-            // Seed one 8-bit segment so the editor has something to show immediately
-            newBlock.byte_len = 1;
-            newBlock.bits = [{ id: uuidv4(), sequence: 0, bit_name: 'VALUE', start_bit: 0, bit_len: 8, default_val: 0 }];
-        }
-        if (opCode === 'ARRAY_GROUP') {
-            newBlock.byte_len = 0;
-            if (!newBlock.parameter_config.max_count) newBlock.parameter_config.max_count = 1;
-        }
-        if (template?.param_template?.bits) {
-            // A1: parameter_config.bits may have been copied as the template ARRAY
-            // ([8,16,32,64]) — Math.ceil(array/8) === NaN, which poisoned byte_len.
-            // Always store the scalar default and derive byte_len from it.
-            const rawBits = template.param_template.bits;
-            const defaultBits = Number(Array.isArray(rawBits) ? rawBits[0] : rawBits);
-            if (Number.isFinite(defaultBits) && defaultBits > 0) {
-                newBlock.parameter_config.bits = defaultBits;
-                newBlock.byte_len = Math.ceil(defaultBits / 8);
-            }
-        }
-
-        // HEX_RAW: default hex must match byte_len exactly (APPLY validates the
-        // length), and byte_len may have been adjusted by the bits template above.
-        if (opCode === 'HEX_RAW') {
-            const byteLen = newBlock.byte_len || 1;
-            const currentHex = String(newBlock.parameter_config.hex || '').replace(/\s/g, '');
-            if (currentHex.length !== byteLen * 2) {
-                newBlock.parameter_config.hex = '00'.repeat(byteLen);
-            }
-        }
-
-        // N2 (G2): 文本字段 —— 8B 默认；pc.type='string' 是编码/显示/校验链的
-        // 触发键（param_template 的 keyword 值不会复制进 pc，必须特判设置）；
-        // encoding 数组（面板下拉源）创建时归一为标量 'ascii'（A1 数组污染先例）。
-        if (opCode === 'STRING') {
-            newBlock.byte_len = 8;
-            newBlock.parameter_config.type = 'string';
-            if (Array.isArray(newBlock.parameter_config.encoding)) {
-                newBlock.parameter_config.encoding = 'ascii';
-            }
-        }
+        applyOpDefaults(newBlock, opCode, template);
 
         // A brand-new group should be immediately visible & focusable, otherwise
         // the user would be adding children into a collapsed lane they can't see.

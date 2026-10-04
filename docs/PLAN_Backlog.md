@@ -45,7 +45,7 @@
 | R19–R20 | **拍板后追加排期**（§8.50：① 加工页传输展示与切换 = **维持 D9-A 不立项**、② 数据包示例下载 = **动态导出**、③ 档案自定义排序 = **`sort_order` DDL 解禁**） | ✅ **R19 已完成 ✅（§8.50：数据包示例下载 —— 动态出按域导入的 5 域、复用 R17 `?domains=` 子集，零后端改动零 DDL，FE 1098 → 1099）**、**R20 已完成 ✅（§8.50：档案自定义排序 —— `device_profiles.sort_order` 仅新增列 + migration 0004 + `PUT /profiles/order` 整表一次提交，拖完只改草稿序；BE 733 → 743、FE 1099 → 1106；db 同步另开 `chore(db)` 提交）** |
 | §8.51 | **§9.7 ① 出线方向销项**（「有 LEN = 不需要转义」在载荷含定界字节时是否异常）—— 按 §8.35 同套方法**联网取公开规范真帧 + 仓内仿真**：IEC 60870-5-104 / DL/T 645-2007 / Modbus TCP 三条**有长度域**协议 + 本仓三层壳出线反解 + **无 LEN 反例** | ✅ **已完成（2026-10-03，零代码改动、零 DDL、零 `pageStatus` 变更）**：新 `backend/tests/test_wire_delimiter.py` **10 例**，**BE 743 → 753/753**、FE 1106/1106（未碰前端）；**「需真实设备帧」这一类自此无开放项** |
 
-| R21–R28 | **七项复议拍板全数立项**（§8.52：C-5 ② 长度域 BE/LE → R21、C-5 ① CRC 多算法 → R22、挂账 ① epoch → R23、挂账 ③ 切 op → R24、挂账 ② 加扰 → R25、C-1 B 序列分支 → R26（含 DDL 仅新增列）、C-5 ③ varint/COBS 拆两批 → R27 出线 / R28 解包） | 🔄 **R21 已完成 ✅（2026-10-03，§8.53：长度域 `byte_order` —— BE+FE 零 DDL，收侧本就支持、补出线与出口翻译 + 应答声明；**顺带修**设计期 ≥2 字节真值被空格切坏的存量缺陷；新增共享向量 `vectors/length_order.json` 7 行，BE 753 → 768、FE 1106 → 1117）**；**R22 已完成 ✅（2026-10-03，§8.54：CRC16-CCITT / CRC32 / LRC —— 六张白名单 + `operator.py` 算子模板同批成对改；收侧 `ALGO_FIELD_WIDTH` 只加 ≥ 下限、`crc16_modbus` 遗留精确 2 字节逐字不变；共享向量 `vectors/checksum_algo.json` 30 行双端同读，期望值取自 `zlib` / `binascii` 外部真值；BE 768 → 793、FE 1117 → 1127）**；**R23 已完成 ✅（2026-10-03，§8.55：`TIME_EPOCH` 绝对时间戳算子 —— BE `encode_time_epoch` + 序列计划补丁 + `KNOWN_OPS` 20 → 21 + 算子模板，FE 编码分支 / normalize 保身份 / `EPOCH` 只读章 / 计划条目；共享向量 `vectors/time_epoch.json` 11 行双端同读，BE 793 → 808、FE 1127 → 1139）**；**R24–R28 排期已立、待实现** —— 顺序 = 先小后大、先补不对称再碰解包；加工页传输展示与切换**复议维持 D9-A 不立项** |
+| R21–R28 | **七项复议拍板全数立项**（§8.52：C-5 ② 长度域 BE/LE → R21、C-5 ① CRC 多算法 → R22、挂账 ① epoch → R23、挂账 ③ 切 op → R24、挂账 ② 加扰 → R25、C-1 B 序列分支 → R26（含 DDL 仅新增列）、C-5 ③ varint/COBS 拆两批 → R27 出线 / R28 解包） | 🔄 **R21 已完成 ✅（2026-10-03，§8.53：长度域 `byte_order` —— BE+FE 零 DDL，收侧本就支持、补出线与出口翻译 + 应答声明；**顺带修**设计期 ≥2 字节真值被空格切坏的存量缺陷；新增共享向量 `vectors/length_order.json` 7 行，BE 753 → 768、FE 1106 → 1117）**；**R22 已完成 ✅（2026-10-03，§8.54：CRC16-CCITT / CRC32 / LRC —— 六张白名单 + `operator.py` 算子模板同批成对改；收侧 `ALGO_FIELD_WIDTH` 只加 ≥ 下限、`crc16_modbus` 遗留精确 2 字节逐字不变；共享向量 `vectors/checksum_algo.json` 30 行双端同读，期望值取自 `zlib` / `binascii` 外部真值；BE 768 → 793、FE 1117 → 1127）**；**R23 已完成 ✅（2026-10-03，§8.55：`TIME_EPOCH` 绝对时间戳算子 —— BE `encode_time_epoch` + 序列计划补丁 + `KNOWN_OPS` 20 → 21 + 算子模板，FE 编码分支 / normalize 保身份 / `EPOCH` 只读章 / 计划条目；共享向量 `vectors/time_epoch.json` 11 行双端同读，BE 793 → 808、FE 1127 → 1139）**；**R24 已完成 ✅（2026-10-03，§8.56：创建后切换 op —— 属性面板 `op_code` 只读 span → 下拉 + 兼容校验 + 确认回执；新建与切换共用 `applyOpDefaults` 单源（顺带修模板数组污染）+ BE `_validate_op_switch` 保存侧兜底，BE 808 → 824、FE 1139 → 1163）**；**R25–R28 排期已立、待实现** —— 顺序 = 先小后大、先补不对称再碰解包；加工页传输展示与切换**复议维持 D9-A 不立项** |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -4292,7 +4292,7 @@ C-4 / §8.49 三·① 与 R18 终态 / §8.27 复跑第 1 项 / §1 新行、`PR
 | C-5 ② 长度域 BE / LE | 触发式 | **立项**（最小，收侧已就绪） | **R21** |
 | C-5 ① CRC 多算法（CCITT / CRC32 / LRC） | 触发式 | **立项**（出线 + 收侧三处白名单成对改） | **R22** —— **✅ 已完成（2026-10-03，§8.54）** |
 | 挂账 ① 绝对时间戳 epoch 模板 | 不排期 | **立项** | **R23** —— **✅ 已完成（2026-10-03，§8.55）** |
-| 挂账 ③ 创建后切换 op | 不排期 | **立项** | **R24** |
+| 挂账 ③ 创建后切换 op | 不排期 | **立项** | **R24** —— **✅ 已完成（2026-10-03，§8.56）** |
 | 挂账 ② 加扰 / 混淆字段 | 不排期 | **立项** | **R25** |
 | C-1 B 序列级分支 | A 不立项 | **立项 B**（C 发前路由**仍不在本列**，要做另议） | **R26** |
 | C-5 ③ varint / COBS | 明确不做 | **立项**，按原建议拆「出线 / 解包」两批 | **R27 出线 + R28 解包** |
@@ -4305,7 +4305,7 @@ C-4 / §8.49 三·① 与 R18 终态 / §8.27 复跑第 1 项 / §1 新行、`PR
 | **R21** | 长度域 `byte_order`（big / little）—— 修「**能判不能发**」的不对称（`handlers/length.py` 恒大端 vs 收侧 `_normalize_length` 已支持 little）<br>**✅ 已完成（2026-10-03，§8.53）**：length 卡 `byte_order` 下拉 + `LengthHandler` 反转 + `frame_builder`/`toFrameBlocks` 出口翻译 + 应答规格声明 + 设计期卡面同口径；BE 753 → 768、FE 1106 → 1117、共享向量 `length_order.json` 7 行 | BE+FE | 小 | 否 |
 | **R22** | CRC16-CCITT / CRC32 / LRC —— BE `ChecksumHandler` + FE enum / 下拉 / `VALID_ALGOS` + **`response_match` 白名单同批** + 共享向量 2–3 组<br>**✅ 已完成（2026-10-03，§8.54）**：六张白名单 + `operator.py` 算子模板同批；`ALGO_FIELD_WIDTH` 只加 ≥ 下限（`crc16_modbus` 遗留精确 2 字节不动）；共享向量 `checksum_algo.json` 30 行（期望值取自 `zlib` / `binascii` 外部真值）；BE 768 → 793、FE 1117 → 1127 | BE+FE | 中 | 否 |
 | **R23** | epoch 绝对时间戳模板（替代手填 INT_UNSIGNED）—— 新算子 `TIME_EPOCH`，`unit` = s/ms（缺省 s）取当前墙钟、定宽大端<br>**✅ 已完成（2026-10-03，§8.55）**：BE `encode_time_epoch` + 序列计划补丁（`_DYNAMIC_OPS` 三值 / `_EPOCH_KEYS`）+ `KNOWN_OPS` 20 → 21 + `operator.py` 算子模板；FE 编码分支 + normalize 保身份 + `EPOCH` 只读章 + 计划条目；共享向量 `time_epoch.json` 11 行双端同读；BE 793 → 808、FE 1127 → 1139 | BE+FE | 小 | 否 |
-| **R24** | 创建后切换 op —— 放开 `op_code` 编辑 + 兼容校验 + 确认回执（现状只能删建重录） | BE+FE | 中 | 否 |
+| **R24** | 创建后切换 op —— 放开 `op_code` 编辑 + 兼容校验 + 确认回执（原只能删建重录）<br>**✅ 已完成（2026-10-03，§8.56）**：属性面板 op 下拉（选项 = 有模板的算子，与调色板同源）+ `planOpSwitch` 兼容校验（容器带子块切叶 → 拦）+ `describeOpSwitch` 确认回执（保留 / 清除 / 位宽 / 字节长度）；新建与切换**单源 `applyOpDefaults`**；BE `_validate_op_switch` 保存侧兜底（只判 op 变化的字段 → 存量不锁）；**顺带修模板数组污染**（`unit` / `algo` / `encoding` / `bits` 一律落首元素标量）；BE 808 → 824、FE 1139 → 1163 | BE+FE | 中 | 否 |
 | **R25** | 加扰 / 混淆字段（异或种子 / 位旋转一类语义化加扰算子） | BE+FE | 中 | 否 |
 | **R26** | 序列级分支：`sequence_steps.condition` **仅新增列** + runner 判执行 / 跳过 + 受限表达式（`== != > < in`，**无 eval**）+ 序列页条件 UI | BE+FE | 大 | **是（仅新增列）** |
 | **R27** | varint / COBS **出线**（只做编码，**不碰解包**） | BE+FE | 大 | 否 |
@@ -4441,7 +4441,7 @@ yorha-ui 校验器改动文件 0 违规 + 文档同步）+ **一批一提交**�
 - **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`pageStatus.json`
   协议页 `availableNow`／`nextSteps` 回填 + `npm run sync:page-status`
 
-**R23 epoch 绝对时间戳模板已完成 ✅（§8.55），下一批 → R24 创建后切换 op**（§8.52 排期第 4 批）。
+**R23 epoch 绝对时间戳模板已完成 ✅（§8.55）、R24 创建后切换 op 已完成 ✅（§8.56），下一批 → R25 加扰 / 混淆**（§8.52 排期第 5 批）。
 
 ---
 
@@ -4520,7 +4520,85 @@ s/ms（含 `MS` 大写等价）× 1/2/4/8 字节（含 1 字节非零低字节�
 - **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`seed.py` **不改**
   （不新增种子字段）；`processor.py` / `graph.py` / `Blueprint.jsx` 未碰
 
-**下一批：R24 创建后切换 op**（§8.52 排期第 4 批）。
+**R24 创建后切换 op 已完成 ✅（§8.56），下一批 → R25 加扰 / 混淆**（§8.52 排期第 5 批）。
+
+### 8.56 R24 创建后切换 op：属性面板放开 `op_code` 编辑 + 兼容校验 + 确认回执
+
+**批次**：2026-10-03 · **BE + FE，零 DDL、`models.py` 未动、`/dispatch` 缺省口径逐字节不变**
+—— §8.52 排期第 4 批（原 `BUSINESS_SCENARIOS.md` 挂账 ③）。现状：属性面板 `op_code` 是只读
+`<span>`，换算子只能**删了重建重录**（改名、重填值、重排 sequence 全要重来）。
+
+**方向**：切算子 = 一次**带确认回执的受控转换**，不是「就地改个枚举」——「换算子后这个字段
+还合法吗」「换完到底是哪些值」两件事必须**先看后按**。
+
+#### 一 · 可切换算子的集合（FE `utils/opSwitch.switchableOps`）
+
+- 选项 = **有算子模板的 `OP_CODES`**，与调色板**同源同判**：`STRUCT` 有口径无模板（G6 已结）
+  → 不提供；encoder legacy 五项（`INPUT`/`FIXED`/`HEADER`/`TAIL`/`CALCULATED`）无创建入口 →
+  不列。排序 `HEX_RAW` 居首、余按 `OP_PRIORITY`。
+- **当前算子恒列第一**（哪怕它不在上集）：legacy 字段渲染不出空下拉、也切得走。
+- 反漂移锁：`test_operator_templates.py::test_seed_is_exactly_the_switchable_op_set` =
+  `KNOWN_OPS` − `STRUCT` − legacy 5（15 项）—— 少一个模板 = 那个算子切不过去。
+
+#### 二 · 兼容校验 + 转换规则（FE `planOpSwitch` ↔ BE `_validate_op_switch` 同口径）
+
+| 判据 | FE（下拉侧） | BE（保存侧） |
+|---|---|---|
+| 未知算子 | `OP_UNKNOWN` 拒 | 既有 `_validate_op_codes` 21 项白名单 400 |
+| 容器（`ARRAY_GROUP`/`STRUCT`）切成叶且下挂子块 | `GROUP_HAS_CHILDREN` 拦（文案点名子块数 + 「孤儿子块」） | 400（只看本次 payload 的 `parent_id`） |
+| 切入 `HEX_RAW` 且 hex 去空白长度 ≠ `byte_len*2` | 不在下拉侧拦，`handleApply` → `validateInstruction` E1 `HEX_LENGTH` 拦 | 400（同口径，堵直连 API 绕过 APPLY 的口子） |
+| 同算子 | `SAME_OP`，不产生转换 | 不判（`prev == f.op_code` 跳过） |
+| 新增字段 / 存量字段的历史怪形态 | —— | **不判**（`old_ops` 里没有、或 op 没变 → 跳过） |
+
+**中性键保留**（语义与算子无关，切完还在）：`value` `refs` `presence` `align` `pad_to`
+`pad_byte` `endianness` `input_base`（组 → 组另留 `max_count`；**进组摘 `value`** —— 组不吃
+静态值，留着会被 `hasFixedValue` 误判成 FIXED 卡面）。**其余键一律丢**、按目标算子默认态
+重建 → **切完 ≡ 新建该算子的字段**（外加保留下来的中性键）。位段 `bits` 只属于 `BITFIELD`：
+切入带过来、切走摘干净（`_validate_bitfields` 只判 `BITFIELD`，不会留孤儿位段）。
+
+#### 三 · 单源 `applyOpDefaults`（新建与切换共用）
+
+原 `handleAddBlock` 内联的默认态（模板默认值 / `BITFIELD` 播种 8-bit 段 / `ARRAY_GROUP`
+清零 + `max_count` / `bits` 派生 `byte_len` / `HEX_RAW` hex 等长 / `STRING` 8B + `type=string`
++ `encoding` 标量）**原样抽出**成 `applyOpDefaults(draft, opCode, template, {preferByteLen})`
+（改一必改二 → 单源）：
+
+- **新建**（`preferByteLen` 缺省）→ 位宽恒用模板首项，行为逐条不变（`Instruction.test.jsx`
+  STRING 例照旧绿）；
+- **切换**（`preferByteLen = 原 byte_len`）→ 位宽枚举**容纳得下原长度就保留**（`4B → bits 32`，
+  长度域 / `refs` 不断链），容纳不下才回落首项并同步 `byte_len`（`1B → FLOAT` 得 `bits 32` /
+  `4B`），回执报「位宽 + 字节长度」两行；`STRING` 同样保留原长度（创建缺省 8B 不变）；
+- **顺带修（存量缺陷）模板数组污染**：`param_template` 的**数组 = 枚举选项**，旧实现原样复制
+  进 `parameter_config` → 下拉显示取 `[0]` 而编码器走 `default` 分支（R23 新增的
+  `TIME_EPOCH unit`、既有的 `CHECKSUM_CRC algo` 都中招）→ 一律**落首个标量**（`bits` /
+  `encoding` 早有特判，等价改写）；另切入 `MAPPING` 补 `_kvArray = []`（切换不重跑选块 effect）。
+
+#### 四 · 确认回执与受控回弹（`BlockPropertiesPanel.jsx`）
+
+`op_code` 只读 span → 带标签的 **`算子 (Operator)` 下拉**（值绑 `tempBlockConfig.op_code`，
+header 同步显示草稿算子）。`handleOpChange` 三步：
+
+1. **先 `setTempBlockConfig(prev => ({...prev}))` 强制回弹受控下拉** —— 否则下拉 `value` 没变，
+   React 不会把 DOM 值改回去，出现「下拉显示新算子、草稿还是旧算子」的假态；
+2. 按 `plan` 弹 `openConfirm(describeOpSwitch(plan), action)`：回执列 **切换方向 / 保留 /
+   清除 / 位宽 / 字节长度变化 / 「确认后写入草稿，仍需 APPLY 保存」**；阻断态（未知算子、
+   容器带子块）给**空动作**；
+3. **确认才 `setTempBlockConfig(plan.next)`**，取消 = 草稿一字未动。
+
+#### 五 · 验收
+
+- **BE 808 → 824/824**（+16：`test_op_switch.py` **15 例**（纯函数口径 + 端点接线：拒绝即
+  存量原样、子块先挪出再切组放行、未切换的存量 HEX 长度不拦、新增字段不拦）+
+  `test_operator_templates.py` 反漂移锁 1 例）
+- **FE 1139 → 1163/1163（76 文件）**（+24：`utils/__tests__/opSwitch.test.js` **20 例** +
+  `BlockPropertiesPanel.test.jsx` 下拉四例 —— 选项构成 / 合法切换回执 + 回弹 + 确认播种 /
+  取消不动草稿 / 容器带子块拦截）
+- `npx vite build` EXIT=0 · `npm run lint` EXIT=0 · yorha-ui 校验器改动 js/jsx/json
+  **0 违规** · md 表列数 mismatches=0 · 隐形字符／CRLF／TAB = 0
+- **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`seed.py` **不改**（无新算子、
+  无新模板字段）；`processor.py` / `graph.py` / `Blueprint.jsx` 未碰
+
+**下一批：R25 加扰 / 混淆**（§8.52 排期第 5 批）。
 
 ## 9. 保留勿动（非任务，勿清理）
 

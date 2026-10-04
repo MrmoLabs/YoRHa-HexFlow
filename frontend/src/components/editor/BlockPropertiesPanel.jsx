@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { mapChecksumAlgo } from '../../utils/normalizeInstruction';
 import { getBlockLimitRefs, ENCODER_LIMITS } from '../../utils/encoderLimits';
 import { padSpec } from '../../utils/padSpec';
+import { planOpSwitch, switchableOps, describeOpSwitch } from '../../utils/opSwitch';
 
 const controlledValue = (value, fallback = '') => (value ?? fallback);
 
@@ -267,6 +268,29 @@ export default function BlockPropertiesPanel({
         if (presencePicking) handleStopPicking();
     };
 
+    // ── R24 (§8.52 挂账 ③): 创建后切换算子 —— 兼容校验 + 确认回执 ───────────
+    // 属性面板的 op_code 原本是只读 span（改算子只能删建重录）。现在是下拉：
+    // ① 受控下拉**先回弹**（新对象 → 必定重渲染 → value 归位），确认后才真正切换 ——
+    //    取消 = 草稿一字未动，不会出现「下拉显示新算子、草稿还是旧算子」的假态；
+    // ② 组 → 叶且带子块直接拦（BE 保存侧同位 400，改一必改二）；
+    // ③ 回执列出保留 / 清除 / 位宽 / 字节长度，先看后按。
+    const opOptions = switchableOps(operatorTemplates, tempBlockConfig?.op_code);
+
+    const handleOpChange = (e) => {
+        const nextOp = e.target.value;
+        const fields = currentInstruction?.fields || [];
+        const childCount = fields.filter(f => (f.parent_id || null) === selectedBlock.id).length;
+        const plan = planOpSwitch(tempBlockConfig, nextOp, { childCount, templates: operatorTemplates });
+
+        setTempBlockConfig(prev => (prev ? { ...prev } : prev)); // ① 先回弹受控下拉
+        if (!plan.ok) {
+            openConfirm(`无法切换算子：\n${plan.message}`, () => {});
+            return;
+        }
+        if (plan.code === 'SAME_OP') return;
+        openConfirm(describeOpSwitch(plan), () => setTempBlockConfig(plan.next));
+    };
+
     const handleApply = () => {
         if (!tempBlockConfig) return;
         const opTemplate = operatorTemplates[tempBlockConfig.op_code];
@@ -441,7 +465,24 @@ export default function BlockPropertiesPanel({
                 <div className="space-y-5 text-sm animate-in fade-in slide-in-from-right-4 duration-300">
                     <div className="text-[10px] opacity-40 font-mono flex justify-between">
                         <span>{selectedBlock.id}</span>
-                        <span className="text-nier-light">{selectedBlock.op_code}</span>
+                        <span className="text-nier-light">{tempBlockConfig.op_code}</span>
+                    </div>
+
+                    {/* R24 (§8.52 挂账 ③): 算子下拉（原只读 span）—— 切换走 handleOpChange
+                        的兼容校验 + 确认回执；选项 = 有算子模板的 OP_CODES（与调色板同源，
+                        当前算子恒列第一，存量字段不会渲染成空下拉）。 */}
+                    <div className="flex flex-col gap-1">
+                        <label htmlFor="block-op-switch" className="text-xs opacity-70 uppercase tracking-widest">算子 (Operator)</label>
+                        <select
+                            id="block-op-switch"
+                            value={tempBlockConfig.op_code}
+                            onChange={handleOpChange}
+                            className="bg-nier-dark border border-nier-light/30 text-xs p-1 text-nier-light focus:border-nier-light focus:outline-none"
+                        >
+                            {opOptions.map(op => (
+                                <option key={op} value={op} className="bg-nier-dark text-nier-light">{op}</option>
+                            ))}
+                        </select>
                     </div>
 
                     {/* P0-1: block-level encoder-limit banner (B2–B8, display-only configs) */}

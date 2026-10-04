@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import BlockPropertiesPanel from '../BlockPropertiesPanel';
 
 const baseProps = {
@@ -183,5 +183,103 @@ describe('BlockPropertiesPanel 复制块按钮移除（R3 #1）', () => {
         const panelAside = container.querySelector('aside');
         expect(panelAside.className).toContain('shrink-0');
         expect(panelAside.className).toContain('overflow-y-auto');
+    });
+});
+
+// ─── R24（§8.52 挂账 ③）: 创建后切换算子 —— 只读 span → 下拉 + 兼容校验 + 确认回执 ───
+describe('BlockPropertiesPanel 切算子下拉（R24）', () => {
+    const TPL = {
+        HEX_RAW: { param_template: { hex: 'input' } },
+        INT_UNSIGNED: { param_template: { bits: [8, 16, 32, 64] } },
+        STRING: { param_template: { value: 'string', encoding: ['ascii', 'utf8'], pad_char: '00' } },
+        ARRAY_GROUP: { param_template: { max_count: 'number' } },
+    };
+
+    const intBlock = {
+        id: 'b1', name: '甲', op_code: 'INT_UNSIGNED', byte_len: 4,
+        parameter_config: { bits: 32 }, sequence: 0, parent_id: null,
+    };
+
+    const renderPanel = (block, fields = [block]) => render(
+        <BlockPropertiesPanel
+            {...baseProps}
+            operatorTemplates={TPL}
+            selectedBlock={block}
+            currentInstruction={{ id: 'i1', name: 'T', code: 'T1', device_code: 'D1', fields }}
+            validationIssues={{ errors: [], warnings: [] }}
+        />
+    );
+
+    it('op_code 从只读 span 变成下拉：选项 = 有模板的算子，当前值选中', () => {
+        renderPanel(intBlock);
+        const sel = screen.getByLabelText('算子 (Operator)');
+        expect(sel.value).toBe('INT_UNSIGNED');
+
+        const opts = [...sel.options].map(o => o.value);
+        expect(opts).toContain('HEX_RAW');
+        expect(opts).toContain('STRING');
+        expect(opts).toContain('ARRAY_GROUP');
+        expect(opts).not.toContain('STRUCT'); // 在 OP_CODES 但无算子模板 → 与调色板同源不提供
+    });
+
+    it('合法切换 → 确认回执（列保留/清除），确认前下拉已回弹，确认后草稿播种目标默认态', () => {
+        renderPanel(intBlock);
+        baseProps.openConfirm.mockClear();
+
+        fireEvent.change(screen.getByLabelText('算子 (Operator)'), { target: { value: 'STRING' } });
+
+        expect(baseProps.openConfirm).toHaveBeenCalledTimes(1);
+        const [msg, action] = baseProps.openConfirm.mock.calls.at(-1);
+        expect(msg).toContain('切换算子：INT_UNSIGNED → STRING');
+        expect(msg).toContain('清除：bits');
+        expect(msg).toContain('APPLY');
+
+        // ① 受控回弹：确认前下拉仍显示原算子（不会出现「显示新算子、草稿还是旧」的假态）
+        expect(screen.getByLabelText('算子 (Operator)').value).toBe('INT_UNSIGNED');
+
+        // ② 确认 → 草稿换算子并按目标算子播种（type/encoding 播种、bits 摘除）
+        act(() => action());
+        const pushed = baseProps.onTempChange.mock.calls.at(-1)[0];
+        expect(pushed.op_code).toBe('STRING');
+        expect(pushed.parameter_config.type).toBe('string');
+        expect(pushed.parameter_config.encoding).toBe('ascii');
+        expect(pushed.parameter_config.bits).toBeUndefined();
+    });
+
+    it('取消 → 草稿一字未动（仍为原算子）', () => {
+        renderPanel(intBlock);
+        baseProps.openConfirm.mockClear();
+
+        fireEvent.change(screen.getByLabelText('算子 (Operator)'), { target: { value: 'HEX_RAW' } });
+        // 只取回执，不执行 action = 用户点「取消」
+        expect(baseProps.openConfirm).toHaveBeenCalledTimes(1);
+        const pushed = baseProps.onTempChange.mock.calls.at(-1)[0];
+        expect(pushed.op_code).toBe('INT_UNSIGNED');
+        expect(screen.getByLabelText('算子 (Operator)').value).toBe('INT_UNSIGNED');
+    });
+
+    it('容器带子块切成叶算子 → 拦（回执点名孤儿子块），即便「确认」也不转换', () => {
+        const grp = {
+            id: 'g1', name: '容器', op_code: 'ARRAY_GROUP', byte_len: 0,
+            parameter_config: { max_count: 1 }, sequence: 0, parent_id: null,
+        };
+        const kid = {
+            id: 'k1', name: '子', op_code: 'HEX_RAW', byte_len: 1,
+            parameter_config: { hex: '00' }, sequence: 1, parent_id: 'g1',
+        };
+        renderPanel(grp, [grp, kid]);
+        baseProps.openConfirm.mockClear();
+
+        fireEvent.change(screen.getByLabelText('算子 (Operator)'), { target: { value: 'INT_UNSIGNED' } });
+
+        const [msg, action] = baseProps.openConfirm.mock.calls.at(-1);
+        expect(msg).toContain('无法切换算子');
+        expect(msg).toContain('1 个子块');
+        expect(msg).toContain('孤儿');
+        expect(screen.getByLabelText('算子 (Operator)').value).toBe('ARRAY_GROUP');
+
+        act(() => action()); // 阻断态的回执是空动作，即便调用也不改变草稿
+        const pushed = baseProps.onTempChange.mock.calls.at(-1)[0];
+        expect(pushed.op_code).toBe('ARRAY_GROUP');
     });
 });

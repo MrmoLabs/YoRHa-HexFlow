@@ -40,6 +40,10 @@ KNOWN_OPS = frozenset({
     "INPUT", "FIXED", "HEADER", "TAIL", "CALCULATED",
 })
 
+# R24（§8.52 挂账 ③）：容器算子 —— 只有这两类 op 允许下挂子字段（parent_id 指向它）。
+# 与 FE utils/opSwitch.isGroupOp 同源，改一必改二。
+GROUP_OPS = frozenset({"ARRAY_GROUP", "STRUCT"})
+
 
 # HELPER: Flat Save (Trust Payload)
 def save_field_flat(db: Session, field_data: InstructionFieldSchema, instruction_id: str):
@@ -127,6 +131,55 @@ def _validate_op_codes(fields):
                 "——保存已拒绝，请核对算子模板或清洗导入数据"
             ),
         )
+
+
+def _validate_op_switch(old_ops, fields):
+    """R24（§8.52 挂账 ③）：创建后切换 op_code 的兼容校验。
+
+    只对「op 发生变化」的字段生效（新增字段、未切换字段一律不判）——存量数据的
+    历史形态不会因此被锁死。口径与 FE ``utils/opSwitch.planOpSwitch`` 逐条对齐：
+    - 容器（ARRAY_GROUP/STRUCT）切成叶算子且下挂子字段 → 400（子块会变孤儿）；
+    - 切入 HEX_RAW 且 hex 与 byte_len 不等长 → 400（与 FE validateInstruction 的
+      E1 HEX_LENGTH 同源，堵直连 API 绕过面板 APPLY 校验的口子）。
+    ``old_ops`` = PUT 前该指令的 ``{field_id: op_code}``。在全量替换的 DELETE 之前
+    调用 —— 拒绝即存量原样、无半写状态。
+    """
+    if not fields:
+        return
+    parents = {}
+    for f in fields:
+        if f.parent_id:
+            parents.setdefault(f.parent_id, []).append(f)
+
+    for f in fields:
+        prev = old_ops.get(f.id) if f.id else None
+        if prev is None or prev == f.op_code:
+            continue
+        label = f.name or f.id or "UNNAMED"
+
+        # 组 → 叶 且还挂着子块：切完子块失去父容器。
+        if prev in GROUP_OPS and f.op_code not in GROUP_OPS and parents.get(f.id):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"「{label}」是容器（{prev} → {f.op_code}）且下挂 {len(parents[f.id])} 个子块："
+                    "切换算子会留下孤儿子块 —— 请先移出或删除子块再切换"
+                ),
+            )
+
+        # 切入 HEX_RAW：hex 必须与 byte_len 等长（FE APPLY 已拦，此处补 API 直连侧）。
+        if f.op_code == "HEX_RAW":
+            cfg = f.parameter_config or {}
+            hex_val = "".join(str(cfg.get("hex") or "").split())
+            byte_len = f.byte_len or 1
+            if len(hex_val) != byte_len * 2:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"「{label}」切换到 HEX_RAW 后 HEX 长度与字节长度不符"
+                        f"（需 {byte_len * 2} 字符，实际 {len(hex_val)}）"
+                    ),
+                )
 
 
 def serialize_instruction(db_inst: Instruction) -> InstructionResponse:
@@ -253,6 +306,16 @@ def update_instruction(id: str, updates: InstructionUpdate, db: Session = Depend
     # G5: op 白名单 — 必须在元数据写入与字段 DELETE 之前拒绝（PUT 全量替换前），
     # 拒绝即存量原样、无半写状态。
     _validate_op_codes(updates.fields)
+
+    # R24（§8.52 挂账 ③）: 切算子兼容校验 —— 同样必须在任何写入前拒绝；只看 op 变了的
+    # 字段（未切换 / 新增字段不判），存量数据的历史形态不因此被锁。
+    if updates.fields:
+        old_ops = {
+            row.id: row.op_code
+            for row in db.query(InstructionField.id, InstructionField.op_code)
+            .filter(InstructionField.instruction_id == id)
+        }
+        _validate_op_switch(old_ops, updates.fields)
 
     # Update Metadata
     db_inst.device_code = updates.device_code
