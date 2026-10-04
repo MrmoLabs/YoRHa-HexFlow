@@ -61,7 +61,7 @@ JSON 没有 `Infinity` / `NaN`，而向量里确实要喂这两个值（如 `[Na
 | `bitfield.json` | `pack` 7 | `test_protocol_bitfield.py::PACK_VECTORS` | `bitGrid.test.js` |
 | `scramble.json` | 14 | `test_scramble.py::VECTORS` | `scramble.test.js` R25 加扰字段 |
 | `condition.json` | 58 | `test_condition.py::VECTORS` | `condition.test.js` R26 序列条件 |
-| `framing.json` | `varint` 14 · `cobs` 16 · `frame` 5 | `test_framing.py` | `framing.test.js` R27 varint / COBS 出线 |
+| `framing.json` | `varint` 14 · `cobs` 16 · `frame` 5 | `test_framing.py` · `test_unframe.py`（反向解码往返） | `framing.test.js` R27 出线 / R28 解包 |
 | `wrap.json` | `main`：children 4 + payloads 1 + expect | `test_frame_builder.py` · `test_wrap_api.py` | `blockMerge.test.js` |
 
 > `wrap.json` 是三处同值场景树（`FA FA / 02 / 01 02 / ED`），迁表前在三个文件里各写一遍。
@@ -320,12 +320,17 @@ JSON 只有一种表达，两端原本的记法差异靠 **3 个稳定适配**�
   多余记号、非法字符、括号与 `&&` 拒收、未闭合字符串 —— **全部 fail-closed**
 - `#56`–`#57` 三条上限：长度 200、记号 64（数组 32 是第二道，记号上限先拦）
 
-### framing.json（R27 · varint / COBS 出线）
+### framing.json（R27 出线 · R28 反向解码往返）
 
-三张表只钉**编码** —— 收侧 `stages` 逆向解包与应答匹配属 R28，本批一行不碰、也不进表。
-双端同读（BE `test_framing.py::load_vectors` / FE `framing.test.js`），口径档案
-`backend/core/framing.py` ↔ `frontend/src/utils/framing.js`：两者都不含解码入口（BE 侧由
-`test_module_is_encode_only` 字面钉住，FE 侧解码只活在测试的局部参考解码器里）。
+字节真值本身是**出线方向**的（R27）；**R28 不新增向量文件**（新表须双端同读，而匹配
+只有后端一处消费），收侧 `backend/core/unframe.py` 的 `decode_varint` / `cobs_decode`
+**反向消费本表**作解码往返真值 —— BE `test_unframe.py`：varint 行 `hex → v`、cobs 行
+`out`（先剥 `parameter_config.terminator`）→ `in`。
+双端同读（BE `test_framing.py` + `test_unframe.py::load_vectors` / FE `framing.test.js`），
+口径档案 `backend/core/framing.py`（编码）↔ `backend/core/unframe.py`（解码）与 FE
+`frontend/src/utils/framing.js`：三个模块都**不含反向入口**（BE 编码侧由
+`test_framing::test_encode_only_module`、解码侧由 `test_unframe::DecodeOnlyModuleTest`
+字面钉住，FE 侧解码只活在测试的局部参考解码器里）。
 
 - `varint`（14 行）`v` → LEB128 最小长度无符号 `hex`：`#0` 0 → `00`；`#1`–`#3` 单字节与
   7/8 位进位边界（`127 → 7F`、`128 → 8001`）；`#5` `255 → FF01`、`#6` `300 → AC02`；

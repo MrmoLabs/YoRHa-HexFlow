@@ -1,5 +1,5 @@
 {
-  "_note": "R27 varint / COBS 出线（§8.52 排期 · §8.59 定案）共享向量：变长长度前缀与定界编码的**出线方向**字节真值。只编码不解包 —— 收侧解包（stages 逆向解包 + 应答匹配）属 R28。varint = LEB128 最小无符号；cobs = 标准 COBS（0xFF 满块254 字面量）+ parameter_config.terminator（\"00\" 缺省 / \"none\"）。",
+  "_note": "R27 varint / COBS 出线（§8.52 排期 · §8.59 定案）+ R28 解包（§8.60 定案）共享向量：变长长度前缀与定界编码的**出线方向**字节真值。**R28 不新增向量文件**（新表须双端同读，而匹配只有后端一处消费）—— 收侧 `decode_varint` / `cobs_decode`（`backend/core/unframe.py`）**反向消费本表**：varint 行 `hex → v`、cobs 行 `out`（先剥 parameter_config.terminator）→ `in`，作解码往返真值（BE `test_unframe.py`）。编码侧 `framing.py` 依旧不含解码入口（test_framing::test_encode_only_module 字面钉住）。varint = LEB128 最小无符号（收侧接受非最小编码，宽度按实际读到的字节数报）；cobs = 标准 COBS（0xFF 满块254 字面量）+ parameter_config.terminator（\"00\" 缺省 / \"none\"）。",
   "varint": [
     {
       "v": 0,

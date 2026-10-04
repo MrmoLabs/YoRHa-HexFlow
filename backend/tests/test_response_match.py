@@ -6,6 +6,7 @@ stdlib unittest 直调纯函数，无 TestClient、无数据库。
 
 import unittest
 
+from backend.core.framing import cobs_encode
 from backend.core.response_match import (
     crc16,
     default_spec,
@@ -278,6 +279,174 @@ class MatchResponseTest(unittest.TestCase):
         handler = ChecksumHandler()
         for data in (b"", b"\x00", bytes(range(32)), b"YoRHa-VECTOR"):
             self.assertEqual(crc16(data), handler.crc16(bytearray(data)))
+
+
+class VarintLengthTest(unittest.TestCase):
+    """R28（PLAN §8.52 第 8 批 · §8.60 定案）：length.encoding = varint 的收侧判读。
+
+    同一份规格必须同时吃下「设计期宽 1、出线宽 1」与「设计期宽 1、出线宽 2」两种帧 ——
+    这正是 `expected = len(frame) + offset_val - (width - byte_length)` 回算项的作用
+    （与 response_generate 求 offset_val 的口径改一必改二）。
+    """
+
+    # [FA FA][LEN=05][5 字节载荷] → 8 字节；LEN=5、出线宽 1 → 5 == 8 + (-3)
+    NARROW = bytes.fromhex("FAFA05AABBCCDDEE")
+    # [FA FA][LEN=8001][128 字节载荷] → 132 字节；LEN=128、出线宽 2 → 128 == 132-3-1
+    WIDE = bytes.fromhex("FAFA8001") + bytes([0xAA]) * 128
+
+    def _spec(self, with_encoding=True):
+        length = {"offset": 2, "byte_length": 1, "offset_val": -3}
+        if with_encoding:
+            length["encoding"] = "varint"
+        return normalize_spec({"mode": "rules", "echo_header_bytes": 2, "length": length})
+
+    def test_same_spec_matches_both_wire_widths(self):
+        spec = self._spec()
+        for frame in (self.NARROW, self.WIDE):
+            ok, reasons = match_response(spec, frame, frame)
+            self.assertTrue(ok, msg=f"{frame.hex()} → {reasons}")
+
+    def test_without_encoding_key_reads_fixed_width(self):
+        """缺 encoding = 存量定宽口径 → 宽帧必然失配（两种形态确实不同，不是可互换）。"""
+        spec = self._spec(with_encoding=False)
+        self.assertTrue(match_response(spec, self.NARROW, self.NARROW)[0])
+        ok, reasons = match_response(spec, self.WIDE, self.WIDE)
+        self.assertFalse(ok)
+        self.assertIn("LENGTH_MISMATCH(128!=129)", reasons)
+
+    def test_truncated_varint_reports_invalid_not_mismatch(self):
+        """读不出值（续位未收束 / 超值域）与读出的值对不上是两种病因 → 两个 reason 码。"""
+        ok, reasons = match_response(self._spec(), self.NARROW, bytes.fromhex("FAFA80"))
+        self.assertFalse(ok)
+        self.assertTrue(reasons[0].startswith("LENGTH_VARINT_INVALID("), msg=reasons)
+        # 8 字节续位未收束
+        ok, reasons = match_response(self._spec(), self.NARROW, b"\xFA\xFA" + b"\x80" * 8)
+        self.assertFalse(ok)
+        self.assertTrue(reasons[0].startswith("LENGTH_VARINT_INVALID("), msg=reasons)
+        # 8 字节收束但值超 2^53-1（FE 丢精度边界，与 framing.VARINT_MAX 同源）
+        ok, reasons = match_response(
+            self._spec(), self.NARROW, b"\xFA\xFA" + bytes([0xFF] * 7 + [0x7F])
+        )
+        self.assertFalse(ok)
+        self.assertTrue(reasons[0].startswith("LENGTH_VARINT_INVALID("), msg=reasons)
+
+    def test_position_out_of_range_still_reported_separately(self):
+        """varint 的边界只卡「起点处至少 1 字节」—— 位置出界是另一个 reason。"""
+        ok, reasons = match_response(self._spec(), self.NARROW, bytes.fromhex("FAFA"))
+        self.assertFalse(ok)
+        self.assertEqual(reasons, ["LENGTH_OUT_OF_RANGE"])
+
+    def test_encoding_fixed_is_not_written_and_unknown_rejected(self):
+        spec = normalize_spec({"length": {"offset": 1, "byte_length": 2, "encoding": "fixed"}})
+        self.assertNotIn("encoding", spec["length"])  # 只写非缺省值 → 存量形态逐字节不变
+        with self.assertRaises(ValueError) as ctx:
+            normalize_spec({"length": {"offset": 1, "encoding": "leb128"}})
+        self.assertIn("length.encoding 必须是 fixed/varint 之一", str(ctx.exception))
+
+    def test_byte_order_kept_but_never_applied_to_varint(self):
+        """两个键可共存（LEB128 字节序无关），byte_order 原样保留供 UI 显示。"""
+        spec = normalize_spec({"length": {"offset": 1, "byte_length": 1, "byte_order": "little",
+                                          "encoding": "varint"}})
+        self.assertEqual(spec["length"]["byte_order"], "little")
+        self.assertEqual(spec["length"]["encoding"], "varint")
+        # little 与 big 判读结果相同（不走 apply_byte_order）
+        frame = bytes.fromhex("FA05AABBCCDD")   # 6 字节；LEN=5、出线宽 1 → 5 == 6 + (-1)
+        for order in ("big", "little"):
+            spec = normalize_spec({"mode": "rules",
+                                   "length": {"offset": 1, "byte_length": 1, "offset_val": -1,
+                                              "encoding": "varint", "byte_order": order}})
+            self.assertTrue(match_response(spec, frame, frame)[0], msg=order)
+
+
+class CobsStageTest(unittest.TestCase):
+    """R28：unpack.mode = cobs —— 分层剥层先 COBS 解码、再剥区内槽前后的本层字节。
+
+    手写两层规格（协议 = [FA FA] + COBS 区 + [00 定界][ED]，区内 = inner_head BB +
+    内层帧 + 区内无尾），与 `backend/tests/test_response_generate.py` 的生成侧口径对偶。
+    """
+
+    INNER = bytes.fromhex("A00102E0")          # 层0：prefix A0 / suffix E0
+    HEAD = bytes.fromhex("FAFA")               # 层1 区外头部
+    TAIL = bytes.fromhex("00ED")               # 层1 定界 00 + trailer ED
+
+    @classmethod
+    def _rx(cls, region):
+        return cls.HEAD + region + cls.TAIL
+
+    def _spec(self, inner_head=1):
+        return normalize_spec({
+            "mode": "rules",
+            "stages": [
+                {"prefix": "A0", "suffix": "E0", "echo_header_bytes": 0,
+                 "unpack": {"head": 1, "trailer": 0}},
+                {"prefix": "FAFA", "suffix": "ED", "echo_header_bytes": 2,
+                 "unpack": {"head": 2, "trailer": 2, "mode": "cobs",
+                            "inner_head": inner_head, "inner_trailer": 0}},
+            ],
+        })
+
+    @staticmethod
+    def _region(children_hex):
+        """区内字节（无定界）→ COBS 出线区（与 framing.cobs_encode 同一口径）。"""
+        return cobs_encode(bytes.fromhex(children_hex))
+
+    def test_decode_peels_to_inner_frame(self):
+        region = self._region("BB" + self.INNER.hex())
+        rx = self._rx(region)
+        ok, reasons = match_response(self._spec(), rx, rx)
+        self.assertTrue(ok, msg=reasons)
+        self.assertEqual(reasons, [])
+
+    def test_corrupted_inner_is_tagged_with_inner_stage(self):
+        region = self._region("BB" + "A10102E0")
+        rx = self._rx(region)
+        ok, reasons = match_response(self._spec(), rx, rx)
+        self.assertFalse(ok)
+        self.assertIn("STAGE[0].PREFIX_MISMATCH", reasons)  # 外层已剥干净 → 病因在内层
+
+    def test_broken_cobs_region_stops_at_that_stage(self):
+        # 码字节要 9 字节、区里只剩 3 字节 → 解码畸形
+        rx = self._rx(bytes.fromhex("0ABBA001"))
+        ok, reasons = match_response(self._spec(), rx, rx)
+        self.assertFalse(ok)
+        self.assertTrue(reasons[0].startswith("STAGE[1].UNPACK_COBS_INVALID("), msg=reasons)
+        # 区内裸 0x00 = 定界没剥干净（unpack.trailer 少算了一个字节）
+        rx = self._rx(bytes.fromhex("03BB00"))
+        ok, reasons = match_response(self._spec(), rx, rx)
+        self.assertFalse(ok)
+        self.assertTrue(reasons[0].startswith("STAGE[1].UNPACK_COBS_INVALID("), msg=reasons)
+
+    def test_decoded_region_too_short_is_its_own_reason(self):
+        region = self._region("BB" + self.INNER.hex())
+        rx = self._rx(region)
+        ok, reasons = match_response(self._spec(inner_head=10), rx, rx)
+        self.assertFalse(ok)
+        self.assertEqual(reasons, ["STAGE[1].UNPACK_INNER_TOO_SHORT(5<=10)"])
+
+    def test_cobs_mode_allows_empty_head_and_trailer(self):
+        """「整层就是一个 COBS 区」本身可区分 → cobs 下 head/trailer 允许同为 0。"""
+        spec = normalize_spec({
+            "mode": "rules",
+            "stages": [
+                {"prefix": "A0", "suffix": "E0", "unpack": {"head": 1, "trailer": 0}},
+                {"prefix": "", "suffix": "",
+                 "unpack": {"head": 0, "trailer": 0, "mode": "cobs",
+                            "inner_head": 0, "inner_trailer": 0}},
+            ],
+        })
+        self.assertEqual(spec["stages"][1]["unpack"]["mode"], "cobs")
+
+    def test_inner_geometry_rejected_in_slice_mode_and_unknown_mode(self):
+        with self.assertRaises(ValueError) as ctx:
+            normalize_spec({"mode": "rules", "stages": [
+                {"prefix": "", "suffix": "", "unpack": {"head": 1, "trailer": 0, "inner_head": 1}},
+            ]})
+        self.assertIn("仅 mode=cobs 时有效", str(ctx.exception))
+        with self.assertRaises(ValueError) as ctx:
+            normalize_spec({"mode": "rules", "stages": [
+                {"prefix": "", "suffix": "", "unpack": {"head": 1, "trailer": 0, "mode": "gzip"}},
+            ]})
+        self.assertIn("unpack.mode 必须是 slice/cobs 之一", str(ctx.exception))
 
 
 if __name__ == "__main__":

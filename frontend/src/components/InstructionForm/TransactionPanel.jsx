@@ -130,6 +130,21 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
             : null
     });
 
+    // R28（§8.60 定案）：length.encoding —— **只写非缺省值**（fixed = 删键）。后端
+    // normalize_spec 把「缺失键」读作 fixed，故改回 fixed 必须把键删掉，否则存量规格
+    // 会多出一个新键（Phase 0 金标准 responseBaseline.test.jsx 即钉这一条）。
+    // BYTE_LEN 不因 varint 禁用：它是**设计期宽度**，收侧用 (实际出线宽 - BYTE_LEN)
+    // 回算 offset_val（与 response_generate 求 offset_val 的口径同源，改一必改二）。
+    const patchLengthEncoding = (encoding) => {
+        setSpec(prev => {
+            const length = { ...(prev.length || {}) };
+            if (encoding === 'varint') length.encoding = 'varint';
+            else delete length.encoding;
+            return { ...prev, length };
+        });
+        setSpecDirty(true);
+    };
+
     const toggleChecksum = (enabled) => patchSpec({
         checksum: enabled
             ? { algo: 'sum', field_offset: 0, field_byte_length: 1, span_start: 0, span_end: null, byte_order: 'big' }
@@ -376,14 +391,35 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
 
                     {/* 长度字段自洽：声明值 == 实际帧长 + offset_val */}
                     <div className="space-y-2">
-                        <button
-                            type="button"
-                            onClick={() => toggleLength(!spec.length)}
-                            aria-pressed={Boolean(spec.length)}
-                            className={`text-[9px] font-mono uppercase tracking-widest border px-2 py-1 transition-colors duration-100 ${toggleButtonClass(Boolean(spec.length))}`}
-                        >
-                            LENGTH {spec.length ? 'ON' : 'OFF'}
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => toggleLength(!spec.length)}
+                                aria-pressed={Boolean(spec.length)}
+                                className={`text-[9px] font-mono uppercase tracking-widest border px-2 py-1 transition-colors duration-100 ${toggleButtonClass(Boolean(spec.length))}`}
+                            >
+                                LENGTH {spec.length ? 'ON' : 'OFF'}
+                            </button>
+                            {spec.length && (
+                                <label className="flex items-center gap-1">
+                                    <span className="text-[9px] font-mono text-nier-light/40 uppercase tracking-[0.2em]">ENCODING</span>
+                                    <select
+                                        value={spec.length.encoding || 'fixed'}
+                                        onChange={e => patchLengthEncoding(e.target.value)}
+                                        aria-label="length encoding"
+                                        className={inputClass}
+                                    >
+                                        <option value="fixed">fixed · 定宽</option>
+                                        <option value="varint">varint · LEB128</option>
+                                    </select>
+                                </label>
+                            )}
+                        </div>
+                        {spec.length && spec.length.encoding === 'varint' && (
+                            <p className="text-[9px] font-mono text-nier-light/40">
+                                varint 按 LEB128 判读（字节序无关，ORDER 不参与）；BYTE_LEN = 设计期宽度，收侧按实际出线宽回算 offset_val。
+                            </p>
+                        )}
                         {spec.length && (
                             <div className="grid grid-cols-4 gap-2">
                                 <label>

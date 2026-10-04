@@ -59,7 +59,7 @@
 - 无 —— 本页人工复测项已全数销（2026-10-02：跨泳道拖拽落点 + slot refs 新语义 4 子项，明细 PLAN §8.28 / HANDOVER 条目 42）；跨页残留项 §9.7 ④「应答是否带转义字节」亦已销（2026-10-02，PLAN §8.35）。
 - R21 长度字节序已落地（2026-10-03，PLAN §8.53 / HANDOVER 条目 70）。
 - R22 CRC 多算法已落地（2026-10-03，PLAN §8.54 / HANDOVER 条目 71）：本页校验算法下拉扩到六值（SUM8 / XOR8 / CRC16-MODBUS / CRC16-CCITT / CRC32 / LRC，缺省 CRC16-MODBUS 不变）；出线 ChecksumHandler（refs 模式与旧区间模式两个 return 同位扩）、出口翻译 toFrameBlocks ↔ frame_builder、收侧 response_match.VALID_ALGOS + ALGO_FIELD_WIDTH 宽度下限（crc16_modbus 遗留「恰好 2 字节」逐字不变）、序列计划冻结链 PLAN_ALGO_FIELD_WIDTH、指令页 CHECKSUM_CRC 算子模板 同批成对改；共享向量 vectors/checksum_algo.json 30 行双端同读。下一批 R23（epoch 绝对时间戳模板），排期见 PLAN §8.52。
-- R27 varint / COBS 出线已落地（2026-10-04，PLAN §8.59 / HANDOVER 条目 76）：length 卡「出线编码」下拉（fixed / varint，缺省 fixed 逐字节不变）+ 调色板新组帧元素 COBS（terminator 00 / none）+ 出线后回写 byte_length + refs 指 COBS 内部保存期 400 + 偏移尺两遍法对齐出线宽；共享向量 vectors/framing.json 3 表 35 行双端同读（BE 878 → 917、FE 1213 → 1247）。下一批 R28（varint / COBS 解包：stages 逆向解码 + 应答匹配），排期见 PLAN §8.52。
+- R27 varint / COBS 出线已落地（2026-10-04，PLAN §8.59 / HANDOVER 条目 76）：length 卡「出线编码」下拉（fixed / varint，缺省 fixed 逐字节不变）+ 调色板新组帧元素 COBS（terminator 00 / none）+ 出线后回写 byte_length + refs 指 COBS 内部保存期 400 + 偏移尺两遍法对齐出线宽；共享向量 vectors/framing.json 3 表 35 行双端同读（BE 878 → 917、FE 1213 → 1247）。R28 解包亦已落地（2026-10-04，PLAN §8.60 / HANDOVER 条目 77）：收侧反向消费同一份 vectors/framing.json 解包应答、**不新增向量文件**（协议树侧本页零改动）。
 
 ---
 
@@ -105,6 +105,7 @@
 - R23 绝对时间戳算子已落地（2026-10-03，PLAN §8.55 / HANDOVER 条目 72）：算子模板新增 TIME_EPOCH「绝对时间戳」（DYNAMIC 组，参数 unit 下拉 s/ms 缺省 s、无 base_time）—— 编码取当前墙钟，floor 后按位宽定宽大端截高位（位宽不够只截低位不报错），设计期卡面走 computedValues 出定宽 hex + EPOCH 章只读 + UNIT 语义行；normalize 保身份不摊平（内外两处 keep 列表同加）；白名单 KNOWN_OPS 20 → 21（FE 经 Object.values(OP_CODES) 自动收录、BE routers/instruction.py 同批改一必改二）；共享向量 vectors/time_epoch.json 11 行双端同读（BE 793 → 808、FE 1127 → 1139）。
 - R24 创建后切换 op 已落地（2026-10-03，PLAN §8.56 / HANDOVER 条目 73）：新建与切换共用 applyOpDefaults 单源（模板默认值 / 位段播种 / hex 等长 / 文本 8B，位宽能容纳原 byte_len 就保留、容纳不下回落首项并同步 byte_len）+ planOpSwitch 兼容校验 + describeOpSwitch 确认回执；顺带修模板数组污染（unit / algo / encoding 一律落首元素标量）—— BE 808 → 824、FE 1139 → 1163。
 - R25 加扰 / 混淆字段已落地（2026-10-04，PLAN §8.57 / HANDOVER 条目 74）：新算子 SCRAMBLE（ENCODING 组）明文进·密文出 —— XOR_SEED 按字节循环异或（缺省种子 A5）与 BIT_ROLL 逐字节左旋两模式，空 / 非 hex 明文补零、契约外参数恒等，解码端反加扰还原（encode(decode(x)) 不动点）；白名单 KNOWN_OPS 21 → 22（FE OP_CODES 16 → 17、BE routers/instruction.py 同批改）+ 算子模板 mode/seed/roll；卡面与组内容串显示**加扰后线上 hex**、加工页只读（normalize isFixed + 两表 keep 防摊平失效）+ SCR 芯片 + MODE/SEED/ROLL 语义行，属性面板走 PLAINTEXT 专用明文输入并在 APPLY 就近校验；共享向量 vectors/scramble.json 14 行双端同读（BE 824 → 843、FE 1163 → 1196），下一批 R26 序列级分支已落地（2026-10-04，PLAN §8.58 / HANDOVER 条目 75）。
+- R28 varint / COBS 解包已落地（2026-10-04，PLAN §8.60 / HANDOVER 条目 77）：本页应答规格长度区新增 ENCODING 下拉（fixed · 定宽 / varint · LEB128）—— **只写非缺省值**（选 varint 才写 length.encoding、切回 fixed 删键 → 存量规格逐字节不变），BYTE_LEN 保持可编辑（设计期宽度，收侧按实际出线宽回算 offset_val，选 varint 时出提示）；收侧新模块 backend/core/unframe.py **只解不编**（framing.py 一行不改），新增 reason 码 LENGTH_VARINT_INVALID(原因) / STAGE[i].UNPACK_COBS_INVALID(原因) / STAGE[i].UNPACK_INNER_TOO_SHORT(n<=m)，分层剥层支持 unpack.mode=cobs（inner_head / inner_trailer，slice 形态逐字节不变）；生成侧**逐要素降级**（只少判不误判，多层几何算不出 → 400 请手工写规格）；反向消费 vectors/framing.json 解码往返、不新增向量文件（BE 917 → 955、FE 1247 → 1251）。
 
 ---
 

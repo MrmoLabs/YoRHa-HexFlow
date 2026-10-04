@@ -2423,8 +2423,8 @@
       拍板表与排期表两行标已办 + §8.54／§8.55 尾行推进；`BUSINESS_SCENARIOS.md`
       「创建后切换 op」行 `⏸` → `✅` + 挂账清单行改已落地；`pageStatus.json` 指令页
       `nextSteps` 回填 + `npm run sync:page-status`；本条。
-    - **状态**：**R24 ✅**；**R25 亦已完成 ✅（条目 74）**、**R26 亦已完成 ✅（条目 75）**；
-      余 **R27 → R28 两批**（下一批 **R27 varint / COBS 出线**）。
+    - **状态**：**R24 ✅**；**R25 亦已完成 ✅（条目 74）**、**R26 亦已完成 ✅（条目 75）**、
+      **R27 出线已完成 ✅（条目 76）**、**R28 解包已完成 ✅（条目 77）** —— R21–R28 全数销项。
 
 74. **R25 · 加扰 / 混淆字段：新算子 `SCRAMBLE` —— 明文进、密文出（PLAN §8.57 · §8.52 排期第 5 批）**
     （2026-10-04，**BE + FE、零 DDL、`models.py` 未动、`/dispatch` 缺省口径逐字不变**；
@@ -2472,8 +2472,8 @@
       §1 回填 + §8.52 两表标已办 + §8.54／§8.55／§8.56 尾行推进、`BUSINESS_SCENARIOS.md`
       「加扰 / 混淆」行 ⏸ → ✅ 与挂账清单、G5 白名单计数 21 → 22、`vectors/README.md` §3 / §7、
       `pageStatus.json` 指令页白名单计数与 `nextSteps` 回填 + `npm run sync:page-status`。
-    - **状态**：**R25 ✅**；**R26 亦已完成 ✅（条目 75）**；余 **R27 → R28 两批**
-      （下一批 **R27 varint / COBS 出线**）。
+    - **状态**：**R25 ✅**；**R26 亦已完成 ✅（条目 75）**、**R27 → R28 两批亦已完成 ✅
+      （条目 76 / 77）** —— R21–R28 全数销项。
 
 75. **R26 · 序列级分支：`sequence_steps.condition`（仅新增列）+ 受限表达式无 eval + runner 判执行 / 跳过（PLAN §8.58 · §8.52 排期第 6 批）**
     （2026-10-04，**BE + FE、DDL 仅新增列 → `yorha.db` 另开 `chore(db)`**、
@@ -2538,8 +2538,8 @@
       `BUSINESS_SCENARIOS.md` G1 行补「按结果跳步已解、发前路由 C 仍红」+「按输入值选指令
       模板 / 报文」行注 R26 边界；`pageStatus.json` + `npm run sync:page-status`；本条
       （**含条目 74 的 R25 正文回补**）。
-    - **状态**：**R26 ✅**（**R27 出线已于 2026-10-04 完成 ✅ → 见条目 76**）；余 **R28 一批**
-      （下一批 **R28 varint / COBS 解包**，**硬前置 = R27 出线已完成**）；提交 = `feat(R26)` 在前 +
+    - **状态**：**R26 ✅**（**R27 出线已于 2026-10-04 完成 ✅ → 见条目 76**、**R28 解包亦已
+      完成 ✅ → 见条目 77**，R21–R28 全数销项）；提交 = `feat(R26)` 在前 +
       `chore(db)` 提交 `yorha.db`（Migration 0005）在后。
 
 76. **R27 · varint / COBS 出线：length 卡 `encoding`（LEB128 变长长度）+ 组帧元素 `cobs` —— 只做编码、不碰解包（PLAN §8.59 · §8.52 排期第 7 批）**
@@ -2622,8 +2622,92 @@
       R28；`BUSINESS_SCENARIOS.md` 第三节 `varint / COBS 组帧` 行 ⏸ → ✅ + 调研基线「仍暂缓」
       收窄 + 挂账行补已落地；`pageStatus.json` + `npm run sync:page-status`；本条
       （**含条目 75 的状态行同步**）。
-    - **状态**：**R27 ✅**；余 **R28 一批**（下一批 **R28 varint / COBS 解包**，**硬前置 =
-      R27 出线已完成**）；提交 = `feat(R27)` 单笔（R27 **零 DDL** → 无 `chore(db)`）。
+    - **状态**：**R27 ✅**；**R28 解包亦已完成 ✅ → 见条目 77**（R21–R28 全数销项）；
+      提交 = `feat(R27)` 单笔（R27 **零 DDL** → 无 `chore(db)`）。
+
+77. **R28 · varint / COBS 解包：`stages` 逆向解包 + 应答匹配 —— R27 出线的收侧另一半（PLAN §8.60 · §8.52 排期第 8 批）**
+    （2026-10-04，**BE + FE、零 DDL → 无 `chore(db)`**、`models.py` 一行未动、
+    `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、`/dispatch` 缺省口径逐字节不变）：
+    - **问题**：R27 只把 varint / COBS **发得出去**，收侧还按定宽 / 切片判 —— 设备回帧的长度域
+      是 LEB128 变长、或整段被 COBS 定界包住时，`response_match` 根本剥不开内层，五要素判定
+      无从谈起。C-5 ③ 按原建议**拆两批**，本批做后半（**硬前置 = R27 出线已完成 ✅**）。
+    - **Phase 0（改前金标准先双端钉死）**：动实现之前先抓改前形态并机械生成测试，改完必须仍绿
+      —— BE `test_response_baseline.py` **7 例**（内嵌改前金标准 JSON：25 normalize +
+      20 match + 6 多层 + 4 生成树 + 3 层链 + stage A/B/C/D，由 Temp `ev_r28_baseline.py`
+      → `ev_r28_baseline.json` 抓取、`ev_r28_gen_baseline_test.py` **机械生成测试体**防手抄漂移）；
+      FE `responseBaseline.test.jsx` **3 例**（`defaultSpec()` 形状 / 改前缀 + 开 LENGTH 提交
+      spec 逐字节 / 只改前缀）。两条新能力都**显式配置**才生效 → §0 缺省口径由它们 +
+      `test_framing_baseline` 14 / `framingBaseline` 5 持续看守。
+    - **收侧新模块 `backend/core/unframe.py`（只解不编、纯函数、零 I/O）**：
+      `decode_varint(data, offset=0) -> (value, width)` —— LEB128 逆向，**非最小编码接受**
+      （`80 00` = 0，编码侧只会出最小形态 → 收侧放宽不产生歧义，拒绝反而把「设备补零」判成坏帧），
+      宽度按**实际读到的字节数**报（供回算 `offset_val`）；起点负 / 布尔 / 越界、续位悬空、
+      超 `MAX_VARINT_BYTES = 8`、值超 `VARINT_MAX = 2^53-1` → `ValueError`。
+      `cobs_decode(data) -> bytes` —— 标准 COBS **码字节区**（不含定界）逆向，码 `0xFF` 与末块
+      之后**不补隐式 `0x00`**（与 R27「满块闭合不写收束码」配对即无歧义）；空区 / **区内含
+      `0x00`**（= 定界漏剥，让 `unpack.trailer` 少算一个字节当场现形）/ 码字节越界 → `ValueError`。
+      **对偶纪律**：R27「生产模块不得出现解码入口」演进为「**编码模块仍无解码符号**」——
+      `framing.py` **一行不改**（`test_framing::test_encode_only_module` 继续钉死无 `decode*`），
+      新增 `test_unframe::DecodeOnlyModuleTest` 对偶钉死无 `encode*`。
+    - **规格形制（只写非缺省值 → 存量逐字节不变）**：`length.encoding ∈ {fixed, varint}`
+      （**缺失键**读作 `fixed`；枚举外 → 400 `length.encoding 必须是 fixed/varint 之一`）；
+      `unpack.mode ∈ {slice, cobs}` + `inner_head` / `inner_trailer`（**仅 cobs 下写这三键**，
+      `slice` 形态逐字节不变；`slice` 配 `inner_*` → 400；`cobs` 下允许 `head = trailer = 0`
+      —— 整层就是一个 COBS 区本身可区分，`slice` 仍禁 0+0）。
+    - **新 reason 码（三条，只在病因确实不同时新增）**：`LENGTH_VARINT_INVALID(原因)`
+      （**读不出值** ≠ 读出的值对不上 `LENGTH_MISMATCH`，不硬凑）；
+      `STAGE[i].UNPACK_COBS_INVALID(原因)`（区解码失败）；
+      `STAGE[i].UNPACK_INNER_TOO_SHORT(n<=m)`（区内字节不够剥 `inner_head + inner_trailer`）。
+      请求侧解码失败**不写理由**（镜像存量 `tx=b""`）；单帧与分层两处 length 逻辑抽共用
+      `_length_reasons(length, frame, tag="")`，reason 只差 `STAGE[i].` 前缀（**改一必改二**）。
+    - **关键公式（varint 自洽的唯一例外）**：`expected = len(frame) + offset_val -
+      (width - byte_length)` —— `offset_val` 按**设计期宽**算、收侧按**实际出线宽**回算，
+      两处差的 `(width - byte_length)` 正好抵消（展开即 `declared = payload + A`）；`fixed` 时
+      `width == byte_length` → 修正项恒 0，**存量逐字节不变**。推导证得该抵消**只对被选中的
+      那张 length 卡成立**，层内另有 varint 卡时 `expected = declared + Σ(wᵢ - bᵢ)(i ≠ 选中项)`
+      → 必然失配 —— 由此定出下面的**逐要素降级**。
+    - **生成侧几何（可用才生成，算不出就降级 —— 只少判不误判）**：`_flatten_leaves` 对
+      **无槽 COBS 收为一个几何单元**（`_cobs_wire` 走 `build_wrapped` 取**出线宽**，码字节与
+      `0x00` 插码不进逻辑和；refs 越出子树 / 区间模式 → 降级）、含槽 COBS 展开；插槽在 COBS
+      区内 → `boundary` → `head/trailer` + `inner_head/inner_trailer` + 跳过 length/checksum +
+      warning（**剥层几何仍成立**）；嵌套 ≥ 2 层 cobs 包槽 或宽不可知 → `unpack = None`；
+      `_ref_leaf_ids` 遇 cobs 不下钻；`_length_element` 走 `normalize_encoding` fail-open、
+      只写非缺省 `encoding`；新增 `_varint_indices` + `_downgrade_varint` 三处降级
+      （非选中 varint 卡 → 丢 length；payload-span / 绝对位置的 checksum 被 varint 污染 → 丢
+      checksum；**任意 varint 卡 → `unpack = None`**，因 `head`/`trailer` 是字节计数）。
+      **多层缺 `unpack` → `ValueError` → 400**（文案指名道姓「无法静态表达的 COBS/变长几何 …
+      请手工编写应答规格」）—— 分层剥不出内层不是「少判」而是「误判」，fail-closed。
+    - **FE 落点（只做规格表单，不建无消费者的解码模块）**：`TransactionPanel.jsx` LENGTH
+      toggle 行右侧新增 `ENCODING` 下拉（`fixed · 定宽` / `varint · LEB128`）+ `patchLengthEncoding`
+      —— **选 varint 才写键、切回 fixed 删键**（与后端「缺失键 = fixed」逐字节对应，存量形态不变），
+      `BYTE_LEN` **不禁用**（设计期宽度，收侧回算要用），选 varint 时出 9px 提示（字节序无关 /
+      BYTE_LEN = 设计期宽度）。
+    - **向量口径（反向消费，不新增文件）**：新表须**双端同读**而匹配只有后端一处消费 → 不满足，
+      故 **不新增 vectors 文件**；`test_unframe.py` 逆向消费 `vectors/framing.json`（varint 行
+      `hex → v`、cobs 行 `out` 剥定界 → `in`）作解码往返真值 + 与 `encode_varint` /
+      `encode_cobs_hex` 直接往返 + 畸形报错面；`framing.json::_note` 与 `vectors/README.md` §3 表行 +
+      §7 同批改口（R27「只编码不解包」→ R28 反向消费），表清单 **18 文件 / 24 表不变**。
+    - **测试**：BE 新 `test_unframe.py` **9 例** + `test_response_baseline.py` **7 例**、
+      `test_response_match.py` **23 → 35**（+12：varint 双出线宽同规格 / 缺 `encoding` 宽帧失配 /
+      截断·超值域 `VARINT_INVALID` / 位置越界另码 / 枚举外拒收 / byte_order 共存不参与判读；
+      cobs 两层剥层成功 / 内层病因打 `STAGE[0].` / 区畸形与裸 `00` 打 `STAGE[1].` /
+      区太短 / cobs 允许 0+0 / `inner_*` 在 slice 下拒 / mode 枚举外拒）、
+      `test_response_generate.py` **41 → 51**（+10：`encoding` 透传与只写非缺省 / 生成 → 发射 →
+      收侧判定**双出线宽整链往返** / 非选中 varint 卡降级 / 多层 varint 拒绝生成 /
+      无槽 COBS 计**出线宽**而非逻辑和 / 含槽 COBS 区内几何 / 区内 length 降级 warning /
+      无槽区 length 隐藏 warning / 两层 cobs 生成 + 整链往返 / 嵌套 cobs 拒绝生成）。
+    - **验收**：**BE 917 → 955/955**（+38）、**FE 1247 → 1251/1251（81 文件）**（+4 =
+      `responseBaseline.test.jsx` 3 + `TransactionPanel.test.jsx` 13 → 14）、
+      `npx vite build` EXIT=0、`npm run lint` EXIT=0、yorha-ui 校验器改动 js/jsx/json
+      **3 文件 0 违规**、md 表列数 mismatches = 0、隐形字符 / CRLF / TAB = 0、
+      index blob BAD = 0；**零 DDL → 无 `chore(db)`**；不引 pytest、**无新 pip 依赖**。
+    - **文档同步（同批）**：PLAN **§8.60 新节** + §1 `R21–R28` 行回填（R28 ✅、七项全数销项）+
+      §8.52 排期表 R28 行标已办 + §8.59 尾行 + §8.36 C-5 销项注 + §8.53～§8.58 **四处尾行**
+      推进到「全数销项」；`vectors/framing.json::_note` + `vectors/README.md` §3 表行与 §7 改口；
+      `pageStatus.json` 协议页 R27 条尾 + 指令页 `nextSteps` 新增 R28 条 + `npm run sync:page-status`；
+      本条（**含条目 73～76 四处状态行同步**）。
+    - **状态**：**R28 ✅** —— **§8.52 七项复议立项（R21–R28）至此全数销项**；
+      提交 = `feat(R28)` 单笔（**零 DDL** → 无 `chore(db)`）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

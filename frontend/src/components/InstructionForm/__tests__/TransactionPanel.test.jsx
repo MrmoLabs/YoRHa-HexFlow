@@ -172,6 +172,43 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
         expect(screen.getByRole('button', { name: /SAVE/ }).disabled).toBe(true);
     });
 
+    // ─── R28 (PLAN §8.52 第 8 批 · §8.60 定案): length.encoding 只写非缺省值 ──
+    it('LENGTH ENCODING: varint 写键、fixed 删键（BYTE_LEN 不禁用 = 设计期宽度）', async () => {
+        api.getResponseSpec.mockRejectedValue(Object.assign(new Error('nf'), { response: { status: 404 } }));
+
+        render(<TransactionPanel instruction={INSTRUCTION} payload={PAYLOAD} />);
+        fireEvent.click(await screen.findByRole('button', { name: /SPEC ▸/ }));
+        fireEvent.click(screen.getByRole('button', { name: /LENGTH OFF/ }));
+
+        const box = screen.getByLabelText('length encoding');
+        expect(box.value).toBe('fixed'); // 缺省 = 无键 → 读回 fixed（与后端口径同）
+        expect(screen.queryByText(/设计期宽度/)).toBeNull(); // fixed 不出 varint 说明
+
+        // BYTE_LEN 在 varint 下仍可编辑（它是设计期宽度，收侧回算 offset_val 要用）
+        fireEvent.change(box, { target: { value: 'varint' } });
+        expect(screen.getByText(/设计期宽度/)).toBeDefined();
+        expect(screen.getByLabelText('length encoding').value).toBe('varint');
+        const byteLen = screen.getByText('BYTE_LEN').parentElement.querySelector('input');
+        expect(byteLen.disabled).toBe(false);
+
+        fireEvent.click(screen.getByRole('button', { name: /SAVE \*/ }));
+        await waitFor(() => expect(api.saveResponseSpec).toHaveBeenCalledTimes(1));
+        expect(api.saveResponseSpec.mock.calls[0][1].length).toEqual({
+            offset: 0, byte_length: 1, offset_val: 0, byte_order: 'big', encoding: 'varint'
+        });
+
+        // 切回 fixed = **删键**（不是写 "fixed"）—— 存量规格形态逐字节不变
+        fireEvent.change(screen.getByLabelText('length encoding'), { target: { value: 'fixed' } });
+        expect(screen.queryByText(/设计期宽度/)).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: /SAVE \*/ }));
+        await waitFor(() => expect(api.saveResponseSpec).toHaveBeenCalledTimes(2));
+        const [, second] = api.saveResponseSpec.mock.calls[1];
+        expect(second.length).toEqual({
+            offset: 0, byte_length: 1, offset_val: 0, byte_order: 'big'
+        });
+        expect(Object.keys(second.length)).not.toContain('encoding');
+    });
+
     // ─── CP3 3d (D7-A): 应答规格失效徽标 ─────────────────────────────────
     // 口径：仅 stale === true 出徽标；false（仍匹配）/ null（无出处，手工规格）
     // 一律不渲染。徽标挂在规格编辑器头部（RESPONSE_SPEC 行）。

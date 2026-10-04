@@ -22,6 +22,7 @@ from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from backend.core.frame_builder import build_wrapped
 from backend.core.response_generate import build_spec, layer_stage_spec
 from backend.core.response_match import match_response, normalize_spec
 from backend.db.database import Base, ensure_binding_columns, ensure_response_spec_columns
@@ -572,6 +573,219 @@ class StoredRowShapeTest(DbBackedTestBase):
             json.dumps(row.spec, sort_keys=True),
             json.dumps(normalize_spec({"mode": "echo"}), sort_keys=True),
         )
+
+
+class VarintGenerationTest(unittest.TestCase):
+    """R28（PLAN §8.52 第 8 批 · §8.60 定案）：length.encoding 透传 + varint 逐要素降级。
+
+    生成侧必须把 `encoding` 一并写进规格，否则收侧按定宽读、出线宽一变就必然失配；
+    而 varint 让**设计期几何**与线上字节差 (实际宽 - 设计期宽)，只有 length 自身靠
+    收侧回算自洽（见 `_downgrade_varint`），其余要素一律少生成。
+    """
+
+    @staticmethod
+    def _children(encoding=None):
+        pc = {"refs": ["s"]}
+        if encoding:
+            pc["encoding"] = encoding
+        return [
+            {"id": "h", "type": "fixed", "byte_length": 2, "hex_value": "FA FA", "children": []},
+            {"id": "l", "type": "length", "byte_length": 1,
+             "parameter_config": pc, "children": []},
+            {"id": "s", "type": "slot", "byte_length": 0, "children": []},
+        ]
+
+    @staticmethod
+    def _spec(children):
+        spec, warnings = build_spec(
+            [{"protocol_id": "p0", "label": "层0", "children": children}]
+        )
+        return spec, warnings
+
+    def test_encoding_written_only_when_non_default(self):
+        spec, warnings = self._spec(self._children("varint"))
+        self.assertEqual(warnings, [])
+        self.assertEqual(spec["length"],
+                         {"byte_length": 1, "offset_val": -3, "byte_order": "big",
+                          "offset": 2, "encoding": "varint"})
+        self.assertEqual(spec["echo_header_bytes"], 2)
+        # 单层退化不写 stages/unpack（存量口径）；而层几何本身在 varint 下确实不可靠
+        self.assertNotIn("unpack", spec)
+        stage = layer_stage_spec(self._children("varint"), where="[层0]", warnings=[])
+        self.assertIsNone(stage["unpack"])
+
+        fixed, _ = self._spec(self._children())
+        self.assertNotIn("encoding", fixed["length"])  # 缺省 = 缺失键（存量逐字节不变）
+        self.assertEqual(fixed["length"]["offset_val"], -3)
+        fixed_stage = layer_stage_spec(self._children(), where="[层0]", warnings=[])
+        self.assertEqual(fixed_stage["unpack"], {"head": 3, "trailer": 0})
+
+    def test_generated_spec_matches_wire_at_both_widths(self):
+        """整条链：生成 → 发射（LengthHandler varint 出线）→ 收侧判定。"""
+        spec, _ = self._spec(self._children("varint"))
+        norm = normalize_spec(spec)
+        for payload_len in (1, 128):  # 出线宽 1 / 2，同一份 offset_val 都要过
+            payload = "AA" * payload_len
+            frame = "".join(build_wrapped(self._children("varint"), [payload])["hex"].split())
+            ok, reasons = match_response(norm, bytes.fromhex(frame), bytes.fromhex(frame))
+            self.assertTrue(ok, msg=f"载荷 {payload_len} 字节 → {reasons}")
+
+    def test_foreign_varint_card_drops_length(self):
+        """第二张 varint 卡的出线宽不在回算项里 → 少判一条要素，不给一个必失配的值。"""
+        children = [
+            {"id": "h", "type": "fixed", "byte_length": 2, "hex_value": "FA FA", "children": []},
+            {"id": "l1", "type": "length", "byte_length": 1,
+             "parameter_config": {"refs": ["s"]}, "children": []},
+            {"id": "s", "type": "slot", "byte_length": 0, "children": []},
+            {"id": "l2", "type": "length", "byte_length": 1,
+             "parameter_config": {"refs": ["s"], "encoding": "varint"}, "children": []},
+        ]
+        stage = layer_stage_spec(children, where="[层0]", warnings=[])
+        self.assertIsNone(stage["length"])
+        self.assertIsNone(stage["unpack"])  # head/trailer 是字节计数 → 一并不可靠
+        warnings: list = []
+        layer_stage_spec(children, where="[层0]", warnings=warnings)
+        self.assertTrue(any("未生成 length" in w for w in warnings), msg=warnings)
+
+    def test_multi_layer_with_varint_rejects_generation(self):
+        """多层时 unpack 是结构必需 → 几何算不出 = 400（绝不给一个会剥错的几何）。"""
+        inner = [
+            {"id": "ih", "type": "fixed", "byte_length": 1, "hex_value": "A0", "children": []},
+            {"id": "is", "type": "slot", "byte_length": 0, "children": []},
+            {"id": "it", "type": "fixed", "byte_length": 1, "hex_value": "E0", "children": []},
+        ]
+        outer = [
+            {"id": "h", "type": "fixed", "byte_length": 2, "hex_value": "FA FA", "children": []},
+            {"id": "l", "type": "length", "byte_length": 1,
+             "parameter_config": {"refs": ["s"], "encoding": "varint"}, "children": []},
+            {"id": "s", "type": "slot", "byte_length": 0, "children": []},
+        ]
+        layers = [
+            {"protocol_id": "p0", "label": "层0", "children": inner},
+            {"protocol_id": "p1", "label": "层1", "children": outer},
+        ]
+        with self.assertRaises(ValueError) as ctx:
+            build_spec(layers)
+        self.assertIn("无法静态表达", str(ctx.exception))
+        self.assertIn("[层1", str(ctx.exception))
+
+
+class CobsGenerationTest(unittest.TestCase):
+    """R28：协议树新组帧元素 `cobs` 进几何 —— 出线宽单元 / 区内剥层 / 不可静态降级。"""
+
+    def test_slot_free_cobs_counts_wire_width_not_logical(self):
+        """无槽 COBS 作一个几何单元：3 个 0x00 → `01 01 01 01`（4 字节）而非 3。"""
+        children = [
+            {"id": "h", "type": "fixed", "byte_length": 2, "hex_value": "FA FA", "children": []},
+            {"id": "c", "type": "cobs",
+             "children": [{"id": "k", "type": "fixed", "byte_length": 3,
+                           "hex_value": "00 00 00", "children": []}],
+             "parameter_config": {"terminator": "none"}},
+            {"id": "s", "type": "slot", "byte_length": 0, "children": []},
+        ]
+        stage = layer_stage_spec(children, where="[层0]", warnings=[])
+        self.assertEqual(stage["unpack"], {"head": 6, "trailer": 0})
+        self.assertEqual(stage["echo_header_bytes"], 2)  # COBS 区不是回显头 → 到它为止
+
+    @staticmethod
+    def _outer_children():
+        return [
+            {"id": "h", "type": "fixed", "byte_length": 2, "hex_value": "FA FA", "children": []},
+            {"id": "c", "type": "cobs",
+             "children": [
+                 {"id": "ih", "type": "fixed", "byte_length": 1, "hex_value": "BB", "children": []},
+                 {"id": "s", "type": "slot", "byte_length": 0, "children": []},
+                 {"id": "it", "type": "fixed", "byte_length": 1, "hex_value": "ED", "children": []},
+             ],
+             "parameter_config": {"terminator": "none"}},
+        ]
+
+    def test_slot_inside_cobs_gives_inner_geometry(self):
+        warnings: list = []
+        stage = layer_stage_spec(self._outer_children(), where="[层0]", warnings=warnings)
+        self.assertEqual(stage["unpack"], {"head": 2, "trailer": 0, "mode": "cobs",
+                                           "inner_head": 1, "inner_trailer": 1})
+        self.assertEqual(stage["echo_header_bytes"], 2)
+        self.assertEqual(warnings, [])  # 没有 length/checksum 卡 → 不该有降级警告
+
+    def test_length_inside_cobs_degrades_with_visible_warning(self):
+        children = self._outer_children()
+        children[1]["children"].insert(1, {
+            "id": "l", "type": "length", "byte_length": 1,
+            "parameter_config": {"refs": ["s"]}, "children": [],
+        })
+        warnings: list = []
+        stage = layer_stage_spec(children, where="[层0]", warnings=warnings)
+        self.assertIsNone(stage["length"])
+        self.assertTrue(any("插槽在 COBS 区内" in w for w in warnings), msg=warnings)
+        # 区内几何本身仍可表达（剥层不依赖 declared）
+        self.assertEqual(stage["unpack"]["mode"], "cobs")
+
+    def test_length_hidden_in_slot_free_cobs_warns(self):
+        """COBS 区（无槽）里的 length 卡没有出线坐标 → 少判一条要素 + 看得见。"""
+        children = [
+            {"id": "c", "type": "cobs",
+             "children": [
+                 {"id": "l", "type": "length", "byte_length": 1,
+                  "parameter_config": {"refs": ["k"]}, "children": []},
+                 {"id": "k", "type": "fixed", "byte_length": 2,
+                  "hex_value": "00 00", "children": []},
+             ],
+             "parameter_config": {"terminator": "none"}},
+            {"id": "s", "type": "slot", "byte_length": 0, "children": []},
+        ]
+        warnings: list = []
+        stage = layer_stage_spec(children, where="[层0]", warnings=warnings)
+        self.assertIsNone(stage["length"])
+        self.assertTrue(any("COBS 区内" in w and "length" in w for w in warnings),
+                        msg=warnings)
+        # 单元宽度仍静态可解析（refs 没越出子树）→ 几何成立
+        self.assertEqual(stage["unpack"], {"head": 4, "trailer": 0})
+
+    @staticmethod
+    def _inner_layer():
+        return [
+            {"id": "ih", "type": "fixed", "byte_length": 1, "hex_value": "A0", "children": []},
+            {"id": "is", "type": "slot", "byte_length": 0, "children": []},
+            {"id": "it", "type": "fixed", "byte_length": 1, "hex_value": "E0", "children": []},
+        ]
+
+    def test_two_layer_cobs_generation_and_roundtrip(self):
+        """生成 → 发射 → 收侧剥层判定的整条链（mode=cobs 只在这一层写出）。"""
+        layers = [
+            {"protocol_id": "p0", "label": "层0", "children": self._inner_layer()},
+            {"protocol_id": "p1", "label": "层1", "children": self._outer_children()},
+        ]
+        spec, warnings = build_spec(layers)
+        self.assertEqual(warnings, [])
+        norm = normalize_spec(spec)
+        self.assertEqual(norm["stages"][1]["unpack"]["mode"], "cobs")
+
+        inner = "".join(
+            build_wrapped(self._inner_layer(), ["0102"])["hex"].split()
+        )
+        outer = "".join(build_wrapped(self._outer_children(), [inner])["hex"].split())
+        ok, reasons = match_response(norm, bytes.fromhex(outer), bytes.fromhex(outer))
+        self.assertTrue(ok, msg=f"{outer} → {reasons}")
+
+    def test_nested_cobs_with_slot_rejects_multi_layer(self):
+        """两层 COBS 都包槽 → 单次 COBS 解码够不着内层，几何表达不了 → 拒绝生成。"""
+        nested = [
+            {"id": "h", "type": "fixed", "byte_length": 2, "hex_value": "FA FA", "children": []},
+            {"id": "c1", "type": "cobs",
+             "children": [{"id": "c2", "type": "cobs",
+                           "children": [{"id": "s", "type": "slot", "byte_length": 0,
+                                         "children": []}],
+                           "parameter_config": {"terminator": "none"}}],
+             "parameter_config": {"terminator": "none"}},
+        ]
+        layers = [
+            {"protocol_id": "p0", "label": "层0", "children": self._inner_layer()},
+            {"protocol_id": "p1", "label": "层1", "children": nested},
+        ]
+        with self.assertRaises(ValueError) as ctx:
+            build_spec(layers)
+        self.assertIn("无法静态表达", str(ctx.exception))
 
 
 if __name__ == "__main__":

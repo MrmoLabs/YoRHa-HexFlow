@@ -34,9 +34,27 @@ plan.shell.layers 同序）。匹配时按 `stages` **逆序**（n-1 → 0）逐
 - 每层 `unpack.head` = 该层帧头字节数、`unpack.trailer` = 帧尾字节数，
   两者不可同时为 0（否则层与层不可区分）。请求侧 `sent` 按同一几何同步剥层，
   使逐层 `echo_header_bytes` 比的是**同层**帧头。
+
+R28（§8.52 排期 · §8.60 定案）：**解包**跟上 R27 的出线 —— 两种可变形态在收侧
+的判读，全部**只写非缺省值**（缺失键 = 存量口径，故无变长编码时逐字节不变，由
+test_response_baseline 金标准看守）：
+- `length.encoding = "varint"` → 长度域按 LEB128 判读（字节序无关），并按实际出线
+  宽度回算 `offset_val`：`expected = len(frame) + offset_val - (width - byte_length)`
+  —— 设计期宽与出线宽的差正好是 offset_val 里少算/多算的那几字节；fixed 时
+  `width == byte_length` → 修正项恒 0，存量判定逐字节不变。畸形 / 超值域 →
+  `LENGTH_VARINT_INVALID(原因)`（不硬凑成 MISMATCH，两者病因不同）。
+- `unpack.mode = "cobs"` → 该层帧 = head + **COBS 区** + trailer（定界字节由
+  trailer 收进去，区内不该再有 0x00），剥层时先 COBS 解码、再按 `inner_head` /
+  `inner_trailer` 剥掉 COBS 区内槽前后的本层字节，才得到内层帧；解码失败 →
+  `STAGE[i].UNPACK_COBS_INVALID(原因)` / 解出太短 → `STAGE[i].UNPACK_INNER_TOO_SHORT`。
+  `mode=slice`（缺省）时 head+trailer 仍不得同时为 0；`mode=cobs` 则允许 ——
+  「整层就是一个 COBS 区」本身就是可区分的形态。
 """
 
 from typing import Any, Dict, List, Optional, Tuple
+
+from backend.core.framing import DEFAULT_LENGTH_ENCODING, LENGTH_ENCODINGS
+from backend.core.unframe import cobs_decode, decode_varint
 
 VALID_MODES = ("echo", "rules", "any")
 VALID_ALGOS = ("sum", "xor", "crc16_modbus", "crc16_ccitt", "crc32", "lrc")
@@ -54,6 +72,10 @@ ALGO_FIELD_WIDTH = {
     "lrc": 1,
 }
 VALID_BYTE_ORDERS = ("big", "little")
+# R28 (§8.60): 分层剥层的两种几何 —— slice（缺省，切片）/ cobs（COBS 区解码后再剥
+# 区内槽前后的本层字节）。镜像 framing.LENGTH_ENCODINGS 的「缺省 = 缺失键」口径。
+VALID_UNPACK_MODES = ("slice", "cobs")
+DEFAULT_UNPACK_MODE = "slice"
 
 # 与 backend/schemas/recipe_api.MAX_RECIPE_STAGES 同值（配方层数上限），镜像
 # recipe_compile 的「核心结构不 import schemas」纪律，此处独立声明免循环引用。
@@ -61,8 +83,10 @@ MAX_STAGES = 4
 
 _SPEC_KEYS = {"mode", "prefix", "suffix", "echo_header_bytes", "length", "checksum", "ignore_ranges", "stages"}
 _STAGE_KEYS = {"prefix", "suffix", "echo_header_bytes", "length", "checksum", "unpack"}
-_UNPACK_KEYS = {"head", "trailer"}
-_LENGTH_KEYS = {"offset", "byte_length", "offset_val", "byte_order", "offset_from_end"}
+# R28 (§8.52 排期 · 解包)：`encoding`（长度域 fixed/varint）与 `mode`（剥层
+# slice/cobs）都是**只写非缺省值**的新键 —— 缺失 = 存量口径，存量规格形态逐字节不变。
+_UNPACK_KEYS = {"head", "trailer", "mode", "inner_head", "inner_trailer"}
+_LENGTH_KEYS = {"offset", "byte_length", "offset_val", "byte_order", "offset_from_end", "encoding"}
 _CHECKSUM_KEYS = {"algo", "field_offset", "field_byte_length", "span_start", "span_end", "byte_order", "span_end_pad", "field_offset_from_end"}
 
 _HEX_CLEANUP = " _-,"
@@ -115,13 +139,25 @@ def _normalize_length(value: Any) -> Optional[Dict[str, Any]]:
         offset_from_end = _require_int(offset_from_end, "length.offset_from_end", 0, 4095)
         if offset != 0:
             raise ValueError("length.offset 与 length.offset_from_end 只能给其一")
-    return {
+    # R28 (§8.60): 长度域编码。缺省 fixed = **缺失键**（存量规格形态逐字节不变），
+    # 枚举外报错（镜像 byte_order 的 fail-closed —— 静默回 fixed 会让人以为配了
+    # varint 却按定宽判，那是误判不是降级）。varint 下 byte_order 不参与判读
+    # （LEB128 字节序无关），两个键同时给也不冲突，故不设互斥。
+    encoding = str(value.get("encoding") or DEFAULT_LENGTH_ENCODING).strip().lower()
+    if encoding not in LENGTH_ENCODINGS:
+        raise ValueError(
+            f"length.encoding 必须是 {'/'.join(LENGTH_ENCODINGS)} 之一"
+        )
+    out = {
         "offset": offset,
         "byte_length": _require_int(value.get("byte_length", 1), "length.byte_length", 1, 4),
         "offset_val": _require_int(value.get("offset_val", 0), "length.offset_val", -4096, 4096),
         "byte_order": byte_order,
         "offset_from_end": offset_from_end,
     }
+    if encoding != DEFAULT_LENGTH_ENCODING:
+        out["encoding"] = encoding
+    return out
 
 
 def _normalize_checksum(value: Any) -> Optional[Dict[str, Any]]:
@@ -182,8 +218,17 @@ def _normalize_checksum(value: Any) -> Optional[Dict[str, Any]]:
     }
 
 
-def _normalize_unpack(value: Any) -> Dict[str, int]:
-    """层解包几何（D15-A 逆序解包）：该层帧 = head(头字节) + 内层块 + trailer(尾字节)。"""
+def _normalize_unpack(value: Any) -> Dict[str, Any]:
+    """层解包几何（D15-A 逆序解包）：该层帧 = head(头字节) + 内层块 + trailer(尾字节)。
+
+    R28（§8.60）新增 `mode=cobs`：该层的内层块是被 COBS 包住的 —— 剥掉 head/trailer
+    后先 COBS 解码，再按 `inner_head`/`inner_trailer` 剥掉 COBS 区内、插槽前后属于
+    **本层**的字节，剩下的才是内层帧（定界字节由 trailer 收进去，COBS 区内不该再有
+    0x00）。`slice`（缺省）= 存量切片：`inner_*` 在该 mode 下无效 → 直接报错而不是
+    静默忽略（写了解释成没生效，比不写更糟），且仍要求 head+trailer 不同为 0；`cobs`
+    允许两者同为 0 ——「整层就是一个 COBS 区」本身就可区分。三个新键只在 cobs 下写，
+    存量 slice 形态逐字节不变。
+    """
     if not isinstance(value, dict):
         raise ValueError("unpack 必须是对象")
     unknown = set(value) - _UNPACK_KEYS
@@ -191,6 +236,21 @@ def _normalize_unpack(value: Any) -> Dict[str, int]:
         raise ValueError(f"未知 unpack 字段: {', '.join(sorted(unknown))}")
     head = _require_int(value.get("head", 0), "unpack.head", 0, 4095)
     trailer = _require_int(value.get("trailer", 0), "unpack.trailer", 0, 4095)
+    mode = str(value.get("mode") or DEFAULT_UNPACK_MODE).strip().lower()
+    if mode not in VALID_UNPACK_MODES:
+        raise ValueError(f"unpack.mode 必须是 {'/'.join(VALID_UNPACK_MODES)} 之一")
+    if mode != DEFAULT_UNPACK_MODE:
+        return {
+            "head": head,
+            "trailer": trailer,
+            "mode": mode,
+            "inner_head": _require_int(value.get("inner_head", 0), "unpack.inner_head", 0, 4095),
+            "inner_trailer": _require_int(
+                value.get("inner_trailer", 0), "unpack.inner_trailer", 0, 4095
+            ),
+        }
+    if value.get("inner_head") not in (None, 0) or value.get("inner_trailer") not in (None, 0):
+        raise ValueError("unpack.inner_head / unpack.inner_trailer 仅 mode=cobs 时有效")
     if head + trailer < 1:
         raise ValueError("unpack.head 与 unpack.trailer 不能同时为 0（层与层不可区分）")
     return {"head": head, "trailer": trailer}
@@ -317,12 +377,50 @@ def _in_ranges(index: int, ranges: List[List[int]]) -> bool:
 
 
 def _length_offset(length: Dict[str, Any], frame_len: int) -> Optional[int]:
-    """length 字段在本帧内的起点（绝对 / 距帧尾两种表达统一到这里）。越界 → None。"""
+    """length 字段在本帧内的起点（绝对 / 距帧尾两种表达统一到这里）。越界 → None。
+
+    R28：varint 的出线宽度是**判读后才知道**的，起点处至少要有 1 字节即可开读
+    （拿设计期 byte_length 去卡边界会把合法的变长字段判成越界）；真读不出由
+    `decode_varint` 报畸形，与「位置本身出界」分成两个 reason。
+    """
     offset = frame_len - length["offset_from_end"] if length.get("offset_from_end") is not None \
         else length["offset"]
-    if offset < 0 or offset + length["byte_length"] > frame_len:
+    need = 1 if length.get("encoding") == "varint" else length["byte_length"]
+    if offset < 0 or offset + need > frame_len:
         return None
     return offset
+
+
+def _length_reasons(length: Dict[str, Any], frame: bytes, tag: str = "") -> List[str]:
+    """长度字段自洽判定 —— 单帧路径与分层路径共用一份口径，只差 `STAGE[i].` 前缀。
+
+    - `fixed`（缺省）：定宽读 → ``expected = len(frame) + offset_val``，与 R28 之前
+      逐字节相同（test_response_baseline 金标准看守）。
+    - `varint`：按 LEB128 读（字节序无关，`byte_order` 不参与）→
+      ``expected = len(frame) + offset_val - (实际宽 - 设计期 byte_length)``。
+      由来：`offset_val = 基准 - head - trailer`（response_generate 按**设计期宽**
+      求和），而帧长里这一项是**出线宽**，差 (width - byte_length) 就得在 expected
+      里扣回来；fixed 时 width == byte_length → 修正项恒 0。
+    - 畸形 / 超值域 → `LENGTH_VARINT_INVALID(原因)`：病因是「读不出值」，与
+      「读出的值对不上」（MISMATCH）分开报，UI 才能一眼分辨该改规格还是改帧。
+    """
+    off = _length_offset(length, len(frame))
+    if off is None:
+        return [tag + "LENGTH_OUT_OF_RANGE"]
+    if length.get("encoding") == "varint":
+        try:
+            declared, width = decode_varint(frame, off)
+        except ValueError as exc:
+            return [tag + f"LENGTH_VARINT_INVALID({exc})"]
+        delta = width - length["byte_length"]
+    else:
+        bl = length["byte_length"]
+        declared = int.from_bytes(frame[off : off + bl], length["byte_order"])
+        delta = 0
+    expected = len(frame) + length["offset_val"] - delta
+    if declared != expected:
+        return [tag + f"LENGTH_MISMATCH({declared}!={expected})"]
+    return []
 
 
 def _checksum_offset(cs: Dict[str, Any], frame_len: int) -> Optional[int]:
@@ -510,18 +608,10 @@ def _match_frame(spec: Dict[str, Any], sent: bytes, received: bytes) -> Tuple[bo
         elif received[:n] != sent[:n]:
             reasons.append("ECHO_HEADER_MISMATCH")
 
-    # 长度字段自洽
+    # 长度字段自洽（R28 起单帧与分层共用 `_length_reasons`，fixed/varint 同一口径）
     length = spec.get("length")
     if length:
-        off = _length_offset(length, len(received))
-        bl = length["byte_length"]
-        if off is None:
-            reasons.append("LENGTH_OUT_OF_RANGE")
-        else:
-            declared = int.from_bytes(received[off : off + bl], length["byte_order"])
-            expected = len(received) + length["offset_val"]
-            if declared != expected:
-                reasons.append(f"LENGTH_MISMATCH({declared}!={expected})")
+        reasons.extend(_length_reasons(length, received))
 
     # 校验字段反算
     checksum = spec.get("checksum")
@@ -567,15 +657,7 @@ def _stage_reasons(
 
     length = stage.get("length")
     if length:
-        off = _length_offset(length, len(rx_layer))
-        bl = length["byte_length"]
-        if off is None:
-            reasons.append(tag + "LENGTH_OUT_OF_RANGE")
-        else:
-            declared = int.from_bytes(rx_layer[off : off + bl], length["byte_order"])
-            expected = len(rx_layer) + length["offset_val"]
-            if declared != expected:
-                reasons.append(f"{tag}LENGTH_MISMATCH({declared}!={expected})")
+        reasons.extend(_length_reasons(length, rx_layer, tag))
 
     checksum = stage.get("checksum")
     if checksum:
@@ -601,8 +683,9 @@ def _match_stages(
         reasons.extend(_stage_reasons(stage, tx, rx, i))
         if i == 0:
             break
-        head = stage["unpack"]["head"]
-        trailer = stage["unpack"]["trailer"]
+        unpack = stage["unpack"]
+        head = unpack["head"]
+        trailer = unpack["trailer"]
         if len(rx) <= head + trailer:
             reasons.append(f"STAGE[{i}].UNPACK_TOO_SHORT({len(rx)}<={head + trailer})")
             break
@@ -611,7 +694,45 @@ def _match_stages(
         else:
             tx = b""  # 请求侧剥不动 → 后续层 ECHO_HEADER_TOO_SHORT
         rx = rx[head : len(rx) - trailer]
+        if unpack.get("mode", DEFAULT_UNPACK_MODE) != DEFAULT_UNPACK_MODE:
+            # R28 (§8.60): mode=cobs —— 内层块被 COBS 包住，先解码再剥区内几何。
+            # 解码失败即止（再往里的层无从判定），理由挂本层号：病因在这一层的壳。
+            rx, tx, stop = _peel_cobs(unpack, rx, tx, i, reasons)
+            if stop:
+                break
         if not rx:
             reasons.append(f"STAGE[{i}].EMPTY_INNER")
             break
     return len(reasons) == 0, reasons
+
+
+def _peel_cobs(
+    unpack: Dict[str, Any], rx: bytes, tx: bytes, index: int, reasons: List[str]
+) -> Tuple[bytes, bytes, bool]:
+    """`mode=cobs` 的剥层：COBS 解码 → 再剥区内槽前后的本层字节。
+
+    返回 ``(内层 rx, 内层 tx, 是否停止)``；`stop=True` 时已写入理由（COBS 区非法 /
+    解出太短），调用方直接断链 —— 内层已无从谈起，硬剥会把「壳坏了」报成「内层坏了」。
+    请求侧解码失败**不写理由**（镜像存量 slice 的 `tx = b""` 口径）：失配理由只描述
+    应答，请求侧剥不动由下一层的 ECHO_HEADER_TOO_SHORT 呈现。
+    """
+    tag = f"STAGE[{index}]."
+    try:
+        inner_rx = cobs_decode(rx)
+    except (TypeError, ValueError) as exc:
+        reasons.append(f"{tag}UNPACK_COBS_INVALID({exc})")
+        return b"", tx, True
+    try:
+        inner_tx = cobs_decode(tx) if tx else b""
+    except (TypeError, ValueError):
+        inner_tx = b""
+    head_in = unpack["inner_head"]
+    trailer_in = unpack["inner_trailer"]
+    if len(inner_rx) <= head_in + trailer_in:
+        reasons.append(f"{tag}UNPACK_INNER_TOO_SHORT({len(inner_rx)}<={head_in + trailer_in})")
+        return b"", inner_tx, True
+    if len(inner_tx) > head_in + trailer_in:
+        inner_tx = inner_tx[head_in : len(inner_tx) - trailer_in]
+    else:
+        inner_tx = b""
+    return inner_rx[head_in : len(inner_rx) - trailer_in], inner_tx, False
