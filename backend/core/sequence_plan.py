@@ -5,7 +5,7 @@
 `sequence_steps.payload`（表单值冻结在 `params`），此后改指令定义不影响已
 存序列。发送时仅按 plan 补两类字节：
 
-- plan.dynamic：TIME_ACCUMULATOR / AUTO_COUNTER 字段按发送时刻重算
+- plan.dynamic：TIME_ACCUMULATOR / AUTO_COUNTER / TIME_EPOCH 字段按发送时刻重算
   （offset/byte_len 来自前端 `encodeInstruction.byteMap`；编码走 E1-6 双端
   byte-equal 锚定的 `encode_time_accumulator` / `encode_auto_counter`）。
   字段定宽 → 补丁等长替换、帧长不变；长度字段（LENGTH_CALC）按字节数计、
@@ -24,15 +24,18 @@ ValueError（路由映射 400；POST /{id}/start 再走一次，防库内脏数�
 """
 from typing import Any, Dict, List, Optional, Tuple
 
-from backend.core.orchestrator import _iso_ms, encode_auto_counter, encode_time_accumulator
+from backend.core.orchestrator import _iso_ms, encode_auto_counter, encode_time_accumulator, encode_time_epoch
 from backend.core.response_match import ALGO_FIELD_WIDTH, VALID_ALGOS, VALID_BYTE_ORDERS, checksum_value
 
 _MAX_PAYLOAD_BYTES = 4096
-_DYNAMIC_OPS = ("TIME_ACCUMULATOR", "AUTO_COUNTER")
+_DYNAMIC_OPS = ("TIME_ACCUMULATOR", "AUTO_COUNTER", "TIME_EPOCH")
 _HEX_CLEANUP = " \t\r\n,_-"
 _SCALAR = (int, float, str, type(None))  # 计数模板值：JSON 标量（bool/对象/数组拒绝）
 
 _TIME_KEYS = {"field_id", "op", "offset", "byte_len", "base_time"}
+# R23 (§8.52 排期): 绝对时间戳条目 —— 无 base_time，改带 unit（s/ms，缺省 s）；
+# 键集同样严格（未知键一律 ValueError → 400，同 _TIME_KEYS/_COUNTER_KEYS 纪律）。
+_EPOCH_KEYS = {"field_id", "op", "offset", "byte_len", "unit"}
 _COUNTER_KEYS = {"field_id", "op", "offset", "byte_len", "value", "start_val", "step", "max"}
 _CHECKSUM_KEYS = {"offset", "byte_length", "algo", "byte_order", "regions"}
 # CP3 3c (D6-B): 序列封装帧 —— 冻结完整帧里外壳的逐层区间（同上严格键集，
@@ -79,6 +82,8 @@ def _encode_dynamic(entry: Dict[str, Any], now_ms: float) -> Optional[str]:
     byte_len = entry["byte_len"]
     if entry["op"] == "TIME_ACCUMULATOR":
         return encode_time_accumulator(entry["base_time"], now_ms, byte_len)
+    if entry["op"] == "TIME_EPOCH":
+        return encode_time_epoch(entry.get("unit"), now_ms, byte_len)
     return encode_auto_counter(
         entry.get("value"), entry.get("start_val"),
         entry.get("step"), entry.get("max"), byte_len,
@@ -100,7 +105,12 @@ def _normalize_dynamic(payload_len: int, raw: Any) -> List[Dict[str, Any]]:
         op = item.get("op")
         if op not in _DYNAMIC_OPS:
             raise ValueError(f"{where}.op 必须是 {'/'.join(_DYNAMIC_OPS)} 之一")
-        allowed = _TIME_KEYS if op == "TIME_ACCUMULATOR" else _COUNTER_KEYS
+        if op == "TIME_ACCUMULATOR":
+            allowed = _TIME_KEYS
+        elif op == "TIME_EPOCH":
+            allowed = _EPOCH_KEYS
+        else:
+            allowed = _COUNTER_KEYS
         unknown = set(item) - allowed
         if unknown:
             raise ValueError(f"{where} 未知字段: {', '.join(sorted(unknown))}")
@@ -113,7 +123,16 @@ def _normalize_dynamic(payload_len: int, raw: Any) -> List[Dict[str, Any]]:
             raise ValueError(f"{where} 超出 payload 范围")
         if item.get("field_id") is not None:
             entry["field_id"] = str(item["field_id"])
-        if op == "TIME_ACCUMULATOR":
+        if op == "TIME_EPOCH":
+            # R23 (§8.52 排期): 绝对时间戳 —— unit 归一成小写 s/ms（缺省 s，与
+            # 编码器/前端同口径）；探针墙钟取固定时刻（与 unit 无关），只用来验证
+            # 编码产物定宽 = byte_len（同上 TIME_ACCUMULATOR 的保存时试算）。
+            unit = item.get("unit", "s")
+            if not isinstance(unit, str) or unit.lower() not in ("s", "ms"):
+                raise ValueError(f"{where}.unit 必须是 s 或 ms")
+            entry["unit"] = unit.lower()
+            probe_now = 1_700_000_000_000.0  # 固定探针墙钟（保存时验证定宽）
+        elif op == "TIME_ACCUMULATOR":
             base = item.get("base_time")
             if not isinstance(base, str) or not base:
                 raise ValueError(f"{where}.base_time 必填（ISO 时间串）")

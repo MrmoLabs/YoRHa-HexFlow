@@ -1,0 +1,13 @@
+[
+  {"unit": "s", "now_ms": 1700000000000, "byte_len": 4, "expected": "6553F100"},
+  {"unit": "s", "now_ms": 1700000000999, "byte_len": 4, "expected": "6553F100"},
+  {"unit": "s", "now_ms": 1700000000000, "byte_len": 2, "expected": "F100"},
+  {"unit": "s", "now_ms": 1700000007000, "byte_len": 1, "expected": "07"},
+  {"unit": "s", "now_ms": 1700000000000, "byte_len": 8, "expected": "000000006553F100"},
+  {"unit": "s", "now_ms": 0, "byte_len": 4, "expected": "00000000"},
+  {"unit": "ms", "now_ms": 1700000000123, "byte_len": 8, "expected": "0000018BCFE5687B"},
+  {"unit": "ms", "now_ms": 1700000000123, "byte_len": 4, "expected": "CFE5687B"},
+  {"unit": "ms", "now_ms": 0, "byte_len": 8, "expected": "0000000000000000"},
+  {"unit": "MS", "now_ms": 1700000000123, "byte_len": 8, "expected": "0000018BCFE5687B"},
+  {"unit": "s", "now_ms": 1735689600000, "byte_len": 4, "expected": "67748580"}
+]

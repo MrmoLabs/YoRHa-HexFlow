@@ -15,6 +15,10 @@
 //   floor((now − base_time)/1000) 墙钟秒数、AUTO_COUNTER → (Current+Step)%Max,
 //   in InstructionEncoder.js branches + orchestrator.encode_time_accumulator /
 //   encode_auto_counter; now 可注入（FE opts.now ↔ BE fields_to_blocks(now=…)）。
+// - R23 (TIME_EPOCH 绝对时间戳, §8.52 挂账 ①) → 走同一条 now 注入通道：
+//   unit=s|ms（缺省 s）→ floor → 通用整数路径定宽截高位，与 BE
+//   encode_time_epoch 的 `& mask` byte-equal。位宽不够截低位不计新限制
+//   （4 字节秒值覆盖到 2106、毫秒需 ≥5 字节）。
 // See PROJECT_HANDOVER.md §7. This module stays the SSOT for any FUTURE
 // encoder limitation: an entry + ref-mapping here flows to the panel banner,
 // ⚠ badges and save-time validation. Display-only metadata: annotating limits

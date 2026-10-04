@@ -108,8 +108,8 @@ const overlapsChecksum = (region, fieldStart, fieldEnd) => region[0] < fieldEnd 
  *
  * 语义逐条镜像 InstructionEncoder：动态门槛 = op 原名 + params.type
  * ''/'number'（raw 指令才保有原 op；normalizeRunnerInstruction 会把
- * TIME_ACCUMULATOR 映射为 TIME_CUMULATIVE、AUTO_COUNTER 映射为 INPUT，
- * 故本函数与编码一律走 raw 指令）；COUNTER 的 Current 取 computed >
+ * TIME_ACCUMULATOR 映射为 TIME_CUMULATIVE、AUTO_COUNTER 映射为 INPUT、
+ * TIME_EPOCH 保身份直通 —— 故本函数与编码一律走 raw 指令）；COUNTER 的 Current 取 computed >
  * input > 静态 value > start_val（跨发送不自增，计划为冻结模板的确定性
  * 重算，状态机不在计划内）；checksum 只认 algorithm（与编码器同源，缺省
  * CRC_16_MODBUS）、refs 按数组顺序生成区间、找不到的 refs 跳过。
@@ -152,6 +152,17 @@ export function buildPlan(instruction, inputs, computedValues, byteMap) {
                 offset: span.start,
                 byte_len: byteLen,
                 base_time: base
+            });
+        } else if (field.op_code === 'TIME_EPOCH') {
+            // R23 (§8.52 排期 · 挂账 ①): 绝对时间戳 —— 无 base_time，只有 unit
+            // （s|ms，缺省 s），发送时按墙钟重算；unit 归一成小写进计划（BE
+            // sequence_plan 同 toLowerCase 口径，'MS' 与 'ms' 等价）。
+            dynamic.push({
+                field_id: field.id,
+                op: 'TIME_EPOCH',
+                offset: span.start,
+                byte_len: byteLen,
+                unit: String(params.unit ?? 's').toLowerCase() === 'ms' ? 'ms' : 's'
             });
         } else if (field.op_code === 'AUTO_COUNTER') {
             const hasCur = params.value !== undefined && params.value !== null && params.value !== '';

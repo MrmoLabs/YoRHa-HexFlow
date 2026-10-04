@@ -74,7 +74,10 @@ const processFields = (items) => {
                 return {
                     id: f.id,
                     name: f.name || f.label,
-                    op_code: (keepKindOp || ['LENGTH_CALC', 'CHECKSUM_CRC', 'HEX_RAW', 'BITFIELD', 'TIME_CUMULATIVE', 'TIME_ACCUMULATOR'].includes(op) || type === 'time_cumulative') ? ((keepKindOp || ['LENGTH_CALC', 'CHECKSUM_CRC', 'HEX_RAW', 'BITFIELD'].includes(op)) ? op : 'TIME_CUMULATIVE') : (isInput ? 'INPUT' : (isCalculated ? 'CALCULATED' : 'FIXED')),
+                    // R23: TIME_EPOCH 与 LENGTH_CALC/CHECKSUM 同列「保身份」——
+                    // 编码分支按 op 门控（InstructionEncoder TIME_EPOCH 分支取
+                    // 墙钟），摊平成 INPUT 即退回静态 value 路径 → 时间戳失效。
+                    op_code: (keepKindOp || ['LENGTH_CALC', 'CHECKSUM_CRC', 'HEX_RAW', 'BITFIELD', 'TIME_CUMULATIVE', 'TIME_ACCUMULATOR', 'TIME_EPOCH'].includes(op) || type === 'time_cumulative') ? ((keepKindOp || ['LENGTH_CALC', 'CHECKSUM_CRC', 'HEX_RAW', 'BITFIELD', 'TIME_EPOCH'].includes(op)) ? op : 'TIME_CUMULATIVE') : (isInput ? 'INPUT' : (isCalculated ? 'CALCULATED' : 'FIXED')),
                     original_op_code: f.op_code, // Preserve original for render logic fallback
                     bits: Array.isArray(f.bits) ? f.bits : [], // Bit layout for BITFIELD packing
                     parameter_config: {

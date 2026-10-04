@@ -23,6 +23,7 @@ import presenceVec from '../../../../vectors/presence.json';
 import repeatVec from '../../../../vectors/repeat.json';
 import stringVec from '../../../../vectors/string.json';
 import timeCounterVec from '../../../../vectors/time_counter.json';
+import timeEpochVec from '../../../../vectors/time_epoch.json';
 import wrapVec from '../../../../vectors/wrap.json';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -46,6 +47,7 @@ const TABLES = {
     repeat: repeatVec,
     string: stringVec,
     time_counter: timeCounterVec,
+    time_epoch: timeEpochVec,
     wrap: wrapVec,
 };
 

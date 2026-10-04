@@ -12,10 +12,10 @@ import { getBlockLimitRefs, ENCODER_LIMITS } from './encoderLimits';
 import { padSpec } from './padSpec';
 import { OP_CODES } from '../constants';
 
-// N1 护栏批（PLAN §8.16 · G5）：编码器已知算子全集 = OP_CODES 15 项（含 N2 的
-// STRING）+ encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/CALCULATED——encoder
-// 各分支仍认识、存量数据可能携带）。全集外的 op_code 落 getFieldBytes 默认整数
-// 路径静默出错。
+// N1 护栏批（PLAN §8.16 · G5）：编码器已知算子全集 = OP_CODES 16 项（含 N2 的
+// STRING、R23 的 TIME_EPOCH）+ encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/
+// CALCULATED——encoder 各分支仍认识、存量数据可能携带）= 21 项。全集外的 op_code
+// 落 getFieldBytes 默认整数路径静默出错。
 // G5 收口（双端硬拦拍板 2026-09-30）：W5 从 warnings 升 errors —— 保存阻断，
 // 与 BE 保存侧 400（routers/instruction.py KNOWN_OPS）同口径逐行同步，改一必改二。
 const KNOWN_OPS = new Set([

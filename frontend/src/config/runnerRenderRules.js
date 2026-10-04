@@ -72,17 +72,24 @@ export const classifyRunnerField = (field = {}) => {
     const params = field.parameter_config || {};
     const originalOp = String(field.original_op_code || '').toUpperCase();
 
-    const isCalculated = field.op_code === 'CALCULATED'
+    // R23 (§8.52 排期 · 挂账 ①): 绝对时间戳 —— 身份认 op_code 与 original_op_code
+    // 两条（normalize 只在「保身份」表里放行 TIME_EPOCH，存量草稿可能已被摊平）。
+    // 走 isCalculated（计算类）而非 TIME_CUMULATIVE：显示取 computedValues 的 hex、
+    // 只读、不挂「点开选时刻」时间选择器（epoch 没有 base_time 可选）。
+    const isEpoch = field.op_code === 'TIME_EPOCH' || originalOp === 'TIME_EPOCH';
+
+    const isCalculated = isEpoch
+        || field.op_code === 'CALCULATED'
         || field.op_code === 'LENGTH_CALC'
         || field.op_code === 'CHECKSUM_CRC'
         || params.formula === 'auto'
         || params.type === 'length'
         || params.type === 'checksum';
 
-    const isTimeCumulative = field.op_code === 'TIME_CUMULATIVE'
+    const isTimeCumulative = !isEpoch && (field.op_code === 'TIME_CUMULATIVE'
         || originalOp === 'TIME_CUMULATIVE'
         || originalOp === 'TIME_ACCUMULATOR'
-        || params.type === 'time_cumulative';
+        || params.type === 'time_cumulative');
 
     // Boolean(): the || chain ends in params.readOnly which may be undefined
     // (original code relied on falsy — coerce so the flag is always a boolean).
@@ -110,7 +117,7 @@ export const classifyRunnerField = (field = {}) => {
     // 另行把闸（无选项造不出下拉），身份（种类章/提示）走 isEnum。
     const isEnum = hasOptions || field.op_code === 'MAPPING' || originalOp === 'MAPPING';
 
-    return { params, originalOp, isCalculated, isTimeCumulative, isFixed, isEditable, hasOptions, isEnum };
+    return { params, originalOp, isEpoch, isCalculated, isTimeCumulative, isFixed, isEditable, hasOptions, isEnum };
 };
 
 // Normalize option values with the SAME rule InstructionEncoder.getInitialValues
@@ -276,7 +283,8 @@ export const collectSemanticItems = (field = {}, ctx = {}) => {
     const items = [
         ['factor', 'FACTOR'], ['offset', 'OFFSET'], ['step', 'STEP'], ['max', 'MAX'],
         ['start_val', 'START'], ['bytes', 'BYTES'], ['max_count', 'MAX LOOP'],
-        ['algorithm', 'ALGO'], ['algo', 'ALGO']
+        // R23: TIME_EPOCH 的 unit（s|ms）—— 不亮出来就看不出发的是秒还是毫秒。
+        ['algorithm', 'ALGO'], ['algo', 'ALGO'], ['unit', 'UNIT']
     ].reduce((acc, [k, label]) => {
         if (k === 'algo' && params.algorithm !== undefined) return acc; // prefer encoder key
         const raw = params[k];
@@ -285,6 +293,12 @@ export const collectSemanticItems = (field = {}, ctx = {}) => {
         acc.push({ text: `${label}=${shown}`, ref: getParamKeyLimitRef(k, field.op_code) });
         return acc;
     }, []);
+
+    // R23 (§8.52 排期 · 挂账 ①): TIME_EPOCH —— unit 缺省 s：算子模板下拉没被点过
+    // 时也要看得出发的是秒还是毫秒（否则语义行整个空掉）。
+    if (classifyRunnerField(field).isEpoch && !params.unit) {
+        items.push({ text: 'UNIT=s', ref: null });
+    }
 
     // 第 15 单：CNT 下帧预览 —— NEXT = 推进后的编码值，与 advanceAutoCounter /
     // 编码端 E1-6 同口径（发送成功后 inputs 被推进，这里实时亮出下一帧会发什么）。
@@ -435,7 +449,7 @@ export const advanceAutoCounter = (field = {}, current) => {
 // 什么算子的字段」。lane 判定复用 classifyRunnerField —— 章说的种类就是输入
 // 实际走的通道，杜绝「章 F32、输入却是 hex 通道」的错位。
 export const resolveRunnerKind = (field = {}) => {
-    const { params, isTimeCumulative, isCalculated, isFixed, isEnum, hasOptions }
+    const { params, isEpoch, isTimeCumulative, isCalculated, isFixed, isEnum, hasOptions }
         = classifyRunnerField(field);
     const ops = runnerOpOf(field);
     const isOp = (...names) => names.some(n => ops.includes(n));
@@ -445,6 +459,9 @@ export const resolveRunnerKind = (field = {}) => {
     // 帧头语义（对齐/包络锚点）从章上消失。
     if (isOp('HEADER', 'TAIL')) return { key: 'HDR', label: 'HDR', title: 'HDR // 帧头/帧尾：固定字节，只读回显（对齐/包络锚点）' };
     if (isFixed) return { key: 'FIX', label: 'FIX', title: 'FIX // 固定字节（定义侧静态值），不可编辑' };
+    // R23 (§8.52 排期 · 挂账 ①): 绝对时间戳先于 TIME 分支 —— 它没有 base_time、
+    // 也不许点开选时刻（当前墙钟由发送时刻决定），讲成「累计时间」会误导。
+    if (isEpoch) return { key: 'EPOCH', label: 'EPOCH', title: 'EPOCH // 绝对时间戳：发送时取当前墙钟（unit = s|ms），只读不参与录入' };
     if (isTimeCumulative) return { key: 'TIME', label: 'TIME', title: 'TIME // 累计时间：base_time + 秒数，点击输入框选时刻' };
     if (isCalculated) {
         if (isOp('LENGTH_CALC') || params.type === 'length') return { key: 'LEN', label: 'LEN', title: 'LEN // 长度字段：引用字段合计自动计算' };

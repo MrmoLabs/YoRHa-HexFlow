@@ -29,7 +29,7 @@
 | 枚举 / 值表 | ✅ | MAPPING（整值枚举）+ 位段 VAL_TABLE（§8.14 优化 2） |
 | 按位标志 / 位段 | ✅ | BITFIELD + 位图 + signed + 标尺（§8.13/8.14） |
 | ASCII 字符串 | ✅ | N2 落地：`STRING` 模板入口（8B/ascii/0x00 默认）+ `byte_len` 定长 pad/截断 + ascii code point / utf8 双模式（孤立代理项 U+FFFD），>0xFF 静态值校验 W6 提醒，双端 byte-equal 向量锚定；存量 `INPUT+type=string` 同吃定长 → G2 已解 |
-| 绝对时间戳（epoch） | ⏸ | 只能 INT_UNSIGNED 手工语义化（TIME_ACCUMULATOR 是增量）→ ~~挂账~~ **已立项 R23（2026-10-03 复议，§8.52）** |
+| 绝对时间戳（epoch） | ✅ | **R23 已落地（2026-10-03，PLAN §8.55）**：新算子 `TIME_EPOCH` 绝对时间戳模板 —— `unit` = s/ms（缺省 s）、发送时取当前墙钟、定宽大端截高位，双端 byte-equal 由共享向量 `vectors/time_epoch.json` 11 行锚定；卡面只读 + `EPOCH` 章，替代手填 INT_UNSIGNED 语义化 epoch（TIME_ACCUMULATOR 仍是增量） |
 | 相对 / 累积时间 | ✅ | TIME_ACCUMULATOR |
 | 计数器（回绕） | ✅ | AUTO_COUNTER start/step/max |
 | 固定 HEX 值 | ✅ | HEX_RAW + 三态录入（§8.13/8.14） |
@@ -91,7 +91,7 @@
 | **G2** | 字符串三连（无入口 / 不定长 / 非 ASCII 脏字节） | ✅ 已解 | §8.16 **N2**（真机验证通过 2026-09-30，第 8 单已提交 `848e248`） |
 | **G3** | 帧字节转义 escaping（后端空 placeholder） | ✅ 已解 | §8.16 **N4**（真机验证通过 2026-09-30，第 10 单已提交 `b7f9fa7`）：层位定案「传输层 · 内核转义后套壳」，配置骑 transport config JSON 零 DDL；**内核域按逻辑字节、壳域按线上字节**；画布与 `/compile/*` 预览仍为逻辑帧，线上字节见发送历史 raw 事件 |
 | **G4** | 填充 / 对齐 | ✅ 已解 | §8.16 **N5**（真机验证通过 2026-09-30，第 11 单已提交 `d8f0d65`）：字段级 `align`（内容起点补到 N 边界）/ `pad_to`（内容末尾补到 N 边界）/ `pad_byte` 骑 `parameter_config` 零 DDL；归一 1..4096 非法 → 0 fail-open（`ALIGN_INVALID`/`PAD_TO_INVALID` 提醒，pad_byte 非法静默 0x00，零 error 不锁保存）；pad 进发射流/偏移尺/LEN/卡宽（卡间空隙即填充字节）、不进长度公式/checksum/byteMap/页脚 LEN（内容口径）；presence 未命中与 repeat=0 不补、LITTLE 反转不涉 pad；FE=BE byte-equal + `/dispatch` 裸发 echo 实测 |
-| **G5** | 未知 op 静默错码无护栏 | ✅ 已解 | §8.16 **N1** FE W5 提醒先行 + **G5 收口双端硬拦**（真机验证通过 2026-10-01，第 12 单已提交 `b715e2b`）：已知全集 20 项双端同源（OP_CODES 15 + encoder legacy 5），FE OP_UNKNOWN 升结构错误（保存阻断 / 卡面 ⛔ / 导入预览拦截）+ BE POST/PUT 保存侧 400（拒绝在任何写入前）；存量 16 指令 × 37 字段全过门不锁历史 |
+| **G5** | 未知 op 静默错码无护栏 | ✅ 已解 | §8.16 **N1** FE W5 提醒先行 + **G5 收口双端硬拦**（真机验证通过 2026-10-01，第 12 单已提交 `b715e2b`）：已知全集 21 项双端同源（OP_CODES 16 + encoder legacy 5，R23 加 `TIME_EPOCH`），FE OP_UNKNOWN 升结构错误（保存阻断 / 卡面 ⛔ / 导入预览拦截）+ BE POST/PUT 保存侧 400（拒绝在任何写入前）；存量 16 指令 × 37 字段全过门不锁历史 |
 | **G6** | STRUCT 创建入口缺失 | ✅ 已定性 | §8.16 N1：正式定为存量兼容、不补模板 |
 | **G7** | float64 可配出但静默错码（FE/BE 还不一致） | ✅ 已按定案落地 → **R5 收口** | §8.16 **N1** 校验提醒摘陷阱（模板不动）→ §8.42 **R5** 双端 float64 编码 + 向量 `f64` 组，提醒收窄到 4/8 以外位宽 |
 
@@ -101,7 +101,7 @@
 > epoch → **R23**、加扰 / 混淆 → **R25**、创建后切 op → **R24**、varint / COBS →
 > **R27 出线 + R28 解包**；后续新缺口仍按维护口径先进本档矩阵再定去向。
 
-- ~~绝对时间戳 epoch 模板（INT_UNSIGNED 手工顶）~~ → **已立项 R23**
+- ~~绝对时间戳 epoch 模板（INT_UNSIGNED 手工顶）~~ → **R23 ✅ 已落地（2026-10-03，PLAN §8.55：新算子 `TIME_EPOCH`）**
 - ~~加扰 / 混淆字段~~ → **已立项 R25**
 - ~~创建后切换 op（删建即可）~~ → **已立项 R24**
 - ~~帧转义之外的组帧族（varint/COBS——已立 §8.14 暂缓，不重复排）~~ → **已立项 R27 + R28**

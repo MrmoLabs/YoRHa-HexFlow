@@ -87,8 +87,9 @@ export const InstructionEncoder = {
      * (containers) are never reversed as a whole — children recurse
      * through this wrapper individually.
      */
-    // `now`（epoch ms，E1-6）贯穿到叶子：TIME_ACCUMULATOR 的墙钟 Current，
-    // encodeInstruction 注入（opts.now），缺省 Date.now()；组递归逐层透传。
+    // `now`（epoch ms，E1-6 / R23）贯穿到叶子：TIME_ACCUMULATOR 的墙钟 Current
+    // 与 TIME_EPOCH 的绝对时间戳都取它，encodeInstruction 注入（opts.now），
+    // 缺省 Date.now()；组递归逐层透传。
     getFieldBytes: function (field, inputs, computedValues, allFields, now) {
         const bytes = this._encodeFieldBytes(field, inputs, computedValues, allFields, now);
         // R1: children 树组（协议容器/合并树）与 fields 组同权 —— 容器整体不做
@@ -109,7 +110,7 @@ export const InstructionEncoder = {
      * NOTE: emits op-semantic (big-endian) byte order — LITTLE reversal lives
      * in the getFieldBytes wrapper. Checksum/refs consumers call this
      * directly so referenced value bytes stay unreversed (matches backend).
-     * `now`（epoch ms）仅 TIME_ACCUMULATOR 消费，其余路径忽略。
+     * `now`（epoch ms）仅 TIME_ACCUMULATOR / TIME_EPOCH 消费，其余路径忽略。
      */
     _encodeFieldBytes: function (field, inputs, computedValues, allFields, now) {
         // N3 (G1): presence 未命中 → 0 字节（组整棵子树；叶被 checksum refs
@@ -196,6 +197,19 @@ export const InstructionEncoder = {
                 const nowMs = Number.isFinite(now) ? now : Date.now();
                 value = Math.floor((nowMs - baseMs) / 1000);
             }
+        }
+
+        // R23 (§8.52 排期 · 挂账 ①): TIME_EPOCH → 绝对 Unix 时间戳（Current 墙钟）。
+        // 无 base_time：unit='ms' 取毫秒、缺省 's' 取秒，floor 后交**通用整数路径**
+        // （abs + 定宽截高位 = BE encode_time_epoch 的 `& mask`，byte-equal）。
+        // inputs/value 不参与（语义即算子描述 "Unix epoch 时间戳（Current）"）；
+        // now 经 encodeInstruction 第 4 参 opts.now 注入、缺省 Date.now()，后端
+        // fields_to_blocks(now=…) 同名同单位 → 双端注入同值 byte-equal。位宽不够
+        // 截低位不报错（4 字节秒值覆盖到 2106、毫秒需 ≥5 字节），同通用整数路径。
+        if (op === 'TIME_EPOCH' && ['', 'number'].includes(String(params.type ?? '').toLowerCase())) {
+            const nowMs = Number.isFinite(now) ? now : Date.now();
+            value = String(params.unit ?? 's').toLowerCase() === 'ms'
+                ? Math.floor(nowMs) : Math.floor(nowMs / 1000);
         }
 
         // E1-6 (B8): AUTO_COUNTER → (Current + Step) % Max（语义即算子描述

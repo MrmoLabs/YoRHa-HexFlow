@@ -31,7 +31,7 @@ export default function RunnerFieldTree({
         const params = field.parameter_config || {};
         // FIX: Robust classification from config/runnerRenderRules.js
         // (re-applied at render time; falls back to preserved original_op_code)
-        const { isCalculated, isTimeCumulative, isEditable, isEnum }
+        const { isEpoch, isCalculated, isTimeCumulative, isEditable, isEnum }
             = classifyRunnerField(field);
 
         const isSelected = selectedFieldId === field.id;
@@ -174,7 +174,7 @@ export default function RunnerFieldTree({
                         max={limits?.max}
                         byteLen={limits?.byteLen}
                         highlight={isCalculated || isTimeCumulative}
-                        suffix={params.unit || (isTimeCumulative ? `${getFieldEpoch(params).getFullYear()}` : '')}
+                        suffix={isEpoch ? (String(params.unit ?? 's').toLowerCase() === 'ms' ? 'ms' : 's') : (params.unit || (isTimeCumulative ? `${getFieldEpoch(params).getFullYear()}` : ''))}
                         placeholder={placeholder}
                         kindLabel={kind.label}
                         kindTitle={kind.title}

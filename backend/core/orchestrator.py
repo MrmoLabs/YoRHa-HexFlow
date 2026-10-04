@@ -376,6 +376,24 @@ def encode_time_accumulator(base_time, now_ms, byte_len: int) -> str:
     return f"{abs(secs) & ((1 << (8 * byte_len)) - 1):0{2 * byte_len}X}"
 
 
+def encode_time_epoch(unit, now_ms, byte_len: int) -> str:
+    """R23 (§8.52 排期): TIME_EPOCH → 绝对 Unix 时间戳，定宽大端。
+
+    与前端 getFieldBytes 的 TIME_EPOCH 分支 byte-equal（改一必改二）：
+    unit='ms' 取墙钟毫秒、其余（缺省 's'）取秒 —— abs 后按位掩到
+    2^(8·byte_len)（与 encode_time_accumulator 的 ``& mask`` 同式），位宽
+    不够即截低位（4 字节秒值覆盖到 2106；毫秒需 ≥5 字节），靠定宽截断而非
+    报错，与通用整数路径同口径。now 非有限 → None（调用方不覆盖 hex_value，
+    保持既有 cfg.hex/zeros 现状，同 encode_time_accumulator 的契约外锚）。
+    """
+    if isinstance(now_ms, bool) or not isinstance(now_ms, (int, float)) \
+            or not math.isfinite(now_ms):
+        return None
+    raw = math.floor(now_ms) if str(unit or "s").lower() == "ms" \
+        else math.floor(now_ms / 1000)
+    return f"{abs(raw) & ((1 << (8 * byte_len)) - 1):0{2 * byte_len}X}"
+
+
 def encode_auto_counter(value, start_val, step, max_val, byte_len: int) -> str:
     """E1-6 (B8): AUTO_COUNTER → (Current + Step) % Max，定宽大端。
 

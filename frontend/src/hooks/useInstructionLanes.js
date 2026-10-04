@@ -206,6 +206,19 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
                     const hex = formatToHex(diffSec, f.byte_len || 4);
                     return { ...f, parameter_config: { ...f.parameter_config, computedValue: hex } };
                 }
+                // 2.5 R23 (§8.52 排期 · 挂账 ①): 绝对时间戳 —— 按当前墙钟出定宽 hex
+                // （unit=s 取秒、ms 取毫秒，缺省 s）；出帧由编码器 TIME_EPOCH 分支在
+                // 发送时刻重算，这里只是卡面预览（同 TIME 的预览性质）。byte_len
+                // 缺省 4（同 TIME 分支）。
+                if (f.op_code === 'TIME_EPOCH') {
+                    const epochMs = Date.now();
+                    const useMs = String(f.parameter_config?.unit ?? 's').toLowerCase() === 'ms';
+                    const hex = formatToHex(
+                        useMs ? Math.floor(epochMs) : Math.floor(epochMs / 1000),
+                        f.byte_len || 4
+                    );
+                    return { ...f, parameter_config: { ...f.parameter_config, computedValue: hex } };
+                }
                 // 3. Auto Counter
                 if (f.op_code === 'AUTO_COUNTER') {
                     const startVal = f.parameter_config?.start_val || 0;

@@ -31,6 +31,9 @@ SEED_TEMPLATES = [
 
     # DYNAMIC
     {"op_code": "TIME_ACCUMULATOR", "name": "时间累积", "category": "DYNAMIC", "description": "Current - BaseTime", "param_template": {"base_time": "1980-01-01T00:00:00"}},
+    # R23 (§8.52 排期): 绝对时间戳 —— 替代「手填 INT_UNSIGNED 语义化 epoch」。
+    # unit 选 s/ms（缺省 s）；无 base_time（没有基准，只有当前墙钟），发送时重算。
+    {"op_code": "TIME_EPOCH", "name": "绝对时间戳", "category": "DYNAMIC", "description": "Unix epoch 时间戳（Current）", "param_template": {"unit": ["s", "ms"]}},
     {"op_code": "AUTO_COUNTER", "name": "自动计数", "category": "DYNAMIC", "description": "(Current+Step)%Max", "param_template": {"start_val": 0, "step": 1, "max": 65535}},
     
     # LOGIC

@@ -28,7 +28,8 @@ import {
 // 打断运行，禁用是 UX 收敛）。
 // 双轨指令处理：表单渲染走 normalized 树（render 语义），编码与计划走 raw
 // op_code——normalizeRunnerInstruction 会把 TIME_ACCUMULATOR 映成
-// TIME_CUMULATIVE、AUTO_COUNTER 映成 INPUT，只有 raw 才与后端发送时重算
+// TIME_CUMULATIVE、AUTO_COUNTER 映成 INPUT（TIME_EPOCH R23 起保身份直通），
+// 只有 raw 才与后端发送时重算
 // byte-equal（计划键集严格同形，改一须核对 utils/sequenceView.js）。
 // CP3 3c (D6-B) 序列封装帧：步骤可选封装配方（编辑器 RECIPE 选择器）——选中
 // 即落草稿步骤 wrap.recipe_id，随 APPLY/保存提交；请求形只收 {recipe_id}

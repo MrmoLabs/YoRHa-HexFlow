@@ -25,6 +25,7 @@ from backend.core.orchestrator import (
     encode_scaled,
     encode_string,
     encode_time_accumulator,
+    encode_time_epoch,
 )
 
 def _presence_hit(f, by_id):
@@ -196,6 +197,16 @@ def fields_to_blocks(fields, now=None):
             # 路径，两端各自现状锚，同 E1-3/E1-4 先例）。
             if str(cfg.get("type") or "").lower() in ("", "number"):
                 sem = encode_time_accumulator(cfg.get("base_time"), now_ms, byte_len)
+                if sem is not None:
+                    hex_value = sem
+        elif op == "TIME_EPOCH" and byte_len > 0 and not kids:
+            # R23 (§8.52 排期): 绝对 Unix 时间戳 —— unit='ms' 取毫秒、缺省 's'
+            # 取秒，与前端 lanes/编码器 TIME_EPOCH 分支同源。now 经
+            # fields_to_blocks(now=… ms) 注入（同 TIME_ACCUMULATOR），双端注入
+            # 同值 → byte-equal；unit 非法值按 's'（算子模板只出 s/ms，收口在
+            # plan/编码器同口径）。now 非有限 → None → 不覆盖 hex_value（同上）。
+            if str(cfg.get("type") or "").lower() in ("", "number"):
+                sem = encode_time_epoch(cfg.get("unit"), now_ms, byte_len)
                 if sem is not None:
                     hex_value = sem
         elif op == "AUTO_COUNTER" and byte_len > 0 and not kids:

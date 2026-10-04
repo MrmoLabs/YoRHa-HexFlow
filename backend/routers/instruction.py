@@ -27,16 +27,16 @@ router = APIRouter(
 )
 
 # G5 收口（双端硬拦拍板 2026-09-30）：保存侧已知算子白名单。
-# 双端同源：FE constants.js OP_CODES 15 项（含 N2 的 STRING）+ encoder legacy
-# 5 项（INPUT/FIXED/HEADER/TAIL/CALCULATED）= 20 项，与 FE utils/validateInstruction.js
-# 的 KNOWN_OPS 逐行同步 —— 改一必改二。存量摸底（只读）：instruction_fields 31 行
-# 9 种 op 全在册 → 取全集硬拦不锁任何历史数据。未知 op 若入库，fields_to_blocks
-# 会静默降级 fixed（编码错码）—— 保存前拒绝（C2 位域校验同位先例）。
+# 双端同源：FE constants.js OP_CODES 16 项（含 N2 的 STRING、R23 的 TIME_EPOCH）
+# + encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/CALCULATED）= 21 项，与 FE
+# utils/validateInstruction.js 的 KNOWN_OPS 逐行同步 —— 改一必改二。存量摸底（只读）：
+# instruction_fields 31 行 9 种 op 全在册 → 取全集硬拦不锁任何历史数据。未知 op 若入库，
+# fields_to_blocks 会静默降级 fixed（编码错码）—— 保存前拒绝（C2 位域校验同位先例）。
 KNOWN_OPS = frozenset({
     "HEX_RAW", "INT_UNSIGNED", "INT_SIGNED", "FLOAT_IEEE", "SCALED_DECIMAL",
     "BCD_CODE", "BITFIELD", "MAPPING", "ARRAY_GROUP", "STRUCT",
     "LENGTH_CALC", "CHECKSUM_CRC", "TIME_ACCUMULATOR", "AUTO_COUNTER",
-    "STRING",
+    "TIME_EPOCH", "STRING",
     "INPUT", "FIXED", "HEADER", "TAIL", "CALCULATED",
 })
 

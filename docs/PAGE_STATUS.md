@@ -93,12 +93,13 @@
 - 页面↔hook 契约显式化（C7）：选项校验抽为 hooks/instructionDataOptions.js（非法选项降级+警告）、hook 全量 JSDoc、页面解构键 ⊆ hook 返回键的静态契约测试。
 - 卡面取值口径：能确定的值直接显示、不确定按字节数出等量 ??（formula.formatUnknown）—— LENGTH_CALC 结果十进制 `${result}B` 直出（公式含未知/无公式同样出等量 ??）、CHECKSUM 空 refs 出等量 ??、TIME_ACCUMULATOR 中央值下方新增 BASE 基准时间小字（如 BASE 2026-09-23 14:00，未配置 → BASE ?；无基准注入等量 ?? 占位、有基准保留 hex 差值口径）；未配置固定/hex 块照显存储值（`0000`→`00 00`、`00`→`00`，`??` 仅限无法确定内容的卡——第 3 轮 #2，与协议页同口径）（卡面取值口径改造，useInstructionLanes/Block 单测锁形）。
 - 对齐/填充（N5 · G4）：属性面板新增「对齐 / 填充 (ALIGN · PAD_TO)」独立区 —— align（内容起点补到 N 字节边界）/ pad_to（内容末尾补到 N 字节边界）/ pad_byte 填充字节 三输入 + 清除 + 口径摘要（未配置 → 不补位），叶子/组两支卡片均可编辑；两键骑 parameter_config 零 DDL，归一 1..4096（bool/非数/越界 → 0 即关闭）fail-open —— 非法 align/pad_to 出 ALIGN_INVALID/PAD_TO_INVALID 提醒（零 error 不锁保存）、pad_byte 非法静默回落 0x00；卡面 A4·P8 角标（title 说明补位语义）、卡片宽度 = 内容 + 归属 pad → 卡间空隙即填充字节且与偏移尺 @ 芯片逐格对齐，顶栏 LEN 与偏移尺按线上字节含 pad（页脚 LEN / PASS0 长度公式 / checksum 参与区 / byteMap 仍为内容口径不变）；presence 未命中与 repeat=0 不补，组 align 首副本前 / pad_to 末副本后补一次、叶逐副本按绝对游标算，LITTLE 反转不涉 pad；双端 byte-equal（test_encode_align 16 条共享向量 + 真机 FE=BE / 裸发 echo 实测）。
-- 算子白名单硬拦（G5 收口 · 双端）：未知 op_code 在保存/导入两侧硬拦 —— 已知全集 = OP_CODES 15 项（含 STRING）+ encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/CALCULATED）= 20 项，双端同源同步（改一必改二）；FE 校验 OP_UNKNOWN 为结构错误 → 保存阻断弹窗 + 卡面 ⛔ 级章 + JSON 导入预览分流拦截（预览即报「校验错误」不落库），BE POST/PUT 保存侧 400（拒绝在任何写入前，直连 API 同拦；PUT 拒绝即存量原样、无半写状态）；大小写敏感逐字匹配（小写 op 双端同拦）、空 op fail-open 不拦；存量字段全过门，硬拦不锁任何历史数据。
+- 算子白名单硬拦（G5 收口 · 双端）：未知 op_code 在保存/导入两侧硬拦 —— 已知全集 = OP_CODES 16 项（含 STRING 与 R23 的 TIME_EPOCH）+ encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/CALCULATED）= 21 项，双端同源同步（改一必改二）；FE 校验 OP_UNKNOWN 为结构错误 → 保存阻断弹窗 + 卡面 ⛔ 级章 + JSON 导入预览分流拦截（预览即报「校验错误」不落库），BE POST/PUT 保存侧 400（拒绝在任何写入前，直连 API 同拦；PUT 拒绝即存量原样、无半写状态）；大小写敏感逐字匹配（小写 op 双端同拦）、空 op fail-open 不拦；存量字段全过门，硬拦不锁任何历史数据。
 - 删除前引用计数（批次二 CP2 · D12/D14②）：删除指令先 GET /instructions/{id}/references（四表计数），确认弹窗按三分口径列受影响项与处置 —— 活配置（协议绑定 / 应答规格）随删一并移入回收站（恢复时一并捞回）、冻结快照（序列步骤）保留并标失效、通讯日志只读保留；确认后后端同事务级联兜底，状态条回显级联条数与留失效条数；计数接口失败降级回原文案、不拦删除。
 - 字段引用测试补强（R18 · PLAN §8.49，2026-10-03，纯测试零代码）：useInstructionData.test 补 6 例钉住**交叉**行为（单条路径已各自覆盖）—— ① 块移动只动草稿：删前计数照常按 id 拉（计数只认后端，不看本地把块挪到第几格），确认后连草稿与脏标一起收口、活动指令切下一条；② 取消确认零 DELETE，且再点删除**重新拉一次计数**（不跨次缓存）；③ 计数拉到但 DELETE 失败 → 状态条报错留台、指令与未保存草稿都还在、脏标不清；④ 块移动 → PUT 400 → **顺序与脏态都不回滚**（P4-2 口径）→ 撤销回移动前 → 重试成功清横幅·脏标·撤销栈（保存 = 新基线）；另补 describeDeletion 只报非零那一段（不写「0 条」）、describeReferences 仅日志被引用不冒充无引用。
 
 ### 后续建议
 - 无 —— 字段引用测试补强已由 R18 落地（PLAN §8.49，2026-10-03：纯测试零代码，FE 1092 → 1098；指令页三条待办已全部出清）。
+- R23 绝对时间戳算子已落地（2026-10-03，PLAN §8.55 / HANDOVER 条目 72）：算子模板新增 TIME_EPOCH「绝对时间戳」（DYNAMIC 组，参数 unit 下拉 s/ms 缺省 s、无 base_time）—— 编码取当前墙钟，floor 后按位宽定宽大端截高位（位宽不够只截低位不报错），设计期卡面走 computedValues 出定宽 hex + EPOCH 章只读 + UNIT 语义行；normalize 保身份不摊平（内外两处 keep 列表同加）；白名单 KNOWN_OPS 20 → 21（FE 经 Object.values(OP_CODES) 自动收录、BE routers/instruction.py 同批改一必改二）；共享向量 vectors/time_epoch.json 11 行双端同读（BE 793 → 808、FE 1127 → 1139）。
 
 ---
 
@@ -237,7 +238,7 @@
 ### 已具备
 - 序列定义 CRUD：新建、重命名/描述与配置（出错即停、读超时）、步骤增删与上移下移、整体保存（PUT 替换），删除需二次确认；步骤列表另可**拖拽排序**（R12，行首 grip 把手 —— 拖完只改草稿序，点「保存定义」才 PUT，运行中拖拽与上移/下移同为禁用口径）。
 - 步骤编辑器：选择指令 → RunnerFieldTree 动态表单填参 → 实时 hex 帧预览，「应用」编译 payload + 冻结 params + 生成发送计划。
-- 计划编译为纯函数 utils/sequenceView.buildPlan（键集与后端 normalize_plan 严格同形；动态字段计数与校验算法摘要徽标；自含重叠/算法不支持等后端会 400 的形态在生成侧降级为冻结并给警告）。
+- 计划编译为纯函数 utils/sequenceView.buildPlan（键集与后端 normalize_plan 严格同形；动态字段计数与校验算法摘要徽标；自含重叠/算法不支持等后端会 400 的形态在生成侧降级为冻结并给警告；动态三值 = TIME_ACCUMULATOR / AUTO_COUNTER / TIME_EPOCH —— R23 起 epoch 条目带 unit（s/ms 归一小写，与后端 _EPOCH_KEYS 键集严格同形）。
 - 运行控制：启动（404 缺失 / 400 无步骤 / 409 忙 分流提示）、停止（恒 200 幂等），运行期定义编辑/删除/启动入口前端禁用。
 - 状态面板 1.5s 轮询：待机/运行/完成/失败/停止徽标、进度 current/total、逐步状态（OK/ERROR/SKIPPED）与 RTT、运行级错误与停止请求标志。
 - 与手动发送互斥：序列运行中 /dispatch、/dispatch/transaction 返回 409（加工页发送错误条可见该文案）。

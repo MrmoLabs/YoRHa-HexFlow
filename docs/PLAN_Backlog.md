@@ -45,7 +45,7 @@
 | R19–R20 | **拍板后追加排期**（§8.50：① 加工页传输展示与切换 = **维持 D9-A 不立项**、② 数据包示例下载 = **动态导出**、③ 档案自定义排序 = **`sort_order` DDL 解禁**） | ✅ **R19 已完成 ✅（§8.50：数据包示例下载 —— 动态出按域导入的 5 域、复用 R17 `?domains=` 子集，零后端改动零 DDL，FE 1098 → 1099）**、**R20 已完成 ✅（§8.50：档案自定义排序 —— `device_profiles.sort_order` 仅新增列 + migration 0004 + `PUT /profiles/order` 整表一次提交，拖完只改草稿序；BE 733 → 743、FE 1099 → 1106；db 同步另开 `chore(db)` 提交）** |
 | §8.51 | **§9.7 ① 出线方向销项**（「有 LEN = 不需要转义」在载荷含定界字节时是否异常）—— 按 §8.35 同套方法**联网取公开规范真帧 + 仓内仿真**：IEC 60870-5-104 / DL/T 645-2007 / Modbus TCP 三条**有长度域**协议 + 本仓三层壳出线反解 + **无 LEN 反例** | ✅ **已完成（2026-10-03，零代码改动、零 DDL、零 `pageStatus` 变更）**：新 `backend/tests/test_wire_delimiter.py` **10 例**，**BE 743 → 753/753**、FE 1106/1106（未碰前端）；**「需真实设备帧」这一类自此无开放项** |
 
-| R21–R28 | **七项复议拍板全数立项**（§8.52：C-5 ② 长度域 BE/LE → R21、C-5 ① CRC 多算法 → R22、挂账 ① epoch → R23、挂账 ③ 切 op → R24、挂账 ② 加扰 → R25、C-1 B 序列分支 → R26（含 DDL 仅新增列）、C-5 ③ varint/COBS 拆两批 → R27 出线 / R28 解包） | 🔄 **R21 已完成 ✅（2026-10-03，§8.53：长度域 `byte_order` —— BE+FE 零 DDL，收侧本就支持、补出线与出口翻译 + 应答声明；**顺带修**设计期 ≥2 字节真值被空格切坏的存量缺陷；新增共享向量 `vectors/length_order.json` 7 行，BE 753 → 768、FE 1106 → 1117）**；**R22 已完成 ✅（2026-10-03，§8.54：CRC16-CCITT / CRC32 / LRC —— 六张白名单 + `operator.py` 算子模板同批成对改；收侧 `ALGO_FIELD_WIDTH` 只加 ≥ 下限、`crc16_modbus` 遗留精确 2 字节逐字不变；共享向量 `vectors/checksum_algo.json` 30 行双端同读，期望值取自 `zlib` / `binascii` 外部真值；BE 768 → 793、FE 1117 → 1127）**；**R23–R28 排期已立、待实现** —— 顺序 = 先小后大、先补不对称再碰解包；加工页传输展示与切换**复议维持 D9-A 不立项** |
+| R21–R28 | **七项复议拍板全数立项**（§8.52：C-5 ② 长度域 BE/LE → R21、C-5 ① CRC 多算法 → R22、挂账 ① epoch → R23、挂账 ③ 切 op → R24、挂账 ② 加扰 → R25、C-1 B 序列分支 → R26（含 DDL 仅新增列）、C-5 ③ varint/COBS 拆两批 → R27 出线 / R28 解包） | 🔄 **R21 已完成 ✅（2026-10-03，§8.53：长度域 `byte_order` —— BE+FE 零 DDL，收侧本就支持、补出线与出口翻译 + 应答声明；**顺带修**设计期 ≥2 字节真值被空格切坏的存量缺陷；新增共享向量 `vectors/length_order.json` 7 行，BE 753 → 768、FE 1106 → 1117）**；**R22 已完成 ✅（2026-10-03，§8.54：CRC16-CCITT / CRC32 / LRC —— 六张白名单 + `operator.py` 算子模板同批成对改；收侧 `ALGO_FIELD_WIDTH` 只加 ≥ 下限、`crc16_modbus` 遗留精确 2 字节逐字不变；共享向量 `vectors/checksum_algo.json` 30 行双端同读，期望值取自 `zlib` / `binascii` 外部真值；BE 768 → 793、FE 1117 → 1127）**；**R23 已完成 ✅（2026-10-03，§8.55：`TIME_EPOCH` 绝对时间戳算子 —— BE `encode_time_epoch` + 序列计划补丁 + `KNOWN_OPS` 20 → 21 + 算子模板，FE 编码分支 / normalize 保身份 / `EPOCH` 只读章 / 计划条目；共享向量 `vectors/time_epoch.json` 11 行双端同读，BE 793 → 808、FE 1127 → 1139）**；**R24–R28 排期已立、待实现** —— 顺序 = 先小后大、先补不对称再碰解包；加工页传输展示与切换**复议维持 D9-A 不立项** |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -2975,7 +2975,7 @@ D15 关联项 1（17 例 + BE 630/630）。**本项无需再拍**，此处只留
 若必须做则分「出线 / 解包」两批。
 **→ 2026-10-03 复议（§8.52）：三项全数立项** —— ② → **R21**（先做）、① → **R22**、
 ③ → **R27 出线 + R28 解包**（沿用「拆两批」口径）。
-**→ ② 已完成 ✅（2026-10-03，§8.53：R21 长度域 `byte_order`）**；余 R22 / R27 / R28 待排。
+**→ ② 已完成 ✅（2026-10-03，§8.53：R21 长度域 `byte_order`）、① 已完成 ✅（同日，§8.54：R22 CRC 多算法）**；余 R27 / R28 待排。
 
 ---
 
@@ -4065,7 +4065,7 @@ LITTLE 先整体还原。**非有限浮点必须在落库前折成字符串**（
 BE/LE = **真机提出即插队** → **2026-10-03 复议提前立项并落地（② R21 ✅ §8.53、① R22 ✅
 §8.54，两项触发式清零）**；③ varint/COBS = **明确不做**；§8.14 余三项同源；
 `BUSINESS_SCENARIOS.md` 挂账三项（epoch 模板 / 加扰混淆 / 创建后切 op）= 软缺口、有替代、不排期。
-**→ 本类已于 2026-10-03 复议全数立项（§8.52，编入 R21–R28）**；唯一维持不立项的是 ③ 加工页传输（D9-A）。
+**→ 本类已于 2026-10-03 复议全数立项（§8.52，编入 R21–R28）**；唯一维持不立项的是 ③ 加工页传输（D9-A）；**挂账 ① epoch → R23 ✅ 已完成（同日，§8.55）**。
 
 **③ 需用户拍板（登记，不自行推进 —— 自主推进到此为止）**：
 
@@ -4291,7 +4291,7 @@ C-4 / §8.49 三·① 与 R18 终态 / §8.27 复跑第 1 项 / §1 新行、`PR
 |---|---|---|---|
 | C-5 ② 长度域 BE / LE | 触发式 | **立项**（最小，收侧已就绪） | **R21** |
 | C-5 ① CRC 多算法（CCITT / CRC32 / LRC） | 触发式 | **立项**（出线 + 收侧三处白名单成对改） | **R22** —— **✅ 已完成（2026-10-03，§8.54）** |
-| 挂账 ① 绝对时间戳 epoch 模板 | 不排期 | **立项** | **R23** |
+| 挂账 ① 绝对时间戳 epoch 模板 | 不排期 | **立项** | **R23** —— **✅ 已完成（2026-10-03，§8.55）** |
 | 挂账 ③ 创建后切换 op | 不排期 | **立项** | **R24** |
 | 挂账 ② 加扰 / 混淆字段 | 不排期 | **立项** | **R25** |
 | C-1 B 序列级分支 | A 不立项 | **立项 B**（C 发前路由**仍不在本列**，要做另议） | **R26** |
@@ -4304,7 +4304,7 @@ C-4 / §8.49 三·① 与 R18 终态 / §8.27 复跑第 1 项 / §1 新行、`PR
 |---|---|---|---|---|
 | **R21** | 长度域 `byte_order`（big / little）—— 修「**能判不能发**」的不对称（`handlers/length.py` 恒大端 vs 收侧 `_normalize_length` 已支持 little）<br>**✅ 已完成（2026-10-03，§8.53）**：length 卡 `byte_order` 下拉 + `LengthHandler` 反转 + `frame_builder`/`toFrameBlocks` 出口翻译 + 应答规格声明 + 设计期卡面同口径；BE 753 → 768、FE 1106 → 1117、共享向量 `length_order.json` 7 行 | BE+FE | 小 | 否 |
 | **R22** | CRC16-CCITT / CRC32 / LRC —— BE `ChecksumHandler` + FE enum / 下拉 / `VALID_ALGOS` + **`response_match` 白名单同批** + 共享向量 2–3 组<br>**✅ 已完成（2026-10-03，§8.54）**：六张白名单 + `operator.py` 算子模板同批；`ALGO_FIELD_WIDTH` 只加 ≥ 下限（`crc16_modbus` 遗留精确 2 字节不动）；共享向量 `checksum_algo.json` 30 行（期望值取自 `zlib` / `binascii` 外部真值）；BE 768 → 793、FE 1117 → 1127 | BE+FE | 中 | 否 |
-| **R23** | epoch 绝对时间戳模板（替代手填 INT_UNSIGNED） | BE+FE | 小 | 否 |
+| **R23** | epoch 绝对时间戳模板（替代手填 INT_UNSIGNED）—— 新算子 `TIME_EPOCH`，`unit` = s/ms（缺省 s）取当前墙钟、定宽大端<br>**✅ 已完成（2026-10-03，§8.55）**：BE `encode_time_epoch` + 序列计划补丁（`_DYNAMIC_OPS` 三值 / `_EPOCH_KEYS`）+ `KNOWN_OPS` 20 → 21 + `operator.py` 算子模板；FE 编码分支 + normalize 保身份 + `EPOCH` 只读章 + 计划条目；共享向量 `time_epoch.json` 11 行双端同读；BE 793 → 808、FE 1127 → 1139 | BE+FE | 小 | 否 |
 | **R24** | 创建后切换 op —— 放开 `op_code` 编辑 + 兼容校验 + 确认回执（现状只能删建重录） | BE+FE | 中 | 否 |
 | **R25** | 加扰 / 混淆字段（异或种子 / 位旋转一类语义化加扰算子） | BE+FE | 中 | 否 |
 | **R26** | 序列级分支：`sequence_steps.condition` **仅新增列** + runner 判执行 / 跳过 + 受限表达式（`== != > < in`，**无 eval**）+ 序列页条件 UI | BE+FE | 大 | **是（仅新增列）** |
@@ -4379,7 +4379,7 @@ yorha-ui 校验器改动文件 0 违规 + 文档同步）+ **一批一提交**�
 - **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`pageStatus.json`
   仅协议页 `availableNow`／`nextSteps` 回填 + `npm run sync:page-status`
 
-**R22 已完成 ✅（§8.54），下一批 → R23 epoch。**
+**R22 已完成 ✅（§8.54）、R23 已完成 ✅（§8.55），下一批 → R24 切 op。**
 
 ---
 
@@ -4441,7 +4441,86 @@ yorha-ui 校验器改动文件 0 违规 + 文档同步）+ **一批一提交**�
 - **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`pageStatus.json`
   协议页 `availableNow`／`nextSteps` 回填 + `npm run sync:page-status`
 
-**下一批：R23 epoch 绝对时间戳模板**（§8.52 排期第 3 批）。
+**R23 epoch 绝对时间戳模板已完成 ✅（§8.55），下一批 → R24 创建后切换 op**（§8.52 排期第 4 批）。
+
+---
+
+### 8.55 R23 `TIME_EPOCH` 绝对时间戳算子：替代手填 INT_UNSIGNED 语义化 epoch
+
+**批次**：2026-10-03 · **BE + FE，零 DDL、`models.py` 未动、`/dispatch` 缺省口径逐字节不变**
+—— §8.52 排期第 3 批（原 `BUSINESS_SCENARIOS.md` 挂账 ①）。现状：想要「绝对 Unix 时间戳」
+只能手填 `INT_UNSIGNED` + 语义化注释（值是死的、发一次就过期），而 `TIME_ACCUMULATOR` 只能出
+**相对**秒数（相对 `base_time`）→ 挂账 ①。
+
+#### 一 · 算子定义（双端同源，改一必改二）
+
+| 项 | 口径 |
+|---|---|
+| `op_code` | `TIME_EPOCH`（`OP_CODES` 第 16 项；`KNOWN_OPS` 20 → **21** —— FE 经 `Object.values(OP_CODES)` 自动收录，BE `routers/instruction.py` 白名单同批 +1） |
+| 参数 | `unit ∈ {s, ms}`，**缺省 `s`**（`operator.py` `param_template = {"unit": ["s", "ms"]}` → FE `inferConfigType` 出数组 → `ParamConfigForm` 渲染 `<select>`；`unit` 在 `models.py` 无同名列、无键冲突） |
+| 取值 | `raw = floor(now_ms / 1000)`（s）或 `floor(now_ms)`（ms）→ `abs(raw) & ((1 << (8 * byte_len)) - 1)` 定宽大端 —— 与 `encode_time_accumulator` 的 `& mask` 同式 |
+| 位宽 | 不够 → **只截低位、不报错**（4 字节秒值覆盖到 2106、毫秒需 ≥5 字节）；富余 → 左侧零填 |
+| `now` | 非有限 / 布尔 / 字符串 → BE `encode_time_epoch` 返 `None`（调用方不覆盖 `hex_value`，保持既有 `cfg.hex`/zeros 现状）、FE 回落 `Date.now()`（同 `TIME_ACCUMULATOR` 既有契约外锚） |
+| 录入 | `inputs` / `value` **不参与**（墙钟压过静态值，同 E1-6 口径） |
+
+#### 二 · 落点
+
+**BE 五处**：
+
+- `core/orchestrator.py` 新增 `encode_time_epoch(unit, now_ms, byte_len) -> str | None`
+  （插在 `encode_auto_counter` 前，标注与 FE 同式）
+- `core/field_blocks.py` 新增 `elif op == "TIME_EPOCH" and byte_len > 0 and not kids:`
+  分支（`type` 闸 + `sem is not None` 才覆盖 `hex_value`，插在 AUTO_COUNTER 分支前）
+- `core/sequence_plan.py` `_DYNAMIC_OPS` 三值 + `_EPOCH_KEYS = {field_id, op, offset,
+  byte_len, unit}` + `_encode_dynamic` 分支 + `allowed` if/elif/else 三段 +
+  `_normalize_dynamic` 分支（`unit` 必须 `s`/`ms`（大小写不敏感，归一小写）、探针墙钟
+  `probe_now = 1_700_000_000_000.0`）
+- `routers/instruction.py` `KNOWN_OPS` + 注释计数 15/20 → 16/21
+- `routers/operator.py` `SEED_TEMPLATES` DYNAMIC 段新增「绝对时间戳」模板（无 `base_time`）
+
+**FE 七处**：
+
+- `constants.js` `OP_CODES.TIME_EPOCH` + `OP_PRIORITY`（DYNAMIC 组内，接在 `AUTO_COUNTER` 后）
+- `utils/InstructionEncoder.js` `TIME_EPOCH` 分支：**只赋 `value`，随后走通用整数路径**
+  （`Math.abs(Math.floor(v)).toString(16).padStart(...).slice(-2n)` 对正值恒等于 BE 的
+  `& mask`），不另起编码轨道 → byte-equal 是结构性的，不靠人肉对齐
+- `components/InstructionForm/normalizeRunnerInstruction.js` **内层与外层 keep 列表同时**
+  加 `TIME_EPOCH` —— 只加内层会被外层闸放行后摊平成 `TIME_CUMULATIVE`、只加外层会落
+  `INPUT`（打字被静默忽略 =「能改但无效」陷阱）
+- `config/runnerRenderRules.js`：`classifyRunnerField` 加 `isEpoch`，**让它走 `isCalculated`
+  而非 `isTimeCumulative`**（→ 只读、不开时间选择器、不写 `base_time`、显示取
+  `computedValues` hex）、`isTimeCumulative = !isEpoch && (...)`、返回对象带 `isEpoch`；
+  `resolveRunnerKind` 加 `EPOCH` 章（先于 `TIME` 分支）；`collectSemanticItems` 增
+  `['unit', 'UNIT']` 且缺省补 `UNIT=s`（不亮就看不出发的是秒还是毫秒）
+- `components/InstructionForm/RunnerFieldTree.jsx` suffix 的 epoch 分支（否则掉进
+  `getFieldEpoch(params).getFullYear()` 显示 `2000`）
+- `hooks/useInstructionLanes.js` 设计期卡面预览（`Date.now()` 出定宽 hex，同 TIME 的预览性质）
+- `utils/sequenceView.js` 计划条目（`unit` 归一小写进 plan，BE `sequence_plan` 同
+  `toLowerCase` 口径）；`pages/Sequences.jsx` / `utils/encoderLimits.js` / `utils/validateInstruction.js`
+  注释同步
+
+#### 三 · 共享向量
+
+新增 `vectors/time_epoch.json`（**11 行**，行形状 `{unit, now_ms, byte_len, expected}`）
+**双端同读** —— `backend/tests/test_time_epoch.py::VECTORS` ↔
+`frontend/src/utils/__tests__/timeEpoch.test.js`；期望值由规范式独立生成，覆盖
+s/ms（含 `MS` 大写等价）× 1/2/4/8 字节（含 1 字节非零低字节堵「恒 00」假绿、截低位、
+左侧零填、epoch 起点 0、毫秒截低 32 位）；`vectorsLoader.test.js` `TABLES` 登记 +
+`vectors/README.md` §3（14 文件 18 表 → **15 文件 19 表**）与 §7 行注归档。
+
+#### 四 · 验收
+
+- **BE 793 → 808/808**（+15：向量逐行 / 出线全链路 2、缺省与大小写 1、截位与零填 2、
+  `now` 契约外 1、计划归一与键集 4、计划补丁字节等长与探针 2、白名单 / 算子模板 / 键集 3；
+  `test_op_whitelist` 清单 20 → 21 同批改名 `is_exactly_21`）
+- **FE 1127 → 1139/1139（75 文件）**（+12：新 `timeEpoch.test.js` 12 例 = 向量 6 +
+  身份与渲染 6；`validateInstruction.test.js` 已知全集列表 20 → 21，例数不增）
+- `npx vite build` EXIT=0 · `npm run lint` EXIT=0 · yorha-ui 校验器改动 js/jsx/json
+  **0 违规** · md 表列数 mismatches=0 · 隐形字符／CRLF／TAB = 0
+- **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`seed.py` **不改**
+  （不新增种子字段）；`processor.py` / `graph.py` / `Blueprint.jsx` 未碰
+
+**下一批：R24 创建后切换 op**（§8.52 排期第 4 批）。
 
 ## 9. 保留勿动（非任务，勿清理）
 

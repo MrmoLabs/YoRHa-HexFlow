@@ -41,7 +41,7 @@ JSON 没有 `Infinity` / `NaN`，而向量里确实要喂这两个值（如 `[Na
   行注见本文末尾「行注归档」。
 - 迁移时已校验：**无任何大于 2⁵³−1 的整数**，JS `Number` 精度无损。
 
-## 3. 表清单（14 文件 / 18 表）
+## 3. 表清单（15 文件 / 19 表）
 
 | JSON | 表 · 行数 | 后端消费 | 前端消费 |
 |---|---|---|---|
@@ -52,6 +52,7 @@ JSON 没有 `Infinity` / `NaN`，而向量里确实要喂这两个值（如 `[Na
 | `float_ieee.json` | `f32` 22 · `f64` 23 | `test_encode_float_ieee.py::VECTORS` / `::VECTORS64` | 同上 E1-4（R5） |
 | `repeat.json` | 11 | `test_encode_repeat.py::VECTORS` | 同上 E1-5 |
 | `time_counter.json` | `time` 5 · `auto` 11 | `test_encode_time_counter.py` | 同上 E1-6 |
+| `time_epoch.json` | 11 | `test_time_epoch.py::VECTORS` | `timeEpoch.test.js` R23 绝对时间戳 |
 | `string.json` | 13 | `test_encode_string.py::VECTORS` | 同上 STRING |
 | `align.json` | 16 | `test_encode_align.py::VECTORS` | `InstructionEncoder.align.test.js` |
 | `presence.json` | `leaf` 13 · `group` 5 | `test_encode_presence.py` | `InstructionEncoder.presence.test.js` |
@@ -259,3 +260,17 @@ JSON 只有一种表达，两端原本的记法差异靠 **3 个稳定适配**�
 - `#2` now < base → -5 → abs
 - `#3` 超宽截断 300 mod 2^8
 - `#4` 90min，空格分隔
+
+### time_epoch.json（R23 · 绝对时间戳）
+
+- `#0` 2023-11-14T22:13:20Z（1700000000 s）4 字节
+- `#1` 同刻带 999 ms → floor 截到整秒（期望同 `#0`）
+- `#2` 2 字节截低 16 位 → `F100`（位宽不够只截低位、不报错）
+- `#3` 1 字节 + 低字节非零（+7 s → `07`，堵「1 字节恒 00」的假绿）
+- `#4` 8 字节左侧零填
+- `#5` epoch 起点 0 → `00000000`
+- `#6` ms 口径 8 字节（1700000000123）
+- `#7` ms 口径 4 字节截低 32 位 → `CFE5687B`
+- `#8` ms 起点 0 → 全 0
+- `#9` `unit` 大写 `MS` → 与 `ms` 等价（双端 `toLowerCase` 同口径）
+- `#10` 2025-01-01T00:00:00Z（1735689600 s）4 字节

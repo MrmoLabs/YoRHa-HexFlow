@@ -20,6 +20,11 @@ export const OP_CODES = {
     CHECKSUM_CRC: 'CHECKSUM_CRC',
     TIME_ACCUMULATOR: 'TIME_ACCUMULATOR',
     AUTO_COUNTER: 'AUTO_COUNTER',
+    // R23 (§8.52 排期 · 挂账 ①): 绝对时间戳 —— 替代「手填 INT_UNSIGNED 语义化
+    // epoch」。无 base_time（只有当前墙钟），unit=s|ms，发送时按墙钟重算。
+    // KNOWN_OPS 经 Object.values(OP_CODES) 自动收录（N1 护栏跟随，BE
+    // routers/instruction.py 的 KNOWN_OPS 同批 20 → 21，改一必改二）。
+    TIME_EPOCH: 'TIME_EPOCH',
     // N2 (G2): 定长文本字段（ascii/utf8 × pad/截断）——G2「字符串三连」的正经
     // 入口。KNOWN_OPS 经 Object.values(OP_CODES) 自动收录（N1 护栏跟随）。
     STRING: 'STRING'
@@ -45,6 +50,7 @@ export const OP_PRIORITY = [
     OP_CODES.BITFIELD,
     OP_CODES.TIME_ACCUMULATOR,
     OP_CODES.AUTO_COUNTER,
+    OP_CODES.TIME_EPOCH,
     OP_CODES.MAPPING,
     OP_CODES.ARRAY_GROUP,
     OP_CODES.LENGTH_CALC,

@@ -2235,7 +2235,8 @@
       R21–R28（🔄 排期已立）** + §8.14 头注 / §8.49 三·② / §8.36 C-1 建议与 C-5 汇总四处
       复议注；`BUSINESS_SCENARIOS.md` 三行状态 `⚪ 挂账` → `⏸ 已立项 R2x` + **挂账清单清零注**。
     - **状态**：**触发式 / 挂账 / 不做清单自此清零**，待办 = **R21 → R28 八批**
-      （**R21 已完成 → 见条目 70**）；仍不立项的只剩加工页传输（D9-A）。
+      （**R21 → 条目 70、R22 → 条目 71、R23 → 条目 72 均已完成 ✅**）；仍不立项的只剩
+      加工页传输（D9-A）。
 
 70. **R21 · 长度域 `byte_order`（big / little）：补「能判不能发」的不对称（PLAN §8.53 · §8.52 排期第 1 批）**
     （2026-10-03，**BE + FE、零 DDL、`models.py` 未动、`/dispatch` 缺省口径逐字节不变**）：
@@ -2315,7 +2316,57 @@
       R22 行标已办 + §8.36 C-5 ① 汇总与 §8.14 补记两处销项注；`vectors/README.md` §3 + §7；
       `BUSINESS_SCENARIOS.md` 校验字段行 `⏸已立` → `✅ 已落地`；`pageStatus.json` 协议页
       `availableNow` / `nextSteps` 回填 + `npm run sync:page-status`；本条。
-    - **状态**：**R22 ✅**；余 **R23 → R28 六批**（下一批 **R23 epoch 绝对时间戳模板**）。
+    - **状态**：**R22 ✅**；**R23 亦已完成 ✅（条目 72）**；余 **R24 → R28 五批**
+      （下一批 **R24 创建后切换 op**）。
+
+72. **R23 · `TIME_EPOCH` 绝对时间戳算子：替代手填 INT_UNSIGNED 语义化 epoch（PLAN §8.55 · §8.52 排期第 3 批）**
+    （2026-10-03，**BE + FE、零 DDL、`models.py` 未动、`/dispatch` 缺省口径逐字不变**）：
+    - **问题**：想要「绝对 Unix 时间戳」只能手填 `INT_UNSIGNED` + 语义化注释（值发一次就过期），
+      `TIME_ACCUMULATOR` 只能出**相对**秒数（相对 `base_time`）→ `BUSINESS_SCENARIOS.md`
+      挂账 ①。
+    - **算子定义（双端同源）**：`op_code = TIME_EPOCH`，参数 `unit ∈ {s, ms}`、**缺省 `s`**
+      （`operator.py` `param_template = {"unit": ["s", "ms"]}` → FE `inferConfigType` 出数组 →
+      `ParamConfigForm` 渲染 `<select>`）；`raw = floor(now_ms/1000)`（s）或 `floor(now_ms)`（ms）
+      → `abs(raw) & ((1 << (8 * byte_len)) - 1)` 定宽大端；**位宽不够只截低位、不报错**
+      （4 字节秒值覆盖到 2106、毫秒需 ≥5 字节）；`now` 非有限 → BE 返 `None`（调用方不覆盖
+      `hex_value`，保持既有 `cfg.hex`/zeros 现状）/ FE 回落 `Date.now()`（同 E1-6 契约外锚）；
+      `inputs` / `value` **不参与**（墙钟压过静态值）。
+    - **BE 五处**：`core/orchestrator.py encode_time_epoch`、`core/field_blocks.py`
+      `TIME_EPOCH` 分支（`type` 闸 + `sem is not None` 才覆盖 `hex_value`，插 AUTO_COUNTER 前）、
+      `core/sequence_plan.py`（`_DYNAMIC_OPS` 三值 + `_EPOCH_KEYS = {field_id, op, offset,
+      byte_len, unit}` + `_encode_dynamic` 分支 + `allowed` 三段 + `_normalize_dynamic` 分支，
+      探针墙钟 `1_700_000_000_000.0`）、`routers/instruction.py KNOWN_OPS` **20 → 21**
+      （注释 15/20 → 16/21）、`routers/operator.py SEED_TEMPLATES` 新增 DYNAMIC 模板
+      （无 `base_time`）。
+    - **FE 七处**：`constants.js`（`OP_CODES` + `OP_PRIORITY`）、`InstructionEncoder.js`
+      **只赋 `value` 后走通用整数路径**（`Math.abs(...).toString(16).padStart().slice(-2n)`
+      对正值恒等于 `& mask` → byte-equal 是结构性的，不靠人肉对齐）、
+      `normalizeRunnerInstruction.js` **内层与外层 keep 列表同加**（只加一处会摊平成
+      `INPUT` / `TIME_CUMULATIVE` → 打字被静默忽略 =「能改但无效」）、`runnerRenderRules.js`
+      （`classifyRunnerField` 增 `isEpoch` **走 `isCalculated` 而非 `isTimeCumulative`** →
+      只读、不开时间选择器、不写 `base_time`、显示取 `computedValues` hex；`resolveRunnerKind`
+      `EPOCH` 章先于 `TIME`；`collectSemanticItems` 增 `UNIT` 且缺省补 `s`）、
+      `RunnerFieldTree.jsx` suffix epoch 分支（否则掉进 `getFieldEpoch().getFullYear()` 显示
+      `2000`）、`useInstructionLanes.js` 设计期卡面预览、`sequenceView.js` 计划条目
+      （`unit` 归一小写，BE 同 `toLowerCase` 口径）；另 `Sequences.jsx` /
+      `encoderLimits.js` / `validateInstruction.js` 注释同步。
+    - **共享向量**：新增 `vectors/time_epoch.json`（**11 行**，行形状 `{unit, now_ms,
+      byte_len, expected}`）**双端同读** —— `backend/tests/test_time_epoch.py` ↔
+      `frontend/.../timeEpoch.test.js`；覆盖 s/ms（含 `MS` 大写等价）× 1/2/4/8 字节（含
+      1 字节非零低字节堵「恒 00」假绿、截低位、左侧零填、epoch 起点 0、毫秒截低 32 位）；
+      `vectorsLoader.test.js` `TABLES` 登记 + `vectors/README.md` §3（14 文件 18 表 →
+      **15 文件 19 表**）与 §7 行注归档。
+    - **验收**：**BE 793 → 808/808**（+15，`test_op_whitelist` 清单同批改名
+      `is_exactly_21`）、**FE 1127 → 1139/1139（75 文件）**（+12）、`npx vite build` EXIT=0、
+      `npm run lint` EXIT=0、yorha-ui 校验器改动 js/jsx/json **0 违规**、md 表列数
+      mismatches = 0、隐形字符 / CRLF / TAB = 0；**零 DDL → 无 `chore(db)`**；`seed.py`
+      **不改**（不新增种子字段）。
+    - **文档同步（同批）**：PLAN **§8.55 新节** + §1 `R21–R28` 行回填（R23 ✅）+ §8.52
+      拍板表与排期表两行标已办 + §8.36 C-5 汇总销项注 + §8.49「剩余项四类分流」尾注 +
+      §8.53／§8.54 尾行推进；`vectors/README.md` §3 + §7；`BUSINESS_SCENARIOS.md`
+      绝对时间戳行 `⏸` → `✅`、挂账清单行与 G5 白名单计数回填；`pageStatus.json` 指令页
+      `availableNow` / `nextSteps` 回填 + `npm run sync:page-status`；本条。
+    - **状态**：**R23 ✅**；余 **R24 → R28 五批**（下一批 **R24 创建后切换 op**）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
