@@ -15,6 +15,9 @@ from backend.core.pad import (
     pad_hex,
     pad_to_pad_len,
 )
+# R27（§8.52 排期 · varint / COBS 出线）：组帧编码 SSOT —— 编码在编排器**发射前**
+# 的树级改写里做，解包（stages 逆向解包 / 应答匹配）是 R28 的范围，本批不碰。
+from backend.core.framing import encode_cobs_hex
 # 帧转义不在编排器（旧占位 `backend.handlers.escape` 已随本批清掉）：N4 拍板
 # 「传输层 · 内核转义后套壳」—— 编排器只出逻辑字节（内容口径），出线时由
 # dispatch / sequence 调 backend/core/escape.py 转义（escape_hex / escape_bytes）。
@@ -73,6 +76,10 @@ class Orchestrator:
         self.flattened_stream: List[Block] = []
 
     def process(self) -> str:
+        # 0. R27 (§8.52): 组帧元素 `cobs` —— 发射前的树级前置改写（由内向外）。
+        #    协议里没有 `cobs` 节点 → 本步零遍历零改写，输出与本批之前逐字节一致（§0）。
+        self._apply_cobs()
+
         # 1. Deep pass (post-order placeholder): children are structural units,
         #    containers emit no bytes of their own.
         for block in self.root_blocks:
@@ -152,6 +159,57 @@ class Orchestrator:
                         cursor += n
 
         return " ".join(final_hex)
+
+    # ------------------------------------------------------------------
+    # R27 (§8.52 排期 · varint / COBS 出线)：组帧元素 `cobs` 的树级前置改写
+    # ------------------------------------------------------------------
+    def _apply_cobs(self) -> None:
+        """把协议森林里的 `cobs` 节点就地换成「定宽 fixed 叶」（由内向外）。
+
+        层位理由：COBS 是**整段子树**的出线编码，属于组帧元素而非传输层转义 ——
+        在发射期**之前**的树上改写，下游 flatten / logic handler / emit /
+        `block_spans` / `total_length` 全部零改动（改写产物就是一棵普通定宽块），
+        这也是「R27 只做编码、不碰解包」能在不动既有 stages 判定的前提下落地的原因。
+        """
+        self._rewrite_cobs(self.root_blocks)
+
+    def _rewrite_cobs(self, nodes: List[Block]) -> None:
+        out: List[Block] = []
+        for node in nodes:
+            if node.children:
+                self._rewrite_cobs(node.children)   # 由内向外：嵌套 cobs 先编码
+            out.append(self._cobs_block(node) if str(node.type) == "cobs" else node)
+        nodes[:] = out
+
+    def _cobs_block(self, node: Block) -> Block:
+        """`cobs` 节点 → 发射子树 + COBS 编码 + 定界 → 定宽 `fixed` 叶。
+
+        - 子树走**同一份** Orchestrator（同 handler / 同 PASS 顺序）→ 内层
+          length/checksum 的 `hex_value` 就地定值，`frame_builder._collect_logic`
+          的分层 LEN/CRC 卡面回显仍取到真值（子树挂在产物叶的 `children` 上，
+          仅作回显：`is_container=False` → 不进主发射流，refs 跨不过编码边界）；
+        - 产物 id 沿用原 cobs 块 id → `block_spans` 里按原 id 查得到出线区间；
+        - `repeat_count` / `align` / `pad_to` 跟到产物叶上（协议侧 `_to_blocks`
+          本就不映射三键，恒为默认值，此处只求不丢语义）。
+        """
+        inner_hex = Orchestrator(list(node.children)).process()
+        wire_hex = encode_cobs_hex(inner_hex, getattr(node.config, "params", None))
+        return Block(
+            id=node.id,
+            type="fixed",
+            label=node.label,
+            byte_length=len(wire_hex) // 2,
+            hex_value=wire_hex,
+            config=None,
+            children=list(node.children or []),
+            is_container=False,
+            is_enabled=node.is_enabled,
+            endianness=node.endianness,
+            repeat_count=node.repeat_count,
+            align=node.align,
+            pad_to=node.pad_to,
+            pad_byte=node.pad_byte,
+        )
 
     def flatten(self) -> List[object]:
         """块森林 → 扁平流（`_PadMark` | `Block`）——发射与**解码共用一份**（改一必改二）。

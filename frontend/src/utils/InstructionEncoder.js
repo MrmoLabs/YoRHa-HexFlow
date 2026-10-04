@@ -1,6 +1,9 @@
 import { evaluateFormula, calculateChecksum, ChecksumAlgo } from './formula';
 import { alignPadLen, padHex, padSpec, padToPadLen } from './padSpec';
 import { isValidPlainHex, scrambleHex } from './scramble';
+// R27（§8.52 排期 · varint / COBS 出线 · §8.59）: 编码 SSOT 与
+// backend/core/framing.py 同形（LEB128 变长长度前缀 + COBS 定界编码），只编码不解包。
+import { encodeCobsHex, encodeVarint, normalizeEncoding, varintWidth } from './framing';
 
 /**
  * Core Logic for the Instruction Processing Engine.
@@ -129,8 +132,13 @@ export const InstructionEncoder = {
         // R1: children 树组（协议容器 / 合并树）与 fields 组同权 —— 后端语义锚
         // datahub.to_block:138 有 kids → container、_flatten_recursive:101 容器
         // 自身字节不入流。
-        const groupChildren = (field.fields && field.fields.length > 0) ? field.fields
-            : (field.children && field.children.length > 0) ? field.children : null;
+        // R27（§8.59）: cobs —— **空子树也算组**（出线 = 0x01 + 定界，不是字面 00），
+        // 故单独取 kids 并让 `[]`（真值）也走组分支，绝不能落到下文叶路径读
+        // hex_value；非 cobs 维持既有「有子才算组」判定。
+        const cobsKids = field.type === 'cobs' ? (field.children || field.fields || []) : null;
+        const groupChildren = cobsKids
+            ?? ((field.fields && field.fields.length > 0) ? field.fields
+                : (field.children && field.children.length > 0) ? field.children : null);
         if (groupChildren) {
             let groupBytes = [];
             // Sort children
@@ -146,6 +154,18 @@ export const InstructionEncoder = {
             if (repeats === 0) return [];
             let out = groupBytes;
             for (let i = 1; i < repeats; i++) out = out.concat(groupBytes);
+            // R27（§8.59）: cobs 组 → 子树字节 COBS 编码 + 定界后才算本块出线
+            // 字节（refs / checksum 引用 cobs **块本身**时按出线字节计，与 BE
+            // 「重写为定宽 fixed 后按出线宽度计」同源；子树**内部** id 跨不过编码
+            // 边界，保存侧双端拒引）。同 getFieldBytes「checksum 引用取未反转
+            // 值字节」的就近原则。
+            if (field.type === 'cobs') {
+                const enc = encodeCobsHex(
+                    out.map((b) => b.toString(16).padStart(2, '0').toUpperCase()).join(''),
+                    field.parameter_config || {}
+                );
+                return enc === null ? [] : this.parseHexBytes(enc);
+            }
             return out;
         }
 
@@ -386,6 +406,16 @@ export const InstructionEncoder = {
             return Array.from(new Uint8Array(farr.buffer)).reverse(); // 平台小端 → 大端
         }
 
+        // R27（§8.52 排期 · varint / COBS 出线 · §8.59）: length 卡
+        // pc.encoding='varint' → LEB128 最小无符号前缀：**不走**下方定宽 padStart、
+        // **不参与** getFieldBytes 的 LITTLE 逆序（字节序中立），分叉点与后端
+        // LengthHandler.format_total 同处。值域外（非整数 / 负 / 超 2^53-1）→ []：
+        // 不发明形态 —— 后端同值 ValueError → 400 拒绝出帧，保存侧 validateProtocol
+        // 拦非法 encoding，UI 路径不可达。
+        if (params.type === 'length' && normalizeEncoding(params) === 'varint') {
+            return encodeVarint(value);
+        }
+
         const hex = Math.abs(Math.floor(value)).toString(16).toUpperCase();
         const targetLen = byteLen * 2;
         // slice(-0) returns the whole string, which is wrong for 0 length. 
@@ -554,7 +584,7 @@ export const InstructionEncoder = {
 
 
         // --- PASS 1: RESOLVE LENGTH_CALC ---
-        allFieldsMap.forEach(field => {
+        const resolveLengths = () => allFieldsMap.forEach(field => {
             const params = field.parameter_config || {};
             // R1 对称闸：指令侧 LENGTH_CALC 算子与协议侧 length 卡（无 op_code，
             // 认 parameter_config.type='length' —— A1 createBlock 初始化保证）
@@ -579,11 +609,44 @@ export const InstructionEncoder = {
                     result = refs.reduce((acc, refId) => acc + (fieldSizes[refId] || 0), 0);
                 }
             }
+            // R27 关联（双端同源 · §8.59）: 协议 length 卡 pc.offset 由 toFrameBlocks
+            // buildLogicConfig / frame_builder._build_logic_config 翻译进 params，
+            // 后端 LengthHandler 恒按 `count + offset` 出线 —— FE 编码侧此前漏加
+            // （UI 不出此键 → 不可达），补齐后同一棵树两端同帧。仅协议 length 卡
+            // 走此分支（指令侧 LENGTH_CALC 无 pc.offset 概念；SCALED 的 offset 是
+            // 另一处语义，被 params.type 闸挡住）。设计期卡面 Σ（protocolTree）仍
+            // 只显示 refs 和 —— 显示口径属另案，不在 R27 范围。
+            if (params.type === 'length' && params.offset !== undefined && params.offset !== null) {
+                const off = Number(params.offset);
+                if (Number.isFinite(off)) result += off;
+            }
             computedValues[field.id] = result;
-            // Update this field's size in the map in case it's referenced later?
-            // Typically Length itself is fixed size (e.g. 2 bytes), so fieldSizes[field.id] is already correct (2).
-            // The *Computed Value* is what changes, not the Field Size.
+            // R27（§8.52 排期 · varint 出线）: varint 卡的**出线宽度**回写
+            // fieldSizes —— 镜像后端 LengthHandler.format_total 的
+            // block.byte_length 回写：出线宽度 ≠ 设计期 byte_length，后到的
+            // refs Σ / checksum 只有取真实宽度两端才同数。值域外（varintWidth
+            // → null）保持设计期宽度，不发明形态（后端同值 ValueError → 400）。
+            if (params.type === 'length' && normalizeEncoding(params) === 'varint') {
+                const width = varintWidth(result);
+                if (Number.isInteger(width) && width > 0) fieldSizes[field.id] = width;
+            }
         });
+        resolveLengths();
+
+        // --- PASS 1.5 (R27): COBS 出线尺寸回填 ---
+        // COBS 的出线宽度依赖子树**实际字节**（子树含 length/算子块时要 PASS1
+        // 先算定值）→ 放 PASS1 之后回填；引用了 cobs 块的 LEN 要拿到新尺寸，故
+        // 回填后再跑一遍 PASS1（Σ 幂等，第二遍只多把 cobs 出线宽度算进 Σ）。
+        // 无 cobs 节点 → 零遍历零回填（与后端 Orchestrator._apply_cobs 的
+        // 「无 cobs 节点零改写」同口径）。
+        const cobsFields = allFieldsMap.filter(f => f.type === 'cobs');
+        if (cobsFields.length) {
+            cobsFields.forEach(f => {
+                const bytes = this._encodeFieldBytes(f, inputs, computedValues, allFieldsMap, undefined);
+                if (bytes && bytes.length) fieldSizes[f.id] = bytes.length;
+            });
+            resolveLengths();
+        }
 
         // --- PASS 2: RESOLVE CHECKSUM & CALC ---
         // Need to respect calculation order. Simple approach: Calculate everything.
@@ -718,7 +781,37 @@ export const InstructionEncoder = {
                     currentByteIndex += gAlign;
                 }
                 for (let c = 0; c < n; c++) {
-                    kids.forEach(k => emitNode(k, 1));
+                    if (field.type === 'cobs') {
+                        // R27（§8.59）: cobs 组 —— 子树字节先在**局部缓冲**里发完
+                        // （游标从 0 起，镜像后端 Orchestrator 子树独立发射的相对
+                        // 游标 → 子树内 align/pad 同口径），再 COBS + 定界并回主流。
+                        // 编码区内子块的 byteMap 区间无意义 → 只记 cobs 块自身
+                        // （后端 block_spans 同样只给 cobs id 的出线区间，画布字节
+                        // 高亮 / 序列视图两端同源）。嵌套 cobs 走同一分支递归自洽。
+                        const savedParts = hexParts;
+                        const savedMap = byteMap;
+                        const savedIdx = currentByteIndex;
+                        hexParts = [];
+                        byteMap = [];
+                        currentByteIndex = 0;
+                        kids.forEach(k => emitNode(k, 1));
+                        const inner = hexParts.join('');
+                        hexParts = savedParts;
+                        byteMap = savedMap;
+                        currentByteIndex = savedIdx;
+                        const enc = encodeCobsHex(inner, field.parameter_config || {});
+                        if (enc !== null) {
+                            hexParts.push(enc);
+                            byteMap.push({
+                                start: currentByteIndex,
+                                end: currentByteIndex + enc.length / 2,
+                                fieldId: field.id
+                            });
+                            currentByteIndex += enc.length / 2;
+                        }
+                    } else {
+                        kids.forEach(k => emitNode(k, 1));
+                    }
                 }
                 const gPadTo = padToPadLen(currentByteIndex, gspec.padTo);
                 if (gPadTo > 0) {

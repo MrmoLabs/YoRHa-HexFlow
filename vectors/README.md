@@ -41,7 +41,7 @@ JSON 没有 `Infinity` / `NaN`，而向量里确实要喂这两个值（如 `[Na
   行注见本文末尾「行注归档」。
 - 迁移时已校验：**无任何大于 2⁵³−1 的整数**，JS `Number` 精度无损。
 
-## 3. 表清单（17 文件 / 21 表）
+## 3. 表清单（18 文件 / 24 表）
 
 | JSON | 表 · 行数 | 后端消费 | 前端消费 |
 |---|---|---|---|
@@ -61,6 +61,7 @@ JSON 没有 `Infinity` / `NaN`，而向量里确实要喂这两个值（如 `[Na
 | `bitfield.json` | `pack` 7 | `test_protocol_bitfield.py::PACK_VECTORS` | `bitGrid.test.js` |
 | `scramble.json` | 14 | `test_scramble.py::VECTORS` | `scramble.test.js` R25 加扰字段 |
 | `condition.json` | 58 | `test_condition.py::VECTORS` | `condition.test.js` R26 序列条件 |
+| `framing.json` | `varint` 14 · `cobs` 16 · `frame` 5 | `test_framing.py` | `framing.test.js` R27 varint / COBS 出线 |
 | `wrap.json` | `main`：children 4 + payloads 1 + expect | `test_frame_builder.py` · `test_wrap_api.py` | `blockMerge.test.js` |
 
 > `wrap.json` 是三处同值场景树（`FA FA / 02 / 01 02 / ED`），迁表前在三个文件里各写一遍。
@@ -318,3 +319,27 @@ JSON 只有一种表达，两端原本的记法差异靠 **3 个稳定适配**�
 - `#35`–`#55` 错误面：类型不可比、`in` 右侧非串非数组、变量未定义、缺运算符、
   多余记号、非法字符、括号与 `&&` 拒收、未闭合字符串 —— **全部 fail-closed**
 - `#56`–`#57` 三条上限：长度 200、记号 64（数组 32 是第二道，记号上限先拦）
+
+### framing.json（R27 · varint / COBS 出线）
+
+三张表只钉**编码** —— 收侧 `stages` 逆向解包与应答匹配属 R28，本批一行不碰、也不进表。
+双端同读（BE `test_framing.py::load_vectors` / FE `framing.test.js`），口径档案
+`backend/core/framing.py` ↔ `frontend/src/utils/framing.js`：两者都不含解码入口（BE 侧由
+`test_module_is_encode_only` 字面钉住，FE 侧解码只活在测试的局部参考解码器里）。
+
+- `varint`（14 行）`v` → LEB128 最小长度无符号 `hex`：`#0` 0 → `00`；`#1`–`#3` 单字节与
+  7/8 位进位边界（`127 → 7F`、`128 → 8001`）；`#5` `255 → FF01`、`#6` `300 → AC02`；
+  `#7`/`#8` 14/15 位边界（`16383 → FF7F`、`16384 → 808001`）；`#9`–`#13` 20/21/28 位
+  与 `1000000`、`2^32-1`。值域上限 `2^53-1`、负数与非整数拒收不进表（各端单测钉）。
+- `cobs`（16 行）`in`（hex，可空）× `term`（`00` / `none`）→ `out`：
+  `#0`/`#1` 空输入两态（`01` / `0100`）；`#2`–`#4` 全零（`00` → `0101`、`0000` → `010101`）；
+  `#5`/`#6` 无零字节（`AABB` → `03AABB`，`00` 定界追加在尾）；`#7`–`#10` 零字节插码与
+  **尾零收束码**（`AA00BB00` → `02AA02BB01`、`00AABB00` → `0103AABB01`）；`#11` 254×`AA`
+  → `FF`+254 字面量（**满块闭合、其后不写收束码**）；`#12` 255×`AA` → 满块 + `02AA`；
+  `#13` 254×`AA`+`00` → `FF`+254 字面量+`0101`；`#14` 同上再跟 `BB` → …+`0102BB`；
+  `#15` 与 `#13` 同输入但 `term=00` → 尾追加 `00`。`out` 正文一律**无 0x00**（定界除外）。
+- `frame`（5 行）整树 → `expect_hex` / `expect_length`：`#0`/`#1` 同树只差 `encoding` 键
+  （`varint` Σ=128 → `8001` 2 字节、出线后 `byte_length` 回写 → 132 字节；缺省 `fixed`
+  按设计期 1 字节出 `80` → 131 字节）；`#2` COBS 包住含长度卡的子树（`05FAFA010700`）；
+  `#3` **`payloads` 非空** —— 载荷注入属发送期 `blockMerge`，FE 编码器测试跳过、BE
+  `build_wrapped` 端到端跑；`#4` 子树含 `00` 字节 → COBS 插码（`0102AA00`）。

@@ -83,6 +83,35 @@ export const BLOCK_PROPERTY_FIELDS = {
             { value: 'big', label: '大端 (BIG)' },
             { value: 'little', label: '小端 (LITTLE)' }
         ]
+    },
+    // R27（§8.52 排期 · varint / COBS 出线）: 长度块出线编码 —— 存点
+    // parameter_config.encoding（fixed | varint，**缺省 fixed = 缺失键**），由
+    // toFrameBlocks buildLogicConfig / frame_builder._build_logic_config 同形翻译进
+    // config.params，出线由 LengthHandler.format_total 分叉（varint = LEB128 最小
+    // 无符号、字节序中立并回写出线宽度）。不选 varint → 与本批之前逐字节一致（§0）。
+    encoding: {
+        key: 'parameter_config.encoding',
+        label: '出线编码 (Encoding)',
+        inputType: 'select',
+        default: 'fixed',
+        options: [
+            { value: 'fixed', label: '定宽 (FIXED)' },
+            { value: 'varint', label: '变长 LEB128 (VARINT)' }
+        ]
+    },
+    // R27（§8.52 排期 · varint / COBS 出线）: COBS 定界字节 —— 存点
+    // parameter_config.terminator（'00' | 'none'，**缺省 '00' = 缺失键**，出线时
+    // 追加 0x00 定界），由 toFrameBlocks mapNode / frame_builder._to_blocks 同形
+    // 翻译进 config.params；后端 terminator_of fail-open（非法值按缺省）。
+    term: {
+        key: 'parameter_config.terminator',
+        label: '定界字节 (Terminator)',
+        inputType: 'select',
+        default: '00',
+        options: [
+            { value: '00', label: '0x00 定界' },
+            { value: 'none', label: '不追加定界' }
+        ]
     }
 };
 
@@ -125,7 +154,9 @@ export const BLOCK_TYPES = [
         // PASS1 求和）。
         // R21: + byte_order 长度字节序下拉（parameter_config.byte_order，出线
         // 大端/小端；缺省 big = 现状逐字节不变）。
-        fields: ['length', 'refs', 'byte_order']
+        // R27: + encoding 出线编码下拉（parameter_config.encoding，缺省 fixed =
+        // 缺失键 = 现状逐字节不变；varint = LEB128 最小无符号，字节序中立）。
+        fields: ['length', 'refs', 'byte_order', 'encoding']
     },
     {
         type: 'checksum',
@@ -145,6 +176,19 @@ export const BLOCK_TYPES = [
         palette: { title: '添加插槽 (Slot)', mainLabel: '插槽', subLabel: 'SLOT', dashed: true },
         // 批次二 (D3): + fit 装填策略下拉（溢出/欠载），存 parameter_config
         fields: ['length', 'fit']
+    },
+    {
+        // R27（§8.52 排期 · varint / COBS 出线 · §8.59）: COBS 定界编码 ——
+        // **组帧元素**（非出线 transport codec，N4 escape 仍在线上层）。包住整棵
+        // 子树，出线时先子树后端发射 → COBS 编码 → 追加定界（pc.terminator，
+        // 缺省 '00'）。末尾追加：palette 分隔线位置不变（R21/批次四同规矩）。
+        // 收侧解包（stages 逆向解包 + 应答匹配）属 R28，本批只做编码。
+        type: 'cobs',
+        defaultLabel: 'COBS',
+        defaultByteLength: 0,
+        nestable: true,
+        palette: { title: '添加定界编码 (COBS)', mainLabel: '定界', subLabel: 'COBS', dashed: false },
+        fields: ['term']
     }
 ];
 
@@ -179,6 +223,10 @@ export const createBlock = (type, makeId) => {
         ...(type === 'length' || type === 'checksum'
             ? { parameter_config: { type, refs: [] } }
             : {}),
+        // R27（COBS 出线）: 新建 cobs 卡初始化 parameter_config.terminator='00'
+        // （追加 0x00 定界；下拉可改 'none'）—— 后端 terminator_of fail-open
+        // 同口径（缺失键 = '00'），此处显式落值只为面板回显。
+        ...(type === 'cobs' ? { parameter_config: { type: 'cobs', terminator: '00' } } : {}),
         // 批次二 (D14①): 新建槽默认 fit_policy=reject（防错；存量槽不迁移、保持
         // 缺省 append/zero_fill，属性面板 fit 下拉可改回）。
         ...(type === 'slot'

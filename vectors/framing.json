@@ -1,0 +1,362 @@
+{
+  "_note": "R27 varint / COBS 出线（§8.52 排期 · §8.59 定案）共享向量：变长长度前缀与定界编码的**出线方向**字节真值。只编码不解包 —— 收侧解包（stages 逆向解包 + 应答匹配）属 R28。varint = LEB128 最小无符号；cobs = 标准 COBS（0xFF 满块254 字面量）+ parameter_config.terminator（\"00\" 缺省 / \"none\"）。",
+  "varint": [
+    {
+      "v": 0,
+      "hex": "00"
+    },
+    {
+      "v": 1,
+      "hex": "01"
+    },
+    {
+      "v": 127,
+      "hex": "7F"
+    },
+    {
+      "v": 128,
+      "hex": "8001"
+    },
+    {
+      "v": 129,
+      "hex": "8101"
+    },
+    {
+      "v": 255,
+      "hex": "FF01"
+    },
+    {
+      "v": 300,
+      "hex": "AC02"
+    },
+    {
+      "v": 16383,
+      "hex": "FF7F"
+    },
+    {
+      "v": 16384,
+      "hex": "808001"
+    },
+    {
+      "v": 65535,
+      "hex": "FFFF03"
+    },
+    {
+      "v": 2097151,
+      "hex": "FFFF7F"
+    },
+    {
+      "v": 2097152,
+      "hex": "80808001"
+    },
+    {
+      "v": 1000000,
+      "hex": "C0843D"
+    },
+    {
+      "v": 4294967295,
+      "hex": "FFFFFFFF0F"
+    }
+  ],
+  "cobs": [
+    {
+      "in": "",
+      "term": "none",
+      "out": "01"
+    },
+    {
+      "in": "",
+      "term": "00",
+      "out": "0100"
+    },
+    {
+      "in": "00",
+      "term": "none",
+      "out": "0101"
+    },
+    {
+      "in": "00",
+      "term": "00",
+      "out": "010100"
+    },
+    {
+      "in": "0000",
+      "term": "none",
+      "out": "010101"
+    },
+    {
+      "in": "AABB",
+      "term": "none",
+      "out": "03AABB"
+    },
+    {
+      "in": "AABB",
+      "term": "00",
+      "out": "03AABB00"
+    },
+    {
+      "in": "AA00BB",
+      "term": "none",
+      "out": "02AA02BB"
+    },
+    {
+      "in": "AA00BB00",
+      "term": "none",
+      "out": "02AA02BB01"
+    },
+    {
+      "in": "00AA",
+      "term": "none",
+      "out": "0102AA"
+    },
+    {
+      "in": "00AABB00",
+      "term": "none",
+      "out": "0103AABB01"
+    },
+    {
+      "in": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "term": "none",
+      "out": "FFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "in": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "term": "none",
+      "out": "FFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA02AA"
+    },
+    {
+      "in": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA00",
+      "term": "none",
+      "out": "FFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0101"
+    },
+    {
+      "in": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA00BB",
+      "term": "none",
+      "out": "FFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA0102BB"
+    },
+    {
+      "in": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA00",
+      "term": "00",
+      "out": "FFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA010100"
+    }
+  ],
+  "frame": [
+    {
+      "name": "varint_len_root",
+      "_note": "LEN 显式 varint：Σ(refs)=128 → LEB128 8001（2 字节出线、设计期 1 → byte_length 回写后下游计数同源）",
+      "children": [
+        {
+          "id": "h",
+          "label": "h",
+          "type": "fixed",
+          "byte_length": 2,
+          "hex_value": "FA FA",
+          "config": {},
+          "children": []
+        },
+        {
+          "id": "l",
+          "label": "l",
+          "type": "length",
+          "byte_length": 1,
+          "hex_value": "00",
+          "config": {},
+          "parameter_config": {
+            "type": "length",
+            "refs": [
+              "p"
+            ],
+            "encoding": "varint"
+          },
+          "children": []
+        },
+        {
+          "id": "p",
+          "label": "p",
+          "type": "fixed",
+          "byte_length": 128,
+          "hex_value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "config": {},
+          "children": []
+        }
+      ],
+      "payloads": [],
+      "expect_hex": "FAFA8001AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expect_length": 132
+    },
+    {
+      "name": "varint_len_fixed_default",
+      "_note": "同树只差一个 encoding 键 → 缺省 fixed：值 128 按设计期 byte_length=1 定宽出 80",
+      "children": [
+        {
+          "id": "h",
+          "label": "h",
+          "type": "fixed",
+          "byte_length": 2,
+          "hex_value": "FA FA",
+          "config": {},
+          "children": []
+        },
+        {
+          "id": "l",
+          "label": "l",
+          "type": "length",
+          "byte_length": 1,
+          "hex_value": "00",
+          "config": {},
+          "parameter_config": {
+            "type": "length",
+            "refs": [
+              "p"
+            ]
+          },
+          "children": []
+        },
+        {
+          "id": "p",
+          "label": "p",
+          "type": "fixed",
+          "byte_length": 128,
+          "hex_value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "config": {},
+          "children": []
+        }
+      ],
+      "payloads": [],
+      "expect_hex": "FAFA80AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expect_length": 131
+    },
+    {
+      "name": "cobs_root",
+      "_note": "内层 FAFA0107（无 0x00）→ 05FAFA0107 + 定界 00",
+      "children": [
+        {
+          "id": "c",
+          "label": "c",
+          "type": "cobs",
+          "byte_length": 0,
+          "hex_value": null,
+          "config": {},
+          "children": [
+            {
+              "id": "ih",
+              "label": "ih",
+              "type": "fixed",
+              "byte_length": 2,
+              "hex_value": "FA FA",
+              "config": {},
+              "children": []
+            },
+            {
+              "id": "il",
+              "label": "il",
+              "type": "length",
+              "byte_length": 1,
+              "hex_value": "00",
+              "config": {},
+              "parameter_config": {
+                "type": "length",
+                "refs": [
+                  "ip"
+                ]
+              },
+              "children": []
+            },
+            {
+              "id": "ip",
+              "label": "ip",
+              "type": "fixed",
+              "byte_length": 1,
+              "hex_value": "07",
+              "config": {},
+              "children": []
+            }
+          ]
+        }
+      ],
+      "payloads": [],
+      "expect_hex": "05FAFA010700",
+      "expect_length": 6
+    },
+    {
+      "name": "cobs_payload_slot",
+      "_note": "槽在 COBS 区内：先注入后编码（内层 FAFA0102）；定界 none",
+      "children": [
+        {
+          "id": "c",
+          "label": "c",
+          "type": "cobs",
+          "byte_length": 0,
+          "hex_value": null,
+          "config": {},
+          "children": [
+            {
+              "id": "ih",
+              "label": "ih",
+              "type": "fixed",
+              "byte_length": 2,
+              "hex_value": "FA FA",
+              "config": {},
+              "children": []
+            },
+            {
+              "id": "s",
+              "label": "s",
+              "type": "slot",
+              "byte_length": 0,
+              "hex_value": null,
+              "config": {},
+              "children": []
+            }
+          ],
+          "parameter_config": {
+            "type": "cobs",
+            "terminator": "none"
+          }
+        }
+      ],
+      "payloads": [
+        "0102"
+      ],
+      "expect_hex": "05FAFA0102",
+      "expect_length": 5
+    },
+    {
+      "name": "cobs_inner_zero",
+      "_note": "内层自带 0x00 → 编码后区段无 0x00，定界 00 收尾",
+      "children": [
+        {
+          "id": "c",
+          "label": "c",
+          "type": "cobs",
+          "byte_length": 0,
+          "hex_value": null,
+          "config": {},
+          "children": [
+            {
+              "id": "iz",
+              "label": "iz",
+              "type": "fixed",
+              "byte_length": 1,
+              "hex_value": "00",
+              "config": {},
+              "children": []
+            },
+            {
+              "id": "ia",
+              "label": "ia",
+              "type": "fixed",
+              "byte_length": 1,
+              "hex_value": "AA",
+              "config": {},
+              "children": []
+            }
+          ]
+        }
+      ],
+      "payloads": [],
+      "expect_hex": "0102AA00",
+      "expect_length": 4
+    }
+  ]
+}

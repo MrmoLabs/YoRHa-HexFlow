@@ -53,11 +53,13 @@
 - 页面划界（D9/D10 · 批次四 4b 文档落位）：本页只管字节帧格式（帧头 / 字段 / 长度 / 校验 / 插槽的结构与字节排布）—— 传输层参数（loopback/TCP/串口、目标地址、超时、重连、设备档案）归通讯调试页 /transport/config 与 transport 抽象，不进协议树（D9-A）；协议保持设备无关（协议行无 device_code），「哪些指令能进此槽」用插槽 accepts 的 device_code 白名单近似表达（D10-A，绑定期后端校验拦截）。
 - 删槽回执不静默（§6.2 槽节点行）：保存期删掉插槽块 → 引用它的绑定 slot_id 悬空 → 置 NULL 并回执 dangling_slots_cleared 计数（不静默回退），对应关系可到数据中心页「绑定矩阵」核对。
 - 长度域字节序（R21 · 2026-10-03，PLAN §8.53）：length 卡属性面板新增「长度字节序 (BYTE ORDER)」下拉（大端 BIG / 小端 LITTLE，缺省大端 = 现状逐字节不变）存 parameter_config.byte_order —— 出线由后端 LengthHandler 按此反转字节对（refs 模式与旧区间模式同步生效），出口翻译 toFrameBlocks ↔ frame_builder 同形（只在 little 写键，params 形状与存量一致）；validateProtocol 新增 W5 BYTE_ORDER_UNKNOWN 枚举外 warning（镜像 W4），自动生成的回显规则声明 byte_order 跟着出线走（原硬编码大端）。收侧 response_spec.length.byte_order 本就支持两值 → 「能判也能发」。设计期卡面同口径：容器中央值里的 length 字段按字节序排（顺带修 ≥2 字节真值被空格切坏的存量显示缺陷 —— 2 字节 CRC/长度不再多出一个 0 字节）。零 DDL，共享向量 vectors/length_order.json 双端同读。
+- 长度域变长前缀与 COBS 组帧（R27 · 2026-10-04，PLAN §8.59）：length 卡属性面板新增「出线编码 (ENCODING)」下拉（定宽 FIXED / 变长 VARINT，缺省 fixed = 缺失键、逐字节不变）存 parameter_config.encoding —— varint 出线为 LEB128 最小无符号（字节序中立、不参与 byte_order 反转；值域 0..2^53-1，负数 / 超界 / 非整数保存期 400），**出线后回写块 byte_length = 实际字节数**（其后 refs Σ 与校验按字节计数同源）；调色板末尾新增组帧元素「COBS」（可嵌套包住整段子树、terminator 下拉 00 / none 缺省 00）—— 编码期由内向外同源子编译后 COBS 定界（单块 ≤254 字面量、满块闭合不写收束码、正文无裸 00），卡面按出线宽出等量 ??；refs 跨不过编码边界：引 COBS 块按其出线字节数计、指其内部叶子保存期 400（FE REFS_INSIDE_COBS 中文可定位）；枚举外值两端 fail-open + FE 提醒（ENCODING_UNKNOWN / TERMINATOR_UNKNOWN，不阻断保存）；偏移尺两遍法回灌 COBS 精确出线宽（**无 COBS 节点零第二遍**），子树含槽则尺寸落未知不谎报；载荷落 COBS 区内 payload_offset 置空、区内不做字节高亮；**解码不进生产代码**（收侧解包属 R28）。零 DDL，共享向量 vectors/framing.json 3 表 35 行双端同读（BE 878 → 917、FE 1213 → 1247）。
 
 ### 后续建议
 - 无 —— 本页人工复测项已全数销（2026-10-02：跨泳道拖拽落点 + slot refs 新语义 4 子项，明细 PLAN §8.28 / HANDOVER 条目 42）；跨页残留项 §9.7 ④「应答是否带转义字节」亦已销（2026-10-02，PLAN §8.35）。
 - R21 长度字节序已落地（2026-10-03，PLAN §8.53 / HANDOVER 条目 70）。
 - R22 CRC 多算法已落地（2026-10-03，PLAN §8.54 / HANDOVER 条目 71）：本页校验算法下拉扩到六值（SUM8 / XOR8 / CRC16-MODBUS / CRC16-CCITT / CRC32 / LRC，缺省 CRC16-MODBUS 不变）；出线 ChecksumHandler（refs 模式与旧区间模式两个 return 同位扩）、出口翻译 toFrameBlocks ↔ frame_builder、收侧 response_match.VALID_ALGOS + ALGO_FIELD_WIDTH 宽度下限（crc16_modbus 遗留「恰好 2 字节」逐字不变）、序列计划冻结链 PLAN_ALGO_FIELD_WIDTH、指令页 CHECKSUM_CRC 算子模板 同批成对改；共享向量 vectors/checksum_algo.json 30 行双端同读。下一批 R23（epoch 绝对时间戳模板），排期见 PLAN §8.52。
+- R27 varint / COBS 出线已落地（2026-10-04，PLAN §8.59 / HANDOVER 条目 76）：length 卡「出线编码」下拉（fixed / varint，缺省 fixed 逐字节不变）+ 调色板新组帧元素 COBS（terminator 00 / none）+ 出线后回写 byte_length + refs 指 COBS 内部保存期 400 + 偏移尺两遍法对齐出线宽；共享向量 vectors/framing.json 3 表 35 行双端同读（BE 878 → 917、FE 1213 → 1247）。下一批 R28（varint / COBS 解包：stages 逆向解码 + 应答匹配），排期见 PLAN §8.52。
 
 ---
 

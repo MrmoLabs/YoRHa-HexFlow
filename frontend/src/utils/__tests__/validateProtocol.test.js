@@ -234,3 +234,72 @@ describe('validateProtocol（协议工作副本结构校验）', () => {
         expect(bad.errors[0].message).toContain('ZZ');
     });
 });
+
+
+// R27 (§8.52 排期 · varint / COBS 出线 · §8.59): 保存侧新增三闸 ——
+//   W6/W7 枚举外只提醒（两端 fail-open 同口径，误报会卡死防抖自动保存）；
+//   refs 指向 COBS 区内部 = error（镜像后端 _validate_refs 400，编码边界跨不过）。
+describe('validateProtocol varint / COBS 出线（R27 §8.59）', () => {
+    const cobs = (id, children = [], extra = {}) => ({
+        id, label: id, type: 'cobs', byte_length: 0, children, ...extra
+    });
+
+    it('W6 length 出线编码枚举外 → ENCODING_UNKNOWN warning；varint/fixed/缺失/空不报', () => {
+        const withEnc = (encoding) => validateProtocol(proto([
+            leaf('h'),
+            leaf('L', {
+                type: 'length', byte_length: 1,
+                parameter_config: {
+                    type: 'length', refs: ['h'],
+                    ...(encoding !== undefined ? { encoding } : {})
+                }
+            })
+        ]));
+        const junk = withEnc('leb');
+        expect(junk.errors).toEqual([]);
+        expect(codes(junk.warnings)).toEqual(['ENCODING_UNKNOWN']);
+        expect(junk.warnings[0].message).toContain('leb');
+        expect(withEnc('varint').warnings).toEqual([]);
+        expect(withEnc('fixed').warnings).toEqual([]);
+        expect(withEnc('VARINT').warnings).toEqual([]); // 两端 lowercase 收
+        expect(withEnc('').warnings).toEqual([]);
+        expect(withEnc(undefined).warnings).toEqual([]);
+    });
+
+    it('W7 cobs 定界字节枚举外 → TERMINATOR_UNKNOWN warning；00/none/缺失不报', () => {
+        const withTerm = (terminator) => validateProtocol(proto([
+            cobs('c', [leaf('x')], terminator !== undefined
+                ? { parameter_config: { type: 'cobs', terminator } }
+                : {})
+        ]));
+        const junk = withTerm('junk');
+        expect(junk.errors).toEqual([]);
+        expect(codes(junk.warnings)).toEqual(['TERMINATOR_UNKNOWN']);
+        expect(junk.warnings[0].message).toContain('junk');
+        expect(withTerm('00').warnings).toEqual([]);
+        expect(withTerm('none').warnings).toEqual([]);
+        expect(withTerm('00').errors).toEqual([]);
+        expect(withTerm(undefined).warnings).toEqual([]);
+    });
+
+    it('refs 指向 COBS 区内部 → error REFS_INSIDE_COBS（镜像后端 400，中文可定位）', () => {
+        const withRefs = (refs) => validateProtocol(proto([
+            cobs('c', [leaf('x')]),
+            leaf('L', { type: 'length', byte_length: 1, parameter_config: { type: 'length', refs } })
+        ]));
+        const inside = withRefs(['x']);
+        expect(codes(inside.errors)).toEqual(['REFS_INSIDE_COBS']);
+        expect(inside.errors[0].blockId).toBe('L');
+        expect(inside.errors[0].message).toContain('x');
+        expect(inside.errors[0].message).toContain('COBS');
+
+        // 引 cobs 块本身（两端都按其出线字节数计）/ 悬空 ref 的既有口径不变
+        expect(withRefs(['c']).errors).toEqual([]);
+        expect(codes(withRefs(['nope']).errors)).toEqual(['REF_DANGLING']);
+    });
+
+    it('cobs 卡（含空子树）形态本身零问题 —— 组语义跳过 hex 闸', () => {
+        expect(validateProtocol(proto([cobs('c', [])]))).toEqual({ errors: [], warnings: [] });
+        expect(validateProtocol(proto([cobs('c', [leaf('x')])]))).toEqual({ errors: [], warnings: [] });
+    });
+});

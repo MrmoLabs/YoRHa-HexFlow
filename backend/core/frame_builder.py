@@ -186,6 +186,46 @@ def _with_byte_order(config, pc, ntype: str):
     return merged
 
 
+def _with_encoding(config, pc, ntype: str):
+    """R27（varint 变长长度前缀）：length 卡 `parameter_config.encoding=varint`
+    → `config.params.encoding`（镜像 toFrameBlocks buildLogicConfig 同名分支）。
+
+    只在值为 varint 时写键 —— 缺省 / fixed / 枚举外的值一律不写，请求形与
+    本批之前逐字节一致（§0 缺省口径，同 R21 `_with_byte_order` 的纪律）。
+    """
+    if ntype != "length" or not isinstance(pc, dict):
+        return config
+    enc = str(pc.get("encoding") or "").strip().lower()
+    if enc != "varint":
+        return config
+    base = config if isinstance(config, dict) else {}
+    params = dict(base.get("params") or {})
+    params["encoding"] = "varint"
+    merged = dict(base)
+    merged["params"] = params
+    return merged
+
+
+def _with_terminator(config, pc, ntype: str):
+    """R27（COBS 定界编码）：cobs 块 `parameter_config.terminator` →
+    `config.params.terminator`（镜像 toFrameBlocks 同名分支）。
+
+    只在值为 none 时写键 —— 缺省 / `00` / 枚举外的值一律不写（→ 后端 fail-open
+    取缺省 `00` 追加 `0x00`），params 形状与「不配定界」时逐字节一致。
+    """
+    if ntype != "cobs" or not isinstance(pc, dict):
+        return config
+    term = str(pc.get("terminator") or "").strip().lower()
+    if term != "none":
+        return config
+    base = config if isinstance(config, dict) else {}
+    params = dict(base.get("params") or {})
+    params["terminator"] = "none"
+    merged = dict(base)
+    merged["params"] = params
+    return merged
+
+
 def _build_logic_config(node, ntype: str, by_id: dict):
     """镜像 toFrameBlocks buildLogicConfig：pc.refs → params.refs 叶子展开
     （容器 ref 展开为其子树叶子、悬空丢弃）；checksum 算法枚举映射；length
@@ -193,7 +233,9 @@ def _build_logic_config(node, ntype: str, by_id: dict):
     （R21）。pc.refs 键缺失 → config 直通（byte_order 仍生效）。"""
     pc = node.get("parameter_config")
     if not isinstance(pc, dict) or not isinstance(pc.get("refs"), list):
-        return _with_byte_order(_js_config(node.get("config")), pc, ntype)
+        return _with_encoding(
+            _with_byte_order(_js_config(node.get("config")), pc, ntype), pc, ntype
+        )
 
     leaf_ids: List[str] = []
 
@@ -201,6 +243,13 @@ def _build_logic_config(node, ntype: str, by_id: dict):
         target = by_id.get(ref)
         if not isinstance(target, dict):
             return  # 悬空 → 丢（前端 encoder find 失败同样跳过）
+        # R27: refs 不下钻 `cobs` 子树 —— 编码边界跨不过（同 slot「不下钻」先例）：
+        # 引用 cobs 块本身 → 计其出线字节数（产物 fixed 叶的 byte_length）；
+        # 引用其内部叶子 → 后端发射流里根本不存在该 id（计 0），保存侧由
+        # _validate_refs_cobs 拒掉，避免两端 Σ 口径不一致。
+        if str(target.get("type")) == "cobs":
+            leaf_ids.append(ref)
+            return
         kids = target.get("children") or []
         if kids:
             for child in kids:
@@ -222,7 +271,7 @@ def _build_logic_config(node, ntype: str, by_id: dict):
     base = node.get("config")
     merged = dict(base) if isinstance(base, dict) else {}
     merged["params"] = params
-    return _with_byte_order(merged, pc, ntype)
+    return _with_encoding(_with_byte_order(merged, pc, ntype), pc, ntype)
 
 
 def _build_bitfield_config(node):
@@ -289,6 +338,9 @@ def _to_blocks(nodes, by_id: dict) -> List[Block]:
             config = _build_logic_config(node, ntype, by_id)
         elif ntype == "bitfield":
             config = _build_bitfield_config(node)
+        elif ntype == "cobs":
+            # R27: 定界选项随 config.params 出线（缺省不写键 → 后端 fail-open 追加 0x00）
+            config = _with_terminator(_js_config(node.get("config")), pc, "cobs")
         else:
             config = _js_config(node.get("config"))
         out.append(Block(

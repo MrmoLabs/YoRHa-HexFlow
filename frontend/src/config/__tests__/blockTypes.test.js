@@ -79,8 +79,8 @@ describe('blockTypes 插槽契约（批次二 D3/D14①）', () => {
 // parameter_config.byte_order（big|little，缺省 big），与收侧
 // response_spec.length.byte_order 同值域（能判也能发）；仅 length 列此字段。
 describe('blockTypes 长度字节序（R21 长度域 BE/LE）', () => {
-    it('length 字段 = length + refs + byte_order（select 分流 + 点路径存 pc）', () => {
-        expect(BLOCK_TYPES.find(b => b.type === 'length').fields).toEqual(['length', 'refs', 'byte_order']);
+    it('length 字段 = length + refs + byte_order + encoding（R27 + select 分流 + 点路径存 pc）', () => {
+        expect(BLOCK_TYPES.find(b => b.type === 'length').fields).toEqual(['length', 'refs', 'byte_order', 'encoding']);
         const f = BLOCK_PROPERTY_FIELDS.byte_order;
         expect(f.inputType).toBe('select');           // 面板通用 select 分支（零 JSX 改动）
         expect(f.key).toBe('parameter_config.byte_order');
@@ -88,12 +88,54 @@ describe('blockTypes 长度字节序（R21 长度域 BE/LE）', () => {
         expect(f.options.map(o => o.value)).toEqual(['big', 'little']);
         // 面板专用字段不提供 parse（同 refs/fit：直接被 inputType 分流消费）
         expect(f.parse).toBeUndefined();
-        expect(getBlockFields('length').map(x => x.id)).toEqual(['length', 'refs', 'byte_order']);
+        expect(getBlockFields('length').map(x => x.id)).toEqual(['length', 'refs', 'byte_order', 'encoding']);
     });
 
     it('checksum 不列 byte_order（R21 拍板范围 = 长度域）；其它块型字段不变', () => {
         expect(BLOCK_TYPES.find(b => b.type === 'checksum').fields).toEqual(['length', 'refs', 'algo']);
         expect(BLOCK_TYPES.find(b => b.type === 'fixed').fields).toEqual(['length', 'hex']);
         expect(BLOCK_TYPES.find(b => b.type === 'slot').fields).toEqual(['length', 'fit']);
+    });
+});
+
+// R27（§8.52 排期 · varint / COBS 出线 · §8.59）：length 卡加出线编码下拉
+// （parameter_config.encoding，缺省 fixed = 缺失键 = 现状逐字节不变）；新组帧元素
+// cobs（可嵌套，palette **末尾追加** → 分隔线位置不变）+ 定界字节下拉。
+describe('blockTypes varint / COBS 出线（R27 §8.59）', () => {
+    it('length.encoding = select + 点路径存 pc、缺省 fixed（枚举 = BE LENGTH_ENCODINGS）', () => {
+        const f = BLOCK_PROPERTY_FIELDS.encoding;
+        expect(f.inputType).toBe('select');
+        expect(f.key).toBe('parameter_config.encoding');
+        expect(f.default).toBe('fixed');
+        expect(f.options.map(o => o.value)).toEqual(['fixed', 'varint']);
+        expect(f.parse).toBeUndefined(); // 面板专用字段不提供 parse（同 byte_order）
+    });
+
+    it('cobs 块型：可嵌套 + 仅列 term 字段，palette 末尾追加（分隔线位置不变）', () => {
+        const types = BLOCK_TYPES.map(t => t.type);
+        expect(types[types.length - 1]).toBe('cobs');
+        const cobs = BLOCK_TYPES.find(t => t.type === 'cobs');
+        expect(cobs.nestable).toBe(true);
+        expect(cobs.fields).toEqual(['term']);
+        expect(isNestable('cobs')).toBe(true);
+        expect(getBlockFields('cobs').map(x => x.id)).toEqual(['term']);
+    });
+
+    it('cobs.term = select + 点路径存 pc、缺省 00（枚举 = BE TERMINATORS 同集）', () => {
+        const f = BLOCK_PROPERTY_FIELDS.term;
+        expect(f.inputType).toBe('select');
+        expect(f.key).toBe('parameter_config.terminator');
+        expect(f.default).toBe('00');
+        expect(f.options.map(o => o.value)).toEqual(['00', 'none']);
+    });
+
+    it('createBlock("cobs") 初始化 terminator=00 + children 空数组；其它块型零影响', () => {
+        const b = createBlock('cobs', () => mk());
+        expect(b.parameter_config).toEqual({ type: 'cobs', terminator: '00' });
+        expect(b.children).toEqual([]);
+        expect(b.byte_length).toBe(0);
+        // 存量块型不被 cobs 分支污染
+        expect(createBlock('fixed', () => mk()).parameter_config).toBeUndefined();
+        expect(createBlock('length', () => mk()).parameter_config).toEqual({ type: 'length', refs: [] });
     });
 });

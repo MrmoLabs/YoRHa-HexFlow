@@ -2538,9 +2538,92 @@
       `BUSINESS_SCENARIOS.md` G1 行补「按结果跳步已解、发前路由 C 仍红」+「按输入值选指令
       模板 / 报文」行注 R26 边界；`pageStatus.json` + `npm run sync:page-status`；本条
       （**含条目 74 的 R25 正文回补**）。
-    - **状态**：**R26 ✅**；余 **R27 → R28 两批**（下一批 **R27 varint / COBS 出线**，
-      **硬前置 = 先证「无变长编码时逐字节不变」**）；提交 = `feat(R26)` 在前 +
+    - **状态**：**R26 ✅**（**R27 出线已于 2026-10-04 完成 ✅ → 见条目 76**）；余 **R28 一批**
+      （下一批 **R28 varint / COBS 解包**，**硬前置 = R27 出线已完成**）；提交 = `feat(R26)` 在前 +
       `chore(db)` 提交 `yorha.db`（Migration 0005）在后。
+
+76. **R27 · varint / COBS 出线：length 卡 `encoding`（LEB128 变长长度）+ 组帧元素 `cobs` —— 只做编码、不碰解包（PLAN §8.59 · §8.52 排期第 7 批）**
+    （2026-10-04，**BE + FE、零 DDL → 无 `chore(db)`**、`processor.py` / `graph.py` /
+    `Blueprint.jsx` 未碰、`/dispatch` 缺省口径逐字节不变）：
+    - **问题**：长度域只有「定宽 1 / 2 字节」一种形态、帧定界只能靠固定外壳 —— §8.36 C-5 ③
+      原判**不做**，§8.52 复议**立项并按原建议拆两批**：**R27 出线（编码）→ R28 解包
+      （`stages` 逆向解码 + 应答匹配）**，本批只做前者。
+    - **硬前置（Phase 0）先于实现**：动代码之前先抓改前金标准、双端钉死「**无变长编码时逐字节
+      不变**」—— BE `test_framing_baseline.py` **14 例** + FE `framingBaseline.test.js` **5 例**。
+      两条能力都必须**显式配置**才生效（`encoding` 缺省 `fixed`、树里没有 `cobs` 节点），
+      故这 19 例是持续看守，不是一次性自证。
+    - **① varint（length 卡新选项）**：`pc.encoding ∈ {fixed, varint}`，缺省 `fixed` = 缺失键 =
+      与本批之前逐字节一致；**LEB128 最小无符号**（`0 → 00`、`127 → 7F`、`128 → 8001`、
+      `300 → AC02`、`2^32-1 → FFFFFFFF0F`）；**字节序中立** → 不走 `apply_byte_order`（R21 的
+      `byte_order` 与它并存也互不相干）；值域 `VARINT_MAX = 2^53-1`，负数 / 超界 / 非整数 →
+      BE `ValueError` → 既有 **400**、FE `encodeVarint` 回 `[]` / `varintWidth` 回 `null`；
+      **出线后回写 `block.byte_length = 实际字节数`** —— 设计期宽度 ≠ 出线宽度，回写后下游
+      refs Σ 与 checksum 计数**同源**（`varint_len_root` 132 字节 vs 缺省 `fixed` 的 131 字节
+      正是这 1 字节）。FE 同口径 PASS1 回填 `fieldSizes` 并**再跑一遍 PASS1**（Σ 幂等、
+      第二遍只多把出线宽算进 Σ）。
+    - **② cobs（协议树新组帧元素）**：`type: "cobs"` 可嵌套包住整段子树、
+      `pc.terminator ∈ {00, none}` 缺省 `00`；BE `Orchestrator.process()` **第 0 步树级前置改写**
+      `_apply_cobs()` —— **由内向外**：子树先经**同源子编译器**发射（与主帧同一套 handler，
+      LEN / CRC 语义完全一致）→ `encode_cobs_hex` → 替换为**定宽 `fixed` 叶**（`id` 沿用、
+      `children` **保留**供 LEN / CRC 卡面回显）；**无 cobs 节点零遍历零改写**。算法单趟、
+      码字节占位回填、单块 ≤ 254 字面量，**码 `0xFF` 满块闭合且其后无字面量时不写收束码**
+      （否则 254 字面量出现两态、非规范）；定界按 `terminator` 追加 → 出线正文**无裸 `0x00`**。
+      FE `emitNode` 组分支**局部缓冲子发射**（`hexParts` / `byteMap` / `currentByteIndex` 换绑、
+      游标从 0 起镜像内层 Orchestrator 相对游标）→ `encodeCobsHex` → 并回主流，子块 byteMap
+      丢弃（**只记 cobs 块自身出线区间**，镜像 BE `block_spans`）。
+    - **解码不进生产代码（「只做编码」的字面执行）**：BE 由 `test_module_is_encode_only` 钉住
+      模块无解码入口；FE 解码只活在测试内的**局部参考解码器**（与实现零共享代码）—— 往返校验
+      用它，生产路径永不 import。
+    - **refs 跨不过编码边界**：`expand` 遇 `cobs` **停钻不下钻** —— 引 cobs 块本身按其**出线
+      字节数**计；指其**内部叶子** → 保存侧 **400**（BE `_validate_refs` 收集 `inside_cobs`，
+      detail `refs cannot reference blocks inside a COBS subtree`；FE 镜像 `REFS_INSIDE_COBS`
+      中文可定位），否则后端按 0 计、前端仍查得到 → 两端 Σ 分歧。枚举外值双端 **fail-open**
+      （回 `fixed` / `00`）+ FE `ENCODING_UNKNOWN` / `TERMINATOR_UNKNOWN` **warning 不阻断**，
+      镜像 `byte_order` 既定口径、防抖自动保存不被误报卡死。
+    - **API 形制与落点**：`backend/core/framing.py` ↔ `frontend/src/utils/framing.js` 编码 SSOT
+      （`normalize_encoding` / `terminator_of` 纯函数只吃 `params`）；取 `Block` 的门面 =
+      `length.encoding_of(block)`，与 R21 `byte_order_of(block)` 同一形制。BE 五处
+      （`framing.py` / `handlers/length.py` / `core/orchestrator.py` / `core/frame_builder.py` /
+      `routers/protocol.py::_validate_refs`）、FE 八处（`config/blockTypes.js` + `utils/framing.js`
+      + `utils/InstructionEncoder.js` + `utils/toFrameBlocks.js` + `utils/validateProtocol.js`
+      + `utils/byteOffsets.js` + `utils/protocolTree.js` + `components/editor/Block.jsx`）。
+    - **设计期偏移尺（两遍法）**：`computeByteOffsets` 新增 `opts.sizeOverrides` 注入精确出线宽
+      —— `length + varint` 按 `varintWidth(Σ + offset)`（任一尺寸未知或值域外 → 未知，不猜）；
+      `cobs` 组的宽取决于**子树字节**（0x00 分布、254 满块）→ `computeProtocolOffsets`
+      **第一遍静态算 → 对每个 cobs 真编码求宽 → 第二遍回灌**，偏移 / 其后起点 / 总长与 BE
+      `block_spans` 同口径；**无 cobs 节点 → 零第二遍**（存量尺寸与总长逐值不变）；子树含
+      **槽**（载荷期才定）→ 注入 `null` = 未知（下游沿既有 `??` 链），**不谎报成 Σ 下界**。
+      COBS 区比 Σ 子**宽** → 游标按**组自身 size 收口**（普通组 Σ 子 ≥ size 走既有 pad 上卷，
+      条件不成立即存量零影响）。
+    - **已知限制 / 存量差异（本批明确不修）**：载荷落 COBS 区内 → `payload_offset = None`；
+      cobs 区内 FE 不做字节高亮（子块区间落在编码后已无对应）；协议卡 UI 无 `align` / `pad`
+      字段（子树内配 pad 仅理论可达）；`SUM_8` 且 `byte_length = 2` 时 BE 出 `01F7`、FE 出
+      `00F7`（`formula.js` 8 位折返）是 **R22 期就存在的双端差异**，按「不改算法」原则两侧各
+      钉现值加注、留待算法对齐批次；FE 编码侧已补 `pc.offset`（此前漏加 → 同一棵树两端同帧），
+      **设计期卡面 Σ 显示**仍不加（显示口径另案）。
+    - **测试与向量**：新增共享向量 `vectors/framing.json` **3 表 35 行**（`varint` 14 ·
+      `cobs` 16 · `frame` 5）双端同读，README §3 → **18 文件 / 24 表**（原 17 / 21）+ §7 三条注、
+      `vectorsLoader` TABLES 登记后目录同集自检过；**双道自检**（期望值既对表、又过独立规范
+      解码器往返）当场揪出 **2 个错向量 + 1 个编码器满块收束码 bug** —— 防「期望值 = 实现自证」。
+      BE 新 `test_framing_baseline.py` **14 例** + `test_framing.py` **25 例**（向量对表 / 值域 /
+      fail-open / 满块边界与往返 / 定界三态 / `LengthHandler` varint 与宽度回写与 byte_order
+      忽略与下游 checksum 计字节 / `Orchestrator` 嵌套与空子树与 refs 引 cobs / frame 向量 /
+      `test_module_is_encode_only`）；FE 新 `framingBaseline.test.js` **5** + `framing.test.js`
+      **17**，既有 `blockTypes.test.js` +4（encoding / cobs / createBlock 种子）、
+      `validateProtocol.test.js` +4（W6 / W7 / `REFS_INSIDE_COBS` / 空 cobs 零问题）、
+      `toFrameBlocks.test.js` +4（encoding 翻译 / 两键并存 / terminator 三态 / expand 停钻）。
+    - **验收**：**BE 878 → 917/917**（+39）、**FE 1213 → 1247/1247（80 文件）**（+34）、
+      `npx vite build` EXIT=0、`npm run lint` EXIT=0、yorha-ui 校验器改动 js/jsx/json
+      **16 文件 0 违规**、`vectors/README.md` 表清单 17 / 21 → **18 / 24**、md 表列数
+      mismatches = 0、隐形字符 / CRLF / TAB = 0、index blob BAD = 0；**零 DDL → 无
+      `chore(db)`**；不引 pytest、**无新 pip 依赖**。
+    - **文档同步（同批）**：PLAN **§8.59 新节** + §1 `R21–R28` 行回填（R27 ✅、余 R28）+
+      §8.52 排期表 R27 行标已办 + §8.36 C-5 两处销项注 + §8.54～§8.58 **五处尾行**推进到
+      R28；`BUSINESS_SCENARIOS.md` 第三节 `varint / COBS 组帧` 行 ⏸ → ✅ + 调研基线「仍暂缓」
+      收窄 + 挂账行补已落地；`pageStatus.json` + `npm run sync:page-status`；本条
+      （**含条目 75 的状态行同步**）。
+    - **状态**：**R27 ✅**；余 **R28 一批**（下一批 **R28 varint / COBS 解包**，**硬前置 =
+      R27 出线已完成**）；提交 = `feat(R27)` 单笔（R27 **零 DDL** → 无 `chore(db)`）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

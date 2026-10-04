@@ -16,6 +16,7 @@ import bitfieldVec from '../../../../vectors/bitfield.json';
 import checksumAlgoVec from '../../../../vectors/checksum_algo.json';
 import conditionVec from '../../../../vectors/condition.json';
 import escapeVec from '../../../../vectors/escape.json';
+import framingVec from '../../../../vectors/framing.json';
 import floatIeeeVec from '../../../../vectors/float_ieee.json';
 import intSignedVec from '../../../../vectors/int_signed.json';
 import lengthOrderVec from '../../../../vectors/length_order.json';
@@ -43,6 +44,7 @@ const TABLES = {
     condition: conditionVec,
     escape: escapeVec,
     float_ieee: floatIeeeVec,
+    framing: framingVec,
     int_signed: intSignedVec,
     length_order: lengthOrderVec,
     little_endian: littleEndianVec,

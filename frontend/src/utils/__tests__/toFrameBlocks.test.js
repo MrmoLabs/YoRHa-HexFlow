@@ -163,3 +163,58 @@ describe('toFrameBlocks（R21: length 字节序出口翻译）', () => {
         expect(b.config.params.byte_order).toBeUndefined();
     });
 });
+
+
+// R27 (§8.52 排期 · varint / COBS 出线 · §8.59): 出口翻译三则 ——
+//   pc.encoding / pc.terminator 只在非缺省时写键（params 形状与存量逐字节一致）；
+//   refs 展开遇 cobs 停钻（编码边界跨不过，镜像后端 frame_builder.expand）。
+describe('toFrameBlocks varint / COBS 出线（R27 §8.59）', () => {
+    const lengthOf = (pc) => toFrameBlocks([
+        leaf('a', { type: 'fixed' }),
+        leaf('L', { type: 'length', parameter_config: { type: 'length', refs: ['a'], ...pc } })
+    ])[1];
+
+    it('pc.encoding=varint → params.encoding=varint；缺省/fixed/枚举外不写键', () => {
+        expect(lengthOf({ encoding: 'varint' }).config.params).toEqual({ refs: ['a'], encoding: 'varint' });
+        expect(lengthOf({ encoding: 'fixed' }).config.params).toEqual({ refs: ['a'] });
+        expect(lengthOf({ encoding: 'leb' }).config.params).toEqual({ refs: ['a'] });
+        expect(lengthOf({}).config.params).toEqual({ refs: ['a'] });
+    });
+
+    it('varint 叠 little 两键并存（端有关丟互不相干）', () => {
+        expect(lengthOf({ encoding: 'varint', byte_order: 'little' }).config.params)
+            .toEqual({ refs: ['a'], byte_order: 'little', encoding: 'varint' });
+    });
+
+    it('cobs：pc.terminator=none → params.terminator=none；缺省/00/枚举外不写键', () => {
+        const cobsOf = (terminator) => toFrameBlocks([{
+            id: 'c', label: 'c', type: 'cobs', byte_length: 0,
+            children: [leaf('x', { type: 'fixed' })],
+            ...(terminator !== undefined ? { parameter_config: { type: 'cobs', terminator } } : {})
+        }])[0];
+        expect(cobsOf('none').config).toEqual({ params: { terminator: 'none' } });
+        expect(cobsOf('00').config).toBeNull();
+        expect(cobsOf('NONE').config).toEqual({ params: { terminator: 'none' } }); // 两端 lowercase 收
+        expect(cobsOf('junk').config).toBeNull();
+        expect(cobsOf(undefined).config).toBeNull();
+        // 类型/子树原样透传（后端 _rewrite_cobs 用子树编码、两侧都保留供 LEN/CRC 卡面回显）
+        expect(cobsOf('none').type).toBe('cobs');
+        expect(cobsOf('none').is_container).toBe(true);
+        expect(cobsOf('none').children.map(c => c.id)).toEqual(['x']);
+    });
+
+    it('refs 展开遇 cobs 停钻：只计 cobs 块自身 id，其子叶不入 refs', () => {
+        const blocks = toFrameBlocks([
+            {
+                id: 'wrap', label: 'w', type: 'container', byte_length: 0,
+                children: [{
+                    id: 'c', label: 'c', type: 'cobs', byte_length: 0,
+                    children: [leaf('inner', { type: 'fixed' })]
+                }]
+            },
+            leaf('L', { type: 'length', parameter_config: { type: 'length', refs: ['wrap', 'c'] } })
+        ]);
+        expect(blocks[1].config.params.refs).toEqual(['c', 'c']); // 容器 ref 撞 cobs 停钻 + 直引 cobs
+        expect(blocks[1].config.params.refs).not.toContain('inner');
+    });
+});

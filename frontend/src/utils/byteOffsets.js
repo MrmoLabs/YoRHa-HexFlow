@@ -1,5 +1,8 @@
 // P1: byte-offset ruler for the instruction editor (see PLAN_InstructionManagement.md §3).
 import { alignPadLen, padSpec, padToPadLen } from './padSpec';
+// R27（§8.52 排期 · varint / COBS 出线 · §8.59）: length 卡出线编码与
+// LEB128 宽度 —— 尺必须跟编码器同宽，否则其后所有偏移错 1..n 字节。
+import { normalizeEncoding, varintWidth } from './framing';
 // Pure function — walks fields by parent_id/sequence and computes each block's
 // start offset plus the instruction's total byte length.
 //
@@ -32,6 +35,14 @@ import { alignPadLen, padSpec, padToPadLen } from './padSpec';
 // size). A missed group zeroes its whole subtree (its children emit nothing),
 // and any complete gate makes the frame VAR (emission follows the run-time
 // value of the ref field).
+//
+// R27 (§8.52 排期 · varint / COBS 出线 · §8.59): 出线宽度口径 ——
+//   · length 卡配 pc.encoding='varint' → size = varintWidth(值)，值 = refs Σ +
+//     pc.offset（与 InstructionEncoder PASS1 / 后端 LengthHandler 同式；任一 ref
+//     尺寸未知或值域外 → 未知，下游沿既有 ?? 链）；
+//   · cobs 组的 COBS 出线宽取决于子树字节（0x00 分布、254 满块），本模块只认
+//     尺寸不编码 → 由 protocolTree.computeProtocolOffsets 两遍法经
+//     opts.sizeOverrides 回灌精确值（编不出 → 注入 null = 未知，不谎报成 Σ 下界）。
 
 const bySequence = (a, b) => (a.sequence ?? 0) - (b.sequence ?? 0);
 
@@ -72,8 +83,14 @@ export function presenceStaticState(field, fieldsById) {
     return String(refVal) === String(pres.expect) ? 'hit' : 'miss';
 }
 
-export function computeByteOffsets(instruction) {
+export function computeByteOffsets(instruction, opts) {
     const fields = Array.isArray(instruction?.fields) ? instruction.fields : [];
+
+    // R27 (§8.59): sizeOverrides —— 调用方注入的**精确出线尺寸**（protocolTree
+    // 两遍法：COBS 区的实际宽度取决于子树字节里的 0x00 分布，本模块只认尺寸不
+    // 编码 → 由 collectDeterministicBytes 算定后回灌）。Map<id, size|null>，
+    // 命中即用；值 null = 该块出线宽不可知（下游沿既有 ?? 链落未知）。
+    const sizeOverrides = (opts && opts.sizeOverrides instanceof Map) ? opts.sizeOverrides : null;
 
     // Build sibling lists per parent (orphan parent_id → root, matching the
     // normalizeInstructionBlocks convention in blockMerge.js).
@@ -119,6 +136,13 @@ export function computeByteOffsets(instruction) {
         if (pState !== null) presenceGated = true; // 完整门 → 发射随运行值变 → VAR
         if (pState === 'miss') { sizeCache.set(f.id, 0); return 0; }
         if (pState === 'unknown') { sizeCache.set(f.id, null); return null; }
+        // R27 (§8.59): 调用方注入的精确出线尺寸优先（COBS 区宽度要真编码才知道；
+        // protocolTree.computeProtocolOffsets 两遍法在第二遍回灌）。
+        if (sizeOverrides && sizeOverrides.has(f.id)) {
+            const forced = sizeOverrides.get(f.id);
+            sizeCache.set(f.id, forced);
+            return forced;
+        }
         const kids = kidsOf.get(f.id) || [];
         let size;
         if (kids.length > 0 || isGroupOp(f)) {
@@ -147,12 +171,34 @@ export function computeByteOffsets(instruction) {
                 if (size !== null) size = sum * reps;
             }
         } else {
-            const n = Number(f.byte_len ?? f.byte_length);
-            if (Number.isFinite(n) && n > 0) {
-                size = n;
+            // R27 (§8.52 排期 · varint / COBS 出线 · §8.59): length 卡配
+            // pc.encoding='varint' → 出线宽度 = varintWidth(值)，值 = refs Σ +
+            // pc.offset（镜像 InstructionEncoder PASS1 与后端 LengthHandler 的
+            // count+offset）。设计期值随 refs 尺寸静态可定 → 精确；任一 ref 尺寸
+            // 未知 → 未知（下游沿既有 ?? 链落 ??）。值域外（varintWidth → null）
+            // 同样落未知 —— 出线期后端 ValueError 拒绝出帧，尺不发明形态。
+            // 悬空 ref 计 0（与 PASS1 `fieldSizes[refId] || 0` 同口径）。
+            if (f.type === 'length' && normalizeEncoding(f.parameter_config) === 'varint') {
+                const refs = Array.isArray(f.parameter_config?.refs) ? f.parameter_config.refs : [];
+                let value = 0;
+                let known = true;
+                for (const refId of refs) {
+                    const target = fieldsById.get(refId);
+                    const refSize = target ? resolveSize(target) : 0;
+                    if (refSize === null) { known = false; break; }
+                    value += refSize;
+                }
+                const off = Number(f.parameter_config?.offset);
+                if (Number.isFinite(off)) value += off;
+                size = known ? varintWidth(value) : null;
             } else {
-                size = hexByteCount(f.parameter_config?.computedValue);
-                if (size !== null) dynamicSized = true; // length derived from the current value
+                const n = Number(f.byte_len ?? f.byte_length);
+                if (Number.isFinite(n) && n > 0) {
+                    size = n;
+                } else {
+                    size = hexByteCount(f.parameter_config?.computedValue);
+                    if (size !== null) dynamicSized = true; // length derived from the current value
+                }
             }
         }
         sizeCache.set(f.id, size);
@@ -222,6 +268,15 @@ export function computeByteOffsets(instruction) {
                 }
             } else if (size !== null && cursor !== null) {
                 cursor += size;
+            }
+
+            // R27 (§8.59): 组出线宽被注入覆盖（COBS 区 =Σ 子宽 + 码字节 + 定界，比
+            // 子宽**大**）→ 游标按组自身 size 收口，其后块起点与总长才与出线同宽。
+            // 普通组 size 恒 = Σ 子（或含 pad 时 Σ 子 + pad ≥ size），条件不成立 →
+            // 既有口径零影响；只在 override 让 size 大于子行进量时生效。
+            if (kids.length > 0 && size !== null && cursor !== null
+                && contentStart !== null && cursor - contentStart < size) {
+                cursor = contentStart + size;
             }
 
             // N5 (G4) pad_to 后置 pad：内容末尾（组 = 末副本后）补到 N 边界。

@@ -135,7 +135,9 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
 
         const isDark = [
             OP_CODES.LENGTH_CALC, OP_CODES.CHECKSUM_CRC, OP_CODES.ARRAY_GROUP,
-            'length', 'checksum', 'container', 'group'
+            // R27（§8.59）: cobs 是结构/组帧元素（可嵌套包子树）→ 与容器同深色，
+            // 不与 fixed 的浅色字面块混淆。
+            'length', 'checksum', 'container', 'group', 'cobs'
         ].includes(op);
 
         if (isDark) return darkStyle;

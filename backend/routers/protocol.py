@@ -35,6 +35,20 @@ def _validate_refs(children) -> None:
 
     walk(children)
 
+    # R27（§8.59）: refs 不得指向 `cobs` 子树**内部** —— 编码边界跨不过（同
+    # slot「不下钻」先例）。COBS 出线后这些 id 不在主发射流里：后端按 0 计、
+    # 前端 resolveDependencies 仍能查到 → 两端 Σ 分歧。引用 COBS 区域本身请
+    # 直接引 `cobs` 块（后端按其出线字节数计）。
+    inside_cobs = set()
+
+    def mark_cobs(items, under=False):
+        for item in items or []:
+            if under:
+                inside_cobs.add(item.id)
+            mark_cobs(item.children, under or str(item.type) == "cobs")
+
+    mark_cobs(children)
+
     for node_id, node in nodes.items():
         pc = node.parameter_config or {}
         if "refs" not in pc:
@@ -49,6 +63,11 @@ def _validate_refs(children) -> None:
                 raise HTTPException(status_code=400, detail="refs cannot reference the block itself")
             if nodes.get(ref) is None:
                 raise HTTPException(status_code=400, detail="refs target not found")
+            if ref in inside_cobs:
+                raise HTTPException(
+                    status_code=400,
+                    detail="refs cannot reference blocks inside a COBS subtree",
+                )
             # ② 锚 slot 放开：槽长定义期不可知（前端设计期 Σ 不注入维持 ??），
             # 发送期由前端 blockMerge 填槽改写为注入块 id 后按真值 Σ。
 

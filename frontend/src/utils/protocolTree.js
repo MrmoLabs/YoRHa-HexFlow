@@ -7,6 +7,9 @@
 import { computeByteOffsets } from './byteOffsets';
 import { isNestable } from '../config/blockTypes';
 import { formatUnknown, calculateChecksum, formatToHex } from './formula';
+// R27（§8.52 排期 · varint / COBS 出线 · §8.59）: 设计期字节真值与出线同口径 ——
+// length 卡按 pc.encoding 出 varint 字节、cobs 组出 COBS+定界字节（只编码不解包）。
+import { encodeCobsHex, encodeVarint, hexToBytes, normalizeEncoding } from './framing';
 import { mapChecksumAlgo } from './normalizeInstruction';
 import { sanitizeValueTable } from './bitMeta';
 import { v4 as uuidv4 } from 'uuid';
@@ -38,10 +41,12 @@ export const findNode = (root, id) => {
 export const computeProtocolOffsets = (protocol) => {
     if (!protocol) return { byId: new Map(), total: 0, exact: true, variable: false };
     const fields = [];
+    const cobsNodes = [];
     const walk = (nodes, parentId) => {
         (nodes || []).forEach((node, index) => {
             const kids = node.children || [];
             const isContainer = isNestable(node.type) || kids.length > 0;
+            if (node.type === 'cobs') cobsNodes.push(node); // R27（§8.59）
             fields.push({
                 ...node,
                 ...(isContainer ? { op_code: node.op_code || 'ARRAY_GROUP' } : {}),
@@ -52,7 +57,22 @@ export const computeProtocolOffsets = (protocol) => {
         });
     };
     walk(protocol.children, null);
-    return computeByteOffsets({ fields });
+    // R27 (§8.59) 两遍法 —— COBS 的出线宽取决于子树字节里的 0x00 分布与 254 满块，
+    // 尺子只认尺寸、不编码，故：
+    //   ① 第一遍按静态尺寸算（cobs 组先落Σ 子宽，只为给第二遍的严格 Σ 当输入）；
+    //   ② 对每个 cobs **真编码**求出线宽（collectDeterministicBytes 含定界）；
+    //   ③ 第二遍回灌精确尺寸 → 偏移尺、其后块起点、总长与 BE block_spans 同口径。
+    // 子树里有槽（载荷期才定字节）/ 任一子块编不出 → 注入 null → 该块与下游落
+    // ??（不谎报成 Σ 下界）。**无 cobs 节点 → 零改写零第二遍**（与后端
+    // Orchestrator._apply_cobs 的零遍历同口径，存量协议字节/尺寸不变）。
+    const base = computeByteOffsets({ fields });
+    if (cobsNodes.length === 0) return base;
+    const overrides = new Map();
+    cobsNodes.forEach(node => {
+        const bytes = collectDeterministicBytes(node, base.byId, protocol);
+        overrides.set(node.id, bytes ? bytes.length : null);
+    });
+    return computeByteOffsets({ fields }, { sizeOverrides: overrides });
 };
 
 // useInstructionLanes.buildLanes 的 children 树版：只对 expandedIds 下钻，
@@ -370,19 +390,27 @@ const bytesToHex = (bytes) => bytes
 
 // collectDeterministicBytes: 严格可确定性 —— 引用内容全部为字面/可计算才出
 // 字节数组，否则 null（卡维持等量 ??）。fixed = 字面 hex；length = Σ 值的大端
-// 字节（超宽由 formatToHex 截低位，与编码器同口径）；checksum = 递归自身
-// refs 求值；容器 = 全子拼接；slot/未配置字面/悬空 → null。
+// 字节（超宽由 formatToHex 截低位，与编码器同口径；R27 配 varint → LEB128
+// 字节）；checksum = 递归自身 refs 求值；容器 = 全子拼接；cobs = 全子拼接后
+// COBS 编码 + 定界（R27 §8.59 出线真值）；slot/未配置字面/悬空 → null。
 // checksum 分支经 collectRefsBytes 反向引用（模块内互递归，调用均发生在模块
 // 初始化之后 → const TDZ 无虞）。
 const collectDeterministicBytes = (node, byId, root) => {
     if (!node) return null;
     const kids = node.children || [];
-    if (kids.length > 0) {
+    // R27（§8.59）: cobs —— 空子树也算组（出线 = 0x01 + 定界，不是字面 00），
+    // 绝不能落到下文 hex_value 分支读建块默认占位 '00'。
+    const isCobs = node.type === 'cobs';
+    if (kids.length > 0 || isCobs) {
         const out = [];
         for (const kid of kids) {
             const b = collectDeterministicBytes(kid, byId, root);
             if (b == null) return null;
             out.push(...b);
+        }
+        if (isCobs) {
+            const hex = encodeCobsHex(bytesToHex(out), node.parameter_config || {});
+            return hex === null ? null : hexToBytes(hex);
         }
         return out;
     }
@@ -390,6 +418,13 @@ const collectDeterministicBytes = (node, byId, root) => {
     if (node.type === 'length') {
         const sigma = strictSigma(node, byId, root);
         if (sigma == null) return null;
+        // R27（varint 出线 · §8.59）: pc.encoding='varint' → LEB128 最小无符号，
+        // **字节序中立**（不走下文 R21 little 反转，也不按 byte_length 定宽）；
+        // 值域外 → null（出线期后端 ValueError 拒绝出帧，尺不发明形态）。
+        if (normalizeEncoding(node.parameter_config) === 'varint') {
+            const vb = encodeVarint(sigma);
+            return vb.length ? vb : null;
+        }
         // 注意：formatToHex 出的是**已加空格**的展示串（"00 06"），先去掉空格再
         // 按字节切 —— 否则空格被吃进切片（"00 06" → [00,0x0,06]，多出一个 0 字节），
         // ≥2 字节的真值一律显示错位（R21 前的存量缺陷：单字节看不出，2 字节 CRC/

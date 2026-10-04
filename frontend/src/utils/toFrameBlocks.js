@@ -52,21 +52,52 @@ const buildBitfieldConfig = (node) => ({
 //   （缺省 / big / 枚举外不写键 → params 形状与存量逐字节一致，后端
 //   LengthHandler 缺省回大端）。
 // pc.refs 键缺失（存量行无 parameter_config）→ 维持既有 config 直通，
-// 行为与批次四前逐字节一致（byte_order 仍生效，镜像后端 _build_logic_config）。
-const withByteOrder = (config, pc, type) => {
+// 行为与批次四前逐字节一致（byte_order / encoding 仍生效，镜像后端 _build_logic_config）。
+// - params.encoding = R27（varint 变长长度前缀 · §8.59）：length pc.encoding=varint
+//   才带（缺省 / fixed / 枚举外不写键 → params 形状与存量逐字节一致，后端
+//   LengthHandler 缺省回定宽，§0 缺省口径同 R21）。
+const withLogicParams = (config, pc, type) => {
     if (type !== 'length' || !pc) return config || null;
-    if (String(pc.byte_order || '').toLowerCase() !== 'little') return config || null;
-    const base = config && typeof config === 'object' ? config : {};
-    return { ...base, params: { ...(base.params || {}), byte_order: 'little' } };
+    const base = config && typeof config === 'object' ? config : null;
+    const params = { ...((base && base.params) || {}) };
+    let touched = false;
+    if (String(pc.byte_order || '').toLowerCase() === 'little') {
+        params.byte_order = 'little';
+        touched = true;
+    }
+    if (String(pc.encoding || '').toLowerCase() === 'varint') {
+        params.encoding = 'varint';
+        touched = true;
+    }
+    return touched ? { ...(base || {}), params } : (config || null);
+};
+
+// R27（§8.59）: cobs 块 `parameter_config.terminator` → `config.params.terminator`
+// （镜像后端 frame_builder._to_blocks + _with_terminator）。只在值为 none 时写键
+// —— 缺省 / `00` / 枚举外一律不写（→ 后端 fail-open 追加 0x00），params 形状与
+// 「不配定界」时逐字节一致。
+const buildCobsConfig = (node) => {
+    const pc = node.parameter_config || {};
+    if (String(pc.terminator || '').toLowerCase() !== 'none') return node.config || null;
+    const base = node.config && typeof node.config === 'object' ? node.config : {};
+    return { ...base, params: { ...(base.params || {}), terminator: 'none' } };
 };
 
 const buildLogicConfig = (node, type, byId) => {
     const pc = node.parameter_config;
-    if (!pc || !Array.isArray(pc.refs)) return withByteOrder(node.config, pc, type);
+    if (!pc || !Array.isArray(pc.refs)) return withLogicParams(node.config, pc, type);
     const leafIds = [];
     const expand = (id) => {
         const target = byId.get(id);
         if (!target) return; // 悬空 → 丢（前端 encoder find 失败同样跳过）
+        // R27（§8.59）: refs 跨不过 COBS 编码边界 —— 撞上 cobs 块**不下钻**、
+        // 引它的 id（后端按其出线字节数计；其子树 id 后端发射流里不存在 →
+        // 0 计而前端仍查得到，两端 Σ 分歧 → 保存侧双端拒引）。镜像后端
+        // frame_builder._build_logic_config.expand 的同名停钻。
+        if (target.type === 'cobs') {
+            leafIds.push(id);
+            return;
+        }
         const kids = target.children || [];
         if (kids.length > 0) kids.forEach(child => expand(child.id));
         else leafIds.push(id);
@@ -78,7 +109,7 @@ const buildLogicConfig = (node, type, byId) => {
     }
     const offset = Number(pc.offset);
     if (type === 'length' && Number.isFinite(offset)) params.offset = offset;
-    return withByteOrder({
+    return withLogicParams({
         ...(node.config && typeof node.config === 'object' ? node.config : {}),
         params
     }, pc, type);
@@ -111,6 +142,7 @@ export const toFrameBlocks = (nodes) => {
 
         const isLogic = type === 'length' || type === 'checksum';
         const isBitfield = type === 'bitfield';
+        const isCobs = type === 'cobs'; // R27（§8.59）: 组帧元素 → config.params.terminator
         return {
             id: String(node.id),
             type: String(type),
@@ -119,7 +151,8 @@ export const toFrameBlocks = (nodes) => {
             hex_value: node.hex_value || node.parameter_config?.hex || null,
             config: isLogic
                 ? buildLogicConfig(node, type, byId)
-                : (isBitfield ? buildBitfieldConfig(node) : (node.config || null)),
+                : (isBitfield ? buildBitfieldConfig(node)
+                    : (isCobs ? buildCobsConfig(node) : (node.config || null))),
             children,
             is_container: Boolean(node.is_container) || children.length > 0,
             is_enabled: node.is_enabled !== false
