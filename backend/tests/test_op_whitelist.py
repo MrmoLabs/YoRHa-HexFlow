@@ -5,9 +5,9 @@
 口径硬拦。存量摸底（只读）：instruction_fields 31 行 9 种 op 全在 KNOWN_OPS 内
 → 取全集硬拦不锁任何历史数据。
 
-KNOWN_OPS 双端同源：FE constants.js OP_CODES 16 项（含 N2 的 STRING、R23 的
-TIME_EPOCH）+ encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/CALCULATED）= 21 项
-—— 改一必改二。
+KNOWN_OPS 双端同源：FE constants.js OP_CODES 17 项（含 N2 的 STRING、R23 的
+TIME_EPOCH、R25 的 SCRAMBLE）+ encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/
+CALCULATED）= 22 项 —— 改一必改二。
 
 Run from repo root: python -m unittest discover -s backend/tests
 """
@@ -34,31 +34,41 @@ from backend.schemas.instruction_api import (
     InstructionUpdate,
 )
 
-# 双端同源全集（FE validateInstruction KNOWN_OPS 逐行同步）：
-KNOWN_21 = [
+# 双端同源全集（FE validateInstruction KNOWN_OPS 逐行同步，R25 起含 SCRAMBLE）：
+KNOWN_22 = [
     "HEX_RAW", "INT_UNSIGNED", "INT_SIGNED", "FLOAT_IEEE", "SCALED_DECIMAL",
     "BCD_CODE", "BITFIELD", "MAPPING", "ARRAY_GROUP", "STRUCT",
     "LENGTH_CALC", "CHECKSUM_CRC", "TIME_ACCUMULATOR", "AUTO_COUNTER",
-    "TIME_EPOCH", "STRING",
+    "TIME_EPOCH", "STRING", "SCRAMBLE",
     "INPUT", "FIXED", "HEADER", "TAIL", "CALCULATED",
 ]
 
 
-def field(name="字段", op_code="HEX_RAW", byte_len=1):
-    return InstructionFieldSchema(name=name, op_code=op_code, byte_len=byte_len)
+def field(name="字段", op_code="HEX_RAW", byte_len=1, pc=None):
+    # R25: SCRAMBLE 走 _validate_scrambles（生效模式的参数必须在场）→ 参与「全集过门」
+    # 的那条要带合法种子；其余算子维持原样（不传 parameter_config，走默认 None）。
+    kwargs = dict(name=name, op_code=op_code, byte_len=byte_len)
+    if pc is not None:
+        kwargs["parameter_config"] = pc
+    return InstructionFieldSchema(**kwargs)
+
+
+def known_field(i, op):
+    return field(name=f"字段{i}", op_code=op,
+                 pc=({"seed": "A5"} if op == "SCRAMBLE" else None))
 
 
 class OpWhitelistHelperTest(unittest.TestCase):
     """_validate_op_codes 纯函数口径（C2 _validate_bitfields 同范式）。"""
 
     def test_known_ops_pass(self):
-        # 全集 21 项逐个过门（含 legacy 5 —— encoder 各分支仍认识、存量可能携带）
-        for op in KNOWN_21:
+        # 全集 22 项逐个过门（含 legacy 5 —— encoder 各分支仍认识、存量可能携带）
+        for op in KNOWN_22:
             _validate_op_codes([field(name=f"f_{op}", op_code=op)])
 
-    def test_known_ops_set_is_exactly_21(self):
+    def test_known_ops_set_is_exactly_22(self):
         # 防双端漂移：BE 集合与共享清单逐元素相等（FE 改 OP_CODES 时此处先红）
-        self.assertEqual(set(KNOWN_OPS), set(KNOWN_21))
+        self.assertEqual(set(KNOWN_OPS), set(KNOWN_22))
 
     def test_unknown_op_rejected_400_with_field_and_op_in_detail(self):
         with self.assertRaises(HTTPException) as ctx:
@@ -138,9 +148,8 @@ class OpWhitelistEndpointTest(unittest.TestCase):
         self.assertEqual(self.db.query(InstructionField).count(), 0)
 
     def test_post_accepts_all_known_ops(self):
-        resp = self._create([field(name=f"字段{i}", op_code=op)
-                             for i, op in enumerate(KNOWN_21)])
-        self.assertEqual(len(resp.fields), 21)
+        resp = self._create([known_field(i, op) for i, op in enumerate(KNOWN_22)])
+        self.assertEqual(len(resp.fields), 22)
 
     def test_put_rejects_unknown_op_and_keeps_existing(self):
         created = self._create([field(name="原字段", op_code="HEX_RAW")])
@@ -159,12 +168,11 @@ class OpWhitelistEndpointTest(unittest.TestCase):
     def test_put_accepts_full_replace_with_known_ops(self):
         created = self._create([field(name="原字段", op_code="HEX_RAW")])
         resp = self._put(created.id,
-                         [field(name=f"新字段{i}", op_code=op)
-                          for i, op in enumerate(KNOWN_21)],
+                         [known_field(i, op) for i, op in enumerate(KNOWN_22)],
                          code=created.code, name=created.name)
-        self.assertEqual(len(resp.fields), 21)
+        self.assertEqual(len(resp.fields), 22)
         self.assertEqual(
-            sorted(f.op_code for f in resp.fields), sorted(KNOWN_21),
+            sorted(f.op_code for f in resp.fields), sorted(KNOWN_22),
         )
 
 

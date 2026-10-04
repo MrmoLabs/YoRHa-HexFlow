@@ -283,3 +283,80 @@ describe('BlockPropertiesPanel 切算子下拉（R24）', () => {
         expect(pushed.op_code).toBe('ARRAY_GROUP');
     });
 });
+
+// ─── R25 (§8.57): 加扰字段 —— 明文输入框（PLAINTEXT）+ 加扰参数 + 就近校验 ────
+describe('BlockPropertiesPanel R25 加扰字段 (SCRAMBLE)', () => {
+    const SCRAMBLE_TPL = {
+        SCRAMBLE: { param_template: { mode: ['XOR_SEED', 'BIT_ROLL'], seed: 'A5', roll: 1 } },
+    };
+
+    const renderScramble = (parameter_config, byte_len = 2) => render(
+        <BlockPropertiesPanel
+            {...baseProps}
+            operatorTemplates={SCRAMBLE_TPL}
+            selectedBlock={{
+                id: 'f1', name: '加扰', op_code: 'SCRAMBLE', byte_len,
+                parameter_config, sequence: 0, parent_id: null,
+            }}
+            currentInstruction={{
+                id: 'i1', name: 'T', code: 'T1', device_code: 'D1',
+                fields: [],
+            }}
+            validationIssues={{ errors: [], warnings: [] }}
+        />
+    );
+
+    it('明文输入框在场（PLAINTEXT 标签）、模板参数渲染、录入进制不渲染', () => {
+        const { container } = renderScramble({ hex: 'AABB', seed: 'A5' });
+        expect(screen.getByText(/PLAINTEXT/)).toBeDefined();
+        expect(screen.getByText(/STORED: AABB/)).toBeDefined();
+        // SCRAMBLE 与 HEX_RAW 同判「不可编辑语义」→ 录入进制不渲染
+        expect(screen.queryByText(/录入进制/)).toBeNull();
+        // ParamConfigForm 在场（op ≠ HEX_RAW/BITFIELD）→ 三键齐
+        const html = container.innerHTML;
+        ['mode', 'seed', 'roll'].forEach((k) => expect(html).toContain(k));
+        expect(html).toContain('XOR_SEED');
+    });
+
+    it('APPLY：非法种子 → 就近回执拒绝，不调 onSaveBlock', () => {
+        renderScramble({ hex: 'AABB', seed: 'A' });
+        baseProps.openConfirm.mockClear();
+        baseProps.onSaveBlock.mockClear();
+
+        fireEvent.click(screen.getByRole('button', { name: /应用配置 \(APPLY\)/ }));
+
+        expect(baseProps.onSaveBlock).not.toHaveBeenCalled();
+        const [msg, action] = baseProps.openConfirm.mock.calls.at(-1);
+        expect(msg).toContain('校验错误');
+        expect(msg).toContain('XOR 种子无效');
+        // 阻断态回执是空动作
+        act(() => action());
+        expect(baseProps.onSaveBlock).not.toHaveBeenCalled();
+    });
+
+    it('APPLY：明文长度 ≠ byte_len×2 → 拒绝（与 HEX_RAW 同校验口径）', () => {
+        renderScramble({ hex: 'AA', seed: 'A5' }, 2);
+        baseProps.openConfirm.mockClear();
+        baseProps.onSaveBlock.mockClear();
+
+        fireEvent.click(screen.getByRole('button', { name: /应用配置 \(APPLY\)/ }));
+
+        expect(baseProps.onSaveBlock).not.toHaveBeenCalled();
+        const [msg] = baseProps.openConfirm.mock.calls.at(-1);
+        expect(msg).toContain('需要 2 字节');
+    });
+
+    it('APPLY：合法 → onSaveBlock 收到去空白后的明文（大小写保留，出线时统一转大写，同 HEX_RAW 口径）', () => {
+        renderScramble({ hex: 'aa bb', seed: 'A5' }, 2);
+        baseProps.onSaveBlock.mockClear();
+        baseProps.openConfirm.mockClear();
+
+        fireEvent.click(screen.getByRole('button', { name: /应用配置 \(APPLY\)/ }));
+
+        expect(baseProps.openConfirm).not.toHaveBeenCalled();
+        const saved = baseProps.onSaveBlock.mock.calls.at(-1)[0];
+        expect(saved.parameter_config.hex).toBe('aabb');
+        expect(saved.parameter_config.seed).toBe('A5');
+        expect(saved.op_code).toBe('SCRAMBLE');
+    });
+});

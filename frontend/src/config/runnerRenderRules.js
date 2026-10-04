@@ -7,6 +7,7 @@
 
 import { mapChecksumAlgo } from '../utils/normalizeInstruction';
 import { getParamKeyLimitRef } from '../utils/encoderLimits';
+import { SCRAMBLE_MODES, cleanHexText } from '../utils/scramble';
 
 // DRY Helper: Get Date object for the field's base time (epoch).
 // Accepts both 'YYYY-MM-DDTHH:mm:ss' and 'YYYY-MM-DD HH:mm:ss'.
@@ -97,8 +98,12 @@ export const classifyRunnerField = (field = {}) => {
     // 任何可编辑输入都不会改变出帧，「能改但无效」即欺骗 → 一律判只读固定。
     const isFixed = Boolean(field.op_code === 'FIXED'
         || originalOp === 'HEX_RAW'
-        || originalOp === 'FIXED'
         || field.op_code === 'HEX_RAW'
+        // R25: SCRAMBLE 的明文是定义侧配置（加工页键入不进编码分支，「能改但无效」
+        // 即欺骗）→ 与 HEX_RAW 同判只读固定；两认身份（存量被 normalize 摊平的兜底）。
+        || originalOp === 'SCRAMBLE'
+        || field.op_code === 'SCRAMBLE'
+        || originalOp === 'FIXED'
         || originalOp === 'HEADER'
         || originalOp === 'TAIL'
         || field.op_code === 'HEADER'
@@ -175,6 +180,9 @@ export const resolveFieldDisplay = (field, { inputs = {}, computedValues = {} } 
     if (isFixed) {
         // 1. Fixed / ReadOnly Fields: Show the exact HEX or Value
         const isExplicitHex = originalOp === 'HEX_RAW' || field.op_code === 'HEX_RAW'
+            // R25: SCRAMBLE 回显**明文**（pc.hex，同 HEX_RAW 的零填充兜底）—— 线上
+            // 加扰字节在 BYTE_STREAM 预览里看（编码端产出），字段行讲定义侧明文。
+            || originalOp === 'SCRAMBLE' || field.op_code === 'SCRAMBLE'
             || originalOp === 'HEADER' || field.op_code === 'HEADER'
             || originalOp === 'TAIL' || field.op_code === 'TAIL';
         let rawVal = params.hex || params.value;
@@ -314,6 +322,21 @@ export const collectSemanticItems = (field = {}, ctx = {}) => {
             warn: true,
             title: '枚举映射未配置选项表：手动录入数值；到「指令管理」为该字段配置 options 后自动出下拉'
         });
+    }
+
+    // R25 (§8.57): 加扰字段 —— 「怎么加扰」不亮出来就看不出线上发的是明文还是密文。
+    // MODE 缺省 XOR_SEED 照 R23 UNIT 先例恒亮（模板下拉没被点过也要说得出）；只亮
+    // **生效模式**的那一个参数（另一个模式的参数留空是合法的，切回来即生效）。
+    const scrambleOp = String(field.original_op_code || field.op_code || '').toUpperCase();
+    if (scrambleOp === 'SCRAMBLE') {
+        const modeNow = String(params.mode ?? 'XOR_SEED').trim().toUpperCase();
+        items.push({
+            text: `MODE=${SCRAMBLE_MODES.includes(modeNow) ? modeNow : String(params.mode ?? '')}`,
+            ref: null,
+        });
+        items.push(modeNow === 'BIT_ROLL'
+            ? { text: `ROLL=${params.roll ?? 0}`, ref: null }
+            : { text: `SEED=${cleanHexText(params.seed) || '00'}`, ref: null });
     }
     return items;
 };
@@ -458,6 +481,9 @@ export const resolveRunnerKind = (field = {}) => {
     // 但 normalize 会把 op 改成 FIXED/INPUT，不先认 original 算子就掉 FIX/IN，
     // 帧头语义（对齐/包络锚点）从章上消失。
     if (isOp('HEADER', 'TAIL')) return { key: 'HDR', label: 'HDR', title: 'HDR // 帧头/帧尾：固定字节，只读回显（对齐/包络锚点）' };
+    // R25 (§8.57): 加扰字段先于 FIX —— 本质是只读固定字节，但「明文 ≠ 线上字节」是
+    // 这个字段唯一要讲清楚的事，掉进 FIX 就看不出发出去的是密文了。
+    if (isOp('SCRAMBLE')) return { key: 'SCR', label: 'SCR', title: 'SCR // 加扰字段：定义侧明文按 mode（异或种子/位旋转）加扰后出线，只读回显明文（线上字节见 BYTE_STREAM）' };
     if (isFixed) return { key: 'FIX', label: 'FIX', title: 'FIX // 固定字节（定义侧静态值），不可编辑' };
     // R23 (§8.52 排期 · 挂账 ①): 绝对时间戳先于 TIME 分支 —— 它没有 base_time、
     // 也不许点开选时刻（当前墙钟由发送时刻决定），讲成「累计时间」会误导。

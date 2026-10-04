@@ -251,12 +251,12 @@ describe('validateInstruction N1 护栏（G5 未知算子 / G7 FLOAT_IEEE 位宽
         expect(errors.some((x) => x.code === 'OP_UNKNOWN')).toBe(true);
     });
 
-    it('G5 双端硬拦: 已知全集（OP_CODES 16 + encoder legacy 5 = 21）不误报', () => {
+    it('G5 双端硬拦: 已知全集（OP_CODES 17 + encoder legacy 5 = 22）不误报', () => {
         const known = [
             'HEX_RAW', 'INT_UNSIGNED', 'INT_SIGNED', 'FLOAT_IEEE', 'SCALED_DECIMAL',
             'BCD_CODE', 'BITFIELD', 'MAPPING', 'ARRAY_GROUP', 'STRUCT',
             'LENGTH_CALC', 'CHECKSUM_CRC', 'TIME_ACCUMULATOR', 'AUTO_COUNTER',
-            'TIME_EPOCH', 'STRING',
+            'TIME_EPOCH', 'STRING', 'SCRAMBLE',
             'INPUT', 'FIXED', 'HEADER', 'TAIL', 'CALCULATED',
         ];
         const { errors, warnings } = validateInstruction(inst(

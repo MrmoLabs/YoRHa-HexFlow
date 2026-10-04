@@ -222,4 +222,47 @@ describe('useInstructionLanes', () => {
         const { result } = renderHook(() => useInstructionLanes(timeMock, 'inst-nobase'));
         expect(result.current.processedLanes[0].items[0].parameter_config.computedValue).toBe('?? ?? ?? ??');
     });
+
+    // ─── R25 (§8.57): 加扰字段卡面 = **线上字节**（明文在属性面板里编辑） ────────
+    it('R25 SCRAMBLE 卡面中央值 = 加扰后 hex（明文 ≠ 线上字节时卡上见真章）', () => {
+        const scramMock = {
+            fields: [
+                {
+                    id: 's', name: '加扰', op_code: 'SCRAMBLE', sequence: 0, byte_len: 4,
+                    parameter_config: { hex: '01020304', seed: 'A5' },
+                },
+            ],
+        };
+        const { result } = renderHook(() => useInstructionLanes(scramMock, 'inst-scramble'));
+        const item = result.current.processedLanes[0].items[0];
+        expect(item.parameter_config.computedValue).toBe('A4A7A6A1');
+    });
+
+    it('R25 SCRAMBLE 明文缺失 → 补零（与编码端同字节，不出 ??）', () => {
+        const scramMock = {
+            fields: [
+                {
+                    id: 's', name: '加扰', op_code: 'SCRAMBLE', sequence: 0, byte_len: 2,
+                    parameter_config: { seed: 'A5' },
+                },
+            ],
+        };
+        const { result } = renderHook(() => useInstructionLanes(scramMock, 'inst-scramble-empty'));
+        expect(result.current.processedLanes[0].items[0].parameter_config.computedValue).toBe('0000');
+    });
+
+    it('R25 SCRAMBLE 在组里：内容串同样出加扰后字节（不是明文）', () => {
+        const scramMock = {
+            fields: [
+                { id: 'g', name: '组', op_code: 'ARRAY_GROUP', sequence: 0, byte_len: 0 },
+                {
+                    id: 's', parent_id: 'g', name: '加扰', op_code: 'SCRAMBLE', sequence: 0,
+                    byte_len: 2, parameter_config: { hex: '0102', seed: 'A5' },
+                },
+            ],
+        };
+        const { result } = renderHook(() => useInstructionLanes(scramMock, 'inst-scramble-group'));
+        const root = result.current.processedLanes.find(l => l.parentId === null);
+        expect(root.items.find(i => i.id === 'g').parameter_config.computedValue).toBe('A4 A7');
+    });
 });

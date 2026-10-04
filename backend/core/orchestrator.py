@@ -2,7 +2,7 @@ import math
 import re
 import struct
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 from backend.schemas.block import Block, BlockType
 from backend.handlers.length import LengthHandler
 from backend.handlers.checksum import ChecksumHandler
@@ -429,6 +429,93 @@ def encode_auto_counter(value, start_val, step, max_val, byte_len: int) -> str:
     if mx is not None and mx > 0:
         n = ((n % mx) + mx) % mx
     return f"{abs(math.floor(n)) & ((1 << (8 * byte_len)) - 1):0{2 * byte_len}X}"
+
+
+# R25（§8.57 · §8.52 排期第 5 批 · BUSINESS_SCENARIOS 挂账 ②）：加扰 / 混淆字段。
+# 与 FE utils/scramble.js **逐行同语义**（共享向量 vectors/scramble.json 双端锚定，改一必改二）：
+#   XOR_SEED  out[i] = plain[i] ^ seed[i % len(seed)]            —— 种子按字节循环
+#   BIT_ROLL  out[i] = (plain[i]<<n | plain[i]>>(8-n)) & 0xFF     —— 逐字节左旋，n = roll%8
+# 明文空 / 非 hex → None（调用方置 hex_value=None → 发射期 "00"*byte_length 补零，与前端
+# 「明文非法 → 补零」同字节）；mode / seed / roll 契约外 → **恒等**（保存侧 _validate_scrambles
+# 已 400 硬拦，这里只为「出线必有确定值」，不静默改语义）。
+_SCRAMBLE_MODES = ("XOR_SEED", "BIT_ROLL")
+_SCRAMBLE_HEX_RE = re.compile(r"[0-9A-Fa-f]+")
+# 十进制字面量：不收 0x/0b —— JS Number('0x10')=16 而 float('0x10') 抛错，不设闸两端各判各的。
+_SCRAMBLE_NUM_RE = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+
+
+def _scramble_plain_bytes(text) -> Optional[bytes]:
+    """明文 → 字节；空 / 非 hex → None（调用方补零）。奇长丢末尾半字节（同 FE）。"""
+    if not isinstance(text, str):
+        return None
+    clean = re.sub(r"\s+", "", text)
+    if not clean or _SCRAMBLE_HEX_RE.fullmatch(clean) is None:
+        return None
+    if len(clean) % 2:
+        clean = clean[:-1]
+    return bytes.fromhex(clean)
+
+
+def _scramble_seed_bytes(seed) -> bytes:
+    """XOR 种子 → 字节；空 / 奇长 / 非 hex → b''（= 恒等，同 FE scrambleSeedBytes）。"""
+    if seed is None:
+        return b""
+    clean = re.sub(r"\s+", "", str(seed))
+    if not clean or _SCRAMBLE_HEX_RE.fullmatch(clean) is None or len(clean) % 2:
+        return b""
+    return bytes.fromhex(clean)
+
+
+def _scramble_roll_bits(roll) -> int:
+    """位旋转位数 → 0..7（负值双取模消平 JS/Python 余数差）；非有限 / 非数字 → 0。"""
+    s = str("" if roll is None else roll).strip()
+    if _SCRAMBLE_NUM_RE.fullmatch(s) is None:
+        return 0
+    try:
+        n = float(s)
+    except ValueError:
+        return 0
+    if not math.isfinite(n):
+        return 0
+    t = int(n)  # JS Math.trunc 同向（向零取整）
+    return ((t % 8) + 8) % 8
+
+
+def _scramble_apply(data: bytes, mode=None, seed=None, roll=None, inverse: bool = False) -> bytes:
+    """加扰核心：反变换只是「左旋 → 右旋」的差别（XOR 自反，逆变换共用 XOR 路径）。"""
+    m = str("XOR_SEED" if mode is None else mode).strip().upper()
+    if m == "BIT_ROLL":
+        n = _scramble_roll_bits(roll)
+        if inverse:
+            n = (8 - n) % 8
+        if n:
+            data = bytes(((b << n) | (b >> (8 - n))) & 0xFF for b in data)
+        return data
+    if m == "XOR_SEED":
+        s = _scramble_seed_bytes(seed)
+        if s:
+            data = bytes(b ^ s[i % len(s)] for i, b in enumerate(data))
+        return data
+    return data  # 契约外 mode → 恒等
+
+
+def encode_scramble(plain_hex, mode=None, seed=None, roll=None) -> Optional[str]:
+    """SCRAMBLE 明文 → 加扰后 hex（大写无空白）；明文空 / 非 hex → None（补零）。"""
+    data = _scramble_plain_bytes(plain_hex)
+    if data is None:
+        return None
+    return _scramble_apply(data, mode, seed, roll).hex().upper()
+
+
+def unscramble_hex(wire_hex, mode=None, seed=None, roll=None) -> Optional[str]:
+    """R25 解码侧：线上 hex → 明文 hex（`core/field_decode` 对偶 FE InstructionDecoder）。
+
+    与 `encode_scramble` 互逆（XOR 自反、左旋的逆是右旋）→ 解码再编码是**不动点**。
+    """
+    data = _scramble_plain_bytes(wire_hex)
+    if data is None:
+        return None
+    return _scramble_apply(data, mode, seed, roll, inverse=True).hex().upper()
 
 
 # N2 (G2): utf8 编码前的孤立代理项识别 —— high 无后随 low / low 无前随 high

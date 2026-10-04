@@ -164,9 +164,9 @@ class TestPlanDynamic(unittest.TestCase):
 
 class TestWhitelistAndTemplate(unittest.TestCase):
     def test_known_ops_contains_epoch(self):
-        # 双端同源：FE constants.js OP_CODES 16 + legacy 5 = 21
+        # 双端同源：FE constants.js OP_CODES 17（含 R25 的 SCRAMBLE）+ legacy 5 = 22
         self.assertIn("TIME_EPOCH", KNOWN_OPS)
-        self.assertEqual(len(KNOWN_OPS), 21)
+        self.assertEqual(len(KNOWN_OPS), 22)
 
     def test_operator_template_epoch(self):
         tpl = next((t for t in SEED_TEMPLATES if t["op_code"] == "TIME_EPOCH"), None)

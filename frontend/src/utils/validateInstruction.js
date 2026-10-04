@@ -10,11 +10,12 @@
 
 import { getBlockLimitRefs, ENCODER_LIMITS } from './encoderLimits';
 import { padSpec } from './padSpec';
+import { scrambleParamError } from './scramble';
 import { OP_CODES } from '../constants';
 
-// N1 护栏批（PLAN §8.16 · G5）：编码器已知算子全集 = OP_CODES 16 项（含 N2 的
-// STRING、R23 的 TIME_EPOCH）+ encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/
-// CALCULATED——encoder 各分支仍认识、存量数据可能携带）= 21 项。全集外的 op_code
+// N1 护栏批（PLAN §8.16 · G5）：编码器已知算子全集 = OP_CODES 17 项（含 N2 的
+// STRING、R23 的 TIME_EPOCH、R25 的 SCRAMBLE）+ encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/
+// CALCULATED——encoder 各分支仍认识、存量数据可能携带）= 22 项。全集外的 op_code
 // 落 getFieldBytes 默认整数路径静默出错。
 // G5 收口（双端硬拦拍板 2026-09-30）：W5 从 warnings 升 errors —— 保存阻断，
 // 与 BE 保存侧 400（routers/instruction.py KNOWN_OPS）同口径逐行同步，改一必改二。
@@ -224,8 +225,9 @@ export function validateInstruction(instruction) {
             }
         }
 
-        // --- E1: HEX_RAW value must match byte_len exactly ---
-        if (f.op_code === 'HEX_RAW') {
+        // --- E1: HEX_RAW value must match byte_len exactly（R25 起 SCRAMBLE 明文同规则
+        //     —— 加扰逐字节保长，明文长度错一位出线就短/长一节，长度域与校验全歪）---
+        if (f.op_code === 'HEX_RAW' || f.op_code === 'SCRAMBLE') {
             const hex = normalizeHex(params.hex);
             if (hex && (!/^[0-9A-Fa-f]+$/.test(hex) || hex.length !== (Number.isFinite(byteLen) ? byteLen : 1) * 2)) {
                 errors.push({
@@ -235,6 +237,16 @@ export function validateInstruction(instruction) {
                 });
             } else if (!hex) {
                 warnings.push({ blockId: f.id, code: 'HEX_EMPTY', message: `「${label || f.id}」HEX 值为空` });
+            }
+        }
+
+        // --- R25 (§8.57): SCRAMBLE 加扰参数 —— 生效模式的参数非法会让出线落进
+        //     「恒等」fail-open（看起来发成功、实际没加扰 = 静默错码）→ error 保存阻断；
+        //     BE 保存侧 _validate_scrambles 同口径 400（改一必改二）。 ---
+        if (f.op_code === 'SCRAMBLE') {
+            const reason = scrambleParamError(params);
+            if (reason) {
+                errors.push({ blockId: f.id, code: 'SCRAMBLE_PARAM', message: `「${label || f.id}」${reason}` });
             }
         }
 

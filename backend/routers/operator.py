@@ -28,6 +28,11 @@ SEED_TEMPLATES = [
     
     # ENCODING
     {"op_code": "BCD_CODE", "name": "BCD码", "category": "ENCODING", "description": "Binary Coded Decimal", "param_template": {"bytes": "number"}},
+    # R25 (§8.52 排期 · 挂账 ②): 加扰 / 混淆字段 —— 明文（hex，与 HEX_RAW 同源）出线前
+    # 按 mode 变换。mode 走数组（= 下拉选项，缺省首项 XOR_SEED）；seed/roll 是字面缺省值
+    # （不是 keyword），创建/切换时原样播种进 parameter_config —— XOR_SEED 缺省 A5（加扰
+    # 立刻可见，比恒等缺省更早暴露「忘了设种子」）；BIT_ROLL 缺省左旋 1 位。
+    {"op_code": "SCRAMBLE", "name": "加扰字段", "category": "ENCODING", "description": "异或种子 / 位旋转加扰（明文出线前变换）", "param_template": {"mode": ["XOR_SEED", "BIT_ROLL"], "seed": "A5", "roll": 1}},
 
     # DYNAMIC
     {"op_code": "TIME_ACCUMULATOR", "name": "时间累积", "category": "DYNAMIC", "description": "Current - BaseTime", "param_template": {"base_time": "1980-01-01T00:00:00"}},

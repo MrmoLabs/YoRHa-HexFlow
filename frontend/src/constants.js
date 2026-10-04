@@ -27,7 +27,13 @@ export const OP_CODES = {
     TIME_EPOCH: 'TIME_EPOCH',
     // N2 (G2): 定长文本字段（ascii/utf8 × pad/截断）——G2「字符串三连」的正经
     // 入口。KNOWN_OPS 经 Object.values(OP_CODES) 自动收录（N1 护栏跟随）。
-    STRING: 'STRING'
+    STRING: 'STRING',
+    // R25 (§8.52 排期 · 挂账 ②): 加扰 / 混淆字段 —— 明文（pc.hex，与 HEX_RAW 同源）
+    // 出线前按 mode 变换（XOR_SEED 异或种子 / BIT_ROLL 逐字节左旋）。口径档案在
+    // utils/scramble.js，BE core/orchestrator.encode_scramble 逐行同语义。KNOWN_OPS
+    // 经 Object.values(OP_CODES) 自动收录（N1 护栏跟随，BE routers/instruction.py 的
+    // KNOWN_OPS 同批 21 → 22，改一必改二）。
+    SCRAMBLE: 'SCRAMBLE'
 };
 
 export const CATEGORIES = {
@@ -47,6 +53,7 @@ export const OP_PRIORITY = [
     OP_CODES.FLOAT_IEEE,
     OP_CODES.SCALED_DECIMAL,
     OP_CODES.BCD_CODE,
+    OP_CODES.SCRAMBLE,
     OP_CODES.BITFIELD,
     OP_CODES.TIME_ACCUMULATOR,
     OP_CODES.AUTO_COUNTER,

@@ -57,8 +57,8 @@ describe('R24 · 可切换算子清单（switchableOps）', () => {
         expect(switchableOps(TEMPLATES, OP_CODES.STRUCT)[0]).toBe(OP_CODES.STRUCT);
     });
 
-    it('已知算子全集 = 21 项（与 BE KNOWN_OPS / validateInstruction 同源）', () => {
-        expect(KNOWN_OP_LIST).toHaveLength(21);
+    it('已知算子全集 = 22 项（与 BE KNOWN_OPS / validateInstruction 同源）', () => {
+        expect(KNOWN_OP_LIST).toHaveLength(22);
         expect(new Set(KNOWN_OP_LIST).has('INPUT')).toBe(true);
     });
 });

@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from typing import List
+import math
+import re
 import uuid
 
 from backend.db.database import get_db, engine, Base
@@ -27,8 +29,9 @@ router = APIRouter(
 )
 
 # G5 收口（双端硬拦拍板 2026-09-30）：保存侧已知算子白名单。
-# 双端同源：FE constants.js OP_CODES 16 项（含 N2 的 STRING、R23 的 TIME_EPOCH）
-# + encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/CALCULATED）= 21 项，与 FE
+# 双端同源：FE constants.js OP_CODES 17 项（含 N2 的 STRING、R23 的 TIME_EPOCH、
+# R25 的 SCRAMBLE）
+# + encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/CALCULATED）= 22 项，与 FE
 # utils/validateInstruction.js 的 KNOWN_OPS 逐行同步 —— 改一必改二。存量摸底（只读）：
 # instruction_fields 31 行 9 种 op 全在册 → 取全集硬拦不锁任何历史数据。未知 op 若入库，
 # fields_to_blocks 会静默降级 fixed（编码错码）—— 保存前拒绝（C2 位域校验同位先例）。
@@ -36,7 +39,7 @@ KNOWN_OPS = frozenset({
     "HEX_RAW", "INT_UNSIGNED", "INT_SIGNED", "FLOAT_IEEE", "SCALED_DECIMAL",
     "BCD_CODE", "BITFIELD", "MAPPING", "ARRAY_GROUP", "STRUCT",
     "LENGTH_CALC", "CHECKSUM_CRC", "TIME_ACCUMULATOR", "AUTO_COUNTER",
-    "TIME_EPOCH", "STRING",
+    "TIME_EPOCH", "STRING", "SCRAMBLE",
     "INPUT", "FIXED", "HEADER", "TAIL", "CALCULATED",
 })
 
@@ -131,6 +134,83 @@ def _validate_op_codes(fields):
                 "——保存已拒绝，请核对算子模板或清洗导入数据"
             ),
         )
+
+
+# R25（§8.57 · §8.52 排期第 5 批）：加扰参数的**模式与十进制字面量**判定。
+# 与 FE utils/scramble.js 的 SCRAMBLE_MODES / NUMERIC 逐字符同口径（改一必改二）：
+# NUMERIC 不收 0x/0b —— JS Number('0x10')=16 而 Python float('0x10') 抛错，不设这道闸
+# 两端会各判各的。
+_SCRAMBLE_MODES = ("XOR_SEED", "BIT_ROLL")
+_SCRAMBLE_HEX_RE = re.compile(r"[0-9A-Fa-f]+")
+_SCRAMBLE_NUM_RE = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+
+
+def _scramble_param_error(cfg):
+    """SCRAMBLE 生效模式的参数是否合法；合法返回 None，否则返回与 FE 同源的文案。
+
+    只看**当前模式**需要的那个参数（XOR_SEED 看 seed、BIT_ROLL 看 roll）—— 另一个模式的
+    参数留空是合法的（下拉切回来即生效），一并要求会把「切过模式」的字段锁死。
+    """
+    raw_mode = cfg.get("mode")
+    mode = str("XOR_SEED" if raw_mode is None else raw_mode).strip().upper()
+    if mode not in _SCRAMBLE_MODES:
+        return f"加扰模式无效（mode={'' if raw_mode is None else raw_mode}）：仅支持 XOR_SEED / BIT_ROLL"
+    if mode == "XOR_SEED":
+        raw_seed = cfg.get("seed")
+        seed = "".join(str("" if raw_seed is None else raw_seed).split())
+        if not seed or _SCRAMBLE_HEX_RE.fullmatch(seed) is None or len(seed) % 2 != 0:
+            return (
+                f"XOR 种子无效（seed={'' if raw_seed is None else raw_seed}）："
+                "需非空、偶数位十六进制（如 A5 / 5AA5）"
+            )
+        return None
+    raw_roll = cfg.get("roll")
+    roll_raw = str("" if raw_roll is None else raw_roll).strip()
+    if _SCRAMBLE_NUM_RE.fullmatch(roll_raw) is None or not math.isfinite(float(roll_raw)):
+        return (
+            f"位旋转位数无效（roll={'' if raw_roll is None else raw_roll}）："
+            "需有限十进制整数（0..7，超出按 mod 8 归一）"
+        )
+    return None
+
+
+def _validate_scrambles(fields):
+    """R25（§8.57）：SCRAMBLE 加扰字段保存侧校验。
+
+    口径与 FE ``utils/scramble.scrambleParamError`` + ``validateInstruction`` 的 E1
+    HEX_LENGTH 逐项对齐（改一必改二）：
+    - mode ∈ {XOR_SEED, BIT_ROLL}；XOR_SEED 的 seed 非空、偶长 hex；BIT_ROLL 的 roll
+      是有限十进制数；
+    - 明文（``parameter_config.hex``）**非空**时必须全 hex 且长度 = byte_len×2（空明文
+      两端同落 byte_len 补零，FE 只出 W HEX_EMPTY 提醒，这里不拦）。
+
+    非法即 400：编码端对这些形态是「恒等 / 补零」fail-open —— 发送成功但**没加扰**正是
+    G5「静默降级 fixed」那类错码，必须存不进去。SCRAMBLE 是新算子（零存量）→ 全量判不
+    锁任何历史数据，故 POST/PUT 都在任何写入前调用。
+    """
+    if not fields:
+        return
+    for f in fields:
+        if f.op_code != "SCRAMBLE":
+            continue
+        label = f.name or f.id or "UNNAMED"
+        cfg = f.parameter_config or {}
+
+        reason = _scramble_param_error(cfg)
+        if reason:
+            raise HTTPException(status_code=400, detail=f"「{label}」{reason}")
+
+        # 明文长度：clean 后为空 → 跳过（与 FE E1 的 `if (hex && …)` 同口径）。
+        clean = "".join(str(cfg.get("hex") or "").split())
+        if not clean:
+            continue
+        # need = byte_len × 2（None/0 → 0，对齐 FE `Number(null) === 0`）。
+        need = (f.byte_len or 0) * 2
+        if _SCRAMBLE_HEX_RE.fullmatch(clean) is None or len(clean) != need:
+            raise HTTPException(
+                status_code=400,
+                detail=f"「{label}」HEX 长度与字节长度不符（需 {need} 字符，实际 {len(clean)}）",
+            )
 
 
 def _validate_op_switch(old_ops, fields):
@@ -264,6 +344,10 @@ def create_instruction(inst: InstructionCreate, db: Session = Depends(get_db)):
     # G5: op 白名单 — 未知算子在任何写入前拒绝（POST，直连 API 同拦）
     _validate_op_codes(inst.fields)
 
+    # R25（§8.57）: 加扰参数 + 明文校验 —— 同样在任何写入前拒绝（新算子零存量，
+    # 全量判不锁历史）；FE 保存阻断同源，堵直连 API 绕过面板的口子。
+    _validate_scrambles(inst.fields)
+
     # 2. Create Instruction
     new_inst = Instruction(
         id=i_id,
@@ -306,6 +390,9 @@ def update_instruction(id: str, updates: InstructionUpdate, db: Session = Depend
     # G5: op 白名单 — 必须在元数据写入与字段 DELETE 之前拒绝（PUT 全量替换前），
     # 拒绝即存量原样、无半写状态。
     _validate_op_codes(updates.fields)
+
+    # R25（§8.57）: 加扰参数 + 明文校验 —— 同位同口径（PUT 也在任何写入前）。
+    _validate_scrambles(updates.fields)
 
     # R24（§8.52 挂账 ③）: 切算子兼容校验 —— 同样必须在任何写入前拒绝；只看 op 变了的
     # 字段（未切换 / 新增字段不判），存量数据的历史形态不因此被锁。

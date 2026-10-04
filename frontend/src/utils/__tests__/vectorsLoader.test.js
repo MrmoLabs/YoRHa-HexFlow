@@ -21,6 +21,7 @@ import lengthOrderVec from '../../../../vectors/length_order.json';
 import littleEndianVec from '../../../../vectors/little_endian.json';
 import presenceVec from '../../../../vectors/presence.json';
 import repeatVec from '../../../../vectors/repeat.json';
+import scrambleVec from '../../../../vectors/scramble.json';
 import stringVec from '../../../../vectors/string.json';
 import timeCounterVec from '../../../../vectors/time_counter.json';
 import timeEpochVec from '../../../../vectors/time_epoch.json';
@@ -45,6 +46,7 @@ const TABLES = {
     little_endian: littleEndianVec,
     presence: presenceVec,
     repeat: repeatVec,
+    scramble: scrambleVec,
     string: stringVec,
     time_counter: timeCounterVec,
     time_epoch: timeEpochVec,

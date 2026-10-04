@@ -45,7 +45,7 @@
 | R19–R20 | **拍板后追加排期**（§8.50：① 加工页传输展示与切换 = **维持 D9-A 不立项**、② 数据包示例下载 = **动态导出**、③ 档案自定义排序 = **`sort_order` DDL 解禁**） | ✅ **R19 已完成 ✅（§8.50：数据包示例下载 —— 动态出按域导入的 5 域、复用 R17 `?domains=` 子集，零后端改动零 DDL，FE 1098 → 1099）**、**R20 已完成 ✅（§8.50：档案自定义排序 —— `device_profiles.sort_order` 仅新增列 + migration 0004 + `PUT /profiles/order` 整表一次提交，拖完只改草稿序；BE 733 → 743、FE 1099 → 1106；db 同步另开 `chore(db)` 提交）** |
 | §8.51 | **§9.7 ① 出线方向销项**（「有 LEN = 不需要转义」在载荷含定界字节时是否异常）—— 按 §8.35 同套方法**联网取公开规范真帧 + 仓内仿真**：IEC 60870-5-104 / DL/T 645-2007 / Modbus TCP 三条**有长度域**协议 + 本仓三层壳出线反解 + **无 LEN 反例** | ✅ **已完成（2026-10-03，零代码改动、零 DDL、零 `pageStatus` 变更）**：新 `backend/tests/test_wire_delimiter.py` **10 例**，**BE 743 → 753/753**、FE 1106/1106（未碰前端）；**「需真实设备帧」这一类自此无开放项** |
 
-| R21–R28 | **七项复议拍板全数立项**（§8.52：C-5 ② 长度域 BE/LE → R21、C-5 ① CRC 多算法 → R22、挂账 ① epoch → R23、挂账 ③ 切 op → R24、挂账 ② 加扰 → R25、C-1 B 序列分支 → R26（含 DDL 仅新增列）、C-5 ③ varint/COBS 拆两批 → R27 出线 / R28 解包） | 🔄 **R21 已完成 ✅（2026-10-03，§8.53：长度域 `byte_order` —— BE+FE 零 DDL，收侧本就支持、补出线与出口翻译 + 应答声明；**顺带修**设计期 ≥2 字节真值被空格切坏的存量缺陷；新增共享向量 `vectors/length_order.json` 7 行，BE 753 → 768、FE 1106 → 1117）**；**R22 已完成 ✅（2026-10-03，§8.54：CRC16-CCITT / CRC32 / LRC —— 六张白名单 + `operator.py` 算子模板同批成对改；收侧 `ALGO_FIELD_WIDTH` 只加 ≥ 下限、`crc16_modbus` 遗留精确 2 字节逐字不变；共享向量 `vectors/checksum_algo.json` 30 行双端同读，期望值取自 `zlib` / `binascii` 外部真值；BE 768 → 793、FE 1117 → 1127）**；**R23 已完成 ✅（2026-10-03，§8.55：`TIME_EPOCH` 绝对时间戳算子 —— BE `encode_time_epoch` + 序列计划补丁 + `KNOWN_OPS` 20 → 21 + 算子模板，FE 编码分支 / normalize 保身份 / `EPOCH` 只读章 / 计划条目；共享向量 `vectors/time_epoch.json` 11 行双端同读，BE 793 → 808、FE 1127 → 1139）**；**R24 已完成 ✅（2026-10-03，§8.56：创建后切换 op —— 属性面板 `op_code` 只读 span → 下拉 + 兼容校验 + 确认回执；新建与切换共用 `applyOpDefaults` 单源（顺带修模板数组污染）+ BE `_validate_op_switch` 保存侧兜底，BE 808 → 824、FE 1139 → 1163）**；**R25–R28 排期已立、待实现** —— 顺序 = 先小后大、先补不对称再碰解包；加工页传输展示与切换**复议维持 D9-A 不立项** |
+| R21–R28 | **七项复议拍板全数立项**（§8.52：C-5 ② 长度域 BE/LE → R21、C-5 ① CRC 多算法 → R22、挂账 ① epoch → R23、挂账 ③ 切 op → R24、挂账 ② 加扰 → R25、C-1 B 序列分支 → R26（含 DDL 仅新增列）、C-5 ③ varint/COBS 拆两批 → R27 出线 / R28 解包） | 🔄 **R21 已完成 ✅（2026-10-03，§8.53：长度域 `byte_order` —— BE+FE 零 DDL，收侧本就支持、补出线与出口翻译 + 应答声明；**顺带修**设计期 ≥2 字节真值被空格切坏的存量缺陷；新增共享向量 `vectors/length_order.json` 7 行，BE 753 → 768、FE 1106 → 1117）**；**R22 已完成 ✅（2026-10-03，§8.54：CRC16-CCITT / CRC32 / LRC —— 六张白名单 + `operator.py` 算子模板同批成对改；收侧 `ALGO_FIELD_WIDTH` 只加 ≥ 下限、`crc16_modbus` 遗留精确 2 字节逐字不变；共享向量 `vectors/checksum_algo.json` 30 行双端同读，期望值取自 `zlib` / `binascii` 外部真值；BE 768 → 793、FE 1117 → 1127）**；**R23 已完成 ✅（2026-10-03，§8.55：`TIME_EPOCH` 绝对时间戳算子 —— BE `encode_time_epoch` + 序列计划补丁 + `KNOWN_OPS` 20 → 21 + 算子模板，FE 编码分支 / normalize 保身份 / `EPOCH` 只读章 / 计划条目；共享向量 `vectors/time_epoch.json` 11 行双端同读，BE 793 → 808、FE 1127 → 1139）**；**R24 已完成 ✅（2026-10-03，§8.56：创建后切换 op —— 属性面板 `op_code` 只读 span → 下拉 + 兼容校验 + 确认回执；新建与切换共用 `applyOpDefaults` 单源（顺带修模板数组污染）+ BE `_validate_op_switch` 保存侧兜底，BE 808 → 824、FE 1139 → 1163）**；**R25 已完成 ✅（2026-10-04，§8.57：加扰 / 混淆字段 —— 新算子 `SCRAMBLE`（ENCODING 类目）明文异或种子 / 位旋转，出线只改本字段字节；FE 编码分支 + 卡面显**加扰后线上 hex** + 加工页只读 + 反加扰解码，BE `encode_scramble` / `unscramble_hex` + `_validate_scrambles` 保存侧 400，`KNOWN_OPS` 21 → 22 + 算子模板 `mode` / `seed` / `roll`（缺省种子 A5）；共享向量 `vectors/scramble.json` 14 行双端同读，BE 824 → 843、FE 1163 → 1196）**；**R26–R28 排期已立、待实现** —— 顺序 = 先小后大、先补不对称再碰解包；加工页传输展示与切换**复议维持 D9-A 不立项** |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -4293,7 +4293,7 @@ C-4 / §8.49 三·① 与 R18 终态 / §8.27 复跑第 1 项 / §1 新行、`PR
 | C-5 ① CRC 多算法（CCITT / CRC32 / LRC） | 触发式 | **立项**（出线 + 收侧三处白名单成对改） | **R22** —— **✅ 已完成（2026-10-03，§8.54）** |
 | 挂账 ① 绝对时间戳 epoch 模板 | 不排期 | **立项** | **R23** —— **✅ 已完成（2026-10-03，§8.55）** |
 | 挂账 ③ 创建后切换 op | 不排期 | **立项** | **R24** —— **✅ 已完成（2026-10-03，§8.56）** |
-| 挂账 ② 加扰 / 混淆字段 | 不排期 | **立项** | **R25** |
+| 挂账 ② 加扰 / 混淆字段 | 不排期 | **立项** | **R25** —— **✅ 已完成（2026-10-04，§8.57）** |
 | C-1 B 序列级分支 | A 不立项 | **立项 B**（C 发前路由**仍不在本列**，要做另议） | **R26** |
 | C-5 ③ varint / COBS | 明确不做 | **立项**，按原建议拆「出线 / 解包」两批 | **R27 出线 + R28 解包** |
 | 加工页传输展示 + 本页切换 | 维持 D9-A 不立项 | **复议维持不立项** | 不排期 |
@@ -4306,7 +4306,7 @@ C-4 / §8.49 三·① 与 R18 终态 / §8.27 复跑第 1 项 / §1 新行、`PR
 | **R22** | CRC16-CCITT / CRC32 / LRC —— BE `ChecksumHandler` + FE enum / 下拉 / `VALID_ALGOS` + **`response_match` 白名单同批** + 共享向量 2–3 组<br>**✅ 已完成（2026-10-03，§8.54）**：六张白名单 + `operator.py` 算子模板同批；`ALGO_FIELD_WIDTH` 只加 ≥ 下限（`crc16_modbus` 遗留精确 2 字节不动）；共享向量 `checksum_algo.json` 30 行（期望值取自 `zlib` / `binascii` 外部真值）；BE 768 → 793、FE 1117 → 1127 | BE+FE | 中 | 否 |
 | **R23** | epoch 绝对时间戳模板（替代手填 INT_UNSIGNED）—— 新算子 `TIME_EPOCH`，`unit` = s/ms（缺省 s）取当前墙钟、定宽大端<br>**✅ 已完成（2026-10-03，§8.55）**：BE `encode_time_epoch` + 序列计划补丁（`_DYNAMIC_OPS` 三值 / `_EPOCH_KEYS`）+ `KNOWN_OPS` 20 → 21 + `operator.py` 算子模板；FE 编码分支 + normalize 保身份 + `EPOCH` 只读章 + 计划条目；共享向量 `time_epoch.json` 11 行双端同读；BE 793 → 808、FE 1127 → 1139 | BE+FE | 小 | 否 |
 | **R24** | 创建后切换 op —— 放开 `op_code` 编辑 + 兼容校验 + 确认回执（原只能删建重录）<br>**✅ 已完成（2026-10-03，§8.56）**：属性面板 op 下拉（选项 = 有模板的算子，与调色板同源）+ `planOpSwitch` 兼容校验（容器带子块切叶 → 拦）+ `describeOpSwitch` 确认回执（保留 / 清除 / 位宽 / 字节长度）；新建与切换**单源 `applyOpDefaults`**；BE `_validate_op_switch` 保存侧兜底（只判 op 变化的字段 → 存量不锁）；**顺带修模板数组污染**（`unit` / `algo` / `encoding` / `bits` 一律落首元素标量）；BE 808 → 824、FE 1139 → 1163 | BE+FE | 中 | 否 |
-| **R25** | 加扰 / 混淆字段（异或种子 / 位旋转一类语义化加扰算子） | BE+FE | 中 | 否 |
+| **R25** | 加扰 / 混淆字段（异或种子 / 位旋转一类语义化加扰算子）—— 新算子 `SCRAMBLE`：**明文进、密文出**，把「固定 hex」变成可换种子的可逆变体<br>**✅ 已完成（2026-10-04，§8.57）**：FE `utils/scramble.js` 口径档案 + 编码分支 / 卡面显加扰后线上 hex / 加工页只读 / 反加扰解码 / 属性面板 `PLAINTEXT` 输入与就近校验；BE `encode_scramble` + `unscramble_hex` + `_validate_scrambles`（保存侧 400）+ `field_blocks` / `field_decode` 两处接线；`KNOWN_OPS` 21 → 22 + 算子模板 `mode` / `seed` / `roll`（**缺省种子 A5** —— 加扰立刻可见，比恒等缺省更早暴露忘了设种子）；共享向量 `vectors/scramble.json` 14 行双端同读，**BE 824 → 843、FE 1163 → 1196** | BE+FE | 中 | 否 |
 | **R26** | 序列级分支：`sequence_steps.condition` **仅新增列** + runner 判执行 / 跳过 + 受限表达式（`== != > < in`，**无 eval**）+ 序列页条件 UI | BE+FE | 大 | **是（仅新增列）** |
 | **R27** | varint / COBS **出线**（只做编码，**不碰解包**） | BE+FE | 大 | 否 |
 | **R28** | varint / COBS **解包**（`stages` 逆向解包 + 应答匹配），硬前置 R27 | BE+FE | 大 | 否 |
@@ -4441,7 +4441,7 @@ yorha-ui 校验器改动文件 0 违规 + 文档同步）+ **一批一提交**�
 - **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`pageStatus.json`
   协议页 `availableNow`／`nextSteps` 回填 + `npm run sync:page-status`
 
-**R23 epoch 绝对时间戳模板已完成 ✅（§8.55）、R24 创建后切换 op 已完成 ✅（§8.56），下一批 → R25 加扰 / 混淆**（§8.52 排期第 5 批）。
+**R23 epoch 绝对时间戳模板已完成 ✅（§8.55）、R24 创建后切换 op 已完成 ✅（§8.56）、R25 加扰 / 混淆已完成 ✅（§8.57），下一批 → R26 序列级分支**（§8.52 排期第 6 批）。
 
 ---
 
@@ -4520,7 +4520,7 @@ s/ms（含 `MS` 大写等价）× 1/2/4/8 字节（含 1 字节非零低字节�
 - **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`seed.py` **不改**
   （不新增种子字段）；`processor.py` / `graph.py` / `Blueprint.jsx` 未碰
 
-**R24 创建后切换 op 已完成 ✅（§8.56），下一批 → R25 加扰 / 混淆**（§8.52 排期第 5 批）。
+**R24 创建后切换 op 已完成 ✅（§8.56）、R25 加扰 / 混淆已完成 ✅（§8.57），下一批 → R26 序列级分支**（§8.52 排期第 6 批）。
 
 ### 8.56 R24 创建后切换 op：属性面板放开 `op_code` 编辑 + 兼容校验 + 确认回执
 
@@ -4598,7 +4598,99 @@ header 同步显示草稿算子）。`handleOpChange` 三步：
 - **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`seed.py` **不改**（无新算子、
   无新模板字段）；`processor.py` / `graph.py` / `Blueprint.jsx` 未碰
 
-**下一批：R25 加扰 / 混淆**（§8.52 排期第 5 批）。
+**R25 加扰 / 混淆已完成 ✅（§8.57），下一批：R26 序列级分支**（§8.52 排期第 6 批）。
+
+### 8.57 R25 加扰 / 混淆字段：新算子 `SCRAMBLE` —— 明文进、密文出
+
+**批次**：2026-10-04 · **BE + FE，零 DDL、`models.py` 未动、`/dispatch` 缺省口径逐字节不变**
+—— §8.52 排期第 5 批（原 `BUSINESS_SCENARIOS.md` 挂账 ②）。现状：想让固定 hex「换个说法」
+只能手算好密文贴进 `HEX_RAW`，换种子要整段重算，卡片上也看不出这是被加扰过的内容。
+
+**方向**：一个**语义化加扰算子** —— 明文（`parameter_config.hex`）进、密文出，解码端反加扰
+还原明文。**只动本字段字节、不引入变长编码**，因此不触碰 R27/R28 的前置（§8.52 硬约束提醒）。
+
+#### 一 · 双端同口径（FE `utils/scramble.js` ↔ BE `core/orchestrator.py`）
+
+| 模式 | 变换 | 参数 |
+|---|---|---|
+| `XOR_SEED`（缺省） | 按字节循环异或：`out[i] = plain[i] ^ seed[i % len(seed)]` | `seed` = 非空偶长 hex |
+| `BIT_ROLL` | 逐字节左旋 n 位（`(b << n)` 与 `b >> (8-n)` 按位或后截 8 位） | `n = ((roll % 8) + 8) % 8` |
+
+- **明文空 / 非 hex / 非字符串 → 补零**（BE 置 `hex_value=None`、FE 显式 `'00'.repeat(len)`）：
+  绝不把非法明文发上线；**奇长明文丢末尾半字节**（双端同断）。
+- **契约外 mode / seed / roll → 恒等 fail-open**：编码层只求「出线有确定值」，真正拦在保存
+  侧（见二）；`roll` 负数 / 超 8 / 带小数 / 数字串统一 `((n % 8) + 8) % 8`，抹平 JS 负数 `%`
+  与 Python 的差异。
+- **解码是编码的逆**：XOR 自反、左旋的逆是右旋 → `decode(encode(x))` 是**不动点**。
+
+#### 二 · 保存侧硬拦（BE `_validate_scrambles` ↔ FE `scrambleParamError` + E1）
+
+- BE 在 create / update **两处、任何写入前**调用；只扫 `op_code === 'SCRAMBLE'` 的字段。
+- 三类 400：模式不在册 / **生效模式**的参数非法（XOR 判 `seed`、BIT_ROLL 判 `roll`，早返回 ——
+  另一个模式留空合法，下拉切回来即生效）/ 明文长度 ≠ `byte_len × 2`（含非 hex；空白不计，
+  与 FE E1 `if (hex && …)` 同判）。
+- **`_validate_op_switch` 不动** —— R24 的切算子校验不扩 `("HEX_RAW","SCRAMBLE")`，改由本函数
+  覆盖（避免两处各判一半）。
+- FE 同批：`scrambleParamError`（属性面板 APPLY **就近回执**）+ E1 扩到 SCRAMBLE + 新错误码
+  `SCRAMBLE_PARAM`（保存阻断 / 卡面 ⛔ / 导入预览拦截同源 G5 硬拦）。
+
+#### 三 · 编码与解码接线
+
+- **BE**：`orchestrator.encode_scramble` + `field_blocks` 的 `elif op == "SCRAMBLE"` 分支
+  （**不设 byte_len 闸** —— 加扰逐字节保长，长度只由明文定）+ `field_decode.decode_field_bytes`
+  的 `0.5` 分支（反加扰后交回明文 hex，与 FE 解码器同位）。
+- **FE**：`InstructionEncoder` 的 SCRAMBLE 分支放在 **slot 早返回之后、computedVal / inputValue
+  优先级链之前**（带 `typeof plain === 'string'` 闸）；`InstructionDecoder` 的 `0.5` 分支排在
+  staticHex 之后；`resolveDependencies` 的 size 分支把 SCRAMBLE 与 HEX_RAW 同规则（长度域 / 组
+  尺寸照常按明文字数算）。
+- **零改动**：`Block.jsx`（computedValue 分支优先）/ `Instruction.jsx`（`handleAddBlock` 走
+  `applyOpDefaults`）/ `sequence_plan.py`（只处理 dynamic / checksum，载荷预建）/ `blockTypes.js`。
+
+#### 四 · 卡面与加工页（**显示线上字节，编辑明文**）
+
+- 卡面 `computedValue` = **加扰后线上 hex**（不是明文）；组内容串同样取加扰后字节；checksum 叶
+  贡献加扰后字节（`scrambleHex` 后再交叶）。
+- 加工页只读：`normalizeRunnerInstruction` 的 `isFixed` 与**内外两张 keep 列表**都加 SCRAMBLE
+  （**含明文为空**的情形 —— 否则落进 INPUT 路径「摊平即失效」，R23 教训）；
+  `runnerRenderRules` 同批补 `isFixed`（双认身份：`op_code` 与 `original_op_code`）、
+  `isExplicitHex`（回显**明文**而非密文）、新 **`SCR` 芯片**（排在 isFixed 判定之前，无 kind
+  样式表需同步）、语义行亮 `MODE=` 与**生效模式**的 `SEED=` / `ROLL=`（二选一）。
+- 属性面板：明文走**专用 hex 输入**（label 动态 `PLAINTEXT`、`STORED:` 回显）、排除录入进制
+  （与 HEX_RAW 同判不可编辑语义）、`ParamConfigForm` 在场给 `mode` / `seed` / `roll` 三入口。
+
+#### 五 · 模板与白名单（双端同批 21 → 22）
+
+- `OP_CODES.SCRAMBLE`（16 → 17）+ `OP_PRIORITY` 插在 `BCD_CODE` 之后；BE `KNOWN_OPS` 21 → 22，
+  `test_op_whitelist::test_known_ops_set_is_exactly_22` 与 FE `opSwitch.test.js` 全集锁同批改。
+- `SEED_TEMPLATES` 新增 `ENCODING` 类目模板 `{mode: [XOR_SEED, BIT_ROLL], seed: "A5", roll: 1}`：
+  **数组 = 枚举选项**（下拉落首项，A1 数组污染先例）；`seed` / `roll` 是**字面值**（keyword
+  类字符串会被 `applyOpDefaults` 当控件类型提示跳过，`A5` 不在册 → 照常落值）。
+- **缺省种子定 A5 而非 00**：加扰立刻可见，比恒等缺省更早暴露「忘了设种子」。
+- 切算子：`mode` / `seed` / `roll` 与 `hex` 都**不是中性键** → 切走即清、切入按 `byte_len`
+  播等长明文（HEX_RAW → SCRAMBLE 不会把老明文串到新算子，R24「切换 ≡ 新建」口径不改）。
+
+#### 六 · 共享向量（`vectors/scramble.json` 14 行 · §3 / §7 已注册）
+
+双端同读：BE `test_scramble.py::VECTORS` / FE `scramble.test.js`。覆盖 XOR 单·多字节种子、种子
+比明文长、`mode` 缺键缺省、BIT_ROLL `n = 1 / 3 / 8 恒等`、负 roll 双取模、数字串 roll、契约外
+mode 与非法种子恒等、空白明文、奇长丢半字节、空种子恒等；每行同时断言「出线 byte-equal +
+出帧一致 + 反加扰回到明文」三件套（期望值另经独立复算对拍，非抄实现输出）。
+
+#### 七 · 验收
+
+- **BE 824 → 843/843**（+19：`test_scramble.py` 19 例 —— 向量三断言 / 补零回落 / 契约外恒等 /
+  roll 归一 / 小端先加扰后逆序 / `_validate_scrambles` 七路 400 与放行 / 白名单模板三键 / 解码
+  反加扰）；`test_op_whitelist` 集合 22 + `test_time_epoch` 计数锁同步。
+- **FE 1163 → 1196/1196（77 文件）**（+33：`utils/__tests__/scramble.test.js` **26 例** +
+  `useInstructionLanes.test.js` 卡面三例 + `BlockPropertiesPanel.test.jsx` 面板四例；
+  `opSwitch.test.js` / `validateInstruction.test.js` 全集 21 → 22）。
+- `npx vite build` EXIT=0 · `npm run lint` EXIT=0 · yorha-ui 校验器改动 js/jsx/json **0 违规
+  （16 文件）** · `vectors/README.md` 表清单 15 文件 19 表 → **16 / 20**（§3 行 + §7 行注）·
+  md 表列数 mismatches=0 · 隐形字符／CRLF／TAB = 0。
+- **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`seed.py` **不改**（新模板在
+  `operator.py`，不落库）；`processor.py` / `graph.py` / `Blueprint.jsx` 未碰。
+
+**下一批：R26 序列级分支**（§8.52 排期第 6 批 · **含 DDL 仅新增列 → 另开 `chore(db)`**）。
 
 ## 9. 保留勿动（非任务，勿清理）
 

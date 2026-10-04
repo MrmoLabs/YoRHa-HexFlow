@@ -59,7 +59,13 @@ const processFields = (items) => {
                 const hasFixedValue = !isStringField
                     && (f.parameter_config?.hex || f.parameter_config?.value) !== undefined
                     && !f.parameter_config?.variable;
-                const isFixed = op === 'FIXED' || op === 'HEX_RAW' || op === 'HEX' || op === 'BITFIELD' || type === 'fixed' || type === 'hex_raw' || f.parameter_config?.readOnly || hasFixedValue;
+                const isFixed = op === 'FIXED' || op === 'HEX_RAW' || op === 'HEX' || op === 'BITFIELD'
+                    // R25: SCRAMBLE 的明文是**定义侧配置**（pc.hex），编码端直读它加扰
+                    // 出线 —— 可编辑输入压根不进编码分支（「能改但无效」即欺骗，同
+                    // 第 15 单 HEADER/TAIL 口径）；显空明文也要判死，否则 hasFixedValue
+                    // 落空 → isInput → 变量字段被创建出来、键入无处生效。
+                    || op === 'SCRAMBLE'
+                    || type === 'fixed' || type === 'hex_raw' || f.parameter_config?.readOnly || hasFixedValue;
                 const isInput = !isCalculated && !isFixed;
 
                 // 第 14 单：种类算子身份保留 —— 可编辑时 FLOAT_IEEE/BCD_CODE/
@@ -77,7 +83,9 @@ const processFields = (items) => {
                     // R23: TIME_EPOCH 与 LENGTH_CALC/CHECKSUM 同列「保身份」——
                     // 编码分支按 op 门控（InstructionEncoder TIME_EPOCH 分支取
                     // 墙钟），摊平成 INPUT 即退回静态 value 路径 → 时间戳失效。
-                    op_code: (keepKindOp || ['LENGTH_CALC', 'CHECKSUM_CRC', 'HEX_RAW', 'BITFIELD', 'TIME_CUMULATIVE', 'TIME_ACCUMULATOR', 'TIME_EPOCH'].includes(op) || type === 'time_cumulative') ? ((keepKindOp || ['LENGTH_CALC', 'CHECKSUM_CRC', 'HEX_RAW', 'BITFIELD', 'TIME_EPOCH'].includes(op)) ? op : 'TIME_CUMULATIVE') : (isInput ? 'INPUT' : (isCalculated ? 'CALCULATED' : 'FIXED')),
+                    // R25: SCRAMBLE 同理且更凶 —— 摊平成 FIXED 后编码端读 params.hex
+                    // **原样出线**（不加扰），明文直接上总线（内外表同加，改一必改二）。
+                    op_code: (keepKindOp || ['LENGTH_CALC', 'CHECKSUM_CRC', 'HEX_RAW', 'BITFIELD', 'SCRAMBLE', 'TIME_CUMULATIVE', 'TIME_ACCUMULATOR', 'TIME_EPOCH'].includes(op) || type === 'time_cumulative') ? ((keepKindOp || ['LENGTH_CALC', 'CHECKSUM_CRC', 'HEX_RAW', 'BITFIELD', 'SCRAMBLE', 'TIME_EPOCH'].includes(op)) ? op : 'TIME_CUMULATIVE') : (isInput ? 'INPUT' : (isCalculated ? 'CALCULATED' : 'FIXED')),
                     original_op_code: f.op_code, // Preserve original for render logic fallback
                     bits: Array.isArray(f.bits) ? f.bits : [], // Bit layout for BITFIELD packing
                     parameter_config: {

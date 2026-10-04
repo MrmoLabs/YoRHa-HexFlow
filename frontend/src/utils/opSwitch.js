@@ -17,7 +17,7 @@ export const OP_KEYWORD_HINTS = [
     'datetime', 'number', 'string', 'field_picker', 'kv_pair_list', 'input', 'bit_editor',
 ];
 
-// 编码器已知算子全集 = OP_CODES 16 项 + encoder legacy 5 项 = 21 项（与
+// 编码器已知算子全集 = OP_CODES 17 项 + encoder legacy 5 项 = 22 项（与
 // validateInstruction.KNOWN_OPS / BE KNOWN_OPS 同源，改一必改二）。
 export const KNOWN_OP_LIST = [
     ...Object.values(OP_CODES),
@@ -86,8 +86,10 @@ export function applyOpDefaults(draft, opCode, template, { preferByteLen } = {})
         }
     }
 
-    // 4) HEX_RAW：hex 必须与 byte_len 等长（APPLY 与 BE 保存侧都按这个判）。
-    if (opCode === 'HEX_RAW') {
+    // 4) HEX_RAW / SCRAMBLE（R25）：hex 必须与 byte_len 等长（APPLY 与保存侧 E1、
+    //    BE _validate_scrambles 都按这个判）。SCRAMBLE 播的是**明文**（与 HEX_RAW 同一条
+    //    零填充规则）—— 加扰后出线的字节由卡面/编码端现算，不在这里写死。
+    if (opCode === 'HEX_RAW' || opCode === 'SCRAMBLE') {
         const byteLen = draft.byte_len || 1;
         const currentHex = String(params.hex || '').replace(/\s/g, '');
         if (currentHex.length !== byteLen * 2) params.hex = '00'.repeat(byteLen);

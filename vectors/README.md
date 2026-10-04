@@ -41,7 +41,7 @@ JSON 没有 `Infinity` / `NaN`，而向量里确实要喂这两个值（如 `[Na
   行注见本文末尾「行注归档」。
 - 迁移时已校验：**无任何大于 2⁵³−1 的整数**，JS `Number` 精度无损。
 
-## 3. 表清单（15 文件 / 19 表）
+## 3. 表清单（16 文件 / 20 表）
 
 | JSON | 表 · 行数 | 后端消费 | 前端消费 |
 |---|---|---|---|
@@ -59,6 +59,7 @@ JSON 没有 `Infinity` / `NaN`，而向量里确实要喂这两个值（如 `[Na
 | `escape.json` | 7 | `test_escape.py::VECTORS` | `escapeTable.test.js` |
 | `checksum_algo.json` | 30 | `test_checksum_algorithms.py::VECTORS` | `checksumAlgo.test.js` R22 CRC 多算法 |
 | `bitfield.json` | `pack` 7 | `test_protocol_bitfield.py::PACK_VECTORS` | `bitGrid.test.js` |
+| `scramble.json` | 14 | `test_scramble.py::VECTORS` | `scramble.test.js` R25 加扰字段 |
 | `wrap.json` | `main`：children 4 + payloads 1 + expect | `test_frame_builder.py` · `test_wrap_api.py` | `blockMerge.test.js` |
 
 > `wrap.json` 是三处同值场景树（`FA FA / 02 / 01 02 / ED`），迁表前在三个文件里各写一遍。
@@ -274,3 +275,26 @@ JSON 只有一种表达，两端原本的记法差异靠 **3 个稳定适配**�
 - `#8` ms 起点 0 → 全 0
 - `#9` `unit` 大写 `MS` → 与 `ms` 等价（双端 `toLowerCase` 同口径）
 - `#10` 2025-01-01T00:00:00Z（1735689600 s）4 字节
+
+### scramble.json（R25 · 加扰字段 / 混淆）
+
+一行 = `plain` × `mode` × `seed` × `roll` → `expected`（加扰后 hex，大写无空白）。`mode` 缺键 =
+缺省 `XOR_SEED`，`seed` / `roll` 缺键 = 该模式的参数缺省。双端同读（BE `test_scramble.py::VECTORS`
+/ FE `scramble.test.js`），口径档案 `frontend/src/utils/scramble.js` ↔
+`backend/core/orchestrator.py::encode_scramble`；解码是编码的逆（XOR 自反、左旋逆右旋）→
+`decode(encode(x))` 是不动点。
+
+- `#0` XOR 单字节种子 `A5` → `01020304` = `A4A7A6A1`
+- `#1` XOR 多字节种子 `5AA5` 按字节循环异或 → `5A5A4A85`
+- `#2` 种子比明文长 → 只用得到的前缀（`01^5A = 5B`）
+- `#3` **`mode` 缺键** → 缺省 XOR_SEED（`11223344 ^ A5 = B48796E1`）
+- `#4` BIT_ROLL `roll=1`：`81` → `03`（bit7 回卷到 bit0）
+- `#5` BIT_ROLL `roll=3`：`1F00` → `F800`
+- `#6` BIT_ROLL `roll=8` → 恒等（mod 8 归零）
+- `#7` BIT_ROLL `roll=-1` → `((n%8)+8)%8 = 7`（抹平 JS 负数 `%` 与 Python 的差异）→ `01`
+- `#8` `roll` 是数字串 `"3"` → 与数值同解（`F800`）
+- `#9` 契约外 `mode=FOO` → **恒等** fail-open（保存侧 400 先拦，编码侧只求出线有确定值）
+- `#10` 非法种子（奇长 `"A"`）→ 恒等（同上，两层各司其职）
+- `#11` 明文带空格 `AA 55` → 去空白后加扰 → `0FF0`
+- `#12` 奇长明文 `ABC` → 丢末尾半字节只编 `AB` → `AA`
+- `#13` **`seed` 缺键** → 空种子恒等（`0F10` 原样出线）

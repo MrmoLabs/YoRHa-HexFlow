@@ -6,6 +6,7 @@ import { mapChecksumAlgo } from '../../utils/normalizeInstruction';
 import { getBlockLimitRefs, ENCODER_LIMITS } from '../../utils/encoderLimits';
 import { padSpec } from '../../utils/padSpec';
 import { planOpSwitch, switchableOps, describeOpSwitch } from '../../utils/opSwitch';
+import { scrambleParamError } from '../../utils/scramble';
 
 const controlledValue = (value, fallback = '') => (value ?? fallback);
 
@@ -295,8 +296,19 @@ export default function BlockPropertiesPanel({
         if (!tempBlockConfig) return;
         const opTemplate = operatorTemplates[tempBlockConfig.op_code];
 
-        // 1. HEX_RAW Validation
-        if (tempBlockConfig.op_code === 'HEX_RAW') {
+        // 0. R25 (§8.57): SCRAMBLE 加扰参数 —— 生效模式的参数非法会让出线落进「恒等」
+        //    fail-open（发成功但没加扰 = 静默错码）→ 拒绝 APPLY（页面级 error 列表同源
+        //    一并拦保存，这里是就近反馈）。
+        if (tempBlockConfig.op_code === 'SCRAMBLE') {
+            const reason = scrambleParamError(tempBlockConfig.parameter_config || {});
+            if (reason) {
+                openConfirm(`校验错误：\n${reason}`, () => { });
+                return;
+            }
+        }
+
+        // 1. HEX_RAW Validation（R25 起 SCRAMBLE 明文同规则：长度 = byte_len×2）
+        if (['HEX_RAW', 'SCRAMBLE'].includes(tempBlockConfig.op_code)) {
             const byteLen = tempBlockConfig.byte_len || 1;
             const hexVal = (tempBlockConfig.parameter_config?.hex || "").replace(/\s/g, '');
             if (hexVal.length !== byteLen * 2) {
@@ -529,8 +541,9 @@ export default function BlockPropertiesPanel({
                         <div className="text-[9px] opacity-50 border-b border-white/10 pb-1 mb-2">配置参数 (CONFIG)</div>
                         {/* 批 1：录入进制（字段级）—— 存 parameter_config.input_base。
                             加工页据此把定长整数字段切到十进制通道；纯 UI 层，编码端口径不变。
-                            HEX_RAW（固定值）/BITFIELD（打包值）不适用 → 不渲染。 */}
-                        {selectedBlock.op_code !== 'HEX_RAW' && selectedBlock.op_code !== 'BITFIELD' && (
+                            HEX_RAW（固定值）/SCRAMBLE（明文同为固定值，只读回显）/
+                            BITFIELD（打包值）不适用 → 不渲染。 */}
+                        {selectedBlock.op_code !== 'HEX_RAW' && selectedBlock.op_code !== 'SCRAMBLE' && selectedBlock.op_code !== 'BITFIELD' && (
                             <div className="flex flex-col gap-1">
                                 <label
                                     className="text-[10px] opacity-70 uppercase tracking-widest"
@@ -577,11 +590,12 @@ export default function BlockPropertiesPanel({
                             />
                         )}
 
-                        {/* HEX_RAW Input (Manual) - Multi Format */}
-                        {selectedBlock.op_code === 'HEX_RAW' && (
+                        {/* HEX_RAW / R25 SCRAMBLE 明文 Input (Manual) - Multi Format
+                            SCRAMBLE 的框内是**明文**（出线前经 mode 加扰，线上字节看卡面） */}
+                        {['HEX_RAW', 'SCRAMBLE'].includes(selectedBlock.op_code) && (
                             <div className="flex flex-col gap-2">
                                 <div className="flex justify-between items-end">
-                                    <label className="text-[10px] opacity-70 uppercase tracking-widest">VALUE ({hexInputMode})</label>
+                                    <label className="text-[10px] opacity-70 uppercase tracking-widest">{selectedBlock.op_code === 'SCRAMBLE' ? 'PLAINTEXT' : 'VALUE'} ({hexInputMode})</label>
                                     <div className="flex text-[10px] gap-1 border border-nier-light/30 p-0.5 bg-black">
                                         {['HEX', 'DEC', 'BIN'].map(m => (
                                             <button

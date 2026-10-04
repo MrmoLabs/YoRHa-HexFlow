@@ -1,0 +1,16 @@
+[
+  {"plain": "01020304", "mode": "XOR_SEED", "seed": "A5", "expected": "A4A7A6A1"},
+  {"plain": "00FF1020", "mode": "XOR_SEED", "seed": "5AA5", "expected": "5A5A4A85"},
+  {"plain": "01", "mode": "XOR_SEED", "seed": "5AA5", "expected": "5B"},
+  {"plain": "11223344", "seed": "A5", "expected": "B48796E1"},
+  {"plain": "81", "mode": "BIT_ROLL", "roll": 1, "expected": "03"},
+  {"plain": "1F00", "mode": "BIT_ROLL", "roll": 3, "expected": "F800"},
+  {"plain": "DEADBEEF", "mode": "BIT_ROLL", "roll": 8, "expected": "DEADBEEF"},
+  {"plain": "02", "mode": "BIT_ROLL", "roll": -1, "expected": "01"},
+  {"plain": "1F00", "mode": "BIT_ROLL", "roll": "3", "expected": "F800"},
+  {"plain": "AABBCCDD", "mode": "FOO", "seed": "A5", "expected": "AABBCCDD"},
+  {"plain": "1234", "mode": "XOR_SEED", "seed": "A", "expected": "1234"},
+  {"plain": "AA 55", "mode": "XOR_SEED", "seed": "A5", "expected": "0FF0"},
+  {"plain": "ABC", "mode": "XOR_SEED", "seed": "01", "expected": "AA"},
+  {"plain": "0F10", "mode": "XOR_SEED", "expected": "0F10"}
+]

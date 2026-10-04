@@ -29,7 +29,7 @@ import struct
 from typing import Any, Dict, List, Optional, Sequence
 
 from backend.core.field_blocks import fields_to_blocks
-from backend.core.orchestrator import Orchestrator, _PadMark
+from backend.core.orchestrator import Orchestrator, _PadMark, unscramble_hex
 from backend.core.pad import align_pad_len, normalize_align, normalize_pad_to, pad_to_pad_len
 from backend.schemas.block import Block, BlockType
 
@@ -121,6 +121,17 @@ def decode_field_bytes(field: dict, raw: Sequence[int]):
     static_hex = field.get("hex_value") or params.get("hex")
     if static_hex and (op in ("FIXED", "HEADER", "TAIL", "HEX_RAW") or op == ""):
         return _hex_of(buf)
+
+    # 0.5 R25 (§8.57): SCRAMBLE —— 线上是**加扰字节**，先反加扰再交回明文 hex（与 FE
+    # InstructionDecoder 的 SCRAMBLE 分支同位同口径）；XOR 自反、左旋的逆是右旋 →
+    # 编码(解码(x)) 是不动点。不反变换就只能把密文当值显示。
+    if op == "SCRAMBLE":
+        return unscramble_hex(
+            _hex_of(buf),
+            params.get("mode"),
+            params.get("seed"),
+            params.get("roll"),
+        )
 
     # 1. 文本（utf8 走 errors='replace'，与前端 TextDecoder 的替换语义同口径）
     if op == "STRING" or params.get("type") == "string":

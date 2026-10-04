@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { evaluateFormula, formatToHex, formatUnknown, calculateChecksum } from '../utils/formula';
 import { mapChecksumAlgo } from '../utils/normalizeInstruction';
 import { computeByteOffsets, presenceStaticState } from '../utils/byteOffsets';
+import { scrambleHex } from '../utils/scramble';
 
 export function useInstructionLanes(currentInstruction, activeInstructionId) {
     // expandedGroupIds: Array of IDs that are currently expanded.
@@ -154,6 +155,16 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
                     return (hexVal.match(/.{1,2}/g) || []).join(' ').toUpperCase();
                 }
             }
+            // R25 (§8.57): 组内容串里的加扰字段要出**线上字节**（与卡面 computedValue、
+            // 编码端同一份 scrambleHex）—— 亮明文会让「组里看起来是 A4、线上却是 01」。
+            if (field.op_code === 'SCRAMBLE') {
+                const raw = field.parameter_config?.hex;
+                const plain = typeof raw === 'string' ? String(raw).replace(/\s/g, '') : '';
+                if (plain && /^[\dA-Fa-f]+$/.test(plain)) {
+                    const wire = scrambleHex(plain, field.parameter_config || {});
+                    return (wire.match(/.{1,2}/g) || []).join(' ').toUpperCase();
+                }
+            }
             return formatUnknown(field.byte_len);
         };
 
@@ -225,6 +236,16 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
                     const hex = formatToHex(startVal, f.byte_len || 1);
                     return { ...f, parameter_config: { ...f.parameter_config, computedValue: hex } };
                 }
+                // 3.4 R25 (§8.57): 加扰字段 —— 卡面中央亮**线上字节**（明文经 mode 加扰），
+                // 属性面板里编辑的仍是明文：卡上看到什么、线上就发什么。明文空/非 hex →
+                // 与编码端同口径回落 byte_len 补零（不出 ??：空明文不是「未知」，是确定的 00）。
+                if (f.op_code === 'SCRAMBLE') {
+                    const plain = f.parameter_config?.hex;
+                    const wire = typeof plain === 'string' && /^[\dA-Fa-f]+$/.test(String(plain).replace(/\s/g, ''))
+                        ? scrambleHex(plain, f.parameter_config || {})
+                        : '00'.repeat(Math.max(0, Number(f.byte_len) || 0));
+                    return { ...f, parameter_config: { ...f.parameter_config, computedValue: wire } };
+                }
                 // 3.5 Checksum preview (A5): structural estimate over referenced
                 // fields — HEX_RAW contributes its literal bytes, everything else
                 // contributes 00 placeholders (no runtime inputs on this page).
@@ -246,7 +267,13 @@ export function useInstructionLanes(currentInstruction, activeInstructionId) {
                         if (!ref) return;
                         const leaves = ref.op_code === 'ARRAY_GROUP' ? collectLeaves(ref.id) : [ref];
                         leaves.forEach(leaf => {
-                            const hexVal = String(leaf.parameter_config?.hex || leaf.hex_value || '').replace(/\s/g, '');
+                            // R25: SCRAMBLE 贡献**加扰后**的字节（校验按线上字节算，
+                            // 亮明文会把校验算错）；空/非明文落下方 00 占位，与编码端
+                            // 「明文空 → 补零」同字节。
+                            const leafHex = leaf.parameter_config?.hex;
+                            const hexVal = leaf.op_code === 'SCRAMBLE'
+                                ? (typeof leafHex === 'string' ? scrambleHex(leafHex, leaf.parameter_config || {}) : '')
+                                : String(leafHex || leaf.hex_value || '').replace(/\s/g, '');
                             if (hexVal && /^[\dA-Fa-f]+$/.test(hexVal)) {
                                 (hexVal.match(/.{1,2}/g) || []).forEach(pair => bytes.push(parseInt(pair, 16)));
                             } else {

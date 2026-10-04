@@ -1,4 +1,5 @@
 import { alignPadLen, padSpec, padToPadLen } from './padSpec';
+import { unscrambleHex } from './scramble';
 import { InstructionEncoder } from './InstructionEncoder';
 
 // R9（PLAN §8.46 · §8.37 R9 行 · C-2 选 B 前半）：**bytes → fields 解码器**。
@@ -114,6 +115,11 @@ export const InstructionDecoder = {
             || op === 'HEX_RAW' || !op)) {
             return hexOf(b);
         }
+
+        // 0.5 R25 (§8.57): SCRAMBLE —— 线上是**加扰字节**，先反加扰再交回明文 hex：
+        // XOR 自反、左旋的逆是右旋 → encode(decode(x)) 是不动点（定点断言对 SCRAMBLE
+        // 仍成立）。不反变换就只能把密文当值显示，人看不出明文是什么。
+        if (op === 'SCRAMBLE') return unscrambleHex(hexOf(b), params);
 
         // 1. 文本（对偶 STRING 分支：utf8 走 TextDecoder，否则逐字节 code unit）
         if (op === 'STRING' || params.type === 'string') {

@@ -23,6 +23,7 @@ from backend.core.orchestrator import (
     encode_float_ieee,
     encode_int_signed,
     encode_scaled,
+    encode_scramble,
     encode_string,
     encode_time_accumulator,
     encode_time_epoch,
@@ -217,6 +218,18 @@ def fields_to_blocks(fields, now=None):
                 hex_value = encode_auto_counter(
                     cfg.get("value"), cfg.get("start_val"),
                     cfg.get("step"), cfg.get("max"), byte_len,
+                )
+        elif op == "SCRAMBLE" and not kids:
+            # R25 (§8.57): 加扰字段 —— 明文（cfg.hex，与 HEX_RAW 同源同规则）经 mode
+            # 变换后出线，与前端 _encodeFieldBytes 的 SCRAMBLE 分支 byte-equal
+            # （共享向量 vectors/scramble.json 双端锚定）。
+            # **无 byte_len 闸**：加扰逐字节保长、不需要位宽（byte_len=0 的空明文两端同为
+            # 0 字节）；明文空 / 非 hex → encode 返回 None → 置 None（发射期
+            # `hex_value or "00"*byte_length` 补零，与前端「明文非法 → 补零」同字节）——
+            # 绝不能沿用上文塞进 hex_value 的原串，那等于把非法明文直接发上线。
+            if isinstance(hex_value, str):
+                hex_value = encode_scramble(
+                    hex_value, cfg.get("mode"), cfg.get("seed"), cfg.get("roll")
                 )
         elif (op == "STRING" or (op == "INPUT" and str(cfg.get("type") or "").lower() == "string")) and byte_len > 0 and not kids:
             # N2 (G2): 文本字段定长编码（ascii/utf8 × pad/截断）——新算子 STRING

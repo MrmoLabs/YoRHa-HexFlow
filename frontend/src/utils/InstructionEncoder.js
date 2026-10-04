@@ -1,5 +1,6 @@
 import { evaluateFormula, calculateChecksum, ChecksumAlgo } from './formula';
 import { alignPadLen, padHex, padSpec, padToPadLen } from './padSpec';
+import { isValidPlainHex, scrambleHex } from './scramble';
 
 /**
  * Core Logic for the Instruction Processing Engine.
@@ -151,6 +152,21 @@ export const InstructionEncoder = {
         // R1: 协议树特殊叶 —— slot 占位不发射（orchestrator.py:76 跳过 SLOT 同
         // 口径）；容器（children:[] 空容器落此）只发子字节 → 0 字节，不产脏 00。
         if (field.type === 'slot' || field.type === 'container') return [];
+
+        // R25 (§8.57): SCRAMBLE 加扰字段 —— 明文恒取 pc.hex（与 HEX_RAW 同源同规则：
+        // 长度 = byte_len×2，保存侧 E1 与 BE 双拦），出线按 mode 加扰；inputs / computed
+        // **不参与**（加工页归一化判 isFixed → 只读，不存在会压过它的运行时值）。
+        // 明文空 / 非 hex → 与后端 `hex_value or "00" * byte_length` 同口径回落补零
+        // （显式补，不走下方值链：链条会把 00 串当数值再走一次定长整数路径）。
+        if (op === 'SCRAMBLE') {
+            const rawLen = Math.max(0, Math.floor(Number(field.byte_len ?? field.byte_length) || 0));
+            const plain = params.hex;
+            // typeof 闸：后端 `isinstance(cfg.get("hex"), str)` 非串一律补零 —— 数字型
+            // hex（直连 API 写入）在 FE 被 String() 后反而会凑出合法 hex，两端必须同判。
+            return this.parseHexBytes(typeof plain === 'string' && isValidPlainHex(plain)
+                ? scrambleHex(plain, params)
+                : '00'.repeat(rawLen));
+        }
 
         // LEAF NODES logic
         const inputValue = inputs[field.id];
@@ -501,7 +517,9 @@ export const InstructionEncoder = {
                     const val = inputs[field.id] || params.value || '';
                     size = val.length;
                 }
-            } else if (field.op_code === 'HEX_RAW') {
+            } else if (field.op_code === 'HEX_RAW' || field.op_code === 'SCRAMBLE') {
+                // R25: SCRAMBLE 明文与 HEX_RAW 同规则（长度 = 加扰后长度，逐字节保长）
+                // → 长度域/组尺寸照常按 hex 字数算；SCRAMBLE 无 inputs（归一只读）。
                 const val = inputs[field.id] || params.hex || '';
                 if (typeof val === 'string') size = Math.ceil(val.replace(/\s/g, '').length / 2);
             }
