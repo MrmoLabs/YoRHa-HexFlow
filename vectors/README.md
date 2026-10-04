@@ -41,7 +41,7 @@ JSON 没有 `Infinity` / `NaN`，而向量里确实要喂这两个值（如 `[Na
   行注见本文末尾「行注归档」。
 - 迁移时已校验：**无任何大于 2⁵³−1 的整数**，JS `Number` 精度无损。
 
-## 3. 表清单（16 文件 / 20 表）
+## 3. 表清单（17 文件 / 21 表）
 
 | JSON | 表 · 行数 | 后端消费 | 前端消费 |
 |---|---|---|---|
@@ -60,6 +60,7 @@ JSON 没有 `Infinity` / `NaN`，而向量里确实要喂这两个值（如 `[Na
 | `checksum_algo.json` | 30 | `test_checksum_algorithms.py::VECTORS` | `checksumAlgo.test.js` R22 CRC 多算法 |
 | `bitfield.json` | `pack` 7 | `test_protocol_bitfield.py::PACK_VECTORS` | `bitGrid.test.js` |
 | `scramble.json` | 14 | `test_scramble.py::VECTORS` | `scramble.test.js` R25 加扰字段 |
+| `condition.json` | 58 | `test_condition.py::VECTORS` | `condition.test.js` R26 序列条件 |
 | `wrap.json` | `main`：children 4 + payloads 1 + expect | `test_frame_builder.py` · `test_wrap_api.py` | `blockMerge.test.js` |
 
 > `wrap.json` 是三处同值场景树（`FA FA / 02 / 01 02 / ED`），迁表前在三个文件里各写一遍。
@@ -298,3 +299,22 @@ JSON 只有一种表达，两端原本的记法差异靠 **3 个稳定适配**�
 - `#11` 明文带空格 `AA 55` → 去空白后加扰 → `0FF0`
 - `#12` 奇长明文 `ABC` → 丢末尾半字节只编 `AB` → `AA`
 - `#13` **`seed` 缺键** → 空种子恒等（`0F10` 原样出线）
+
+### condition.json（R26 · 序列步骤条件）
+
+一行 = `expr` × `vars` → **`expected`（true / false）或 `error`（预期错误文案）**，二选一。
+双端同读（BE `test_condition.py::VECTORS` / FE `condition.test.js`），口径档案
+`backend/core/condition.py` ↔ `frontend/src/utils/condition.js`：一条条件 = 一次比较，
+运算符恰 6 个（`==` `!=` `>=` `<=` `>` `<` + 关键字 `in`），**无 eval、无括号、无算术、
+无布尔连接**；变量名是**一整个裸词**、查表 = **整串精确匹配**（`step.1.status` 是一个键，
+不下钻）。`error` 行的文案两端**逐字相同** —— 文案改一必改二。
+
+- `#0`–`#10` 六运算符 + `0x` / `0b` / 小数 / 负号 / 整数与小数同比
+- `#11`–`#16` 状态与字符串比较（`step.1.status` 带点键、`>=` 字典序）
+- `#17`–`#21` `in` 两形态：**子串**（`"A501" in step.1.received`）与**数组成员**
+- `#22`–`#30` `true` / `null` 口径 —— **`null` 只与 `null` 相等**（`nil == 0` → false，
+  比大小 → 类型错）
+- `#31`–`#34` 中文 / 点号 / 连字符变量名 + 平铺键优先于带点键（整串匹配，非前缀）
+- `#35`–`#55` 错误面：类型不可比、`in` 右侧非串非数组、变量未定义、缺运算符、
+  多余记号、非法字符、括号与 `&&` 拒收、未闭合字符串 —— **全部 fail-closed**
+- `#56`–`#57` 三条上限：长度 200、记号 64（数组 32 是第二道，记号上限先拦）

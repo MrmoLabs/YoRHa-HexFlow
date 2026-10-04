@@ -45,7 +45,7 @@
 | R19–R20 | **拍板后追加排期**（§8.50：① 加工页传输展示与切换 = **维持 D9-A 不立项**、② 数据包示例下载 = **动态导出**、③ 档案自定义排序 = **`sort_order` DDL 解禁**） | ✅ **R19 已完成 ✅（§8.50：数据包示例下载 —— 动态出按域导入的 5 域、复用 R17 `?domains=` 子集，零后端改动零 DDL，FE 1098 → 1099）**、**R20 已完成 ✅（§8.50：档案自定义排序 —— `device_profiles.sort_order` 仅新增列 + migration 0004 + `PUT /profiles/order` 整表一次提交，拖完只改草稿序；BE 733 → 743、FE 1099 → 1106；db 同步另开 `chore(db)` 提交）** |
 | §8.51 | **§9.7 ① 出线方向销项**（「有 LEN = 不需要转义」在载荷含定界字节时是否异常）—— 按 §8.35 同套方法**联网取公开规范真帧 + 仓内仿真**：IEC 60870-5-104 / DL/T 645-2007 / Modbus TCP 三条**有长度域**协议 + 本仓三层壳出线反解 + **无 LEN 反例** | ✅ **已完成（2026-10-03，零代码改动、零 DDL、零 `pageStatus` 变更）**：新 `backend/tests/test_wire_delimiter.py` **10 例**，**BE 743 → 753/753**、FE 1106/1106（未碰前端）；**「需真实设备帧」这一类自此无开放项** |
 
-| R21–R28 | **七项复议拍板全数立项**（§8.52：C-5 ② 长度域 BE/LE → R21、C-5 ① CRC 多算法 → R22、挂账 ① epoch → R23、挂账 ③ 切 op → R24、挂账 ② 加扰 → R25、C-1 B 序列分支 → R26（含 DDL 仅新增列）、C-5 ③ varint/COBS 拆两批 → R27 出线 / R28 解包） | 🔄 **R21 已完成 ✅（2026-10-03，§8.53：长度域 `byte_order` —— BE+FE 零 DDL，收侧本就支持、补出线与出口翻译 + 应答声明；**顺带修**设计期 ≥2 字节真值被空格切坏的存量缺陷；新增共享向量 `vectors/length_order.json` 7 行，BE 753 → 768、FE 1106 → 1117）**；**R22 已完成 ✅（2026-10-03，§8.54：CRC16-CCITT / CRC32 / LRC —— 六张白名单 + `operator.py` 算子模板同批成对改；收侧 `ALGO_FIELD_WIDTH` 只加 ≥ 下限、`crc16_modbus` 遗留精确 2 字节逐字不变；共享向量 `vectors/checksum_algo.json` 30 行双端同读，期望值取自 `zlib` / `binascii` 外部真值；BE 768 → 793、FE 1117 → 1127）**；**R23 已完成 ✅（2026-10-03，§8.55：`TIME_EPOCH` 绝对时间戳算子 —— BE `encode_time_epoch` + 序列计划补丁 + `KNOWN_OPS` 20 → 21 + 算子模板，FE 编码分支 / normalize 保身份 / `EPOCH` 只读章 / 计划条目；共享向量 `vectors/time_epoch.json` 11 行双端同读，BE 793 → 808、FE 1127 → 1139）**；**R24 已完成 ✅（2026-10-03，§8.56：创建后切换 op —— 属性面板 `op_code` 只读 span → 下拉 + 兼容校验 + 确认回执；新建与切换共用 `applyOpDefaults` 单源（顺带修模板数组污染）+ BE `_validate_op_switch` 保存侧兜底，BE 808 → 824、FE 1139 → 1163）**；**R25 已完成 ✅（2026-10-04，§8.57：加扰 / 混淆字段 —— 新算子 `SCRAMBLE`（ENCODING 类目）明文异或种子 / 位旋转，出线只改本字段字节；FE 编码分支 + 卡面显**加扰后线上 hex** + 加工页只读 + 反加扰解码，BE `encode_scramble` / `unscramble_hex` + `_validate_scrambles` 保存侧 400，`KNOWN_OPS` 21 → 22 + 算子模板 `mode` / `seed` / `roll`（缺省种子 A5）；共享向量 `vectors/scramble.json` 14 行双端同读，BE 824 → 843、FE 1163 → 1196）**；**R26–R28 排期已立、待实现** —— 顺序 = 先小后大、先补不对称再碰解包；加工页传输展示与切换**复议维持 D9-A 不立项** |
+| R21–R28 | **七项复议拍板全数立项**（§8.52：C-5 ② 长度域 BE/LE → R21、C-5 ① CRC 多算法 → R22、挂账 ① epoch → R23、挂账 ③ 切 op → R24、挂账 ② 加扰 → R25、C-1 B 序列分支 → R26（含 DDL 仅新增列）、C-5 ③ varint/COBS 拆两批 → R27 出线 / R28 解包） | 🔄 **R21 已完成 ✅（2026-10-03，§8.53：长度域 `byte_order` —— BE+FE 零 DDL，收侧本就支持、补出线与出口翻译 + 应答声明；**顺带修**设计期 ≥2 字节真值被空格切坏的存量缺陷；新增共享向量 `vectors/length_order.json` 7 行，BE 753 → 768、FE 1106 → 1117）**；**R22 已完成 ✅（2026-10-03，§8.54：CRC16-CCITT / CRC32 / LRC —— 六张白名单 + `operator.py` 算子模板同批成对改；收侧 `ALGO_FIELD_WIDTH` 只加 ≥ 下限、`crc16_modbus` 遗留精确 2 字节逐字不变；共享向量 `vectors/checksum_algo.json` 30 行双端同读，期望值取自 `zlib` / `binascii` 外部真值；BE 768 → 793、FE 1117 → 1127）**；**R23 已完成 ✅（2026-10-03，§8.55：`TIME_EPOCH` 绝对时间戳算子 —— BE `encode_time_epoch` + 序列计划补丁 + `KNOWN_OPS` 20 → 21 + 算子模板，FE 编码分支 / normalize 保身份 / `EPOCH` 只读章 / 计划条目；共享向量 `vectors/time_epoch.json` 11 行双端同读，BE 793 → 808、FE 1127 → 1139）**；**R24 已完成 ✅（2026-10-03，§8.56：创建后切换 op —— 属性面板 `op_code` 只读 span → 下拉 + 兼容校验 + 确认回执；新建与切换共用 `applyOpDefaults` 单源（顺带修模板数组污染）+ BE `_validate_op_switch` 保存侧兜底，BE 808 → 824、FE 1139 → 1163）**；**R25 已完成 ✅（2026-10-04，§8.57：加扰 / 混淆字段 —— 新算子 `SCRAMBLE`（ENCODING 类目）明文异或种子 / 位旋转，出线只改本字段字节；FE 编码分支 + 卡面显**加扰后线上 hex** + 加工页只读 + 反加扰解码，BE `encode_scramble` / `unscramble_hex` + `_validate_scrambles` 保存侧 400，`KNOWN_OPS` 21 → 22 + 算子模板 `mode` / `seed` / `roll`（缺省种子 A5）；共享向量 `vectors/scramble.json` 14 行双端同读，BE 824 → 843、FE 1163 → 1196）**；**R26 已完成 ✅（2026-10-04，§8.58：序列级分支 —— `sequence_steps.condition` **仅新增列**（Migration 0005 + 启动自愈两列同批 + datahub 导出带条件），受限表达式求值器**双端同语义**（`== != >= <= > < in` 六比较符 + 关键字，**无 eval**，共享向量 `vectors/condition.json` 58 行），runner 四分口径（条件空→原路径 / 真→执行 / 假→`SKIPPED` 不延时不发送不落日志 / 非法→`ERROR` `COND:` 结构化诊断），变量上下文 = `step.<n>.*` 逐步累积 + 应答解码字段平铺，序列页「执行条件」输入**就地校验** + `COND ::` 指示 + 跳过原因进 tooltip；**前置证明 = 无条件序列零解码零增量**（专项测试钉住），BE 843 → 878、FE 1196 → 1213）**；**R27–R28 排期已立、待实现** —— 顺序 = 先小后大、先补不对称再碰解包；加工页传输展示与切换**复议维持 D9-A 不立项** |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -4294,7 +4294,7 @@ C-4 / §8.49 三·① 与 R18 终态 / §8.27 复跑第 1 项 / §1 新行、`PR
 | 挂账 ① 绝对时间戳 epoch 模板 | 不排期 | **立项** | **R23** —— **✅ 已完成（2026-10-03，§8.55）** |
 | 挂账 ③ 创建后切换 op | 不排期 | **立项** | **R24** —— **✅ 已完成（2026-10-03，§8.56）** |
 | 挂账 ② 加扰 / 混淆字段 | 不排期 | **立项** | **R25** —— **✅ 已完成（2026-10-04，§8.57）** |
-| C-1 B 序列级分支 | A 不立项 | **立项 B**（C 发前路由**仍不在本列**，要做另议） | **R26** |
+| C-1 B 序列级分支 | A 不立项 | **立项 B**（C 发前路由**仍不在本列**，要做另议） | **R26** —— **✅ 已完成（2026-10-04，§8.58）** |
 | C-5 ③ varint / COBS | 明确不做 | **立项**，按原建议拆「出线 / 解包」两批 | **R27 出线 + R28 解包** |
 | 加工页传输展示 + 本页切换 | 维持 D9-A 不立项 | **复议维持不立项** | 不排期 |
 
@@ -4307,7 +4307,7 @@ C-4 / §8.49 三·① 与 R18 终态 / §8.27 复跑第 1 项 / §1 新行、`PR
 | **R23** | epoch 绝对时间戳模板（替代手填 INT_UNSIGNED）—— 新算子 `TIME_EPOCH`，`unit` = s/ms（缺省 s）取当前墙钟、定宽大端<br>**✅ 已完成（2026-10-03，§8.55）**：BE `encode_time_epoch` + 序列计划补丁（`_DYNAMIC_OPS` 三值 / `_EPOCH_KEYS`）+ `KNOWN_OPS` 20 → 21 + `operator.py` 算子模板；FE 编码分支 + normalize 保身份 + `EPOCH` 只读章 + 计划条目；共享向量 `time_epoch.json` 11 行双端同读；BE 793 → 808、FE 1127 → 1139 | BE+FE | 小 | 否 |
 | **R24** | 创建后切换 op —— 放开 `op_code` 编辑 + 兼容校验 + 确认回执（原只能删建重录）<br>**✅ 已完成（2026-10-03，§8.56）**：属性面板 op 下拉（选项 = 有模板的算子，与调色板同源）+ `planOpSwitch` 兼容校验（容器带子块切叶 → 拦）+ `describeOpSwitch` 确认回执（保留 / 清除 / 位宽 / 字节长度）；新建与切换**单源 `applyOpDefaults`**；BE `_validate_op_switch` 保存侧兜底（只判 op 变化的字段 → 存量不锁）；**顺带修模板数组污染**（`unit` / `algo` / `encoding` / `bits` 一律落首元素标量）；BE 808 → 824、FE 1139 → 1163 | BE+FE | 中 | 否 |
 | **R25** | 加扰 / 混淆字段（异或种子 / 位旋转一类语义化加扰算子）—— 新算子 `SCRAMBLE`：**明文进、密文出**，把「固定 hex」变成可换种子的可逆变体<br>**✅ 已完成（2026-10-04，§8.57）**：FE `utils/scramble.js` 口径档案 + 编码分支 / 卡面显加扰后线上 hex / 加工页只读 / 反加扰解码 / 属性面板 `PLAINTEXT` 输入与就近校验；BE `encode_scramble` + `unscramble_hex` + `_validate_scrambles`（保存侧 400）+ `field_blocks` / `field_decode` 两处接线；`KNOWN_OPS` 21 → 22 + 算子模板 `mode` / `seed` / `roll`（**缺省种子 A5** —— 加扰立刻可见，比恒等缺省更早暴露忘了设种子）；共享向量 `vectors/scramble.json` 14 行双端同读，**BE 824 → 843、FE 1163 → 1196** | BE+FE | 中 | 否 |
-| **R26** | 序列级分支：`sequence_steps.condition` **仅新增列** + runner 判执行 / 跳过 + 受限表达式（`== != > < in`，**无 eval**）+ 序列页条件 UI | BE+FE | 大 | **是（仅新增列）** |
+| **R26** | 序列级分支：`sequence_steps.condition` **仅新增列** + runner 判执行 / 跳过 + 受限表达式（`== != > < in`，**无 eval**）+ 序列页条件 UI<br>**✅ 已完成（2026-10-04，§8.58）**：**求值器双端单源语义** `backend/core/condition.py` ↔ `frontend/src/utils/condition.js`（无算术 / 括号 / 布尔连接 / 函数；变量 = 整串裸词查表；`in` = 子串或数组成员；`null` 只与 `null` 相等；长度 200 / 记号 64 / 数组 32 三道上限），11 条错误文案**双端逐字相同**；**DDL 仅新增列** —— `models.py` 加列 + `migrate.py` **Migration 0005** + `ensure_sequence_step_columns` 两列同批自愈 + datahub 导出带条件；runner = `_condition_gate`（判定排在 delay 之前）+ `_remember`（`step.<n>.status/sent/received/rtt_ms` + 解码字段平铺），`decode_vars` 回调走 `resolve_log_fields`；保存口 `_condition_spec` **只查语法**（变量到运行期才存在）→ 400 定位 `steps[i].condition`；FE 编辑器「执行条件」输入 `checkCondition` 就地红框 + APPLY 拦截 + `COND ::` 行内指示 + 跳过原因 tooltip；共享向量 `vectors/condition.json` **58 行**双端同读，**BE 843 → 878、FE 1196 → 1213** | BE+FE | 大 | **是（仅新增列）** |
 | **R27** | varint / COBS **出线**（只做编码，**不碰解包**） | BE+FE | 大 | 否 |
 | **R28** | varint / COBS **解包**（`stages` 逆向解包 + 应答匹配），硬前置 R27 | BE+FE | 大 | 否 |
 
@@ -4441,7 +4441,7 @@ yorha-ui 校验器改动文件 0 违规 + 文档同步）+ **一批一提交**�
 - **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`pageStatus.json`
   协议页 `availableNow`／`nextSteps` 回填 + `npm run sync:page-status`
 
-**R23 epoch 绝对时间戳模板已完成 ✅（§8.55）、R24 创建后切换 op 已完成 ✅（§8.56）、R25 加扰 / 混淆已完成 ✅（§8.57），下一批 → R26 序列级分支**（§8.52 排期第 6 批）。
+**R23 epoch 绝对时间戳模板已完成 ✅（§8.55）、R24 创建后切换 op 已完成 ✅（§8.56）、R25 加扰 / 混淆已完成 ✅（§8.57）、R26 序列级分支已完成 ✅（§8.58），下一批 → R27 varint / COBS 出线**（§8.52 排期第 7 批）。
 
 ---
 
@@ -4520,7 +4520,7 @@ s/ms（含 `MS` 大写等价）× 1/2/4/8 字节（含 1 字节非零低字节�
 - **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`seed.py` **不改**
   （不新增种子字段）；`processor.py` / `graph.py` / `Blueprint.jsx` 未碰
 
-**R24 创建后切换 op 已完成 ✅（§8.56）、R25 加扰 / 混淆已完成 ✅（§8.57），下一批 → R26 序列级分支**（§8.52 排期第 6 批）。
+**R24 创建后切换 op 已完成 ✅（§8.56）、R25 加扰 / 混淆已完成 ✅（§8.57）、R26 序列级分支已完成 ✅（§8.58），下一批 → R27 varint / COBS 出线**（§8.52 排期第 7 批）。
 
 ### 8.56 R24 创建后切换 op：属性面板放开 `op_code` 编辑 + 兼容校验 + 确认回执
 
@@ -4598,7 +4598,7 @@ header 同步显示草稿算子）。`handleOpChange` 三步：
 - **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`seed.py` **不改**（无新算子、
   无新模板字段）；`processor.py` / `graph.py` / `Blueprint.jsx` 未碰
 
-**R25 加扰 / 混淆已完成 ✅（§8.57），下一批：R26 序列级分支**（§8.52 排期第 6 批）。
+**R25 加扰 / 混淆已完成 ✅（§8.57）、R26 序列级分支已完成 ✅（§8.58），下一批：R27 varint / COBS 出线**（§8.52 排期第 7 批）。
 
 ### 8.57 R25 加扰 / 混淆字段：新算子 `SCRAMBLE` —— 明文进、密文出
 
@@ -4690,7 +4690,127 @@ mode 与非法种子恒等、空白明文、奇长丢半字节、空种子恒等
 - **零 DDL**（`models.py` 未动、`yorha.db` 未动，无 `chore(db)`）；`seed.py` **不改**（新模板在
   `operator.py`，不落库）；`processor.py` / `graph.py` / `Blueprint.jsx` 未碰。
 
-**下一批：R26 序列级分支**（§8.52 排期第 6 批 · **含 DDL 仅新增列 → 另开 `chore(db)`**）。
+**R26 序列级分支已完成 ✅（§8.58），下一批：R27 varint / COBS 出线**（§8.52 排期第 7 批）。
+
+### 8.58 R26 · 序列级分支（`sequence_steps.condition` 仅新增列）—— 2026-10-04
+
+#### 一 · 背景与拍板
+
+- 来源 §8.52 复议表：原案 A「不立项」被复议推翻 → **立项 B**（**C 发前路由仍不在本列**，要做另议）。
+- 定位 = 步骤的「**执行条件**」：上一步（或本步之前）的执行结果 / 应答字段决定这一步**跑不跑**。这是
+  **运行期跳步**，不是设计期路由 —— 不改帧、不改序列结构、不改 `/dispatch` 任何口径。
+- 解禁点（§0 硬约束）：**仅新增列** —— `models.py` 只加一列 `condition VARCHAR(200) NULL`
+  （无改列、无删列），`migrate.py` 加 **Migration 0005**；沿 3a / 3c / 3d / R10 / R20 先例 →
+  **feat 提交在前，`yorha.db` 二进制另开 `chore(db)` 提交**。
+- 硬前置：**「无条件步骤行为逐字节不变」**。实现 = `execute` 顶部
+  `with_context = any(step.get("condition") for step in ...)` —— 全序列无条件 → 连 `decode_vars`
+  **一次都不调**（测试注入「被调用即失败」的回调钉死，附记录键集与改前同形的断言）。
+
+#### 二 · 表达式定案（受限 DSL，**无 eval**）
+
+语法 = **一次比较**：`左 op 右`。
+
+| 维度 | 定案 | 理由 |
+|---|---|---|
+| 运算符 | `==` `!=` `>=` `<=` `>` `<` + 关键字 `in`（6 比较符 + 1 关键字） | 拍板 5 项 + 补 `>=` / `<=`（§8.36 例 A「固件版本 ≥ 0x1200」要用） |
+| 关键字 | `true` / `false` / `null` / `in` **大小写不敏感** | 与数制前缀 `0x` 同口径：关键字不管大小写，变量名照抄查表 |
+| 不做 | 算术、括号、布尔连接、函数调用 | 复杂度与注入面都是坑；宁可少而正确，缺的下批再议 |
+| 变量 | **整串裸词**查表（可含 `.`、`-`、中文；分隔 = 空白与 `[] ,` 引号），**整串精确匹配、不下钻** | `step.1.status` 是一个键，不是路径 → 零歧义、零注入面 |
+| `in` | `a in b` ≡ `b.includes(a)`：子串 **或** 数组成员 | 双端同向（FE 曾写反成 `a.includes(b)`，靠向量对拍当场抓出） |
+| `null` | **只与 `null` 相等**；`v == 0` → `false`；比大小 → 类型错 | 三值逻辑里最省心智的一致选择 |
+| 布尔 | 永不当数字 | 杜绝 `true == 1` 这类「看起来对」的陷阱 |
+| 上限 | `MAX_CONDITION_LEN=200` / `MAX_TOKENS=64` / `MAX_ARRAY_ITEMS=32` | 三道防线：记号上限先拦，数组上限是第二道 |
+
+**错误文案 11 条双端逐字相同**（由 `vectors/condition.json` 的 `error` 行钉死）：`条件为空`、
+`条件超长（{n} > {max} 字符）`、`条件过于复杂（{n} > {max} 个记号）`、`字符串未闭合：位置 {i}`、
+`无法识别的记号：位置 {i}`、`缺少比较运算符（支持 == != >= <= > < in）`、`多余的记号：{text}`、
+`数组元素过多（最多 32）`、`变量未定义：{name}`、`类型无法比较：{a} 与 {b}`、
+`右侧须是数组或字符串，实得 {b}`。
+
+#### 三 · 运行期语义（runner 四分口径）
+
+| 条件状态 | 结果 | 附带行为 |
+|---|---|---|
+| 空 / 缺键 / null | **原路径** | 零额外解码（`with_context=False`）、记录形状不变 |
+| 求值为真 | 执行 | 与无条件完全同路径 |
+| 求值为假 | `SKIPPED` + `error = "COND: 条件不成立"` | **判定排在 delay 之前**：不延时、不建帧、不发、不落日志 |
+| 求值抛错 | `ERROR` + `"COND: {原因}"` | `_step_diagnostic(stage="condition", code="CONDITION_REJECTED", data_sent=False)` → 走 `_log_step` + `stop_on_error` |
+
+- **绝不把异常吞成 False** —— 语法 / 变量 / 类型错必须暴露成步骤错误，否则「以为会走的分支没走」
+  是最难查的故障。
+- 假 → `error` 非空；停止补跳过 → `error` 为空 —— **两种跳过可区分**（与 D6-C `_skip_remaining`
+  互补，后者 docstring 已补此说明）。
+- 变量上下文（`_remember`，仅 `with_context` 下建）：`step.<n>.status` / `step.<n>.sent` /
+  `step.<n>.received` / `step.<n>.rtt_ms`（去空格 hex；无值不写键）；解码字段两个命名空间并存 =
+  平铺 `<字段名>`（**最近者胜**）+ 定点 `step.<n>.<字段名>`。
+- 解码 hook = 路由侧 `_decode_vars_factory`（仿 `_compile_wrap_factory`，到步执行时自开会话），
+  复用 `log_store.resolve_log_fields` —— **与落库解码同一条路**，不引第二套解码；回调**永不抛**
+  （解不出来 → 该步没这几个键，不反噬执行）。
+
+#### 四 · DDL（Migration 0005 · 仅新增列）
+
+- `models.py::SequenceStep.condition = Column(String(200), nullable=True)`（注释写明缺省路径）。
+- `migrate.py::Migration(5, "sequence_steps_condition", _condition_apply, _condition_verify)`；
+  `condition_tables()` 在 verify 钉死 **恰好** `["sequence_steps"]`（补列范围一张表，与 R20
+  `profile_sort_tables` 同构）。
+- `database.ensure_sequence_step_columns` → **两列同批自愈**（wrap + condition，一次 commit 幂等），
+  兜住 `create_all` 只建表不补列的缺口。
+- datahub `sequence_step_export_row` 是显式 dict → **补 `"condition"`**（漏了 = 导出再导入静默丢
+  分支，往返不等价）；导入走 `SequenceStepSpec.model_validate`（加字段即通）。
+
+#### 五 · 保存口与 FE
+
+- **保存口只查语法、不查变量**：`routers/sequence._condition_spec` —— `None` / 非字符串 /
+  strip 后空 → `None`；超长与语法 → `DiagHTTPException(400, "steps[i].condition: …", stage="condition", code="STEP_CONDITION_INVALID", target=steps[i], step=n, data_sent=False)`。
+  变量到运行期才存在，「变量未定义」属运行期 `COND:` 记步错误。为此 **`diagnostics.STAGES` 新增
+  `"condition"`**（仅加枚举值，不是加约束）。
+- 形态：`SequenceStepSpec.condition` 与 `SequenceStepOut.condition` 均 `Optional[str] = None`；
+  `_normalize_steps` 校验后进 `write_steps(condition=spec.get("condition"))`；`_to_out` 用
+  `getattr(s, "condition", None)`（与 `wrap` 同口径，直连改库的存量行 / 未自愈列不炸）；
+  `start_sequence` 在步 dict 带 `"condition"` 并注入 `decode_vars=_decode_vars_factory()`。
+- **FE `Sequences.jsx`**：编辑器新增「执行条件（可选）」输入（`maxLength=200`、
+  `data-testid="step-condition"`），`stepCondition` state 与「标签 / 延时」同轨（APPLY 才落步）——
+  `checkCondition` **就地红框 + 红字**（`step-condition-error`），APPLY 先拦非法并弹 `fail` 横幅；
+  `handleApplyStep` 是**重建对象**故显式 `...(stepConditionText ? { condition } : {})`；
+  `saveBody` 按 `'condition' in s && s.condition` **条件包含**（键缺席 = 无条件 → 无条件步骤的请求形
+  与 R26 前逐字节一致）；`toDraft` `if (!step.condition) delete step.condition`；StepRow
+  `COND :: {expr}` 行内指示（`step-cond-{i}`，title 写明四分口径）；状态行 `title` 本就带 `error`
+  → 跳过原因 `COND: 条件不成立` 就地可见（**无状态表结构改动**）。
+
+#### 六 · 共享向量与测试
+
+- `vectors/condition.json` **58 行**（每行一对象，UTF-8 LF，`expected` / `error` 二选一）；注册
+  `vectors/README.md` §3 → **17 文件 / 21 表** + §7 七条注；`vectorsLoader.test.js` 增 `conditionVec`
+  （TABLES 与目录同集自检 5/5 过）。
+- 每行同时覆盖：6 比较符与 `in` 双形态、关键字大小写、`null` 三值、布尔非数字、变量未定义、
+  类型不可比、三道上限（长度行 314 字符、记号行 70 记号）、字符串未闭合 / 无法识别记号、数组元素
+  过多、括号与算术**直接判非法**、空词防御（防 tokenizer 死循环）。
+- BE 新增 `test_condition.py`（14 例 = 求值器口径 + 58 向量 **FAILS=0**）与
+  `test_sequence_condition.py`（18 例 = **无条件零解码零增量钉死** / 真 → 执行 / 假 → 不延时不发不
+  落日志 / 非法 → `COND:` + 结构化诊断 + 快停 / `stop_on_error=False` 继续 / 变量未定义 / 类型
+  不可比 / 解码字段两命名空间 / 解码回调炸了不反噬 / 保存口 400 定位与 0 写入 / 非字符串 400 /
+  空白归一 null / 缺键 null / 启动注入 `decode_vars` 且步 dict 带 condition / API 全链路
+  OK-OK-SKIPPED / datahub 导出带条件）。
+- 迁移与自愈：`test_migrate.py` 新增 `ConditionMigrationTest` 3 例（存量库补列 + 行回填 NULL /
+  新库只 verify / verify 钉死范围与列），R20 断言改 `_ALL_LABELS[3:]` **跟注册表走**（不硬编码）；
+  `SequenceStepColumnSelfHealTest` 四态扩到**两列**（wrap + condition 同批自愈）。
+- FE 新增 `utils/__tests__/condition.test.js`（14 例，与 BE 14 例同向量同断言）+ `Sequences.test.jsx`
+  **24 → 27 例**（带条件 PUT 带键 / 无条件键缺席且形状 `toEqual` 逐字段钉死 / APPLY 拦非法 + 状态
+  行 tooltip 带 `COND:` 原因）。
+
+#### 七 · 验收
+
+- **BE 843 → 878/878**（+35 = `test_condition` 14 + `test_sequence_condition` 18 +
+  `ConditionMigrationTest` 3）。
+- **FE 1196 → 1213/1213（78 文件）**（+17 = `condition.test.js` 14 + `Sequences.test.jsx` 3）。
+- `npx vite build` EXIT=0 · `npm run lint` EXIT=0 · yorha-ui 校验器改动 js/jsx/json **0 违规
+  （6 文件）** · `vectors/README.md` 表清单 16 文件 20 表 → **17 / 21** · md 表列数 mismatches=0 ·
+  隐形字符／CRLF／TAB = 0。
+- **DDL 仅新增列** → feat 提交后另开 `chore(db)`（`python -m backend.db.migrate up`，备份目录
+  `backend/db/backups/` 已 gitignore）；`processor.py` / `graph.py` / `Blueprint.jsx` 未碰；
+  `/dispatch` 缺省口径逐字节不变（本批零改动 dispatch 链路）；不引 pytest、无新 pip 依赖。
+
+**下一批：R27 varint / COBS 出线**（§8.52 排期第 7 批 · **硬前置 = 先证「无变长编码时逐字节不变」**）。
 
 ## 9. 保留勿动（非任务，勿清理）
 

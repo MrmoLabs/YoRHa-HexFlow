@@ -254,7 +254,7 @@ class ProfileSortMigrationTest(_MigrateCase):
             self.engine, do_backup=False, backups_dir=self.backups
         )
 
-        self.assertEqual(report["applied"], ["0004_device_profiles_sort_order"])
+        self.assertEqual(report["applied"], _ALL_LABELS[3:])  # 0004 + 后续新增
         self.assertEqual(report["to_version"], TARGET_VERSION)
         self.assertEqual(report["integrity"], "ok")
         self.assertIn("sort_order", self._cols("device_profiles"))
@@ -287,6 +287,76 @@ class ProfileSortMigrationTest(_MigrateCase):
             with self.assertRaises(MigrationError) as ctx:
                 _profile_sort_verify(conn)
         self.assertIn("sort_order", str(ctx.exception))
+
+
+class ConditionMigrationTest(_MigrateCase):
+    """R26（PLAN §8.58 · 2026-10-04 拍板解禁 DDL）：`sequence_steps.condition`（0005，仅新增列）。"""
+
+    def _cols(self, table):
+        with self.engine.connect() as conn:
+            rows = conn.exec_driver_sql(f"PRAGMA table_info({table})").fetchall()
+        return {row[1] for row in rows}
+
+    def test_legacy_library_gains_condition_and_rows_stay_null(self):
+        """存量库（已记 0001–0004）→ 0005 补列；存量行拿到 NULL = 无条件（路径逐字节不变）。"""
+        Base.metadata.create_all(bind=self.engine)
+        with self.engine.begin() as conn:
+            conn.exec_driver_sql("ALTER TABLE sequence_steps DROP COLUMN condition")
+            ensure_migrations_table(conn)
+            for version, name in (
+                (1, "baseline"),
+                (2, "soft_delete_deleted_at"),
+                (3, "dispatch_logs_fields_json"),
+                (4, "device_profiles_sort_order"),
+            ):
+                conn.exec_driver_sql(
+                    "INSERT INTO schema_migrations (version, name, applied_at) "
+                    f"VALUES ({version}, '{name}', '2026-10-04T00:00:00')"
+                )
+            conn.exec_driver_sql(
+                "INSERT INTO sequence_steps (id, sequence_id, step_order, "
+                "instruction_id, delay_ms, payload) "
+                "VALUES ('s1', 'q1', 0, 'i1', 0, 'A5010B')"
+            )
+        self.assertNotIn("condition", self._cols("sequence_steps"))
+
+        report = run_pending_migrations(
+            self.engine, do_backup=False, backups_dir=self.backups
+        )
+
+        self.assertEqual(report["applied"], _ALL_LABELS[4:])  # 0005 + 后续新增
+        self.assertEqual(report["to_version"], TARGET_VERSION)
+        self.assertEqual(report["integrity"], "ok")
+        self.assertIn("condition", self._cols("sequence_steps"))
+        with self.engine.connect() as conn:
+            row = conn.exec_driver_sql(
+                "SELECT payload, condition FROM sequence_steps WHERE id = 's1'"
+            ).fetchone()
+        self.assertEqual(row[0], "A5010B")  # 存量步骤原样在
+        self.assertIsNone(row[1])  # 回填 NULL = 无条件（R26 缺省路径）
+
+    def test_fresh_library_only_verifies(self):
+        """新库 create_all 已建列 → 0005 的 ALTER 直接跳过（不撞重复列名）。"""
+        Base.metadata.create_all(bind=self.engine)
+        report = run_pending_migrations(
+            self.engine, do_backup=False, backups_dir=self.backups
+        )
+        self.assertIn("0005_sequence_steps_condition", report["applied"])
+        self.assertEqual(report["integrity"], "ok")
+        self.assertIn("condition", self._cols("sequence_steps"))
+
+    def test_verify_actually_checks_the_scope_and_column(self):
+        """verify 不是走过场：补列范围钉死「恰好 sequence_steps 一张」，列缺失即报错。"""
+        from backend.db.migrate import _condition_verify, condition_tables
+
+        Base.metadata.create_all(bind=self.engine)
+        self.assertEqual(condition_tables(), ["sequence_steps"])
+        with self.engine.begin() as conn:
+            conn.exec_driver_sql("ALTER TABLE sequence_steps DROP COLUMN condition")
+        with self.engine.connect() as conn:
+            with self.assertRaises(MigrationError) as ctx:
+                _condition_verify(conn)
+        self.assertIn("condition", str(ctx.exception))
 
 
 class FailureRecoveryTest(_MigrateCase):

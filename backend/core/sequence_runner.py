@@ -21,6 +21,14 @@
   kernel)` 按当前协议定义重算外壳（`compile_wrap` 由路由注入，自开会话）。
   失败记步 `WRAP: {原因}`（与 `PLAN:` / `TRANSPORT:` 三分），不抛到 Runner 级。
   无 shell 的步骤路径**逐字节不变**。
+- R26（§8.58）序列级分支：步骤可带 `condition`（受限表达式，见 core/condition.py，
+  **无 eval**）→ 求值为假记步 `SKIPPED + error="COND: 条件不成立"`，**判定排在
+  delay 之前**（不延时、不建帧、不发、不落日志）；条件非法 / 变量未定义 / 类型
+  不可比记步 `ERROR + "COND: {原因}"`（与 `PLAN:` / `WRAP:` / `TRANSPORT:` **四分**，
+  诊断 `data_sent=False`），`stop_on_error` 照常生效。求值变量表由**同一序列已执行的
+  步**累积（`step.<n>.*` + 应答解码字段的平铺键，见 `_remember`），注入的
+  `decode_vars` 只在**存在带条件的步骤**时才被调用 → 无条件序列零解码、
+  路径与 R26 之前逐字节相同。
 
 快照字段是轮询契约（P4 序列页）：
 running / result(idle|running|completed|failed|stopped) / sequence_id /
@@ -40,6 +48,7 @@ from typing import Any, Dict, List, Optional
 
 from backend.core import diagnostics as diag
 from backend.core import transport
+from backend.core.condition import ConditionError, evaluate_condition
 from backend.core.escape import escape_bytes, table_from_config
 from backend.core.sequence_plan import apply_plan, core_plan, kernel_slice
 
@@ -70,6 +79,7 @@ class _Run:
         steps: List[Dict[str, Any]],
         config: Dict[str, Any],
         compile_wrap=None,
+        decode_vars=None,
     ):
         self.sequence_id = sequence_id
         self.sequence_name = sequence_name
@@ -78,6 +88,10 @@ class _Run:
         # D6-B 发送期「按配方重算外壳」入口（routers/sequence 注入，自开会话；
         # None = 无封装步可用，遇到封装步记步 WRAP 错误）
         self.compile_wrap = compile_wrap
+        # R26 条件求值的「应答解码」入口（routers/sequence 注入，自开会话）：
+        # (instruction_id, received_hex) -> {字段名: 值}；None = 不解码（无条件
+        # 序列恒为这种，见 execute 的 with_context 分支）
+        self.decode_vars = decode_vars
         self.stop = False
         self.running = True
         self.result = "running"
@@ -142,13 +156,14 @@ def claim(
     steps: List[Dict[str, Any]],
     config: Dict[str, Any],
     compile_wrap=None,
+    decode_vars=None,
 ) -> _Run:
     """同步占用运行槽；已有运行 → SequenceBusy（路由 409）。"""
     global _state
     with _lock:
         if _state is not None and _state.running:
             raise SequenceBusy(f"序列运行中：{_state.sequence_name or _state.sequence_id}")
-        run = _Run(sequence_id, sequence_name, steps, config, compile_wrap)
+        run = _Run(sequence_id, sequence_name, steps, config, compile_wrap, decode_vars)
         _state = run
         return run
 
@@ -180,9 +195,10 @@ def start(
     steps: List[Dict[str, Any]],
     config: Dict[str, Any],
     compile_wrap=None,
+    decode_vars=None,
 ) -> Dict[str, Any]:
     """claim + daemon 线程执行；返回初始快照（SequenceBusy 抛给路由）。"""
-    run = claim(sequence_id, sequence_name, steps, config, compile_wrap)
+    run = claim(sequence_id, sequence_name, steps, config, compile_wrap, decode_vars)
     thread = threading.Thread(
         target=execute, args=(run,), daemon=True, name=f"seq-{sequence_id[:8]}"
     )
@@ -249,8 +265,90 @@ def _step_diagnostic(
     return payload
 
 
+def _condition_gate(
+    condition: str, context: Dict[str, Any], step: Dict[str, Any], n: int
+) -> Optional[Dict[str, Any]]:
+    """R26: 求一步的执行条件 → `None`（放行）或一条已成形的记录。
+
+    - **求值为真** → None，走原路径（不延时、不建帧、不发 —— 判定在 delay 之前，
+      条件不成立的步不白等）；
+    - **求值为假** → `SKIPPED` + `COND: 条件不成立`（与「停止后补跳过」的
+      `SKIPPED + error 为空` 可区分：操作员看得出是条件挡下的）；
+    - **条件本身非法**（语法 / 变量未定义 / 类型不可比，直连改库绕过保存口也拦得住）
+      → `ERROR` + `COND: {原因}` + 结构化诊断（`data_sent=False`：字节没出去）——
+      与 `PLAN:` / `WRAP:` / `TRANSPORT:` 四分，`stop_on_error` 照常生效。
+
+    **绝不**把异常吞成 False —— 否则配置写错会让步骤被静默跳过。
+    """
+    try:
+        take = evaluate_condition(condition, context)
+    except ConditionError as exc:
+        record = _step_record(step, n, "ERROR")
+        record["error"] = f"COND: {exc}"
+        record["diagnostic"] = _step_diagnostic(
+            exc, stage="condition", code="CONDITION_REJECTED",
+            n=n, step=step, data_sent=False,
+        )
+        return record
+    if take:
+        return None
+    record = _step_record(step, n, "SKIPPED")
+    record["error"] = "COND: 条件不成立"
+    return record
+
+
+def _remember(
+    context: Dict[str, Any],
+    step: Dict[str, Any],
+    n: int,
+    record: Dict[str, Any],
+    decode_vars=None,
+) -> None:
+    """R26: 把这一步的结果写进条件变量表（**只在带条件的序列里被调用**）。
+
+    变量键全是**整串精确匹配**的扁平键（`core.condition` 不做点号下钻）：
+
+    - `step.<n>.status`（OK|ERROR|SKIPPED）、`step.<n>.sent` / `.received`
+      （去空格大写 hex）、`step.<n>.rtt_ms` —— 没值就不写键（引用到即
+      「变量未定义」，比拿到 null 更早暴露条件写错）；
+    - 本步应答按宿主指令布局解码出的字段：**平铺键 `<字段名>`（最近一次出现者胜）**
+      与**定点键 `step.<n>.<字段名>`** 并存 —— 跨步同名字段既能看最新值、
+      也能回看第几步（例 A 的 `fw_version >= 0x1200` 就走平铺键）。
+
+    解码失败 / 无布局 / 注入的回调炸了 → 什么都不加：**条件上下文绝不反噬执行**。
+    """
+    prefix = f"step.{n}."
+    context[prefix + "status"] = record["status"]
+    if record.get("sent") is not None:
+        context[prefix + "sent"] = str(record["sent"]).replace(" ", "")
+    if record.get("received") is not None:
+        context[prefix + "received"] = str(record["received"]).replace(" ", "")
+    if record.get("rtt_ms") is not None:
+        context[prefix + "rtt_ms"] = record["rtt_ms"]
+    if decode_vars is None or record["status"] != "OK":
+        return
+    received = record.get("received")
+    instruction_id = step.get("instruction_id")
+    if not received or not instruction_id:
+        return
+    try:
+        flat = decode_vars(str(instruction_id), str(received)) or {}
+    except Exception:  # noqa: BLE001 —— 解码失败不得反噬执行
+        return
+    for name, value in dict(flat).items():
+        key = str(name)
+        if not key:
+            continue
+        context[key] = value
+        context[prefix + key] = value
+
+
 def _skip_remaining(run: _Run, from_n: int) -> None:
-    """把尚未执行的步补成 SKIPPED（n = from_n 起，1-based，已有的跳过）。"""
+    """把尚未执行的步补成 SKIPPED（n = from_n 起，1-based，已有的跳过）。
+
+    停止位 / `stop_on_error` 中止产生的 SKIPPED **error 为空** —— 与 R26 条件挡下的
+    `SKIPPED + "COND: 条件不成立"` 可区分（前端 tooltip 直接看 error）。
+    """
     for index in range(from_n - 1, len(run.steps)):
         if any(record["n"] == index + 1 for record in run.results):
             continue
@@ -321,6 +419,12 @@ def execute(run: _Run) -> None:
     """阻塞执行 claim 到的槽；任何路径都 finalize（running=False）并留终态。"""
     stop_on_error = bool((run.config or {}).get("stop_on_error", True))
     read_timeout_ms = (run.config or {}).get("read_timeout_ms")
+    # R26（§8.58）条件上下文：**只有带条件的序列才建这张表** —— 无条件序列
+    # （存量全部）零解码、零额外状态，执行路径与 R26 之前逐字节相同。
+    context: Dict[str, Any] = {}
+    with_context = any(
+        str(step.get("condition") or "").strip() for step in run.steps
+    )
     try:
         for index, step in enumerate(run.steps):
             n = index + 1
@@ -329,6 +433,24 @@ def execute(run: _Run) -> None:
                 run.result = "stopped"
                 return
             run.current_step = n
+
+            # R26 序列级分支：条件判定排在 delay 之前 —— 被条件挡下的步不延时、
+            # 不建帧、不发、不落日志；条件本身非法则记步 COND: 错误（四分之一）。
+            condition = str(step.get("condition") or "").strip()
+            if condition:
+                gate = _condition_gate(condition, context, step, n)
+                if gate is not None:
+                    run.results.append(gate)
+                    _remember(context, step, n, gate, run.decode_vars)
+                    if gate["status"] == "ERROR":
+                        _log_step(step, n, gate, run)
+                        if stop_on_error:
+                            _skip_remaining(run, n + 1)
+                            run.result = "failed"
+                            run.error = gate["error"]
+                            return
+                    continue
+
             delay_ms = int(step.get("delay_ms") or 0)
             if delay_ms > 0 and _sleep_interruptible(run, delay_ms / 1000):
                 _skip_remaining(run, n)
@@ -370,6 +492,8 @@ def execute(run: _Run) -> None:
                 record["rtt_ms"] = round((time.perf_counter() - started) * 1000, 2)
             run.results.append(record)
             _log_step(step, n, record, run)
+            if with_context:
+                _remember(context, step, n, record, run.decode_vars)
 
             if record["status"] != "OK" and stop_on_error:
                 _skip_remaining(run, n + 1)

@@ -246,6 +246,10 @@ class SequenceStep(Base):
     # shell（外壳逐层 length/checksum 区间），发送期按配方重算（D6-B）。
     # 存量库缺列由 database.ensure_sequence_step_columns 启动自愈。
     wrap = Column(JSON, nullable=True)
+    # R26 序列级分支（§8.58）：本步执行条件 —— 受限表达式（core/condition.py，
+    # 只认 == != >= <= > < in，无 eval）。NULL / 空 = 无条件：**存量步骤与全部
+    # 既有序列的缺省路径，行为逐字节不变**。存量库缺列由 ensure_ 启动自愈。
+    condition = Column(String(200), nullable=True)
     # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
     deleted_at = Column(String(40), nullable=True)
 

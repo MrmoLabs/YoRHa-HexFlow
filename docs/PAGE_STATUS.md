@@ -102,7 +102,7 @@
 - 无 —— 字段引用测试补强已由 R18 落地（PLAN §8.49，2026-10-03：纯测试零代码，FE 1092 → 1098；指令页三条待办已全部出清）。
 - R23 绝对时间戳算子已落地（2026-10-03，PLAN §8.55 / HANDOVER 条目 72）：算子模板新增 TIME_EPOCH「绝对时间戳」（DYNAMIC 组，参数 unit 下拉 s/ms 缺省 s、无 base_time）—— 编码取当前墙钟，floor 后按位宽定宽大端截高位（位宽不够只截低位不报错），设计期卡面走 computedValues 出定宽 hex + EPOCH 章只读 + UNIT 语义行；normalize 保身份不摊平（内外两处 keep 列表同加）；白名单 KNOWN_OPS 20 → 21（FE 经 Object.values(OP_CODES) 自动收录、BE routers/instruction.py 同批改一必改二）；共享向量 vectors/time_epoch.json 11 行双端同读（BE 793 → 808、FE 1127 → 1139）。
 - R24 创建后切换 op 已落地（2026-10-03，PLAN §8.56 / HANDOVER 条目 73）：新建与切换共用 applyOpDefaults 单源（模板默认值 / 位段播种 / hex 等长 / 文本 8B，位宽能容纳原 byte_len 就保留、容纳不下回落首项并同步 byte_len）+ planOpSwitch 兼容校验 + describeOpSwitch 确认回执；顺带修模板数组污染（unit / algo / encoding 一律落首元素标量）—— BE 808 → 824、FE 1139 → 1163。
-- R25 加扰 / 混淆字段已落地（2026-10-04，PLAN §8.57 / HANDOVER 条目 74）：新算子 SCRAMBLE（ENCODING 组）明文进·密文出 —— XOR_SEED 按字节循环异或（缺省种子 A5）与 BIT_ROLL 逐字节左旋两模式，空 / 非 hex 明文补零、契约外参数恒等，解码端反加扰还原（encode(decode(x)) 不动点）；白名单 KNOWN_OPS 21 → 22（FE OP_CODES 16 → 17、BE routers/instruction.py 同批改）+ 算子模板 mode/seed/roll；卡面与组内容串显示**加扰后线上 hex**、加工页只读（normalize isFixed + 两表 keep 防摊平失效）+ SCR 芯片 + MODE/SEED/ROLL 语义行，属性面板走 PLAINTEXT 专用明文输入并在 APPLY 就近校验；共享向量 vectors/scramble.json 14 行双端同读（BE 824 → 843、FE 1163 → 1196），下一批 R26 序列级分支（含 DDL 仅新增列 → 另开 chore(db)）。
+- R25 加扰 / 混淆字段已落地（2026-10-04，PLAN §8.57 / HANDOVER 条目 74）：新算子 SCRAMBLE（ENCODING 组）明文进·密文出 —— XOR_SEED 按字节循环异或（缺省种子 A5）与 BIT_ROLL 逐字节左旋两模式，空 / 非 hex 明文补零、契约外参数恒等，解码端反加扰还原（encode(decode(x)) 不动点）；白名单 KNOWN_OPS 21 → 22（FE OP_CODES 16 → 17、BE routers/instruction.py 同批改）+ 算子模板 mode/seed/roll；卡面与组内容串显示**加扰后线上 hex**、加工页只读（normalize isFixed + 两表 keep 防摊平失效）+ SCR 芯片 + MODE/SEED/ROLL 语义行，属性面板走 PLAINTEXT 专用明文输入并在 APPLY 就近校验；共享向量 vectors/scramble.json 14 行双端同读（BE 824 → 843、FE 1163 → 1196），下一批 R26 序列级分支已落地（2026-10-04，PLAN §8.58 / HANDOVER 条目 75）。
 
 ---
 
@@ -235,7 +235,7 @@
 
 - 路径: `/sequences`
 - 快捷键: `F`
-- 当前状态: 新表 sequences / sequence_steps + 单槽后台 Runner + 1.5s 状态轮询 + 手动发送互斥 + 步骤封装配方（wrap 冻结/重算分离）
+- 当前状态: 新表 sequences / sequence_steps + 单槽后台 Runner + 1.5s 状态轮询 + 手动发送互斥 + 步骤封装配方（wrap 冻结/重算分离）+ 步骤执行条件（condition 列 · runner 判真/假/非法）
 - 摘要: 序列编排页维护多步骤发送序列：步骤帧保存时由 encodeInstruction 编译定值（表单参数冻结为 params），TIME/COUNTER/校验字段按 plan 在每次发送时重算；定义持久化到新表 sequences / sequence_steps，运行经单槽后台 Runner（协作式停止、出错即停开关），/sequences/status 每 1.5s 轮询运行快照；序列运行期手动 /dispatch 与事务发送 409 互斥。
 
 ### 已具备
@@ -247,9 +247,10 @@
 - 与手动发送互斥：序列运行中 /dispatch、/dispatch/transaction 返回 409（加工页发送错误条可见该文案）。
 - 宿主指令失效标记（批次二 CP2 · D14②，零 DDL）：步骤读取时批量比对 instruction_id 出 instruction_missing —— 列表行亮琥珀「失效」徽标（并再带一层本地判据，列表刚被外部删指令、草稿未刷新时也点得出来），打开编辑器即降只读（指令下拉锁死并出「（宿主指令已删除）」占位项、标签/延时禁改，红提示改黄提示：宿主已删但步骤帧是冻结快照仍可继续运行，不阻断启动）；要改请移除后重新添加。
 - 序列封装配方（批次三 CP3-3c · D6-B，含 sequence_steps.wrap 单列 DDL）：步骤编辑器新增「配方 RECIPE（可选）」选择器（挂载期拉取 GET /recipes，失败静默降级、引用已删配方出占位项），选中即落草稿 wrap.recipe_id 随 APPLY/保存提交；保存期后端切内核 + 串行编译 → 冻结完整封装帧进 payload、plan 扩出 shell（每层 length/checksum 本帧绝对坐标区间）、wrap.definition_hash 落库；卡片与编辑器头部回显「WRAP :: <配方名>」（琥珀），配方或所引协议改动即点亮 wrap.stale 失效徽标（只提示不阻断，冻结帧仍可运行）；PLAN 摘要面板渲染「SHELL L1..LN · LN LEN@x CRC@y」层偏移；发送期按配方重算外壳（先切内核再套壳），故冻结帧与出线帧等价而参数可继续按 plan 重算；请求形只收 {recipe_id}，响应形 definition_hash/stale 严格剥离；未选配方步骤不带 wrap 键、请求形与改前逐字节不变（shell 由后端注入，前端只透传、buildPlan 输出键集零改）。
+- 步骤执行条件 / 序列级分支（R26 · PLAN §8.58，2026-10-04，含 sequence_steps.condition 仅新增列 DDL）：步骤编辑器新增「执行条件（可选）」输入（maxLength 200），条件 = 受限表达式一次比较（== != >= <= > < 关键字 in，大小写不敏感的 true/false/null，无算术/括号/布尔连接/函数、无 eval），APPLY 时经 utils/condition.checkCondition 就地校验 —— 非法即红框 + 红字 + 横幅拦下，不送后端吃 400；条件随 APPLY 落步、保存形按『非空才带键』（键缺席 = 无条件，无条件步骤请求形与改前逐字节一致），toDraft 回读时空条件不留键；步骤行亮「COND :: <表达式>」中性指示（title 写明四分口径）。运行期由后端求值：条件空 → 原路径（无条件序列零解码、记录形状不变）、真 → 执行、假 → SKIPPED + error『COND: 条件不成立』（判定排在 delay 之前：不延时、不建帧、不发、不落日志，与停止补跳过的空 error 可区分）、语法/变量/类型非法 → ERROR + COND: 诊断（stage=condition、data_sent=false）随出错即停；变量 = step.<n>.status/sent/received/rtt_ms + 上一步应答解码字段的平铺键与定点键。状态面板状态行 title 原本就带 error，跳过原因就地可见。共享向量 vectors/condition.json 58 行双端同读（BE 843 → 878、FE 1196 → 1213）。
 
 ### 后续建议
-- 无 —— 步骤拖拽排序已由 R12 落地（PLAN §8.49，2026-10-03：拖完只改草稿序，点「保存定义」才 PUT，与上移/下移共用 utils/sequenceView.reorder；后端本就按数组序重编 step_order，零 BE 改动）。
+- 无 —— 步骤拖拽排序已由 R12 落地（PLAN §8.49，2026-10-03：拖完只改草稿序，点「保存定义」才 PUT，与上移/下移共用 utils/sequenceView.reorder；后端本就按数组序重编 step_order，零 BE 改动）；步骤执行条件已由 R26 落地（PLAN §8.58，2026-10-04，见 availableNow）。
 
 ---
 

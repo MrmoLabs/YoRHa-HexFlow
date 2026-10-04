@@ -48,6 +48,7 @@ STAGES = (
     "match",      # 应答匹配
     "spec",       # 应答规格解析
     "sequence",   # 序列执行 / 互斥
+    "condition",  # R26（§8.58）序列步骤条件：语法 / 变量 / 类型
     "param",      # 请求参数校验
 )
 

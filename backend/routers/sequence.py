@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.core import diagnostics as diag
 from backend.core import sequence_runner
+from backend.core.condition import ConditionError, parse_condition
 from backend.core.recipe_compile import (
     compile_recipe,
     current_fingerprint,
@@ -14,6 +15,7 @@ from backend.core.recipe_compile import (
 )
 from backend.core.sequence_plan import core_plan, kernel_slice, normalize_plan
 from backend.db.database import SessionLocal, get_db
+from backend.db.log_store import resolve_log_fields
 from backend.db.models import FrameRecipe, Instruction, Sequence, SequenceStep
 from backend.db.soft_delete import alive, mark_deleted
 from backend.schemas.sequence_api import (
@@ -118,6 +120,39 @@ def _wrap_spec(raw, where: str):
     return {"recipe_id": recipe_id}
 
 
+def _condition_spec(raw, where: str, step_no: int):
+    """R26（§8.58）步骤执行条件的保存侧校验 —— **只查语法，不查变量**。
+
+    - `None` / 非字符串 / 去空白后为空 → `None` = **无条件**（存量步骤与全部既有
+      序列的缺省路径，`_to_out` 回显 null、执行期原样走旧路径）；
+    - 超长 / 语法不合法 → 400 定位 `steps[i].condition`（结构化诊断与 plan/wrap
+      同口径）。变量到运行期才存在，所以这里刻意**不**判「变量未定义」——
+      那是运行期的 `COND: 变量未定义：X` 记步错误。
+
+    判空用 strip 而非 truthy：条件串本身不可加空格以外的「静默语义」，
+    但 `'   '` 必须等价于没写（FE 只在非空时才提交键，见 saveBody）。
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise HTTPException(
+            status_code=400, detail=f"{where}.condition 必须是字符串或 null"
+        )
+    text = raw.strip()
+    if not text:
+        return None
+    try:
+        # 长度 / 记号 / 数组三条上限都在 parse_condition 里（SSOT 在求值器，
+        # 保存侧不复制第二份数值），错误文案双端同值
+        parse_condition(text)
+    except ConditionError as e:
+        raise diag.http_from(
+            e, 400, f"{where}.condition: {e}", "condition", "STEP_CONDITION_INVALID",
+            target=where, step=step_no, data_sent=False,
+        )
+    return text
+
+
 def _freeze_wrap(db: Session, where: str, recipe_id: str, data: bytes, plan):
     """保存期「冻结完整帧」：内核 → 逐层套壳 → 注入 plan.shell 逐层区间。
 
@@ -187,6 +222,9 @@ def _normalize_steps(db: Session, steps: List[SequenceStepSpec]) -> List[dict]:
         if step.params is not None and not isinstance(step.params, dict):
             raise HTTPException(status_code=400, detail=f"{where}.params 必须是对象或 null")
         wrap = _wrap_spec(step.wrap, where)
+        # R26（§8.58）步骤执行条件：**保存侧只查语法**（此时没有运行期变量表）。
+        # 空白 / null / 缺键 → None = 无条件（存量步骤的缺省路径，行为逐字节不变）。
+        condition = _condition_spec(step.condition, where, i + 1)
         try:
             data, plan = normalize_plan(step.payload, step.plan)
         except ValueError as e:
@@ -218,6 +256,7 @@ def _normalize_steps(db: Session, steps: List[SequenceStepSpec]) -> List[dict]:
             "params": step.params,
             "payload": data.hex().upper(),
             "plan": plan,
+            "condition": condition,
             "wrap": (
                 {"recipe_id": wrap["recipe_id"], "definition_hash": fingerprint}
                 if wrap is not None
@@ -239,6 +278,8 @@ def write_steps(db: Session, sequence_id: str, steps: List[dict]) -> None:
             params=spec["params"],
             payload=spec["payload"],
             plan=spec["plan"],
+            # R26：condition 与 wrap 同为「可选键」—— None/空 = 无条件（缺省路径）
+            condition=spec.get("condition"),
             wrap=spec.get("wrap"),
         ))
 
@@ -329,6 +370,8 @@ def _to_out(db: Session, row: Sequence, step_rows: List[SequenceStep]) -> Sequen
                 payload=s.payload,
                 plan=s.plan,
                 wrap=_wrap_with_stale(db, getattr(s, "wrap", None), seen),
+                # getattr 同 wrap 口径：直连改库的存量行 / 未自愈的表可能没这列
+                condition=getattr(s, "condition", None),
             )
             for s in step_rows
         ],
@@ -469,6 +512,46 @@ def _compile_wrap_factory():
     return compile_wrap
 
 
+def _decode_vars_factory():
+    """R26（§8.58）: Runner 条件求值的「应答 → 字段变量表」入口。
+
+    镜像 `_compile_wrap_factory`：请求作用域的 `db` 在 `start_sequence` 返回后
+    即关闭，而 Runner 是后台线程、到步执行时才需要解码 → 入口每次自开独立会话。
+
+    口径 = 与落库解码快照同一条路（`log_store.resolve_log_fields`，按 instruction_id
+    查字段布局 → `decode_hex`，**本函数绝不抛**）：解不出来（无布局 / 指令没了 /
+    应答为空）→ None，Runner 就记不到这一步的字段（条件变量表少几个键而已，
+    不反噬执行）。
+    """
+
+    def decode_vars(instruction_id: str, echo: str):
+        session = SessionLocal()
+        try:
+            decoded = resolve_log_fields(
+                session, echo, instruction_id=instruction_id
+            )
+            return _flat_decoded(decoded)
+        finally:
+            session.close()
+
+    return decode_vars
+
+
+def _flat_decoded(decoded):
+    """`decode_hex` 的结果 → `{字段名: 值}` 扁平表（name 空的行跳过）。"""
+    if not isinstance(decoded, dict):
+        return None
+    out = {}
+    for item in decoded.get("fields") or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or "").strip()
+        if not name:
+            continue
+        out[name] = item.get("value")
+    return out or None
+
+
 @router.post("/{sequence_id}/start", response_model=SequenceStatus)
 def start_sequence(sequence_id: str, db: Session = Depends(get_db)) -> SequenceStatus:
     row = (
@@ -510,11 +593,16 @@ def start_sequence(sequence_id: str, db: Session = Depends(get_db)) -> SequenceS
             # 已归一的帧字节（Runner/apply_plan 只认 bytes；库里存 hex 文本）
             "payload": data,
             "plan": plan,
+            # R26: 条件在启动前重归一旁路 —— 运行期判的是**库里的原始条件串**，
+            # 只有走保存口的行才可能非空（保存口已查过语法）
+            "condition": getattr(step, "condition", None),
         })
     config = _normalize_config(row.config or {})
     try:
         snap = sequence_runner.start(
-            row.id, row.name, steps, config, compile_wrap=_compile_wrap_factory()
+            row.id, row.name, steps, config,
+            compile_wrap=_compile_wrap_factory(),
+            decode_vars=_decode_vars_factory(),
         )
     except sequence_runner.SequenceBusy as e:
         raise diag.http(

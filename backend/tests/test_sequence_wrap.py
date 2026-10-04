@@ -544,14 +544,15 @@ class SequenceWrapSendTest(SequenceWrapTestBase):
 
 
 # ---------------------------------------------------------------------------
-# 4) DDL 自愈：sequence_steps.wrap 单列（镜像 ensure_recipe_columns 四态模板）
+# 4) DDL 自愈：sequence_steps 的 wrap + condition 两列（镜像 ensure_recipe_columns 四态模板）
 # ---------------------------------------------------------------------------
 
 
 class SequenceStepColumnSelfHealTest(unittest.TestCase):
-    """create_all 只建缺失的表、**不给既有表补列** → 存量库缺 wrap 须启动自愈。
+    """create_all 只建缺失的表、**不给既有表补列** → 存量库缺 wrap / condition 须启动自愈。
 
-    四态与 test_frame_recipes 的 ensure_recipe_columns 用例同构（改一须对照另一处）。
+    四态与 test_frame_recipes 的 ensure_recipe_columns 用例同构（改一须对照另一处）；
+    R26 起补列范围 = **两列同一次自愈**（D6-B 的 wrap + §8.58 的 condition）。
     """
 
     def setUp(self):
@@ -593,23 +594,34 @@ class SequenceStepColumnSelfHealTest(unittest.TestCase):
     def test_adds_missing_column_and_backfills_null(self):
         self._make_legacy_table()
         ensure_sequence_step_columns(self.engine)
-        self.assertIn("wrap", self._columns())
+        cols = self._columns()
+        # D6-B 的 wrap 与 R26 的 condition 是**同一份自愈**（缺哪个补哪个）
+        self.assertIn("wrap", cols)
+        self.assertIn("condition", cols)
         with self.engine.connect() as conn:
-            value = conn.exec_driver_sql(
+            wrap = conn.exec_driver_sql(
                 "SELECT wrap FROM sequence_steps WHERE id='s1'"
             ).scalar()
-        self.assertIsNone(value)  # 存量行回填 NULL = 裸帧步骤（D6-B 缺省路径）
+            cond = conn.exec_driver_sql(
+                "SELECT condition FROM sequence_steps WHERE id='s1'"
+            ).scalar()
+        self.assertIsNone(wrap)  # 存量行回填 NULL = 裸帧步骤（D6-B 缺省路径）
+        self.assertIsNone(cond)  # 回填 NULL = 无条件步骤（R26 缺省路径）
 
     def test_idempotent_when_column_already_exists(self):
         self._make_legacy_table()
         ensure_sequence_step_columns(self.engine)
         ensure_sequence_step_columns(self.engine)  # 二次调用 no-op 不抛
-        self.assertEqual(sum(1 for c in self._columns() if c == "wrap"), 1)
+        cols = self._columns()
+        self.assertEqual(sum(1 for c in cols if c == "wrap"), 1)
+        self.assertEqual(sum(1 for c in cols if c == "condition"), 1)
 
     def test_fresh_schema_is_noop(self):
         Base.metadata.create_all(bind=self.engine)  # models 已带列
         ensure_sequence_step_columns(self.engine)
-        self.assertIn("wrap", self._columns())
+        cols = self._columns()
+        self.assertIn("wrap", cols)
+        self.assertIn("condition", cols)
 
     def test_table_absent_is_noop(self):
         # 表都还没有（调用先于 create_all 的防御分支）→ 不抛

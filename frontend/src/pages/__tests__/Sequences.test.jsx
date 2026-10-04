@@ -519,4 +519,72 @@ describe('Sequences Page', () => {
             params: null, payload: 'A5010B', plan: null
         });
     });
+
+    // ---- R26（PLAN §8.58）序列级分支 --------------------------------------
+
+    it('steps with a condition PUT it; steps without omit the key (bare shape kept)', async () => {
+        api.listSequences.mockResolvedValue([{
+            ...SEQ_ROW,
+            steps: [
+                { ...SEQ_ROW.steps[0], condition: 'step.1.status == "OK"' },
+                { ...SEQ_ROW.steps[1], condition: null }
+            ]
+        }]);
+        await renderPage();
+        expect(screen.getByTestId('step-cond-0')).toBeTruthy(); // COND :: 指示在场
+        expect(screen.queryByTestId('step-cond-1')).toBeNull(); // null → 无指示
+
+        fireEvent.click(screen.getByRole('button', { name: /保存定义/ }));
+        await waitFor(() => expect(api.updateSequence).toHaveBeenCalledTimes(1));
+        const steps = api.updateSequence.mock.calls[0][1].steps;
+        expect(steps[0].condition).toBe('step.1.status == "OK"');
+        expect('condition' in steps[1]).toBe(false); // 键缺席 = 无条件（不发 null）
+        // 无条件步的形状与 R26 之前逐字节一致（零回归锚）
+        expect(steps[1]).toEqual({
+            instruction_id: 'instr-1', label: '第二步', delay_ms: 100,
+            params: { f1: 5 }, payload: 'CCDD', plan: null
+        });
+    });
+
+    it('APPLY writes the condition; invalid syntax is blocked with an inline red hint', async () => {
+        await renderPage();
+        fireEvent.click(screen.getByRole('button', { name: /\+ 添加步骤/ }));
+        await screen.findByText(/STEP 03 \/\/ 编辑器/);
+        const input = await screen.findByTestId('step-condition');
+        expect(input.value).toBe('');
+
+        // 合法 → 无红字 → APPLY 落步
+        fireEvent.change(input, { target: { value: 'step.1.status == "OK"' } });
+        expect(screen.queryByTestId('step-condition-error')).toBeNull();
+        fireEvent.click(screen.getByRole('button', { name: /应用到步骤/ }));
+        await waitFor(() => expect(screen.getByText(/步骤 3 已应用/)).toBeTruthy());
+
+        // 非法（缺右操作数）→ 红框 + 红字，APPLY 被拦下不改草稿
+        fireEvent.change(input, { target: { value: 'fw_version >=' } });
+        await screen.findByTestId('step-condition-error');
+        fireEvent.click(screen.getByRole('button', { name: /应用到步骤/ }));
+        await waitFor(() => expect(screen.getByText(/条件非法/)).toBeTruthy());
+
+        // 保存：第 3 步仍是上一次**合法**的条件；前两步无键
+        fireEvent.click(screen.getByRole('button', { name: /保存定义/ }));
+        await waitFor(() => expect(api.updateSequence).toHaveBeenCalledTimes(1));
+        const steps = api.updateSequence.mock.calls[0][1].steps;
+        expect(steps[2].condition).toBe('step.1.status == "OK"');
+        expect('condition' in steps[0]).toBe(false);
+        expect('condition' in steps[1]).toBe(false);
+    });
+
+    it('status row tooltip surfaces the condition-skip reason (COND:)', async () => {
+        api.getSequenceStatus.mockResolvedValue({
+            ...IDLE_SNAP,
+            steps: [{
+                n: 2, step_id: 'st-2', label: '第二步', instruction_id: 'instr-1',
+                status: 'SKIPPED', sent: null, received: null, rtt_ms: null,
+                error: 'COND: 条件不成立'
+            }]
+        });
+        await renderPage();
+        // 操作员据此区分「条件挡下的跳过」与「停止后补跳过」（后者 error 为空）
+        expect(await screen.findByTitle(/COND: 条件不成立/)).toBeTruthy();
+    });
 });

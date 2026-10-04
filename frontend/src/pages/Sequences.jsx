@@ -7,6 +7,9 @@ import RunnerFieldTree from '../components/InstructionForm/RunnerFieldTree';
 import { normalizeRunnerInstruction } from '../components/InstructionForm/normalizeRunnerInstruction';
 import { useInstructionForm } from '../hooks/useInstructionForm';
 import { InstructionEncoder } from '../utils/InstructionEncoder';
+// R26（§8.58）序列级分支：条件表达式**保存前就地校验**（无 eval 的受限语法，
+// 与 BE backend/core/condition.py 同语义、共享向量 vectors/condition.json）
+import { checkCondition, MAX_CONDITION_LEN } from '../utils/condition';
 import { rttText } from '../utils/transactionView';
 import {
     buildPlan,
@@ -36,6 +39,11 @@ import {
 // （definition_hash/stale 属响应形，透传会被 400 未知字段）。有 wrap 的步骤
 // payload = 冻结完整封装帧、plan.shell 由后端保存期注入，前端只透传 + 展示
 // （shellSummary），不自算外壳；选回「无封装」发 wrap:null，后端自动切回内核。
+// R26（§8.58）序列级分支：步骤可选**执行条件**（编辑器「执行条件」输入）——
+// 受限表达式（== != >= <= > < in，无 eval），APPLY 时经 checkCondition 就地校验、
+// 非法即拦；保存形与 wrap 同约定：**键缺席 = 无条件**（空白不发键，后端按 null
+// 落库）。运行期由后端求值：不成立 → 该步 SKIPPED（不延时不发送不落日志），
+// 条件/变量/类型非法 → 该步 ERROR（`COND: ...`，随 stop_on_error 中止）。
 
 const toDraft = (row) => ({
     name: row.name || '',
@@ -48,6 +56,9 @@ const toDraft = (row) => ({
     steps: (row.steps || []).map((s) => {
         const step = { ...s };
         if (!step.wrap) delete step.wrap;
+        // R26（§8.58）: 空条件不落键 —— 与 wrap 同约定，键缺席 = 无条件
+        // （存量序列回读后 GET 的 condition 是 null，draft 里同样不留该键）。
+        if (!step.condition) delete step.condition;
         return step;
     })
 });
@@ -74,6 +85,11 @@ const saveBody = (draft) => ({
         // 区间切回内核、剥 plan.shell）；键缺席 = 从未封装 → 不带该键，裸帧
         // 路径请求形与改前逐字节一致。
         if ('wrap' in s) step.wrap = s.wrap ? { recipe_id: s.wrap.recipe_id } : null;
+        // R26（§8.58）: 执行条件只在**非空**时才带键（与 wrap 的键缺席约定同形）——
+        // 无条件步骤的请求形与 R26 之前逐字节一致，后端把缺键/null/空白一律落 null。
+        if ('condition' in s && s.condition) {
+            step.condition = String(s.condition).trim();
+        }
         return step;
     })
 });
@@ -138,6 +154,17 @@ function StepRow({
                         title="封装配方已失效：协议定义已变更（步骤冻结帧不受影响，不阻断保存/运行）"
                     >
                         失效
+                    </span>
+                )}
+                {/* R26（§8.58）: 有执行条件的步骤 → COND 指示（求值在后端运行期，
+                    本地只在 APPLY 时查语法 —— 见编辑器「执行条件」输入） */}
+                {step.condition && (
+                    <span
+                        data-testid={`step-cond-${index}`}
+                        className="shrink-0 max-w-[11rem] truncate border border-nier-light/30 px-1 text-[9px] tracking-widest opacity-80"
+                        title={`执行条件：${step.condition}\n条件不成立 → 本步 SKIPPED（不延时、不发送、不落日志）；\n条件/变量/类型非法 → 本步 ERROR（COND: ...，随停止遇错中止）`}
+                    >
+                        {`COND :: ${step.condition}`}
                     </span>
                 )}
                 {/* 批次二 (D14②): 宿主已删 → 失效徽标（帧已冻结仍可运行） */}
@@ -206,6 +233,8 @@ export default function Sequences() {
     const [stepInstructionId, setStepInstructionId] = useState('');
     const [stepLabel, setStepLabel] = useState('');
     const [stepDelay, setStepDelay] = useState('0');
+    // R26（§8.58）: 步骤执行条件 —— 与「标签 / 延时」同轨（编辑态，APPLY 才落步）
+    const [stepCondition, setStepCondition] = useState('');
 
     // raw 编码（hexPreview/byteMap/computedValues 与保存产物同源）+ normalized 渲染
     const renderFields = useMemo(
@@ -289,6 +318,7 @@ export default function Sequences() {
         }
         setStepLabel(step.label || '');
         setStepDelay(String(step.delay_ms ?? 0));
+        setStepCondition(step.condition || '');
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [formInstruction?.id, editorIndex]);
 
@@ -302,6 +332,10 @@ export default function Sequences() {
     }, [formInstruction, form.inputs, form.computedValues, form.byteMap, form.hexPreview]);
 
     const running = status?.running === true;
+    // R26（§8.58）: 步骤条件的就地校验 —— 留空 = 合法的「无条件」；非空则过同一套
+    // 受限语法（checkCondition ↔ BE parse_condition，共享向量钉死两端同语义）。
+    const stepConditionText = stepCondition.trim();
+    const stepConditionError = stepConditionText ? checkCondition(stepConditionText) : null;
     const timeoutOk = !draft
         || draft.timeout.trim() === ''
         || (/^\d+$/.test(draft.timeout.trim()) && Number(draft.timeout) >= 1 && Number(draft.timeout) <= 60000);
@@ -422,6 +456,7 @@ export default function Sequences() {
         setStepInstructionId(instructions[0].id);
         setStepLabel('');
         setStepDelay('0');
+        setStepCondition('');  // R26: 新增步无条件（键缺席）
     };
 
     const handleSelectStep = (i) => {
@@ -433,6 +468,7 @@ export default function Sequences() {
         setStepInstructionId(step.instruction_id);
         setStepLabel(step.label || '');
         setStepDelay(String(step.delay_ms ?? 0));
+        setStepCondition(step.condition || '');
     };
 
     const handleStepInstructionChange = (id) => {
@@ -493,6 +529,12 @@ export default function Sequences() {
 
     const handleApplyStep = () => {
         if (running || !draft || editorIndex === null || !formInstruction || !live?.payload) return;
+        // R26（§8.58）: 条件非法 → 就地拦下（红字在输入框下，另弹横幅定位），
+        // 不静默丢弃、不送后端吃 400。语法与 BE 完全同源，故这里过了保存口也过。
+        if (stepConditionError) {
+            fail({ message: `步骤 ${editorIndex + 1} 条件非法：${stepConditionError}` });
+            return;
+        }
         const delay = Math.min(60000, Math.max(0, Math.trunc(Number(stepDelay) || 0)));
         applyDraftSteps(draft.steps.map((s, i) => (i === editorIndex ? {
             instruction_id: formInstruction.id,
@@ -504,7 +546,10 @@ export default function Sequences() {
             // CP3 3c (D6-B): 封装配方随 APPLY 一并落步（键缺席 = 从未封装）。
             // APPLY 后 payload = 内核帧、plan 无 shell → 后端按 wrap 重新套壳；
             // 未「应用」时则透传 GET 回来的完整帧 + 带 shell 的 plan，幂等重冻。
-            ...('wrap' in s ? { wrap: s.wrap } : {})
+            ...('wrap' in s ? { wrap: s.wrap } : {}),
+            // R26（§8.58）: 执行条件随 APPLY 落步 —— **非空才带键**（键缺席 = 无条件 /
+            // 清除该步条件），空白与 null 后端一律归一成 null。
+            ...(stepConditionText ? { condition: stepConditionText } : {})
         } : s)));
         setMsg(`步骤 ${editorIndex + 1} 已应用（${payloadByteCount(live.payload)} 字节）`);
         setLoadError('');
@@ -786,6 +831,33 @@ export default function Sequences() {
                                                     onChange={(e) => setStepDelay(e.target.value)}
                                                     className="w-28 bg-nier-dark border border-nier-light/30 px-2 py-1 text-xs font-mono text-nier-light disabled:opacity-50"
                                                 />
+                                            </label>
+                                            {/* R26（§8.58）: 步骤执行条件（可选）——受限表达式，
+                                                APPLY 时经 checkCondition 就地校验（非法红框 +
+                                                横幅，拦下不发）；键随 APPLY 落步，保存形
+                                                **非空才带键**（见 saveBody）。 */}
+                                            <label className="flex flex-col gap-1 opacity-60">
+                                                执行条件（可选）
+                                                <input
+                                                    type="text"
+                                                    data-testid="step-condition"
+                                                    maxLength={MAX_CONDITION_LEN}
+                                                    value={stepCondition}
+                                                    disabled={running || stepHostMissing(step)}
+                                                    placeholder='例：step.1.status == "OK"'
+                                                    title={stepConditionError
+                                                        || '留空 = 无条件；可用变量：step.<n>.status / step.<n>.received / 上一步解码字段名'}
+                                                    onChange={(e) => setStepCondition(e.target.value)}
+                                                    className={`w-72 bg-nier-dark border ${stepConditionError ? 'border-red-500/60' : 'border-nier-light/30'} px-2 py-1 text-xs font-mono text-nier-light disabled:opacity-50`}
+                                                />
+                                                {stepConditionError && (
+                                                    <span
+                                                        data-testid="step-condition-error"
+                                                        className="text-red-400 text-[10px]"
+                                                    >
+                                                        {stepConditionError}
+                                                    </span>
+                                                )}
                                             </label>
                                             {/* CP3 3c (D6-B): 封装配方选择器（可选）—— 选中即落
                                                 草稿步骤 wrap.recipe_id，随 APPLY / 保存提交；

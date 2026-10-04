@@ -23,6 +23,12 @@ class SequenceStepSpec(BaseModel):
     wrap: Optional[Dict[str, Any]] = Field(
         None, description="{recipe_id}（请求形）；落库形另带 definition_hash"
     )
+    # R26（§8.58）序列级分支：本步执行条件 —— 受限表达式（`== != >= <= > < in`，
+    # 无 eval）。None / 空 = 无条件（存量步骤缺省路径，行为逐字节不变）。
+    # 保存侧只查语法（routers/sequence._condition_spec），变量到运行期才存在。
+    condition: Optional[str] = Field(
+        None, description="执行条件表达式；None/空 = 无条件"
+    )
 
 
 class SequencePayload(BaseModel):
@@ -49,6 +55,8 @@ class SequenceStepOut(BaseModel):
     # CP3 3c (D6-B): 配方引用（{recipe_id, definition_hash}）；协议结构变了才亮
     # 徽标（D15 关联项 2），步骤冻结帧不受影响、不阻断。
     wrap: Optional[Dict[str, Any]] = None
+    # R26（§8.58）步骤执行条件回显；null = 无条件（存量步骤/未自愈列同 null）
+    condition: Optional[str] = None
 
 
 class SequenceOut(BaseModel):

@@ -244,6 +244,48 @@ def _profile_sort_verify(conn):
             raise MigrationError(f"排序列缺失: {table}.sort_order")
 
 
+# --------------------------------------------------------------------------
+# 0005 · R26 序列级分支（PLAN §8.58）：`sequence_steps.condition` 仅新增列
+# --------------------------------------------------------------------------
+
+#: R26 要落 `condition` 的表（**仅新增列**）—— 表单从 `models` 派生（加列只写一处，
+#: 同 0002 / 0003 / 0004 口径），verify 再钉死「恰好 sequence_steps 一张」，防有人
+#: 误删列后迁移静默漏改、或误给别的表也加上这列（§0 只允许新增列，不做改列）。
+def condition_tables() -> List[str]:
+    return sorted(
+        name
+        for name, table in Base.metadata.tables.items()
+        if "condition" in table.columns
+    )
+
+
+def _condition_apply(conn):
+    """缺则 `ALTER TABLE ... ADD COLUMN condition VARCHAR(200)`（幂等）。
+
+    存量行回填 NULL = **无条件步骤**（R26 缺省路径：不判定、原样执行 → 与升级前
+    逐字节一致）；全新库由 create_all 直接建出该列 → 跳过（`ALTER` 加已存在的列
+    会直接报错）。
+    """
+    for table in condition_tables():
+        have = _column_names(conn, table)
+        if have and "condition" not in have:
+            conn.exec_driver_sql(
+                f"ALTER TABLE {table} ADD COLUMN condition VARCHAR(200)"
+            )
+
+
+def _condition_verify(conn):
+    """升级结果检查：R26 恰好只给 `sequence_steps` 加列 —— 多一张、少一张都报错。"""
+    tables = condition_tables()
+    if tables != ["sequence_steps"]:
+        raise MigrationError(
+            f"R26 condition 应且仅应覆盖 sequence_steps，实得 {tables}"
+        )
+    for table in tables:
+        if "condition" not in _column_names(conn, table):
+            raise MigrationError(f"条件列缺失: {table}.condition")
+
+
 REGISTRY: List[Migration] = [
     Migration(1, "baseline", _baseline_apply, _baseline_verify),
     # 13 表统一加 `deleted_at`（仅新增列，合 §0；新库 create_all 已带 → 只验不改）。
@@ -252,6 +294,8 @@ REGISTRY: List[Migration] = [
     Migration(3, "dispatch_logs_fields_json", _decode_json_apply, _decode_json_verify),
     # R20：`device_profiles.sort_order` 自定义排序序号（仅新增列）。
     Migration(4, "device_profiles_sort_order", _profile_sort_apply, _profile_sort_verify),
+    # R26：`sequence_steps.condition` 步骤执行条件（仅新增列，NULL = 无条件）。
+    Migration(5, "sequence_steps_condition", _condition_apply, _condition_verify),
 ]
 
 #: 当前目标版本（= REGISTRY 最后一条）。升级即把库推进到这个号。

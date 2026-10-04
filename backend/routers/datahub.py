@@ -553,6 +553,8 @@ def sequence_step_export_row(row) -> dict:
         "params": row.params,
         "payload": row.payload,
         "plan": row.plan,
+        # R26: 条件也带走（漏了 → 导出再导入会静默丢分支，往返不等价）
+        "condition": getattr(row, "condition", None),
         "wrap": row.wrap,
     }
 
