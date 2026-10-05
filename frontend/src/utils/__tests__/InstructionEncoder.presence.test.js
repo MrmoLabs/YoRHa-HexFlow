@@ -285,3 +285,56 @@ describe('N3 三验收场景（§8.16 · G1）', () => {
         expect(enc(instr, { cmd: 2 })).toBe('0222');
     });
 });
+
+// ─── R32 (§8.64): 判定归一 —— expect 是十六进制**字符串**时与数值等价 ────────
+// 拍板项（§8.61 第七节 ① / §8.63 第七节）：样本 ② expect 存字符串 "01"，而引用
+// 值是数值 1 → 旧口径 `String(1) !== "01"` **恒未命中**，门等于配废。
+// R32 让两者**判等**（双端 byte-equal：field_blocks._presence_hit 同批改）。
+//
+// 三条边界（宁可少判，只做拍板项）：
+//   · 归一**仅当 expect 是字符串**（JSON 数字 10 不按 hex 解 → 现状不变）；
+//   · expect 必须**整串** `^[0-9A-Fa-f]+$`（空白 / 前缀 / `ALPHA` 一律不归一）；
+//   · 数值**超出安全整数**不归一（双端定长精度一致，避免 JS/Python 大整数分叉）。
+describe('R32 presence 十六进制归一（"01" ≡ 1 · 双端 byte-equal）', () => {
+    const frameWith = (expectVal, refValue) => enc({
+        fields: [
+            cmdField(refValue),
+            leaf('opt', 1, 'BB', { ref_id: 'cmd', expect: expectVal }),
+        ],
+    });
+
+    it('expect "01" + ref 值 1 → 归一命中（BB 出线）', () => {
+        expect(frameWith('01', 1)).toBe('AABB');
+    });
+
+    it('expect "0A" + ref 值 10 → 归一命中（带字母的补零形态）', () => {
+        expect(frameWith('0A', 10)).toBe('AABB');
+    });
+
+    it('ref 是字符串 "1"、expect "01" → 归一命中（归一不看 ref 侧类型）', () => {
+        expect(frameWith('01', '1')).toBe('AABB');
+    });
+
+    it('真·不同值（expect "9" / ref 1）→ 解析值不等 → 仍未命中', () => {
+        expect(frameWith('9', 1)).toBe('AA');
+    });
+
+    it('expect 带空白（" 1"）→ 不是整串 hex → 不归一，仍未命中（现状不变）', () => {
+        expect(frameWith(' 1', 1)).toBe('AA');
+    });
+
+    it('expect 是数字 10、ref 值 16 → 不归一（归一仅限字符串 expect，现状不变）', () => {
+        expect(frameWith(10, 16)).toBe('AA');
+    });
+
+    it('expect 非十六进制（"ALPHA"）/ ref 1 → 不归一，仍未命中', () => {
+        expect(frameWith('ALPHA', 1)).toBe('AA');
+    });
+
+    it('组级门同样归一：expect "01" + ref 值 1 → 整棵树发射', () => {
+        expect(enc({
+            fields: [cmdField(1), group('g', 1, [kid('a', '11', 'g')],
+                { ref_id: 'cmd', expect: '01' })],
+        })).toBe('AA11');
+    });
+});

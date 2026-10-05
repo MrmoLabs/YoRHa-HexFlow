@@ -3,6 +3,10 @@ import { alignPadLen, padSpec, padToPadLen } from './padSpec';
 // R27（§8.52 排期 · varint / COBS 出线 · §8.59）: length 卡出线编码与
 // LEB128 宽度 —— 尺必须跟编码器同宽，否则其后所有偏移错 1..n 字节。
 import { normalizeEncoding, varintWidth } from './framing';
+// R32 (§8.64): presence 比较谓词 —— 与 InstructionEncoder._presenceHit / 后端
+// field_blocks._presence_hit 同一个（"01" ≡ 1 十六进制归一），改一必改二。
+// 若此处不跟归一，会出现「编码期命中、卡面却按 0 字节排偏移」的两端矛盾。
+import { presenceEqual } from './presenceSemantics';
 // Pure function — walks fields by parent_id/sequence and computes each block's
 // start offset plus the instruction's total byte length.
 //
@@ -66,7 +70,7 @@ const hexByteCount = (cv) => {
  * 返回：
  *   null      —— 无门：未配置 / 配置不完整（fail-open）/ ref 悬空（编码恒发射）；
  *   'hit'/'miss' —— 按静态值链 pc.value 判出（DYNAMIC repeat 静态 resolve 同链，
- *                   String 归一比较）；
+ *                   presenceEqual：String 归一 + R32 十六进制归一 `"01"` ≡ 1）；
  *   'unknown' —— ref 在场但无静态值（运行输入才决定 → 尺寸落 ??）。
  * @param {object} field 字段/组
  * @param {Map} fieldsById id → field 查表（缺失即悬空）
@@ -80,7 +84,8 @@ export function presenceStaticState(field, fieldsById) {
     if (!ref) return null; // 悬空 ref → 编码 fail-open 恒发射 → 无门
     const refVal = ref.parameter_config ? ref.parameter_config.value : undefined;
     if (refVal === undefined || refVal === null) return 'unknown'; // 运行输入才有
-    return String(refVal) === String(pres.expect) ? 'hit' : 'miss';
+    // R32 (§8.64): 与 InstructionEncoder._presenceHit 同谓词（设计期静态链只判 pc.value）
+    return presenceEqual(pres.expect, refVal) ? 'hit' : 'miss';
 }
 
 export function computeByteOffsets(instruction, opts) {

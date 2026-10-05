@@ -1,21 +1,23 @@
 import { describe, it, expect } from 'vitest';
 import { validateInstruction } from '../validateInstruction';
 
-// ─── R31 (§8.63): presence **设计期效度**三码（红测先行） ────────────────────
+// ─── R31 (§8.63): presence **设计期效度**两码（红测先行） ────────────────────
 // R29/R30 只把「为什么判不等」的原因摆在**加工页/步骤编辑器**的 hover 里 —— 那是
 // 运行前的填写现场；**指令管理页（设计期）看不到**，等用户发现「配了却一个字节都
-// 不发」已经晚了。三码在设计期就把三种「这条条件根本不可能成立」的形态点出来。
+// 不发」已经晚了。设计期把「这条条件根本不可能成立」的形态点出来。
 //
-// 硬性质：**零行为变更** —— 三码全部落 warnings（保存只拦 errors），判定 / 编码 /
-// 校验四码一行未动 → 出线字节逐字不变。
+// 硬性质：**零行为变更** —— 全部落 warnings（保存只拦 errors）。
 //
 //   W PRESENCE_REF_NO_SOURCE      —— 引用字段拿不到可判定的值（只读常量、无静态值、
 //                                    非输入型、无选项、非计算类）→ 编码恒 fail-open
 //                                    判命中 = 等于没配
 //   W PRESENCE_EXPECT_UNREACHABLE —— 引用字段的**全部可取值**（下拉选项 + 静态值）
-//                                    都与 expect 不相等 → 选哪一项都不成立 = 恒 0 字节
-//   W PRESENCE_HEX_PAD            —— 静态值与 expect 十六进制解析相等却 String 判不
-//                                    等（补零/进制差异，样本②同款）→ 恒未命中
+//                                    与 expect **全都判不等**（含 R32 十六进制归一）
+//                                    → 选哪一项都不成立 = 恒 0 字节
+//
+// R32 (§8.64) 起第三码 `PRESENCE_HEX_PAD` **退役**：判定归一后 `"01"` ≡ 1 判**命中**，
+// 「恒未命中」的前提不复存在，再报就是假警 —— 补零差异改由加工页**命中侧**的
+// 「按十六进制归一判等」注记说明。
 //
 // 判据一律「**宁可少判不误判**」：拿不准（可自由键入、非锁定、无候选全集）就不报。
 
@@ -91,16 +93,24 @@ describe('R31 W PRESENCE_REF_NO_SOURCE（引用字段拿不到可判定的值）
     });
 });
 
-// ─── ② 全部可取值都不相等 → 选哪项都不成立（样本② 的设计期可见版） ────────────
+// ─── ② 全部可取值都判不等（含 R32 归一）→ 选哪项都不成立 ─────────────────────
 describe('R31 W PRESENCE_EXPECT_UNREACHABLE（可取值穷尽无一命中）', () => {
-    it('样本②：下拉 {开:"01", 关:"00"} + expect "01" → warning（选哪个都不成立）', () => {
+    it('样本② **归一后可达**：下拉 {开:"01", 关:"00"} + expect "01" → 不报（R32 已判等）', () => {
         const r = validateInstruction(withGate(
             fld('ref', 1, { options: { 开: '01', 关: '00' } }, 'MAPPING'), '01'));
+        expect(codes(r, 'warnings')).not.toContain('PRESENCE_EXPECT_UNREACHABLE');
+        expect(r.errors).toEqual([]);
+    });
+
+    it('候选穷尽且**归一后**仍判不等（选项 05/06 + expect "0A"）→ warning', () => {
+        const r = validateInstruction(withGate(
+            fld('ref', 1, { options: { 甲: '05', 乙: '06' } }, 'MAPPING'), '0A'));
         const w = r.warnings.find(x => x.code === 'PRESENCE_EXPECT_UNREACHABLE');
         expect(w).toBeTruthy();
         expect(w.blockId).toBe('gate');
         expect(w.message).toContain('可取值');
-        expect(w.message).toContain('expect "01"');
+        expect(w.message).toContain('expect "0A"');
+        expect(w.message).toContain('含十六进制归一');
         expect(w.message).toContain('恒未命中');
         expect(w.message).toContain('0 字节');
         expect(r.errors).toEqual([]);          // 只提醒，不锁保存
@@ -130,67 +140,51 @@ describe('R31 W PRESENCE_EXPECT_UNREACHABLE（可取值穷尽无一命中）', (
     });
 });
 
-// ─── ③ 静态值补零 / 进制假阴性 → 恒未命中（与 R30 hover 归因同源） ─────────────
-describe('R31 W PRESENCE_HEX_PAD（静态值补零/进制假阴性）', () => {
-    it('静态值 1 + expect "01" → warning，文案点明十六进制解析相等', () => {
+// ─── ③ R31 的 W PRESENCE_HEX_PAD 已随 R32 判定归一**退役** ───────────────────
+describe('R32 归一后 W PRESENCE_HEX_PAD 退役（「恒未命中」前提已不成立）', () => {
+    it('静态值 1 + expect "01" → 归一判等（门命中）→ 不再报 HEX_PAD', () => {
         const r = validateInstruction(withGate(fld('ref', 1, { value: 1 }), '01'));
-        const w = r.warnings.find(x => x.code === 'PRESENCE_HEX_PAD');
-        expect(w).toBeTruthy();
-        expect(w.blockId).toBe('gate');
-        expect(w.message).toContain('十六进制解析');
-        expect(w.message).toContain('补零/进制差异');
-        expect(w.message).toContain('恒按未命中处理');
-        expect(w.message).toContain('0 字节');
-        expect(r.errors).toEqual([]);          // 只提醒，不锁保存
-    });
-
-    it('带字母的补零形态（值 10 + expect "0A"）→ 同样报', () => {
-        const r = validateInstruction(withGate(fld('ref', 1, { value: 10 }), '0A'));
-        expect(codes(r, 'warnings')).toContain('PRESENCE_HEX_PAD');
-    });
-
-    it('真·不同值（值 1 + expect "9"）→ 不报（宁可少判，不断言用户意图）', () => {
-        const r = validateInstruction(withGate(fld('ref', 1, { value: 1 }), '9'));
-        expect(codes(r, 'warnings')).not.toContain('PRESENCE_HEX_PAD');
-    });
-
-    it('本来判等（值 1 + expect "1"）→ 不报（没有「判不等」这回事）', () => {
-        const r = validateInstruction(withGate(fld('ref', 1, { value: 1 }), '1'));
-        expect(codes(r, 'warnings')).not.toContain('PRESENCE_HEX_PAD');
-    });
-
-    it('可自由键入（STRING / type string）→ 不报（键入相符值即命中，非恒）', () => {
-        const r = validateInstruction(withGate(fld('ref', 1, { value: '01', type: 'string' }, 'STRING'), '1'));
-        expect(codes(r, 'warnings')).not.toContain('PRESENCE_HEX_PAD');
-    });
-
-    it('带选项表时归 ②（不叠报 HEX_PAD）', () => {
-        const r = validateInstruction(withGate(
-            fld('ref', 1, { options: { 开: '01', 关: '00' } }, 'MAPPING'), '01'));
-        expect(codes(r, 'warnings')).toContain('PRESENCE_EXPECT_UNREACHABLE');
-        expect(codes(r, 'warnings')).not.toContain('PRESENCE_HEX_PAD');
-    });
-});
-
-// ─── 零行为变更总闸：三码全在 warnings，绝不产生 error ────────────────────────
-describe('R31 三码零行为变更（不阻断保存）', () => {
-    it('三种形态同时存在 → 三条 warning、errors 仍为空', () => {
-        const r = validateInstruction(instr([
-            fld('gate', 0, { value: 1, presence: { ref_id: 'a', expect: '01' } }),
-            fld('a', 1, { value: 1 }),                       // ③
-            fld('gate2', 2, { value: 1, presence: { ref_id: 'b', expect: '1' } }),
-            fld('b', 3, { hex: 'FF' }, 'HEX_RAW'),           // ①
-            fld('gate3', 4, { value: 1, presence: { ref_id: 'c', expect: '01' } }),
-            fld('c', 5, { options: { 开: '01', 关: '00' } }, 'MAPPING'),  // ②
-        ]));
-        const w = codes(r, 'warnings');
-        expect(w).toContain('PRESENCE_HEX_PAD');
-        expect(w).toContain('PRESENCE_REF_NO_SOURCE');
-        expect(w).toContain('PRESENCE_EXPECT_UNREACHABLE');
+        expect(r.warnings.some(w => w.code === 'PRESENCE_HEX_PAD')).toBe(false);
         expect(r.errors).toEqual([]);
     });
 
-    it('存量无 presence 字段 → 三码全无（存量零回归）', () => {
+    it('带字母补零形态（值 10 + expect "0A"）→ 同样归一判等 → 不报', () => {
+        const r = validateInstruction(withGate(fld('ref', 1, { value: 10 }), '0A'));
+        expect(codes(r, 'warnings')).not.toContain('PRESENCE_HEX_PAD');
+    });
+
+    it('真·不同值（值 1 + expect "9"）/ 本来判等（值 1 + "1"）→ 都不报（码已下架）', () => {
+        expect(codes(validateInstruction(withGate(fld('ref', 1, { value: 1 }), '9')), 'warnings'))
+            .not.toContain('PRESENCE_HEX_PAD');
+        expect(codes(validateInstruction(withGate(fld('ref', 1, { value: 1 }), '1')), 'warnings'))
+            .not.toContain('PRESENCE_HEX_PAD');
+    });
+
+    it('补零形态 + 有值源 + 无选项 → ①②也不报：整条指令 PRESENCE 提醒为空', () => {
+        const r = validateInstruction(withGate(fld('ref', 1, { value: 1 }), '01'));
+        expect(codes(r, 'warnings')).toEqual([]);
+    });
+});
+
+// ─── 零行为变更总闸：提醒全在 warnings，绝不产生 error ────────────────────────
+describe('R31/R32 零行为变更（不阻断保存）', () => {
+    it('①②同时存在 + 一条归一命中的门 → 两条 warning、errors 仍为空', () => {
+        const r = validateInstruction(instr([
+            fld('gate', 0, { value: 1, presence: { ref_id: 'a', expect: '01' } }),
+            fld('a', 1, { value: 1 }),                       // R32 归一命中 → 零提醒
+            fld('gate2', 2, { value: 1, presence: { ref_id: 'b', expect: '1' } }),
+            fld('b', 3, { hex: 'FF' }, 'HEX_RAW'),           // ①
+            fld('gate3', 4, { value: 1, presence: { ref_id: 'c', expect: '0A' } }),
+            fld('c', 5, { options: { 甲: '05', 乙: '06' } }, 'MAPPING'),  // ②
+        ]));
+        const w = codes(r, 'warnings');
+        expect(w).toContain('PRESENCE_REF_NO_SOURCE');
+        expect(w).toContain('PRESENCE_EXPECT_UNREACHABLE');
+        expect(w.filter(c => c === 'PRESENCE_HEX_PAD')).toEqual([]);   // 退役码零回归
+        expect(r.errors).toEqual([]);
+    });
+
+    it('存量无 presence 字段 → 两码全无（存量零回归）', () => {
         const r = validateInstruction(instr([fld('a', 0, { value: 1 }), fld('b', 1, { value: 2 })]));
         expect(codes(r, 'warnings')).toEqual([]);
         expect(codes(r, 'errors')).toEqual([]);

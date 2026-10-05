@@ -51,7 +51,9 @@
 
 | R30 | **presence 可见性收口** —— R29 自己登记的两个「半成品」（§8.62；同属「看得见没」主题，**非** §8.52 复议范围） | ✅ **已完成（2026-10-05，§8.62，纯 FE · 零 DDL → 无 `chore(db)`）**：① **进制/补零假阴性提示** —— `resolvePresenceStates` 的 `title` 仅在「miss 侧 + expect 整串十六进制可解析 + 解析值与当前值数值相等」三条同时成立时追加（`01`↔1 会提示、`9`↔1 与 `ALPHA` 不提示，宁可少判不误判），纯展示不参与比对；② **第二消费方自算** —— `RunnerFieldTree` 的 `presenceStates` 缺省语义由「`null` = 零渲染」改为「`undefined` = 用本组件手上的 `fields`/`inputs` 自算」（与显式传表**同一个 helper**，顶层只算一次、递归透传），`Sequences.jsx` **一行未改**即出同款 `IF` / `[SKIP 0B]`，加工页与步骤编辑器口径必然同源；显式 `null` 逃生口与 `InstructionRunner` 的 memo 显式表**均保留**。**判定 / 编码 / 校验四码一行未改 → 出线字节逐字不变**，判定归一继续挂 §8.61 第七节待拍板；红测先行（stash 两实现文件 → presence 三文件 7 failed / 31 passed + `Sequences` 1 failed / 27 passed → pop 后 42 例全绿）；**BE 955/955（持平）、FE 1275 → 1290/1290（84 文件，+15）** |
 
-| R31 | **presence 设计期效度三码** —— §8.61 第七节第 ② 项「ref 无值链校验提醒」的正主，扩成三个面（§8.63；同属「这条条件到底成不成立」主题，**非** §8.52 复议范围） | ✅ **已完成（2026-10-05，§8.63，纯 FE · 零 DDL → 无 `chore(db)`）**：新增三条 **W 码**（全落 warnings → 保存只拦 errors，**零行为变更**）——① `PRESENCE_REF_NO_SOURCE`：引用字段无 `pc.value` / 非输入型 / 无选项 / 非计算类**且**是只读固定算子 → 编码期只能取 `undefined` → **恒 fail-open 判命中 = 等于没配**；② `PRESENCE_EXPECT_UNREACHABLE`：有下拉选项（封闭集）却**无一**与 `String(expect)` 相等 → **选哪项都不成立**（样本② 的设计期可见版）；③ `PRESENCE_HEX_PAD`：静态值与 expect 十六进制解析相等却 `String` 判不等 → **静态链恒未命中**。判据一律**表外不算、宁可少判**（可自由键入 / 非锁定 / 无候选全集一律不报），悬空 ref 与不完整配置各归原码**不叠报**。同批把 R30 的比较谓词抽成叶子模块 `utils/presenceSemantics.js`（零依赖无环）→ **角标 hover 与设计期提醒 import 同一实现**（`formatEnumOptions` 从 `runnerRenderRules` re-export，既有 70 例一行未改）；**判定 / 校验四码 / normalize / 编码分支一行未改 → 出线字节逐字不变**，BE 零改动（BE 本就无 presence 校验码）。红测先行有据（实现前 7 failed / 14 passed → stash 复红 7 failed / 14 passed → pop 后 21 例全绿）；**BE 955/955（持平）、FE 1290 → 1311/1311（85 文件，+21）** |
+| R31 | **presence 设计期效度三码** —— §8.61 第七节第 ② 项「ref 无值链校验提醒」的正主，扩成三个面（§8.63；同属「这条条件到底成不成立」主题，**非** §8.52 复议范围） | ✅ **已完成（2026-10-05，§8.63，纯 FE · 零 DDL → 无 `chore(db)`）**：新增三条 **W 码**（全落 warnings → 保存只拦 errors，**零行为变更**）——① `PRESENCE_REF_NO_SOURCE`：引用字段无 `pc.value` / 非输入型 / 无选项 / 非计算类**且**是只读固定算子 → 编码期只能取 `undefined` → **恒 fail-open 判命中 = 等于没配**；② `PRESENCE_EXPECT_UNREACHABLE`：有下拉选项（封闭集）却**无一**与 `String(expect)` 相等 → **选哪项都不成立**（样本② 的设计期可见版）；③ `PRESENCE_HEX_PAD`：静态值与 expect 十六进制解析相等却 `String` 判不等 → **静态链恒未命中**。判据一律**表外不算、宁可少判**（可自由键入 / 非锁定 / 无候选全集一律不报），悬空 ref 与不完整配置各归原码**不叠报**。同批把 R30 的比较谓词抽成叶子模块 `utils/presenceSemantics.js`（零依赖无环）→ **角标 hover 与设计期提醒 import 同一实现**（`formatEnumOptions` 从 `runnerRenderRules` re-export，既有 70 例一行未改）；**判定 / 校验四码 / normalize / 编码分支一行未改 → 出线字节逐字不变**，BE 零改动（BE 本就无 presence 校验码）。红测先行有据（实现前 7 failed / 14 passed → stash 复红 7 failed / 14 passed → pop 后 21 例全绿）；**BE 955/955（持平）、FE 1290 → 1311/1311（85 文件，+21）**（本行 ③ 码已由 R32 判定归一退役、② 判据已改 `presenceEqual`，见 §8.64） |
+
+| R32 | **presence 判定归一** —— §8.61 第七节第 ① 项（首个**会改字节**的判定修正，用户拍板连做并接受字节变化）（§8.64；**非** §8.52 复议范围） | ✅ **已完成（2026-10-05，§8.64，纯 FE+BE · 零 DDL → 无 `chore(db)`）**：新增谓词 `presenceEqual(expect, value)` = `String()` 归一（N3 存量口径逐字保留：数值 1 命中 `"1"`）**∪ 十六进制归一**（expect 是**字符串**且整串 `^[0-9A-Fa-f]+$` 且在安全整数内 → 与 `comparableNumber(value)` 数值相等即判**命中**，`"01"` ≡ 1、`"0A"` ≡ 10 —— 样本② 拍板项）。**三个判定点同用一个谓词（改一必改二 + 一）**：FE `InstructionEncoder._presenceHit`（运行期）/ FE `byteOffsets.presenceStaticState`（设计期静态链，不跟就「编码命中、卡面按 0 字节排偏移」）/ BE `field_blocks._presence_hit` → `_presence_equal`（byte-equal 锚点）。三条边界**宁可少判**：仅字符串 expect（JSON 数字 `10` 不按 hex 解）、**不做 trim**（`" 1"` 非整串 hex）、超安全整数不归一（`Number.isSafeInteger` ↔ Python `2**53-1` 同阈）。**存量影响清单（会改字节的全集）**：`vectors/presence.json` 的 `[{"expect":"01"} → "AA"]` 翻成 `"AABB"` —— **唯一一条向量变化**（两端同读一份自动同步）；无 presence 的指令与其余 17 份向量**逐字节不变**，`/dispatch` 缺省口径不变；N3 四码 / fail-open 四支 / 判定先于 repeat 的顺序**一行未动**。**展示层随判定收口**：R30 的 miss 侧假阴性注记翻到**命中侧**（`· 按十六进制归一判等（expect "01" ≡ 值 1 = 1…）`）、R31 W `PRESENCE_HEX_PAD` **退役**（前提不复存在）、R31 W `PRESENCE_EXPECT_UNREACHABLE` 改用 `presenceEqual` 判候选（样本② 归一后可达 → 不再报）。红测先行有据（实现前 BE 4 failed / 14 passed + FE 6 failed / 51 passed → 实现后 BE 18/18、FE 57/57 全绿，R30/R31 展示层用例随语义翻面同批改写）；**BE 955 → 963/963、FE 1311 → 1323/1323（85 文件，+12）** |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -5296,7 +5298,74 @@ expected = len(frame) + offset_val - (width - byte_length)
 - ②「ref 无值链的校验提醒（新 W 码）」→ **本批以 `PRESENCE_REF_NO_SOURCE` 收掉**（且扩成三码）；
 - ① expect / 枚举**十六进制归一**（`"01" ≡ 1`）→ **仍待拍板**，是唯一会改字节的一项 → 下一批 **R32（§8.64）**。
 
-**R31 ✅。下一批 → R32（§8.64）：判定归一（`"01" ≡ 1`），会改字节，须 BE/FE 同步 + 存量影响清单。**
+**R31 ✅（本节的三条 W 码里 ③ `PRESENCE_HEX_PAD` 已由 §8.64 判定归一**退役**、② 的判据已改用 `presenceEqual` —— 见下节）。**
+**下一批 → R32（§8.64）：判定归一（`"01" ≡ 1`），会改字节，须 BE/FE 同步 + 存量影响清单。**
+
+### 8.64 R32 · presence **判定归一**（`"01"` ≡ 1）—— 首个「会改字节」的判定修正 —— 2026-10-05
+
+#### 一 · 来源与拍板
+
+- §8.61 第七节第 ① 项（§8.62 / §8.63 续挂），用户拍板「**R31 + R32 两批连做**」，并**明确接受出线字节会变**。
+- 病根（样本 ②）：expect 存**字符串** `"01"`，而引用值是**数值** `1` → `String(1)="1" ≠ "01"` **恒未命中**，门等于配废。
+  R30 只能在 hover 里解释「**为什么**判不等」、R31 只能在设计期提醒「这条条件达不成」—— 都是在**描述病**，不是治病。
+- 本批把两者判成**等**：这正是拍板的目的，也是 §0「`/dispatch` 缺省口径逐字节不变」的**不冲突面** —— 无 presence 的指令与默认路径逐字节不变，只有「expect 是补零/带字母 hex 字符串、值是数值」这一类配置由未命中翻为命中。
+
+#### 二 · 判定归一（谓词 `presenceEqual`）
+
+```
+presenceEqual(expect, value) =
+      String(expect) === String(value)                                  // ① N3 存量口径逐字保留（数值 1 命中 "1"）
+   || ( expect 是**字符串**
+        && /^[0-9A-Fa-f]+$/.test(expect)                                // ② 整串 hex（无前缀、无空白）
+        && Number.isSafeInteger(parseInt(expect,16))                    // ③ 安全整数内
+        && comparableNumber(value) === parseInt(expect,16) )            // 数值相等 → 判等
+```
+
+三条边界（**宁可少判，只做拍板项**，各自有向量/用例锚住）：
+
+- 归一**仅当 expect 是字符串** —— JSON 数字 `10` 不按 hex 解（现状不变，用例锁住）；
+- **不做 trim** —— `" 1"` 不是整串 hex（现状不变，向量 `[{"expect": " 1"}, "AA"]` 锚住）；
+- 超安全整数不归一 —— `Number.isSafeInteger` ↔ Python `2**53-1`，双端精度同阈不分叉。
+
+**三个判定点同用一个谓词（改一必改二 + 一）：**
+
+| 层 | 判定点 | 为什么必须跟 |
+|---|---|---|
+| FE 运行期 | `utils/InstructionEncoder._presenceHit` | 出线字节的真源（inputs/computed 值链） |
+| FE 设计期 | `utils/byteOffsets.presenceStaticState` | 偏移尺 / 卡面静态链 —— 不跟就会「编码期命中、卡面却按 0 字节排偏移」的两端自相矛盾 |
+| BE 编译期 | `core/field_blocks._presence_hit` → `_presence_equal` | byte-equal 锚点（`datahub` 再导出） |
+
+#### 三 · 存量影响清单（会改字节的全集）
+
+1. **`vectors/presence.json` leaf 表** `[{"ref_id":"cmd","expect":"01"}, "AA"]` → **`"AABB"`** —— **唯一一条向量变化**（两端同读一份 → 自动同步，无需改两处）。
+2. 双端**新增 21 例**锁新口径（BE 8 + FE 13），其中 BE `TestPresenceRadixNormalize` / FE `InstructionEncoder` 的 R32 describe 逐条镜像同名用例。
+3. **零影响面**：无 presence 的指令 / `vectors/*.json` 其余 17 份 / N3 四码 / fail-open 四支 / 判定先于 repeat 与子树递归的先后顺序 —— **一行未动**。
+4. `test_field_decode`（`expect "2"` vs 值 1）、`test_encode_align`（`expect "1"` vs 值 1）、`Sequences` 的 `expect "02"` vs 初值 0 —— 均为真·不同值 → **命中结论不变，全量照绿**（BE 955 → 963 全绿即证据）。
+
+#### 四 · 展示层随判定收口（一处翻面 + 一处退役 + 一处改判据）
+
+- **R30 hover 注记翻面**：miss 侧的「假阴性解释」在 R32 后**已无可能成立**（能 hex 相等的必已命中）→ 注记改挂**命中侧**：
+  `· 按十六进制归一判等（expect "01" ≡ 值 1 = 1，补零/进制差异不影响判定）`；fail-open 归因优先，两者互斥。
+- **R31 W `PRESENCE_HEX_PAD` 退役**：「恒未命中」的前提不复存在，再报就是假警 —— 码从 `validateInstruction` 删除（测试改写为「退役后零回归」断言）。
+- **R31 W `PRESENCE_EXPECT_UNREACHABLE` 改判据**：候选比对由 `String(v) !== expect` 改为 `!presenceEqual(expect, v)` —— 样本② 归一后**可达 → 不再报**，只有「归一后仍判不等」（如选项 05/06 vs expect `"0A"`）才报，文案加「（含十六进制归一）」。
+- **R31 W `PRESENCE_REF_NO_SOURCE` 不受影响**（fail-open 四支未变，① 码语义照旧）。
+
+#### 五 · 测试（红测先行有据）
+
+- 新增 **21 例**：BE `TestPresenceRadixNormalize` **8**、FE `InstructionEncoder.presence.test.js` R32 describe **8**（含组级门）、FE `byteOffsets.presence.test.js` R32 describe **5**。
+- **红测证据（实现落笔前）**：BE `test_encode_presence` → **4 failed / 14 passed**；FE encoder + byteOffsets → **6 failed / 51 passed**（正向断言全红、负向断言已绿）。实现后 BE 18/18、FE 57/57 全绿。
+- R30/R31 展示层既有用例在判定翻面后**转红（预期）→ 同批改写**：`runnerRenderRules.presence` 的 miss 侧三条改命中侧、`InstructionRunner.presence` 的「仍判未命中」改「归一命中 + 无 SKIP」、`validateInstruction.presenceValidity` 的 HEX_PAD 段改退役断言。
+
+#### 六 · 验收
+
+- **BE 955 → 963/963**、**FE 1311 → 1323/1323（85 文件，+12）**、`npx vite build` EXIT=0、`npm run lint` EXIT=0、yorha-ui 校验器改动 js/jsx/json **0 违规**、md 表列数 mismatches = 0；
+  **零 DDL → 无 `chore(db)`**（`models.py` 未动）、不引 pytest、**无新 pip 依赖**、`processor.py` / `graph.py` / `Blueprint.jsx` 未碰。
+
+#### 七 · 明确留白（本批不做）
+
+- 不做空白容错（`" 1"`）、不做 JSON 数字 expect 的归一、不改 fail-open 四支、不改 N3 四码与层级顺序。
+
+**R32 ✅ —— §8.61 第七节两项至此全部出清（② 由 R31、① 由本批）。第七节归零。**
 
 ## 9. 保留勿动（非任务，勿清理）
 

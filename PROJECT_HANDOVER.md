@@ -2787,6 +2787,8 @@
     - **状态**：**R30 ✅** —— §8.61 第七节 3 项中「Sequences 同款角标」已以「组件自算」方式收掉（不止同款：
       新页面默认就有）。**剩余待拍板 2 项** = expect/枚举十六进制归一（**会改字节**）、ref 无值链校验提醒（新 W 码）。
       提交 = `feat(R30)` 单笔（**零 DDL** → 无 `chore(db)`）。
+      （**R32 改判**：本条的 miss 侧假阴性注记已随 §8.64 判定归一**翻到命中侧** ——
+      「能 hex 相等的必已命中」，miss 侧那段话不再可能成立。见条目 81。）
 
 80. **R31 · presence 设计期效度三码 —— 「配了却不成立」在保存前就点破（PLAN §8.63 · §8.61 第七节第 ② 项正主）**
     （2026-10-05，**纯 FE、零 DDL → 无 `chore(db)`**、`models.py` 一行未动、
@@ -2827,6 +2829,53 @@
     - **状态**：**R31 ✅** —— §8.61 第七节第 ② 项**已收掉**（扩成三码）。**唯一剩余待拍板** =
       expect/枚举十六进制归一（`"01" ≡ 1`，**会改字节**）→ 下一批 **R32（§8.64）**。
       提交 = `feat(R31)` 单笔（**零 DDL** → 无 `chore(db)`）。
+      （**R32 后改判**：本条 ③ `PRESENCE_HEX_PAD` 已**退役**、② 的候选判据已改用
+      `presenceEqual` —— 见条目 81。）
+
+81. **R32 · presence 判定归一（`"01"` ≡ 1）—— 首个「会改字节」的判定修正（PLAN §8.64 · §8.61 第七节第 ① 项正主）**
+    （2026-10-05，**纯 FE+BE、零 DDL → 无 `chore(db)`**、`models.py` 一行未动、
+    `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、**不引 pytest、无新 pip 依赖**；
+    用户拍板「R31 + R32 两批连做」并**明确接受出线字节会变**）：
+    - **病根（样本②）**：expect 存**字符串** `"01"`、引用值是**数值** `1` → `String(1)="1" ≠ "01"`
+      **恒未命中**，门等于配废。R30 只能在 hover 解释「为什么判不等」、R31 只能在设计期提醒
+      「这条条件达不成」—— 都在**描述病**。本批把两者判成**等**。
+    - **谓词 `presenceEqual(expect, value)`** = `String()` 归一（N3 存量口径逐字保留：数值 1 命中
+      `"1"`）**∪ 十六进制归一**（`expect` 是**字符串** 且 整串 `^[0-9A-Fa-f]+$` 且在安全整数内
+      → 与 `comparableNumber(value)` 数值相等即判**命中**，`"01"` ≡ 1、`"0A"` ≡ 10）。
+    - **三条边界（宁可少判，只做拍板项）**：仅字符串 expect（JSON 数字 `10` 不按 hex 解 → 现状不变）、
+      **不做 trim**（`" 1"` 非整串 hex → 向量 `[..., " 1" → "AA"]` 锚住）、超安全整数不归一
+      （`Number.isSafeInteger` ↔ Python `2**53-1` **同阈**，双端精度一致不分叉）。
+    - **三个判定点同用一个谓词（改一必改二 + 一）**：
+      | 层 | 位置 | 不跟的后果 |
+      |---|---|---|
+      | FE 运行期 | `utils/InstructionEncoder._presenceHit` | 出线字节真源 |
+      | FE 设计期 | `utils/byteOffsets.presenceStaticState` | 编码期命中、卡面却按 0 字节排偏移（两端自相矛盾） |
+      | BE 编译期 | `core/field_blocks._presence_hit` → `_presence_equal` | byte-equal 锚点断 |
+    - **存量影响清单（会改字节的全集）**：`vectors/presence.json` leaf `[{"ref_id":"cmd","expect":"01"}, "AA"]`
+      → **`"AABB"`** —— **唯一一条向量变化**（两端同读一份 → 自动同步）；无 presence 的指令、
+      其余 17 份向量、`/dispatch` 缺省口径、N3 四码、fail-open 四支、判定先于 repeat 的顺序
+      **一行未动**；`test_field_decode` / `test_encode_align` / `Sequences` 的用例均为真·不同值
+      → 结论不变（BE 955 → 963 全绿即证据）。
+    - **展示层随判定收口（一处翻面 + 一处退役 + 一处改判据）**：① R30 的 **miss 侧假阴性注记翻到
+      命中侧**（`· 按十六进制归一判等（expect "01" ≡ 值 1 = 1，补零/进制差异不影响判定）`，fail-open
+      归因优先互斥）；② **R31 W `PRESENCE_HEX_PAD` 退役**（「恒未命中」前提不复存在，再报即假警）；
+      ③ **R31 W `PRESENCE_EXPECT_UNREACHABLE` 改判据** `String(v)!==expect` → `!presenceEqual(expect,v)`
+      （样本② 归一后**可达 → 不再报**，文案加「（含十六进制归一）」）。① 码
+      `PRESENCE_REF_NO_SOURCE` 不受影响（fail-open 未变）。
+    - **测试（红测先行有据）**：新增 **21 例** —— BE `TestPresenceRadixNormalize` **8**、FE
+      `InstructionEncoder.presence.test.js` R32 describe **8**（含组级门）、FE `byteOffsets.presence.test.js`
+      R32 describe **5**。**红测证据**：实现落笔前 BE → **4 failed / 14 passed**、FE → **6 failed /
+      51 passed**（正向全红）；实现后 BE 18/18、FE 57/57 全绿；R30/R31 展示层既有用例**转红属预期
+      （语义翻面）→ 同批改写**。
+    - **验收**：**BE 955 → 963/963**、**FE 1311 → 1323/1323（85 文件，+12）**、`npx vite build` EXIT=0、
+      `npm run lint` EXIT=0、yorha-ui 校验器改动 js/jsx/json **0 违规**、md 表列数 mismatches = 0；
+      **零 DDL → 无 `chore(db)`**。
+    - **文档同步（同批）**：PLAN **§8.64 新节** + §1 新增 `R32` 行 + §8.63 尾行改指 + §1 `R30`/`R31`
+      两行加改判指针；本条（并给条目 79 / 80 挂改判注）；pageStatus 加工页 / 序列编排页 / 指令管理页
+      三条改判 + `npm run sync:page-status`。
+    - **状态**：**R32 ✅ —— §8.61 第七节两项至此全部出清（② 由 R31、① 由本批），第七节归零。**
+      **明确留白**：不做空白容错、不做 JSON 数字 expect 归一、不改 fail-open 与 N3 四码。
+      提交 = `feat(R32)` 单笔（**零 DDL** → 无 `chore(db)`）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

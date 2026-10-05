@@ -14,7 +14,7 @@ import { InstructionEncoder } from '../utils/InstructionEncoder';
 // R30 (§8.62) / R31 (§8.63): presence 的**比较口径**（补零/进制谓词 + 选项归一）
 // 与 utils/validateInstruction 的设计期校验**共用同一实现** —— leaf 模块零依赖，无环。
 // 改一必改二：本文件的角标 hover 与设计期提醒必须说同一件事。
-import { formatEnumOptions, hexNorm, comparableNumber } from '../utils/presenceSemantics';
+import { formatEnumOptions, radixPadMismatch } from '../utils/presenceSemantics';
 export { formatEnumOptions };
 
 // DRY Helper: Get Date object for the field's base time (epoch).
@@ -586,23 +586,22 @@ export const resolvePresenceStates = (fields = [], inputs = {}, computedValues =
         else if (refVal === undefined || refVal === null) reason = ' · ref 无值链 → fail-open 按命中';
 
         const hit = InstructionEncoder._presenceHit(f, inputs, computedValues, flat);
-        // R30 (§8.62)：进制 / 补零**假阴性**提示 —— 只在 miss 侧、且 expect 整串
-        // 十六进制可解析、解析值与当前值**数值相等**三条同时成立时追加（宁可少判
-        // 不误判：`ALPHA` 解析不出、真·不同值解析值不等 → 一律不提示）。
-        // 纯展示：判定仍由 _presenceHit 说了算，本段只回答「为什么判不等」——
-        // 样本 ② expect 存 "01" 而枚举值被 parseInt(x,16) 转成数值 1 正属此类。
+        // R32 (§8.64) 归一后 `01` ≡ 1 **判命中** → R30 那条「假阴性解释」在 miss 侧
+        // 已无可能成立（能 hex 相等的必已命中）→ 注记改挂**命中侧**：解释「字符串
+        // 不一样为什么还命中」。纯展示，判定仍由 _presenceHit 说了算。
         let radixNote = '';
-        if (!hit && Number.isFinite(hexNorm(expect))) {
-            const refNum = comparableNumber(refVal);
-            if (Number.isFinite(refNum) && refNum === hexNorm(expect)) {
-                radixNote = ` · ⚠ 按十六进制解析 "${String(expect)}" = ${hexNorm(expect)}`
-                    + ` 与当前值 ${refNum} 相等，String 归一判不等（补零/进制差异 → 未命中）`;
+        if (hit && !reason && hasExpect && refVal !== undefined && refVal !== null
+            && String(expect) !== String(refVal)) {
+            const pad = radixPadMismatch(expect, refVal);
+            if (pad) {
+                radixNote = ` · 按十六进制归一判等（expect "${String(expect)}" ≡ 值 `
+                    + `${String(refVal)} = ${pad.expectNum}，补零/进制差异不影响判定）`;
             }
         }
         states[f.id] = {
             hit,
             title: `条件字段：[${hasRef ? String(refId) : '?'}] == ${hasExpect ? String(expect) : '?'}`
-                + (hit ? ` · 命中 → 发射本字段${reason}` : ` · 未命中 → 0 字节（本帧不发）${radixNote}`),
+                + (hit ? ` · 命中 → 发射本字段${reason || radixNote}` : ' · 未命中 → 0 字节（本帧不发）'),
         };
     });
     return states;

@@ -179,5 +179,55 @@ class TestCombinedVector(unittest.TestCase):
         self.assertEqual(frame_of(*fields).hex().upper(), "AABB1111")
 
 
+class TestPresenceRadixNormalize(unittest.TestCase):
+    """R32 (§8.64): 判定归一 —— expect 是十六进制**字符串**时与数值等价。
+
+    拍板项（§8.61 第七节 ① / §8.63 第七节）：样本② expect 存字符串 "01"，而引用
+    值是数值 1 → 旧口径 str(1) != "01" **恒未命中**，门等于配废。R32 两者判等
+    （FE InstructionEncoder._presenceHit 与 byteOffsets.presenceStaticState 同批改）。
+
+    三条边界（宁可少判，只做拍板项）：
+    - 归一**仅当 expect 是字符串**（JSON 数字 10 不按 hex 解 → 现状不变）；
+    - expect 必须**整串** ^[0-9A-Fa-f]+$（空白 / ALPHA 一律不归一）；
+    - 数值**超出安全整数**不归一（与 JS Number.isSafeInteger 同阈，双端精度一致）。
+    """
+
+    @staticmethod
+    def frame(presence, value=1):
+        return frame_of(
+            cmd_field(value),
+            leaf("opt", {"hex": "BB", "presence": presence}, sequence=1),
+        ).hex().upper()
+
+    def test_padded_hex_string_hits_numeric_value(self):
+        self.assertEqual(self.frame({"ref_id": "cmd", "expect": "01"}), "AABB")
+
+    def test_hex_with_letters_hits_numeric_value(self):
+        self.assertEqual(self.frame({"ref_id": "cmd", "expect": "0A"}, 10), "AABB")
+
+    def test_string_ref_value_hits(self):
+        self.assertEqual(self.frame({"ref_id": "cmd", "expect": "01"}, "1"), "AABB")
+
+    def test_genuinely_different_value_still_misses(self):
+        self.assertEqual(self.frame({"ref_id": "cmd", "expect": "9"}), "AA")
+
+    def test_whitespace_expect_not_normalized(self):
+        self.assertEqual(self.frame({"ref_id": "cmd", "expect": " 1"}), "AA")
+
+    def test_numeric_expect_not_normalized(self):
+        self.assertEqual(self.frame({"ref_id": "cmd", "expect": 10}, 16), "AA")
+
+    def test_non_hex_expect_not_normalized(self):
+        self.assertEqual(self.frame({"ref_id": "cmd", "expect": "ALPHA"}), "AA")
+
+    def test_group_gate_normalized(self):
+        group = {"id": "g", "name": "G", "op_code": "ARRAY_GROUP", "byte_len": 0,
+                 "sequence": 1, "parent_id": None, "repeat_type": "FIXED",
+                 "repeat_count": 1,
+                 "parameter_config": {"presence": {"ref_id": "cmd", "expect": "01"}},
+                 "children": [leaf("a", {"hex": "11"}, sequence=0, parent_id="g")]}
+        self.assertEqual(frame_of(cmd_field(1), group).hex().upper(), "AA11")
+
+
 if __name__ == "__main__":
     unittest.main()

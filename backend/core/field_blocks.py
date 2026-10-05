@@ -14,6 +14,7 @@ pad_to / byte_length）。编译在 routers、解码在 core 就得让 core 反�
 """
 
 import math
+import re
 from datetime import datetime
 
 from backend.core.orchestrator import (
@@ -29,12 +30,68 @@ from backend.core.orchestrator import (
     encode_time_epoch,
 )
 
+def _hex_norm(v):
+    """R32 (§8.64): 整串十六进制**字符串** → int。
+
+    仅字符串（JSON 数字不按 hex 解）、不做 strip（`" 1"` 不是整串 hex）、
+    超安全整数 → None —— 三条与 FE utils/presenceSemantics.hexNorm 同口径。
+    安全整数阈取 2**53-1 = JS Number.isSafeInteger 上限，双端精度一致不分叉。
+    """
+    if not isinstance(v, str) or v == "":
+        return None
+    if re.fullmatch(r"[0-9A-Fa-f]+", v) is None:
+        return None
+    n = int(v, 16)
+    return n if n <= (2 ** 53 - 1) else None
+
+
+def _num_of(v):
+    """R32 (§8.64): 当前值 → 可比数（FE comparableNumber 同口径）。
+
+    bool **不算数**（`str(True)=="True"` 归 ① 存量 str 比较，不进归一）；
+    int/float 原样（非有限 → None）；十进制字符串（不带空白）取 float。
+    """
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        f = float(v)
+        return f if math.isfinite(f) else None
+    if isinstance(v, str) and re.fullmatch(r"[+-]?\d+(\.\d+)?", v) is not None:
+        try:
+            f = float(v)
+        except ValueError:  # pragma: no cover — 正则已排除不可能
+            return None
+        return f if math.isfinite(f) else None
+    return None
+
+
+def _presence_equal(expect, ref_val):
+    """R32 (§8.64): presence **比较谓词** —— 先 str() 归一（N3 存量口径：数值 1
+    命中 "1"），不等再按十六进制归一（`"01"` ≡ 1、`"0A"` ≡ 10，样本② 拍板项）。
+
+    与 FE utils/presenceSemantics.presenceEqual byte-equal（改一必改二）：
+    归一仅当 expect 是**字符串**且整串 hex 且数值在安全整数内。
+    """
+    if str(ref_val) == str(expect):
+        return True
+    if not isinstance(expect, str):
+        return False
+    hn = _hex_norm(expect)
+    if hn is None:
+        return False
+    vn = _num_of(ref_val)
+    if vn is None:
+        return False
+    return bool(hn == vn)
+
+
 def _presence_hit(f, by_id):
     """N3 (G1): presence 条件存在判定 —— True=命中（发射）、False=未命中（0 字节）。
 
     静态值链仅 parameter_config.value（DYNAMIC repeat 静态 resolve 同链；inputs/
-    computed 覆盖为 FE-only 运行期行为），str() 归一比较（数值 1 命中 "1"，与
-    前端 String() byte-equal；bool/浮整值等非契约类型各自现状锚）。
+    computed 覆盖为 FE-only 运行期行为），比较走 _presence_equal：
+    str() 归一（数值 1 命中 "1"，与前端 String() byte-equal）+ R32 十六进制归一
+    （"01" ≡ 1；bool/浮整值等非契约类型各自现状锚）。
     fail-open → True：presence 非 dict / 缺 ref_id / 缺 expect（None/""）/
     ref 悬空 / ref 无静态值 —— 半成品配置不吞字节，防数据丢失优于严格过滤
     （前端 InstructionEncoder._presenceHit 同口径，改一必改二）。
@@ -59,7 +116,7 @@ def _presence_hit(f, by_id):
     ref_val = ref_cfg.get("value") if isinstance(ref_cfg, dict) else None
     if ref_val is None:
         return True  # 无静态值（运行输入才有）→ fail-open
-    return str(ref_val) == str(expect)
+    return _presence_equal(expect, ref_val)
 
 
 def fields_to_blocks(fields, now=None):

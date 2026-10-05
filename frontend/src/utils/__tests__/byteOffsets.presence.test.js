@@ -150,3 +150,34 @@ describe('N3 presenceStaticState 导出语义（lanes 复用）', () => {
         expect(presenceStaticState(cmd(1), byId)).toBeNull();
     });
 });
+
+// ─── R32 (§8.64): 设计期静态链同批归一（与 _presenceHit 改一必改二） ─────────
+// 设计期的偏移尺 / 尺寸口径走 presenceStaticState，若它不跟归一，就会出现
+// 「编码期命中、卡面却按 0 字节排偏移」的两端自相矛盾。
+describe('R32 presenceStaticState 十六进制归一', () => {
+    const st = (expectVal, refValue) => {
+        const fields = [cmd(refValue),
+            F('gated', 1, { hex: 'BB', presence: { ref_id: 'cmd', expect: expectVal } })];
+        return presenceStaticState(fields[1], new Map(fields.map(x => [x.id, x])));
+    };
+
+    it('expect "01" + 静态值 1 → hit（与编码期同口径）', () => {
+        expect(st('01', 1)).toBe('hit');
+    });
+
+    it('expect "0A" + 静态值 10 → hit', () => {
+        expect(st('0A', 10)).toBe('hit');
+    });
+
+    it('真·不同值（expect "9" / 1）→ 仍 miss', () => {
+        expect(st('9', 1)).toBe('miss');
+    });
+
+    it('expect 带空白（" 1"）→ 非整串 hex → 不归一，仍 miss', () => {
+        expect(st(' 1', 1)).toBe('miss');
+    });
+
+    it('expect 是数字 10 / 静态值 16 → 不归一，仍 miss（归一仅限字符串 expect）', () => {
+        expect(st(10, 16)).toBe('miss');
+    });
+});

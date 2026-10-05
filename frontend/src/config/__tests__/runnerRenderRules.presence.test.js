@@ -75,7 +75,8 @@ describe('resolvePresenceStates · 判定口径（委托 _presenceHit）', () =>
         const ins = gatedInstr({ ref_id: 'cmd', expect: '1' });
         expect(resolvePresenceStates(ins.fields, { cmd: 1 }, {}).gated.hit).toBe(true);
         expect(resolvePresenceStates(ins.fields, { cmd: '1' }, {}).gated.hit).toBe(true);
-        expect(resolvePresenceStates(ins.fields, { cmd: '01' }, {}).gated.hit).toBe(false);
+        // R32 (§8.64) 归一：字符串 "01" 与 expect "1" 都读作 1 → 现在判**命中**
+        expect(resolvePresenceStates(ins.fields, { cmd: '01' }, {}).gated.hit).toBe(true);
     });
 
     it('computedValues 优先于 inputs（与 _refValue 取值链同序）', () => {
@@ -170,48 +171,56 @@ describe('resolvePresenceStates · 角标结论 == 真实字节（恒等式）',
     });
 });
 
-// ─── R30 (§8.62): 进制 / 补零假阴性提示 ────────────────────────────────────
-// 用户样本 ② 的病：expect 存 `"01"`，枚举下拉把选项值 parseInt(x,16) 转成数值
-// → `String(1)="1" ≠ "01"` **选哪支都未命中**，而 R29 只说「未命中 → 0 字节」，
-// 没说**为什么**判不等。本条提示是**纯展示**（title 追加文案，不改判定、不改字节）。
+// ─── R30 → R32 (§8.64): 补零/进制差异已改**归一判等**，注记移上命中侧 ────────────────────────────────────
+// 用户样本 ② 的病（R30 当时的口径）：expect 存 `"01"`，枚举下拉把选项值
+// parseInt(x,16) 转成数值 → `String(1)="1" ≠ "01"` 恒未命中，角标只好补一句
+// 「为什么判不等」。
 //
-// 触发条件收得很紧（宁可少判不误判）：仅 miss 侧 + expect **整串十六进制可解析**
-// + 解析值与当前值**数值相等** —— 三条同时成立才提示；`ALPHA` 之类解析不出、
-// 或解析值根本不同（真·不同值），一律不提示。
-describe('resolvePresenceStates · R30 进制/补零假阴性提示', () => {
-    const missTitle = (expect, refVal) => resolvePresenceStates(
+// **R32 (§8.64) 拍板归一后，两者判等 → 命中**，那句话的前提（miss 侧能 hex 相等）
+// 不再可能成立 —— 注记改挂**命中侧**，解释「字符串不一样为什么还命中」。
+// 触发条件仍收得很紧（宁可少判不误判）：仅命中侧 + expect **整串十六进制可解析**
+// + 解析值与当前值数值相等 + String 归一确实判不等；`ALPHA`、真·不同值、
+// String 本来就相等、fail-open 归因在场 → 一律不注记。
+// 纯展示：判定仍由 _presenceHit 说了算，本段只回答「为什么」。
+describe('resolvePresenceStates · R32 归一后的命中侧注记', () => {
+    const titleOf = (expect, refVal) => resolvePresenceStates(
         [
             leaf('cmd', { parameter_config: { value: refVal } }),
             leaf('gated', { parameter_config: { presence: { ref_id: 'cmd', expect } } }),
         ], {}, {}
     ).gated.title;
 
-    it('expect 补零 hex（01）+ 当前值 1 → miss 且出提示', () => {
-        const t = missTitle('01', 1);
+    it('expect 补零 hex（01）+ 值 1 → R32 归一**命中**，title 点明「按十六进制归一判等」', () => {
+        const t = titleOf('01', 1);
+        expect(t).toContain('命中 → 发射本字段');
+        expect(t).toContain('按十六进制归一判等');
+        expect(t).toContain('expect "01"');
+        expect(t).toContain('补零/进制差异不影响判定');
+        expect(t).not.toContain('未命中 → 0 字节（本帧不发）');
+    });
+
+    it('expect 带字母 hex（0A）+ 值 10 → 同样命中且有注记', () => {
+        const t = titleOf('0A', 10);
+        expect(t).toContain('命中 → 发射本字段');
+        expect(t).toContain('按十六进制归一判等');
+    });
+
+    it('ref 是字符串 "1"、expect "01" → 同样命中且有注记（归一不看类型）', () => {
+        const t = titleOf('01', '1');
+        expect(t).toContain('按十六进制归一判等');
+    });
+
+    it('真·不同值（expect 9 / 值 1）→ 未命中且**不**出归一注记', () => {
+        const t = titleOf('9', 1);
         expect(t).toContain('未命中 → 0 字节（本帧不发）');
-        expect(t).toContain('十六进制解析');
-        expect(t).toContain('String 归一判不等');
+        expect(t).not.toContain('按十六进制归一判等');
     });
 
-    it('expect 带字母 hex（0A）+ 当前值 10 → 同样出提示', () => {
-        const t = missTitle('0A', 10);
-        expect(t).toContain('十六进制解析');
+    it('expect 非十六进制（ALPHA / BETA）→ 归一不出手 → 未命中、无注记', () => {
+        expect(titleOf('ALPHA', 'BETA')).not.toContain('按十六进制归一判等');
     });
 
-    it('ref 是字符串 "1"、expect "01" → 同样出提示（归一不看类型）', () => {
-        const t = missTitle('01', '1');
-        expect(t).toContain('十六进制解析');
-    });
-
-    it('真·不同值（expect 9 / 当前 1）→ 解析值不等 → 不提示', () => {
-        expect(missTitle('9', 1)).not.toContain('十六进制解析');
-    });
-
-    it('expect 非十六进制（ALPHA / BETA）→ 解析不出 → 不提示', () => {
-        expect(missTitle('ALPHA', 'BETA')).not.toContain('十六进制解析');
-    });
-
-    it('命中侧（expect 1 / 当前 1）→ 根本不进 miss 分支 → 不提示', () => {
+    it('String 本来就相等（expect 1 / 值 1）→ 命中但**不出**注记（没有「不一样」这回事）', () => {
         const st = resolvePresenceStates([
             leaf('cmd', { parameter_config: { value: 1 } }),
             leaf('gated', { parameter_config: { presence: { ref_id: 'cmd', expect: '1' } } }),

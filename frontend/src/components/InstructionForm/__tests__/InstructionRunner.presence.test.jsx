@@ -99,11 +99,12 @@ describe('InstructionRunner · presence 状态表装配', () => {
     });
 });
 
-// ─── R30 (§8.62): 进制 / 补零假阴性的**端到端可见** ──────────────────────────
-// 对应样本 ②：面板 expect 存字符串 "01"，而 ref 当前值是数值 1 —— String 归一
-// 判不等 → 恒未命中。R29 只说「未命中 → 0 字节」，没说**为什么**判不等；本批把
-// 原因追加进同一条 hover title（纯展示，判定与出线字节一行未改）。
-describe('InstructionRunner · R30 补零/进制假阴性提示（端到端）', () => {
+// ─── R30 (§8.62) → R32 (§8.64): 补零/进制差异的**端到端可见** ────────────────
+// 样本 ②：面板 expect 存字符串 "01"、ref 当前值是数值 1 —— R30 时代 String 归一
+// 判不等 → 恒未命中，角标只好补「为什么判不等」；R32 拍板归一后两者**判命中**，
+// 注记改挂在命中侧（「字符串不一样为什么还命中」）。纯展示，判定与出线字节由
+// _presenceHit 说了算。
+describe('InstructionRunner · R32 归一命中注记（端到端）', () => {
     const HEXPAD = {
         id: 'inst-hexpad',
         name: '补零指令',
@@ -119,16 +120,16 @@ describe('InstructionRunner · R30 补零/进制假阴性提示（端到端）',
         ],
     };
 
-    it('默认值 0 vs expect "01"（真·不同值）→ 未命中但**不**出十六进制提示', async () => {
+    it('默认值 0 vs expect "01"（真·不同值）→ 未命中且**不**出归一注记', async () => {
         setupWith(HEXPAD);
         await waitFor(() => expect(document.querySelector('[data-runner-presence-chip]')).toBeTruthy());
         expect(document.querySelector('[data-runner-presence-chip]')
             .getAttribute('data-runner-presence-chip')).toBe('miss');
         expect(document.querySelector('[data-runner-presence-chip]').getAttribute('title'))
-            .not.toContain('十六进制解析');
+            .not.toContain('按十六进制归一判等');
     });
 
-    it('ref 改成 1 → 仍判未命中，但 title 追加「按十六进制解析 01 = 1」的假阴性说明', async () => {
+    it('ref 改成 1 → R32 归一判**命中**，title 出「按十六进制归一判等」、不再有 SKIP', async () => {
         setupWith(HEXPAD);
         await waitFor(() => expect(document.querySelector('[data-runner-presence-chip]')).toBeTruthy());
 
@@ -136,12 +137,13 @@ describe('InstructionRunner · R30 补零/进制假阴性提示（端到端）',
 
         const chip = await waitFor(() => {
             const el = document.querySelector('[data-runner-presence-chip]');
-            expect(el.getAttribute('title')).toContain('十六进制解析');
+            expect(el.getAttribute('data-runner-presence-chip')).toBe('hit');
             return el;
         });
-        expect(chip.getAttribute('data-runner-presence-chip')).toBe('miss'); // 判定本身没被改
-        expect(chip.getAttribute('title')).toContain('String 归一判不等');
-        expect(chip.getAttribute('title')).toContain('未命中 → 0 字节（本帧不发）');
-        expect(document.querySelector('[data-runner-presence-skip]')).toBeTruthy();
+        expect(chip.getAttribute('title')).toContain('按十六进制归一判等');
+        expect(chip.getAttribute('title')).toContain('expect "01"');
+        expect(chip.getAttribute('title')).toContain('命中 → 发射本字段');
+        expect(chip.getAttribute('title')).not.toContain('未命中 → 0 字节（本帧不发）');
+        expect(document.querySelector('[data-runner-presence-skip]')).toBeNull(); // 命中 → 不再跳段
     });
 });

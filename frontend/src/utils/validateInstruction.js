@@ -12,9 +12,11 @@ import { getBlockLimitRefs, ENCODER_LIMITS } from './encoderLimits';
 import { padSpec } from './padSpec';
 import { scrambleParamError } from './scramble';
 import { OP_CODES } from '../constants';
-// R31 (§8.63): presence 的比较口径与「可取值」枚举 —— 与加工页角标 hover
+// R31 (§8.63): presence 的「可取值」枚举 —— 与加工页角标 hover
 // （runnerRenderRules → resolvePresenceStates）**共用同一实现**，改一必改二。
-import { radixPadMismatch, enumCandidates } from './presenceSemantics';
+// R32 (§8.64): 比较也下沉到 presenceEqual（十六进制归一）—— 提醒的「达不成」
+// 结论必须与判定 _presenceHit 同谓词，否则归一后校验器还在报假警。
+import { presenceEqual, enumCandidates } from './presenceSemantics';
 
 // N1 护栏批（PLAN §8.16 · G5）：编码器已知算子全集 = OP_CODES 17 项（含 N2 的
 // STRING、R23 的 TIME_EPOCH、R25 的 SCRAMBLE）+ encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/
@@ -256,8 +258,6 @@ export function validateInstruction(instruction) {
                 const isLockedRef = PRESENCE_LOCKED_OPS.has(refOp) || rpc.readOnly === true;
                 const optionValues = enumCandidates(rpc.options, undefined);   // 只取选项值
                 const hasOptions = optionValues.length > 0;
-                // 自由键入（可凭键入得到 expect → 不是"恒"）—— 一律不提醒
-                const isFreeText = refOp === 'STRING' || refType === 'string';
 
                 // ① 引用字段拿不到可判定的值 → 编码恒 fail-open 判命中 = 等于没配
                 const hasValueSource = rpc.value !== undefined
@@ -271,28 +271,22 @@ export function validateInstruction(instruction) {
                     });
                 }
 
-                // ② 可取值是封闭集（有下拉选项）却无一与 expect 相等 → 选哪项都不成立
+                // ② 可取值是封闭集（有下拉选项）却无一与 expect **判等** → 选哪项都不成立。
+                //    判等 = presenceEqual（R32 十六进制归一）—— 与 _presenceHit 同谓词：
+                //    样本② 的 {01,00} vs "01" 归一后判等 → **不再报**（门现在真的会命中）。
                 const candidates = enumCandidates(rpc.options, rpc.value);
-                if (hasOptions && candidates.every(v => String(v) !== expectRaw)) {
+                if (hasOptions && candidates.every(v => !presenceEqual(expectRaw, v))) {
                     warnings.push({
                         blockId: f.id,
                         code: 'PRESENCE_EXPECT_UNREACHABLE',
-                        message: `「${label || f.id}」条件存在（presence）引用字段「${refLabel}」的 ${candidates.length} 项可取值与 expect "${expectRaw}" 全都不相等：无论选哪一项条件都不成立（恒未命中 → 0 字节）——请把 expect 改成某一可取值`,
+                        message: `「${label || f.id}」条件存在（presence）引用字段「${refLabel}」的 ${candidates.length} 项可取值与 expect "${expectRaw}" 全都判不等（含十六进制归一）：无论选哪一项条件都不成立（恒未命中 → 0 字节）——请把 expect 改成某一可取值`,
                     });
                 }
 
-                // ③ 静态值与 expect 十六进制解析相等、String 归一判不等（补零/进制假阴性，
-                //    样本② 同款）→ 静态链恒未命中。选项集已由 ② 覆盖 → 不叠报。
-                if (!hasOptions && !isFreeText && rpc.value !== undefined) {
-                    const pad = radixPadMismatch(expectRaw, rpc.value);
-                    if (pad) {
-                        warnings.push({
-                            blockId: f.id,
-                            code: 'PRESENCE_HEX_PAD',
-                            message: `「${label || f.id}」条件存在（presence）静态值 ${String(rpc.value)} 与 expect "${expectRaw}" 按十六进制解析同为 ${pad.expectNum}（补零/进制差异 → String 归一判不等）：编码恒按未命中处理（0 字节）——请把 expect 改成 ${String(rpc.value)} 或把值改成 ${expectRaw}`,
-                        });
-                    }
-                }
+                // R32 (§8.64)：原 R31 的 W `PRESENCE_HEX_PAD`（静态值补零假阴性提醒）
+                // 已随判定归一**退役** —— 归一后 `"01"` ≡ 1 判命中，「恒未命中」的
+                // 前提不复存在，再报就是假警。补零/进制差异现在由加工页角标
+                // **命中侧**的「按十六进制归一判等」注记说明。
             }
         }
 

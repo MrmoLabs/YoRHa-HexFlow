@@ -4,6 +4,9 @@ import { isValidPlainHex, scrambleHex } from './scramble';
 // R27（§8.52 排期 · varint / COBS 出线 · §8.59）: 编码 SSOT 与
 // backend/core/framing.py 同形（LEB128 变长长度前缀 + COBS 定界编码），只编码不解包。
 import { encodeCobsHex, encodeVarint, normalizeEncoding, varintWidth } from './framing';
+// R32 (§8.64): presence 比较谓词（"01" ≡ 1 十六进制归一）—— 与 byteOffsets 的
+// 设计期静态链、后端 field_blocks._presence_hit **同用一个谓词**，改一必改二。
+import { presenceEqual } from './presenceSemantics';
 
 /**
  * Core Logic for the Instruction Processing Engine.
@@ -470,14 +473,18 @@ export const InstructionEncoder = {
 
     /**
      * N3 (G1): presence 条件存在判定 —— true=命中（照发）、false=未命中（0 字节）。
-     * - 比较 String(refVal) === String(expect) 归一（数值 1 命中 '1'，不 trim）；
+     * - 比较 presenceEqual(expect, refVal)（R32 · §8.64）：先 String() 归一
+     *   （数值 1 命中 '1'，不 trim —— N3 存量口径逐字保留），不等再按**十六进制
+     *   归一**（expect 必须是字符串且整串 hex → `"01"` ≡ 1、`"0A"` ≡ 10，样本②
+     *   拍板项；空白 / JSON 数字 / `ALPHA` / 超安全整数一律不归一）；
      * - fail-open → true：presence 非对象 / 缺 ref_id / 缺 expect（undefined/
      *   null/''）/ 值链不可解析（ref 悬空或无静态值且运行输入也没有）——
      *   半成品配置不吞字节，防数据丢失优于严格过滤（W PRESENCE_INCOMPLETE /
      *   PRESENCE_REF_MISSING 提醒核对）。
      * - 层级：presence 先于 repeat 展开（emitNode 入口），组未命中整棵子树
      *   0 字节；命中组内子字段各自独立判（父命中不豁免子）。
-     * 与 backend datahub._presence_hit byte-equal（改一必改二）。
+     * 与 backend field_blocks._presence_hit 以及 **byteOffsets.presenceStaticState**
+     * （设计期静态链，偏移尺/卡面）byte-equal —— 三处同用 presenceEqual（改一必改二）。
      */
     _presenceHit: function (field, inputs, computedValues, allFields) {
         const pres = field.parameter_config ? field.parameter_config.presence : undefined;
@@ -486,7 +493,10 @@ export const InstructionEncoder = {
         if (pres.expect === undefined || pres.expect === null || pres.expect === '') return true;
         const refVal = this._refValue(pres.ref_id, inputs, computedValues, allFields);
         if (refVal === undefined || refVal === null) return true; // fail-open：不可解析
-        return String(refVal) === String(pres.expect);
+        // R32 (§8.64): 比较谓词下沉 presenceSemantics.presenceEqual —— 先 String()
+        // 归一（数值 1 命中 "1"，N3 存量口径），再十六进制归一（"01" ≡ 1、"0A" ≡ 10，
+        // 样本② 拍板项）。与 byteOffsets.presenceStaticState / BE _presence_hit 同源。
+        return presenceEqual(pres.expect, refVal);
     },
 
     parseHexBytes: function (hexStr) {
