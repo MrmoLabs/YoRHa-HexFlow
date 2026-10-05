@@ -169,3 +169,64 @@ describe('resolvePresenceStates · 角标结论 == 真实字节（恒等式）',
         expect(strip(encode(ins, { cmd: 2 }).hexString).length).toBe(2); // 只剩 cmd
     });
 });
+
+// ─── R30 (§8.62): 进制 / 补零假阴性提示 ────────────────────────────────────
+// 用户样本 ② 的病：expect 存 `"01"`，枚举下拉把选项值 parseInt(x,16) 转成数值
+// → `String(1)="1" ≠ "01"` **选哪支都未命中**，而 R29 只说「未命中 → 0 字节」，
+// 没说**为什么**判不等。本条提示是**纯展示**（title 追加文案，不改判定、不改字节）。
+//
+// 触发条件收得很紧（宁可少判不误判）：仅 miss 侧 + expect **整串十六进制可解析**
+// + 解析值与当前值**数值相等** —— 三条同时成立才提示；`ALPHA` 之类解析不出、
+// 或解析值根本不同（真·不同值），一律不提示。
+describe('resolvePresenceStates · R30 进制/补零假阴性提示', () => {
+    const missTitle = (expect, refVal) => resolvePresenceStates(
+        [
+            leaf('cmd', { parameter_config: { value: refVal } }),
+            leaf('gated', { parameter_config: { presence: { ref_id: 'cmd', expect } } }),
+        ], {}, {}
+    ).gated.title;
+
+    it('expect 补零 hex（01）+ 当前值 1 → miss 且出提示', () => {
+        const t = missTitle('01', 1);
+        expect(t).toContain('未命中 → 0 字节（本帧不发）');
+        expect(t).toContain('十六进制解析');
+        expect(t).toContain('String 归一判不等');
+    });
+
+    it('expect 带字母 hex（0A）+ 当前值 10 → 同样出提示', () => {
+        const t = missTitle('0A', 10);
+        expect(t).toContain('十六进制解析');
+    });
+
+    it('ref 是字符串 "1"、expect "01" → 同样出提示（归一不看类型）', () => {
+        const t = missTitle('01', '1');
+        expect(t).toContain('十六进制解析');
+    });
+
+    it('真·不同值（expect 9 / 当前 1）→ 解析值不等 → 不提示', () => {
+        expect(missTitle('9', 1)).not.toContain('十六进制解析');
+    });
+
+    it('expect 非十六进制（ALPHA / BETA）→ 解析不出 → 不提示', () => {
+        expect(missTitle('ALPHA', 'BETA')).not.toContain('十六进制解析');
+    });
+
+    it('命中侧（expect 1 / 当前 1）→ 根本不进 miss 分支 → 不提示', () => {
+        const st = resolvePresenceStates([
+            leaf('cmd', { parameter_config: { value: 1 } }),
+            leaf('gated', { parameter_config: { presence: { ref_id: 'cmd', expect: '1' } } }),
+        ], {}, {});
+        expect(st.gated.hit).toBe(true);
+        expect(st.gated.title).not.toContain('十六进制解析');
+    });
+
+    it('fail-open 恒命中（ref 无值链）→ 不提示（提示只挂 miss 侧）', () => {
+        const st = resolvePresenceStates([
+            leaf('cmd'),
+            leaf('gated', { parameter_config: { presence: { ref_id: 'cmd', expect: '01' } } }),
+        ], {}, {});
+        expect(st.gated.hit).toBe(true);
+        expect(st.gated.title).toContain('ref 无值链 → fail-open 按命中');
+        expect(st.gated.title).not.toContain('十六进制解析');
+    });
+});

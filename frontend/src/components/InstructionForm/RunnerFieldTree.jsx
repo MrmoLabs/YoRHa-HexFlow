@@ -9,7 +9,8 @@ import {
     getFieldEpoch,
     computeFieldInputLimits,
     resolveRunnerKind,
-    computeStringUsage
+    computeStringUsage,
+    resolvePresenceStates
 } from '../../config/runnerRenderRules';
 
 // Recursive renderer for the dynamic send form's field tree.
@@ -26,9 +27,17 @@ export default function RunnerFieldTree({
     onOpenDatePicker, // (iso, callback) => void
     selectedFieldId = null,   // 第 4 批 #2：选中字段（字节流高亮联动）
     onSelectField = null,     // (fieldId) => void
-    presenceStates = null     // R29 (§8.61)：{fieldId: {hit, title}} —— 缺省 null =
-                              // 不渲染任何 IF/SKIP 章（Sequences 步骤编辑器不传 → 零改动）
+    presenceStates            // R29 (§8.61): {fieldId: {hit, title}}；R30 (§8.62) 起：
+                              // undefined → **用本组件手上的 fields / inputs / computedValues
+                              // 自算**（未接线的消费方 —— 如 Sequences 步骤编辑器 —— 默认
+                              // 就有，与显式传表**同一个 helper**、不是第二套判据）；
+                              // null → 显式关闭（保留 R29 逃生口）；对象 → 直接用。
 }) {
+    // 只有**顶层调用**会自算：递归由父层把算好的表以对象形态传下来（!== undefined），
+    // 故整棵树每次渲染只算一次，且各页口径必然同源。
+    const states = presenceStates === undefined
+        ? resolvePresenceStates(fields, inputs, computedValues)
+        : presenceStates;
     return fields.map((field) => {
         const params = field.parameter_config || {};
         // FIX: Robust classification from config/runnerRenderRules.js
@@ -40,8 +49,8 @@ export default function RunnerFieldTree({
         const subFields = field.fields || [];
         // R29 (§8.61)：本字段的 presence 结论（判定来自编码端同源 helper，
         // 这里只做查表 + 布局）。未命中 → 行/组整块降透明 + 右侧 [SKIP 0B]。
-        const presence = (presenceStates && field.id !== undefined && field.id !== null)
-            ? (presenceStates[field.id] || null) : null;
+        const presence = (states && field.id !== undefined && field.id !== null)
+            ? (states[field.id] || null) : null;
         const presenceMiss = !!(presence && !presence.hit);
 
         if (subFields.length > 0) {
@@ -104,7 +113,7 @@ export default function RunnerFieldTree({
                             onOpenDatePicker={onOpenDatePicker}
                             selectedFieldId={selectedFieldId}
                             onSelectField={onSelectField}
-                            presenceStates={presenceStates}
+                            presenceStates={states}
                         />
                     </div>
                 </div>

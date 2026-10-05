@@ -50,6 +50,15 @@ const setup = () => render(
     />
 );
 
+const setupWith = (instruction) => render(
+    <InstructionRunner
+        instruction={instruction}
+        onSend={() => {}}
+        onOpenDatePicker={() => {}}
+        wrapInfo={null}
+    />
+);
+
 describe('InstructionRunner · presence 状态表装配', () => {
     it('表已接线：叶字段渲染 IF 角标（默认输入 0 → 未命中 → [SKIP 0B]）', async () => {
         setup();
@@ -87,5 +96,52 @@ describe('InstructionRunner · presence 状态表装配', () => {
         await waitFor(() => expect(document.querySelector('[data-runner-presence-chip]')).toBeTruthy());
         const chips = document.querySelectorAll('[data-runner-presence-chip]');
         expect(chips.length).toBe(1); // 只有 gated，cmd 不配 presence
+    });
+});
+
+// ─── R30 (§8.62): 进制 / 补零假阴性的**端到端可见** ──────────────────────────
+// 对应样本 ②：面板 expect 存字符串 "01"，而 ref 当前值是数值 1 —— String 归一
+// 判不等 → 恒未命中。R29 只说「未命中 → 0 字节」，没说**为什么**判不等；本批把
+// 原因追加进同一条 hover title（纯展示，判定与出线字节一行未改）。
+describe('InstructionRunner · R30 补零/进制假阴性提示（端到端）', () => {
+    const HEXPAD = {
+        id: 'inst-hexpad',
+        name: '补零指令',
+        fields: [
+            {
+                id: 'cmd', name: '命令字', op_code: 'INPUT', byte_len: 1, sequence: 0,
+                parameter_config: { type: 'number' }
+            },
+            {
+                id: 'gated', name: '原始Hex', op_code: 'HEX_RAW', byte_len: 1, sequence: 1,
+                parameter_config: { hex: 'FF', presence: { ref_id: 'cmd', expect: '01' } }
+            },
+        ],
+    };
+
+    it('默认值 0 vs expect "01"（真·不同值）→ 未命中但**不**出十六进制提示', async () => {
+        setupWith(HEXPAD);
+        await waitFor(() => expect(document.querySelector('[data-runner-presence-chip]')).toBeTruthy());
+        expect(document.querySelector('[data-runner-presence-chip]')
+            .getAttribute('data-runner-presence-chip')).toBe('miss');
+        expect(document.querySelector('[data-runner-presence-chip]').getAttribute('title'))
+            .not.toContain('十六进制解析');
+    });
+
+    it('ref 改成 1 → 仍判未命中，但 title 追加「按十六进制解析 01 = 1」的假阴性说明', async () => {
+        setupWith(HEXPAD);
+        await waitFor(() => expect(document.querySelector('[data-runner-presence-chip]')).toBeTruthy());
+
+        fireEvent.change(document.querySelector('input'), { target: { value: '1' } });
+
+        const chip = await waitFor(() => {
+            const el = document.querySelector('[data-runner-presence-chip]');
+            expect(el.getAttribute('title')).toContain('十六进制解析');
+            return el;
+        });
+        expect(chip.getAttribute('data-runner-presence-chip')).toBe('miss'); // 判定本身没被改
+        expect(chip.getAttribute('title')).toContain('String 归一判不等');
+        expect(chip.getAttribute('title')).toContain('未命中 → 0 字节（本帧不发）');
+        expect(document.querySelector('[data-runner-presence-skip]')).toBeTruthy();
     });
 });

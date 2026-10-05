@@ -86,6 +86,17 @@ const INSTR = {
 // CP3 3c (D6-B): 配方行（GET /recipes 响应形）与封装步骤的 plan.shell ——
 // 最终帧绝对字节坐标，16 字节帧 3 层（由内到外 offset 递减、最外层 0，几何与
 // backend/core/recipe_compile.shell_plan 一致：S_i = Σ_{j>i} head_j）。
+
+// R30 (§8.62): 带条件存在 (presence) 的指令 —— 用来锁「Sequences 步骤编辑器
+// **不传** presenceStates，字段树自算照样出章」（同一组件的第二个消费方）。
+const INSTR_PRESENCE = {
+    id: 'instr-presence', code: 'BR', name: '分支', device_code: 'DEV',
+    fields: [
+        { id: 'f1', name: '命令', op_code: 'INPUT', byte_len: 1, sequence: 0, endianness: 'BIG', parameter_config: { type: 'number' } },
+        { id: 'f2', name: 'Gated', op_code: 'HEX_RAW', byte_len: 1, sequence: 1, endianness: 'BIG', parameter_config: { hex: 'FF', presence: { ref_id: 'f1', expect: '02' } } }
+    ]
+};
+
 const RECIPE = { id: 'rec-1', name: '三重壳', description: null, stages: [], version: 1 };
 
 const SHELL = {
@@ -277,6 +288,30 @@ describe('Sequences Page', () => {
         expect(body.steps).toHaveLength(3);
         expect(body.steps[2].payload).toBe('AABBCC');
         expect(body.steps[2].instruction_id).toBe('instr-1');
+    });
+
+    // ── R30 (§8.62): 第二个消费方（Sequences 步骤编辑器）**未接线 → 组件自算** ─
+    // Sequences.jsx 一行未改：字段树自己拿 fields / inputs 算 presence，两个页面
+    // 从此同一口径 —— R29 曾因「范围钉在加工页」而在本页一个章都不出。
+    it('R30 步骤编辑器自动出 presence 章：IF(miss) + [SKIP 0B]（Sequences 零接线）', async () => {
+        api.getInstructions.mockResolvedValue([INSTR_PRESENCE]);
+        await renderPage();
+        fireEvent.click(screen.getByRole('button', { name: /\+ 添加步骤/ }));
+        await screen.findByText(/STEP 03 \/\/ 编辑器/);
+
+        const chip = await waitFor(() => {
+            const el = document.querySelector('[data-runner-presence-chip]');
+            expect(el).toBeTruthy();
+            return el;
+        });
+        // 默认输入 0 vs expect "02" → 未命中（真·不同值 → 不出十六进制提示）
+        expect(chip.getAttribute('data-runner-presence-chip')).toBe('miss');
+        expect(chip.getAttribute('title')).toContain('条件字段：[f1] == 02');
+        expect(chip.getAttribute('title')).toContain('未命中 → 0 字节（本帧不发）');
+        expect(chip.getAttribute('title')).not.toContain('十六进制解析');
+        expect(document.querySelector('[data-runner-presence-skip]').textContent).toBe('[SKIP 0B]');
+        // 同批验收：被门掉的字段不出线 → 帧只剩 ref 自己 1 字节
+        expect(screen.getByText(/FRAME 1B/)).toBeTruthy();
     });
 
     it('move step down reorders the draft and PUT follows new order', async () => {

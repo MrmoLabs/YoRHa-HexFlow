@@ -598,11 +598,44 @@ export const resolvePresenceStates = (fields = [], inputs = {}, computedValues =
         else if (refVal === undefined || refVal === null) reason = ' · ref 无值链 → fail-open 按命中';
 
         const hit = InstructionEncoder._presenceHit(f, inputs, computedValues, flat);
+        // R30 (§8.62)：进制 / 补零**假阴性**提示 —— 只在 miss 侧、且 expect 整串
+        // 十六进制可解析、解析值与当前值**数值相等**三条同时成立时追加（宁可少判
+        // 不误判：`ALPHA` 解析不出、真·不同值解析值不等 → 一律不提示）。
+        // 纯展示：判定仍由 _presenceHit 说了算，本段只回答「为什么判不等」——
+        // 样本 ② expect 存 "01" 而枚举值被 parseInt(x,16) 转成数值 1 正属此类。
+        let radixNote = '';
+        if (!hit && Number.isFinite(hexNorm(expect))) {
+            const refNum = numOf(refVal);
+            if (Number.isFinite(refNum) && refNum === hexNorm(expect)) {
+                radixNote = ` · ⚠ 按十六进制解析 "${String(expect)}" = ${hexNorm(expect)}`
+                    + ` 与当前值 ${refNum} 相等，String 归一判不等（补零/进制差异 → 未命中）`;
+            }
+        }
         states[f.id] = {
             hit,
             title: `条件字段：[${hasRef ? String(refId) : '?'}] == ${hasExpect ? String(expect) : '?'}`
-                + (hit ? ` · 命中 → 发射本字段${reason}` : ' · 未命中 → 0 字节（本帧不发）'),
+                + (hit ? ` · 命中 → 发射本字段${reason}` : ` · 未命中 → 0 字节（本帧不发）${radixNote}`),
         };
     });
     return states;
+};
+
+// 十六进制整串解析（仅 `0-9A-Fa-f` 允许 —— `parseInt('0x1',16)` 这类前缀形态
+// 一律拒绝，避免把用户写错的东西也"解释"成相等）。
+const hexNorm = (v) => {
+    if (v === undefined || v === null) return NaN;
+    const s = String(v).trim();
+    if (s === '' || !/^[0-9A-Fa-f]+$/.test(s)) return NaN;
+    const n = parseInt(s, 16);
+    return Number.isFinite(n) ? n : NaN;
+};
+
+// 当前值 → 可比较的数（number 原样；纯十进制字符串取 Number，其余 NaN）。
+const numOf = (v) => {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+    if (typeof v === 'string' && v.trim() !== '' && /^[+-]?\d+(\.\d+)?$/.test(v.trim())) {
+        const n = Number(v.trim());
+        return Number.isFinite(n) ? n : NaN;
+    }
+    return NaN;
 };

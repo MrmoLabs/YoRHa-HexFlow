@@ -49,6 +49,8 @@
 
 | R29 | **加工页条件存在 (PRESENCE) 展示层** —— 用户人工测试反馈「满足 IF 条件的与不满足 IF 条件的时候，指令加工中本条指令的字段从肉眼上看不出区别」（§8.61；**非 §8.52 复议范围，独立批次**） | ✅ **已完成（2026-10-04，§8.61，纯 FE · 零 DDL → 无 `chore(db)`）**：新纯函数 `resolvePresenceStates`（**只委托** `InstructionEncoder._presenceHit`，与出线编码同源 fail-open，不造第二套判据）+ `SmartInput` 新 prop `presence` → label 区 `IF` 琥珀章 + 右槽 `[SKIP 0B]`（**顶到最高优先**，压过 TIME_PICKER / READ_ONLY / 用量 / 长度）+ `RunnerFieldTree` 新 prop `presenceStates` → 叶行 / 组头出章、未命中 `opacity-50`（组未命中整棵子树随之降透明）+ `InstructionRunner` 造表（依赖与 `hexPreview` / `byteMap` **同组** → 角标与 BYTE_STREAM、`LEN` 恒同步）；**`presenceStates` 缺省 `null` = 零渲染 → `Sequences` 步骤编辑器零改动**；输入与限宽一律不禁用、**判定与字节一行未改**；红测先行（stash 实现后 19 failed / 2 passed → pop 后 24/24 绿）；**BE 955/955（持平）、FE 1251 → 1275/1275（84 文件，+24）**；判定链两处坑（expect `"01"` vs 枚举数值 `1`、无值链 fail-open）**登记为 §8.61 第七节可选项**，不并入本批 |
 
+| R30 | **presence 可见性收口** —— R29 自己登记的两个「半成品」（§8.62；同属「看得见没」主题，**非** §8.52 复议范围） | ✅ **已完成（2026-10-05，§8.62，纯 FE · 零 DDL → 无 `chore(db)`）**：① **进制/补零假阴性提示** —— `resolvePresenceStates` 的 `title` 仅在「miss 侧 + expect 整串十六进制可解析 + 解析值与当前值数值相等」三条同时成立时追加（`01`↔1 会提示、`9`↔1 与 `ALPHA` 不提示，宁可少判不误判），纯展示不参与比对；② **第二消费方自算** —— `RunnerFieldTree` 的 `presenceStates` 缺省语义由「`null` = 零渲染」改为「`undefined` = 用本组件手上的 `fields`/`inputs` 自算」（与显式传表**同一个 helper**，顶层只算一次、递归透传），`Sequences.jsx` **一行未改**即出同款 `IF` / `[SKIP 0B]`，加工页与步骤编辑器口径必然同源；显式 `null` 逃生口与 `InstructionRunner` 的 memo 显式表**均保留**。**判定 / 编码 / 校验四码一行未改 → 出线字节逐字不变**，判定归一继续挂 §8.61 第七节待拍板；红测先行（stash 两实现文件 → presence 三文件 7 failed / 31 passed + `Sequences` 1 failed / 27 passed → pop 后 42 例全绿）；**BE 955/955（持平）、FE 1275 → 1290/1290（84 文件，+15）** |
+
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
 ## 2. M1 明细（实现完成，待人工验证）
@@ -5164,7 +5166,72 @@ expected = len(frame) + offset_val - (width - byte_length)
 | ref 无值链时的校验提醒（新 W 码） | 只提醒、零行为变更 | 用户本轮只选显示层 |
 | `Sequences` 步骤编辑器同款角标 | 该页显示变更 | 本批严格限于加工页 |
 
-**R29 ✅ —— 加工页「看不见条件」这一条人工反馈已收口。下一批：待用户排期。**
+**R29 ✅ —— 加工页「看不见条件」这一条人工反馈已收口。下一批 → R30（§8.62）就地收掉 R29 登记的两个「半成品」。**
+
+### 8.62 R30 · presence 可见性**收口**：进制/补零假阴性提示 + 第二消费方自算 —— 2026-10-05
+
+#### 一 · 来源（R29 自己登记的两个「半成品」，同一主题 = 看不看得见）
+
+- 交付 R29（§8.61）后仍留两处缺口：
+  1. **只说结论、不说原因** —— 样本 ② 面板 expect 存字符串 `"01"`，而枚举下拉把选项值 `parseInt(x,16)` 转成数值 `1`
+     → `String(1)="1" ≠ "01"` **判不等**，但角标 title 只写「未命中 → 0 字节」，**看不出为什么**判不等；
+  2. **第二个消费方一个章都不出** —— `Sequences.jsx` 步骤编辑器复用同一 `RunnerFieldTree`，R29 为把范围钉在加工页
+     把缺省定成 `null = 零渲染` → 同一条指令**加工页有角标、步骤编辑器没有**，自相矛盾。
+- 两处**都不改判定、不改字节**（用户此前明确只选显示层；判定归一仍待拍板）。
+
+#### 二 · 进制 / 补零**假阴性**提示（`resolvePresenceStates` 的 `title` 追加）
+
+| 触发条件 | 口径 |
+|---|---|
+| 仅 **miss** 侧 | 命中没这问题；fail-open 恒命中也不挂（提示只回答「为什么不等」） |
+| expect **整串十六进制可解析** | `^[0-9A-Fa-f]+$` 且非空；`ALPHA` / `0x1` 之类一律 `NaN` |
+| 解析值与当前值**数值相等** | `String(refVal) !== String(expect)` 却 `hex(expect) === num(refVal)` |
+
+- 三条同时成立才追加 `· ⚠ 按十六进制解析 "01" = 1 与当前值 1 相等，String 归一判不等（补零/进制差异 → 未命中）`；
+  **真·不同值（expect `9` / 当前 `1`）不提示** —— 宁可少判不误判，文案只陈述事实不断言用户意图。
+- **纯展示**：判定仍由 `_presenceHit` 说了算，本段不参与任何比对。
+
+#### 三 · 第二消费方自算（`RunnerFieldTree` 缺省语义：「零渲染」→「自算」）
+
+| `presenceStates` | 行为 |
+|---|---|
+| `undefined`（未传） | **用本组件手上的 `fields` / `inputs` / `computedValues` 自算**（顶层只算一次，递归把表传下去） |
+| `null`（显式） | 关闭（保留 R29 的逃生口） |
+| 对象 | 直接用（`InstructionRunner` 走这条，带 memo 保证与 `hexPreview` / `byteMap` 同依赖） |
+
+- 自算与显式传表**同一个 helper**，不是第二套判据 → 加工页 / 步骤编辑器口径**必然同源**，新增页面默认就有。
+- **`Sequences.jsx` 一行未改**（靠组件自算生效）；`normalizeRunnerInstruction` 的 `parameter_config` 整包 spread，
+  `presence` 原样透传到渲染树。
+
+#### 四 · 明确不改
+
+- 判定 / 校验四码 / normalize / 编码分支 **一行未动** → **出线字节逐字不变**；BE 零改动；`models.py` 未动 → **零 DDL → 无 `chore(db)`**。
+- **判定归一（`"01" ≡ 1`）仍不做**（会翻转存量判定 → 字节变），继续挂在 §8.61 第七节待拍板。
+
+#### 五 · 测试（红测先行有据）
+
+- 新增 **15 例**（FE **1275 → 1290**）：
+  - `runnerRenderRules.presence.test.js` **+7**（补零 `01` / 带字母 `0A` / ref 为字符串 / 真不同值不提示 /
+    非 hex 不提示 / 命中侧不提示 / fail-open 不提示）；
+  - `RunnerFieldTree.presence.test.jsx` **+5**（不传自算 miss / hit / 组级 / **显式表优先于自算** / 显式 `null` 仍可关）；
+  - `InstructionRunner.presence.test.jsx` **+2**（端到端：默认 `0` vs `"01"` 不提示 → 改成 `1` 出提示**且判定仍 miss**）；
+  - `Sequences.test.jsx` **+1**（**第二消费方端到端**：步骤编辑器零接线自动出 `IF(miss)` + `[SKIP 0B]`，帧同步 `FRAME 1B`）。
+- **红测证据**：stash `runnerRenderRules.js` + `RunnerFieldTree.jsx` → presence 三文件 **7 failed / 31 passed**、
+  `Sequences.test.jsx` **1 failed / 27 passed**，`stash pop` 后 4 文件 42 例全绿。
+
+#### 六 · 验收
+
+- **BE 955/955（持平）**、**FE 1275 → 1290/1290（84 文件，+15）**、`npx vite build` EXIT=0、`npm run lint` EXIT=0、
+  yorha-ui 校验器改动 js/jsx **6 文件 0 违规**、md 表列数 mismatches = 0、隐形字符 / CRLF / TAB = 0；
+  **零 DDL → 无 `chore(db)`**；不引 pytest、**无新 pip 依赖**。
+
+#### 七 · §8.61 第七节剩余（仍未做）
+
+- expect / 枚举值**十六进制补零归一**（`"01" ≡ 1`）—— **会改字节，需拍板**；
+- ref 无值链的**校验提醒**（新 W 码，零行为变更）。
+
+**R30 ✅ —— §8.61 第七节 3 项里「Sequences 同款角标」已由本批以「组件自算」方式收掉（且不止同款：新页面默认就有）。
+下一批：待用户排期。**
 
 ## 9. 保留勿动（非任务，勿清理）
 

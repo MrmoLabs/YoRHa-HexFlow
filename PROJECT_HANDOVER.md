@@ -2753,6 +2753,41 @@
       = expect/枚举十六进制归一（**会改字节，单独排期**）/ ref 无值链校验提醒 / Sequences 页同款角标。
       提交 = `feat(R29)` 单笔（**零 DDL** → 无 `chore(db)`）。
 
+79. **R30 · presence 可见性收口：进制/补零假阴性提示 + 第二消费方自算（PLAN §8.62 · R29 自登记「半成品」批次）**
+    （2026-10-05，**纯 FE、零 DDL → 无 `chore(db)`**、`models.py` 一行未动、
+    `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、**出线字节逐字不变**）：
+    - **两处缺口（都是「看得见没」同一主题）**：① R29 角标**只说结论不说原因** —— 样本 ② expect 存字符串
+      `"01"`、枚举下拉把选项值 `parseInt(x,16)` 转成数值 `1` → `String(1)="1" ≠ "01"` 判不等，而 title 只写
+      「未命中 → 0 字节」，看不出**为什么**；② **第二个消费方一个章都不出** —— `Sequences.jsx` 步骤编辑器
+      复用同一 `RunnerFieldTree`，R29 为把范围钉在加工页把缺省定成 `null = 零渲染` → 同一条指令**加工页有角标、
+      步骤编辑器没有**，自相矛盾。两处**都不改判定、不改字节**（用户此前明确只选显示层，判定归一仍待拍板）。
+    - **进制 / 补零假阴性提示**（`resolvePresenceStates` 的 `title` 追加）：三条**同时**成立才提示 ——
+      仅 **miss 侧**（命中 / fail-open 不挂）+ **expect 整串十六进制可解析**（`^[0-9A-Fa-f]+$`，`ALPHA` / `0x1`
+      一律 `NaN`）+ **解析值与当前值数值相等**；文案 `· ⚠ 按十六进制解析 "01" = 1 与当前值 1 相等，String 归一
+      判不等（补零/进制差异 → 未命中）`。**真·不同值（`9`↔`1`）不提示** —— 宁可少判不误判，只陈述事实不断言意图。
+      纯展示，不参与任何比对。
+    - **第二消费方自算**（`RunnerFieldTree` 缺省语义「零渲染」→「自算」）：`undefined`（未传）→ 用本组件手上的
+      `fields` / `inputs` / `computedValues` **自算**（顶层只算一次、递归把表透传）；`null`（显式）→ 关闭
+      （保留 R29 逃生口）；对象 → 直接用（`InstructionRunner` 走这条，带 memo 与 `hexPreview` / `byteMap` 同依赖）。
+      自算与显式传表**同一个 helper**、**不是第二套判据** → 两页口径必然同源、新增页面默认就有。
+      **`Sequences.jsx` 一行未改**即生效；`normalizeRunnerInstruction` 的 `parameter_config` 整包 spread，
+      `presence` 原样透传到渲染树。
+    - **边界**：判定 / 校验四码 / normalize / 编码分支**一行未动** → 出线字节逐字不变；BE 零改动；**零 DDL**；
+      判定归一（`"01" ≡ 1`）**仍不做**，继续挂 §8.61 第七节待拍板。
+    - **测试（红测先行有据）**：新增 **15 例**（FE **1275 → 1290**）—— `runnerRenderRules.presence` +7、
+      `RunnerFieldTree.presence` +5（含**显式表优先于自算**）、`InstructionRunner.presence` +2（端到端：
+      默认 `0` vs `"01"` 不提示 → 改 `1` 出提示**且判定仍 miss**）、`Sequences.test` +1（**第二消费方端到端**：
+      零接线出 `IF(miss)` + `[SKIP 0B]`，帧同步 `FRAME 1B`）。
+      **红测证据**：stash `runnerRenderRules.js` + `RunnerFieldTree.jsx` → presence 三文件 **7 failed / 31 passed**、
+      `Sequences.test.jsx` **1 failed / 27 passed**，`stash pop` 后 4 文件 42 例全绿。
+    - **验收**：**BE 955/955（持平）**、**FE 1275 → 1290/1290（84 文件，+15）**、`npx vite build` EXIT=0、
+      `npm run lint` EXIT=0、yorha-ui 校验器改动 js/jsx **6 文件 0 违规**、md 表列数 mismatches = 0、
+      隐形字符 / CRLF / TAB = 0；**零 DDL → 无 `chore(db)`**；不引 pytest、**无新 pip 依赖**。
+    - **文档同步（同批）**：PLAN **§8.62 新节** + §1 新增 `R30` 行 + §8.61 尾行改指 §8.62；本条。
+    - **状态**：**R30 ✅** —— §8.61 第七节 3 项中「Sequences 同款角标」已以「组件自算」方式收掉（不止同款：
+      新页面默认就有）。**剩余待拍板 2 项** = expect/枚举十六进制归一（**会改字节**）、ref 无值链校验提醒（新 W 码）。
+      提交 = `feat(R30)` 单笔（**零 DDL** → 无 `chore(db)`）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
