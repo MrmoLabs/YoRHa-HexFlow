@@ -305,6 +305,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                             selectedFieldId={selectedFieldId}
                             onSelectField={setSelectedFieldId}
                             presenceStates={presenceStates}
+                            hidePresenceMissed
                         />
                     </div>
                 </div>

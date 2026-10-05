@@ -245,3 +245,139 @@ describe('RunnerFieldTree · R30 未传 presenceStates 时自动自算', () => {
         expect(skips(container).length).toBe(0);
     });
 });
+
+// ─── R33 (§8.65): 加工页「未命中 → 纯隐藏」 ─────────────────────────────────
+// 用户拍板两条：① **纯隐藏**（完全不渲染，不留占位、不留展开入口）；
+// ② **仅指令加工业页面** —— 步骤编辑器（Sequences）维持现状（降透明 + [SKIP 0B]）。
+// 故开关是 opt-in prop `hidePresenceMissed`，**缺省 false = 现状逐像素不变**，
+// 加工页由 InstructionRunner 显式接线，Sequences 不接即零改动。
+// 纯展示层：未命中的字段本就不发射字节（byteOffsets 已按 0 算），隐藏只动 DOM，
+// 偏移尺 / LEN / BYTE_STREAM 一行不改。
+describe('RunnerFieldTree · R33 hidePresenceMissed（加工页纯隐藏）', () => {
+    const gatedWithPresence = {
+        id: 'gated', name: '原始Hex', op_code: 'HEX_RAW', byte_len: 1,
+        parameter_config: { hex: 'FF', presence: { ref_id: 'cmd', expect: '1' } }
+    };
+    const nestedGroup = {
+        id: 'grp', name: '分支A', op_code: 'NONE',
+        parameter_config: { presence: { ref_id: 'cmd', expect: '1' } },
+        fields: [{
+            id: 'inner', name: '内层', op_code: 'HEX_RAW', byte_len: 1,
+            parameter_config: { hex: 'AA', presence: { ref_id: 'cmd', expect: '1' } }
+        }]
+    };
+
+    it('缺省不传 → 行为不变（未命中仍降透明 + [SKIP 0B]，Sequences 现状）', () => {
+        const { container } = render(
+            <RunnerFieldTree fields={[cmd, gatedWithPresence]} {...baseProps}
+                inputs={{ cmd: 2 }} />
+        );
+        expect(container.querySelector('[data-runner-presence-skip]')).toBeTruthy();
+        expect(container.querySelector('.opacity-50')).toBeTruthy();
+        expect(container.textContent).toContain('原始Hex');
+    });
+
+    it('hidePresenceMissed + 叶未命中 → 整行完全不渲染（无章、无降透明、无 label）', () => {
+        const { container } = render(
+            <RunnerFieldTree fields={[cmd, gatedWithPresence]} {...baseProps}
+                inputs={{ cmd: 2 }} hidePresenceMissed />
+        );
+        expect(chips(container).length).toBe(0);
+        expect(skips(container).length).toBe(0);
+        expect(container.querySelector('.opacity-50')).toBeNull();
+        expect(container.textContent).not.toContain('原始Hex');
+        expect(container.textContent).toContain('命令字');   // 未配 presence 的 ref 照常在
+    });
+
+    it('hidePresenceMissed + 叶命中 → 照常渲染（开关只收未命中侧）', () => {
+        const { container } = render(
+            <RunnerFieldTree fields={[cmd, gatedWithPresence]} {...baseProps}
+                inputs={{ cmd: 1 }} hidePresenceMissed />
+        );
+        expect(container.textContent).toContain('原始Hex');
+        expect(container.querySelector('[data-runner-presence-chip]')
+            .getAttribute('data-runner-presence-chip')).toBe('hit');
+        expect(container.querySelector('.opacity-50')).toBeNull();
+    });
+
+    it('hidePresenceMissed + 组未命中 → 组头与整棵子树一起消失', () => {
+        const { container } = render(
+            <RunnerFieldTree fields={[cmd, nestedGroup]} {...baseProps}
+                inputs={{ cmd: 2 }} hidePresenceMissed />
+        );
+        expect(container.textContent).not.toContain('分支A');
+        expect(container.textContent).not.toContain('内层');
+        expect(chips(container).length).toBe(0);
+    });
+
+    it('hidePresenceMissed + 组命中但内层未命中 → 组头在、内层不在（父命中不豁免子）', () => {
+        const { container } = render(
+            <RunnerFieldTree
+                fields={[{
+                    id: 'grp', name: '分支A', op_code: 'NONE', parameter_config: {},
+                    fields: [gatedWithPresence]
+                }]}
+                {...baseProps}
+                presenceStates={{ grp: HIT, gated: MISS }}
+                hidePresenceMissed
+            />
+        );
+        expect(container.textContent).toContain('分支A');
+        expect(container.textContent).not.toContain('原始Hex');
+        expect(skips(container).length).toBe(0);
+    });
+
+    it('hidePresenceMissed + 未配置 presence 的字段不受影响（不是全表隐藏）', () => {
+        const { container } = render(
+            <RunnerFieldTree fields={[cmd, gatedWithPresence]} {...baseProps}
+                inputs={{ cmd: 2 }} hidePresenceMissed />
+        );
+        expect(container.textContent).toContain('命令字');
+        expect(container.querySelector('input')).toBeTruthy();
+    });
+
+    it('hidePresenceMissed + 不传表（自算路径）→ 同一个 helper 判定、同样隐藏', () => {
+        const { container } = render(
+            <RunnerFieldTree fields={[cmd, gatedWithPresence]} {...baseProps}
+                inputs={{ cmd: 2 }} hidePresenceMissed />
+        );
+        // 自算 = resolvePresenceStates（与显式表同一 helper），故结论与显式表一致
+        expect(container.textContent).not.toContain('原始Hex');
+    });
+
+    it('hidePresenceMissed + presenceStates=null（判定显式关闭）→ 无判定即不隐藏', () => {
+        const { container } = render(
+            <RunnerFieldTree fields={[cmd, gatedWithPresence]} {...baseProps}
+                inputs={{ cmd: 2 }} presenceStates={null} hidePresenceMissed />
+        );
+        expect(container.textContent).toContain('原始Hex');
+    });
+
+    it('递归传递：深层组里的未命中字段同样隐藏', () => {
+        const { container } = render(
+            <RunnerFieldTree fields={[cmd, nestedGroup]} {...baseProps}
+                inputs={{ cmd: 2 }} hidePresenceMissed />
+        );
+        expect(container.textContent).not.toContain('内层');
+    });
+
+    it('全部字段都被隐藏 → 出兜底事实行（防「页面像坏了」；无占位、无展开入口）', () => {
+        const { container } = render(
+            <RunnerFieldTree fields={[gatedWithPresence]} {...baseProps}
+                inputs={{ cmd: 2 }} hidePresenceMissed />
+        );
+        expect(container.textContent).not.toContain('原始Hex');
+        const empty = container.querySelector('[data-runner-tree-empty]');
+        expect(empty).toBeTruthy();
+        expect(empty.textContent).toContain('无可填字段');
+        expect(empty.querySelector('button')).toBeNull();   // 纯隐藏：不留展开入口
+    });
+
+    it('有可见字段时不出兜底行', () => {
+        const { container } = render(
+            <RunnerFieldTree fields={[cmd, gatedWithPresence]} {...baseProps}
+                inputs={{ cmd: 2 }} hidePresenceMissed />
+        );
+        expect(container.querySelector('[data-runner-tree-empty]')).toBeNull();
+    });
+});

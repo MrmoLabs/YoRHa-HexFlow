@@ -27,17 +27,42 @@ export default function RunnerFieldTree({
     onOpenDatePicker, // (iso, callback) => void
     selectedFieldId = null,   // 第 4 批 #2：选中字段（字节流高亮联动）
     onSelectField = null,     // (fieldId) => void
-    presenceStates            // R29 (§8.61): {fieldId: {hit, title}}；R30 (§8.62) 起：
+    presenceStates,           // R29 (§8.61): {fieldId: {hit, title}}；R30 (§8.62) 起：
                               // undefined → **用本组件手上的 fields / inputs / computedValues
                               // 自算**（未接线的消费方 —— 如 Sequences 步骤编辑器 —— 默认
                               // 就有，与显式传表**同一个 helper**、不是第二套判据）；
                               // null → 显式关闭（保留 R29 逃生口）；对象 → 直接用。
+    hidePresenceMissed = false // R33 (§8.65): **opt-in 纯隐藏** —— 未命中字段整行不渲染
+                              // （含组整棵子树），不留占位、不留展开入口。缺省 false =
+                              // 现状逐像素不变，故 Sequences 步骤编辑器一行未改仍是
+                              // 「降透明 + [SKIP 0B]」；加工页由 InstructionRunner 显式接线。
 }) {
     // 只有**顶层调用**会自算：递归由父层把算好的表以对象形态传下来（!== undefined），
     // 故整棵树每次渲染只算一次，且各页口径必然同源。
     const states = presenceStates === undefined
         ? resolvePresenceStates(fields, inputs, computedValues)
         : presenceStates;
+
+    // R33 (§8.65)：整棵树**一个可见字段都不剩**时出兜底事实行 —— 否则配置区
+    // 空白会被当成「页面坏了」。只陈述事实（条件未命中 → 本帧不发），
+    // **不给展开入口**（用户拍板「纯隐藏」）；有任一可见字段即不出现。
+    if (depth === 0 && hidePresenceMissed && fields.length > 0
+        && fields.every((f) => {
+            const p = (states && f.id !== undefined && f.id !== null)
+                ? (states[f.id] || null) : null;
+            return !!(p && !p.hit);
+        })) {
+        return (
+            <div
+                key="__tree_empty"
+                data-runner-tree-empty="miss"
+                className="border border-nier-light/20 px-3 py-3 text-[10px] font-mono uppercase tracking-tighter text-nier-light/50 select-none"
+            >
+                [HIDDEN] 无可填字段 · 字段的 presence 条件在当前输入下均未命中（本帧不发射）
+            </div>
+        );
+    }
+
     return fields.map((field) => {
         const params = field.parameter_config || {};
         // FIX: Robust classification from config/runnerRenderRules.js
@@ -52,6 +77,14 @@ export default function RunnerFieldTree({
         const presence = (states && field.id !== undefined && field.id !== null)
             ? (states[field.id] || null) : null;
         const presenceMiss = !!(presence && !presence.hit);
+
+        // R33 (§8.65)：opt-in 纯隐藏 —— 未命中即整行不渲染。**组与叶同一个判定点**
+        // （组在此 return → 整棵子树随之消失，无需在子层重复判断）。缺省 false 时
+        // 本分支永不进入，故未接线方（Sequences）形态逐像素不变。纯展示层：
+        // 未命中本就不发射字节，隐藏只动 DOM，偏移尺 / LEN / BYTE_STREAM 一行不改。
+        if (hidePresenceMissed && presenceMiss) {
+            return null;
+        }
 
         if (subFields.length > 0) {
             // 第 14 单：组头也出种类章（STRUCT/ARRAY…；身份归一 VAR/IN → GROUP）
@@ -114,6 +147,7 @@ export default function RunnerFieldTree({
                             selectedFieldId={selectedFieldId}
                             onSelectField={onSelectField}
                             presenceStates={states}
+                            hidePresenceMissed={hidePresenceMissed}
                         />
                     </div>
                 </div>
