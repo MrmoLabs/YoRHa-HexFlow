@@ -57,6 +57,7 @@
 
 | R33 | **加工页 presence 未命中字段纯隐藏** —— 用户新需求「没触发的字段直接隐藏掉，防止干扰使用者」，两项 UX 取舍拍板（**纯隐藏不留入口** + **仅加工页**）（§8.65；**非** §8.52 复议范围，独立批次） | ✅ **已完成（2026-10-05，§8.65，纯 FE · 零 DDL → 无 `chore(db)`）**：`RunnerFieldTree` 新增 opt-in prop **`hidePresenceMissed = false`** —— 算出 `presenceMiss` 后直接 `return null`（**组与叶同一判定点**，组返回即整棵子树消失，递归透传至深层），**缺省 false 分支永不进入 → `Sequences.jsx` 一行未改**仍出降透明 + `[SKIP 0B]`；`InstructionRunner` 为唯一接线点；顶层全字段皆未命中时出兜底**事实行**（`[HIDDEN] 无可填字段…`，无按钮无展开入口 —— 否则空白被当成页面坏了，有任一可见字段即不出现）。**纯展示层**：判定表仍是同一张 `resolvePresenceStates`（同源判定 + 分叉展示），判定 / 编码 / 偏移尺 / 校验四码**一行未改 → 零字节变化**（测试锁「字段被藏 LEN 照样随判定 +1」）。红测先行有据（实现前 **7 failed / 26 passed** → 实现后全绿）；`InstructionRunner.presence` 装配测试**同批改写**（R29 靠 miss 形态证接线，R33 后加工页 miss 不可见 → 改两头锁：初始即命中出 `IF(hit)` + 默认未命中不出、改 ref 命中才出现、改回又消失）。**BE 963/963（持平）、FE 1323 → 1335/1335（85 文件，+12）** |
 | R34 | **校验和字节序** —— R21 长度域的**成对缺口**（§8.53 尾行登记「checksum 的 `byte_order` 未立项，需另开」+ `blockTypes.js` 代码注释同款留档，文档与代码双重登记）（§8.66；**非** §8.52 复议范围，独立批次） | ✅ **已完成（2026-10-05，§8.66，FE+BE · 零 DDL → 无 `chore(db)`）**：协议 checksum 卡增列 `byte_order` —— **复用 length 的同一 `BLOCK_PROPERTY_FIELDS.byte_order`**（同存点 / 同值域 / 同缺省 `big`），面板走既有通用 select 分支 → `ProtocolPropertiesPanel` **零 JSX 改动**。**同用一个字节序门面**：`byte_order_of` / `apply_byte_order` 上移 `handlers/base.py`，length + checksum 两个 handler 共用（`length.py` re-export 保住既有 import）。**BE 四处** = `ChecksumHandler` **两个 return 同位套用**（refs 模式 + 旧区间模式，换引用方式不换形态）· `frame_builder._with_byte_order` 闸门放开到 checksum（`_with_encoding` 一行未动 → varint 仍 length 专属）· `response_generate._checksum_element` 硬编码 `"big"` **改从 pc 取**（镜像 §8.53 表第 ④ 项 `_length_element`，否则出线小端而比对规则按大端比**必然失配**）。**FE 四处** = `blockTypes` 卡字段 · `toFrameBlocks.withLogicParams` 闸门放开（encoding 另设二级闸，防 `pc.encoding` 误写进 checksum）· `protocolTree` **两个计算点同用一份反转**（`collectDeterministicBytes` 容器内容 + `injectRefsSigma` 卡中央值）· `validateProtocol` W5 同码覆盖（文案按块型分叉）。**收侧本就支持、零改动**（`response_match._CHECKSUM_KEYS` 与 `sequence_plan` 早含 `byte_order`）。共享向量 `vectors/checksum_order.json` **12 行 = 6 算法 × 2 字节序**，真值链不自证（`expected_big` 逐字取自 R22 `checksum_algo.json` 的外部真值、`expected_little` = 字节反转；1 字节算法两侧同串 → 把「单字节不反转」也钉进表里）。**缺省路径逐字节不变**（§0）：面板读侧 `?? field.default` 只回显不落值、`createBlock` 不播种 → `parameter_config` 形状不变，只有真选到 `little` 才出现该键。红测先行有据（实现前 **BE 11 failed / 14 tests** + **FE 9 failed / 108 passed**），**三处既有测试同批翻面**（`test_checksum_blocks_ignore_byte_order` → `..._honour_byte_order`、`toFrameBlocks`「非 length 不写」→「闸门只开两卡」、`blockTypes`「checksum 不列」）。**BE 963 → 977/977、FE 1335 → 1349/1349（85 文件，+14）** |
+| R35 | **前端路由级拆包** —— `vite build` 每批报的「chunk > 500kB」技术债（**无既有登记项**，build 输出本身即凭据：8 个页面在 `App.jsx` 全是静态 import，用户一次只开一页却全进首屏）（§8.67；**非** §8.52 复议范围，独立批次） | ✅ **已完成（2026-10-05，§8.67，纯 FE 构建层 · 零 DDL → 无 `chore(db)`）**：新增 `utils/routeChunks.js`（**页面模块单一登记表** `ROUTE_LOADERS` = 8 个动态 import · `routeComponent` 返回**缓存过的** `React.lazy` 实例（不缓存则每次渲染新建组件 → 整页重挂载）· `prefetchRoute` 复用同一份 pending Promise（hover 多少次只发一次、失败 `.catch(→null)` 不打断导航）· `__resetRouteCaches` 仅测试隔离）+ 新增 `components/RouteLoading.jsx`（Suspense fallback：`[ MODULE LOAD ]` 工业标记 + 按 `useLocation` 查 `PAGE_STATUS_BY_PATH` 出中文页名、**未知路由回落站点名不臆造** + `role="status"`/`aria-live`；**只陈述「正在载入哪页」不画假百分比** —— 拆包加载没有可度量的进度，8 段待机格表达「等待」）。`App.jsx` **删 8 行静态 import** → `renderRouteElement` 改按 `pageKey` 取组件后**原样注入各页 props**（未知 key 仍 `<Navigate to="/protocol">`）、`NavItem` 增 `pageKey` 走 `onMouseEnter`/`onFocus` 预取、**Suspense 边界放在 `key={location.pathname}` 之外**（换路由时边界自身不重建，已访问过的页切回来不重闪 fallback）。**体量账（两次 `npx vite build` 实测）**：`assets/index-*.js` **752.85kB（gzip 243.50）→ 325.42kB（gzip 113.64）**，8 个页面 chunk **10.43–56.63kB**，**500kB 警告消失**；`manualChunks` 分 vendor 判为无效（依赖极轻：react / router / dnd-kit 无 lodash 无图表库，vendor 只砍约 200kB 而本项目代码自身就超线）故不选。**零字节影响**（BE 一行未改，`/dispatch` 缺省口径不变）。**pageStatus.json 零改动**（该文件按页登记「本页具备哪些能力」，本批是外壳/构建层改动不给任一页新增能力 → 生成物 `docs/PAGE_STATUS.md` 同步为零）。红测先行有据（实现前 **2 个测试文件整体红 = 模块不存在**；落一轮后剩 1 failed 属**测试自身 bug** —— React 19 的 `lazy` 返回 lazy 组件对象非函数，先修测试再算数）；**BE 977/977（持平）、FE 1349 → 1362/1362（87 文件，+13）** |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -5512,6 +5513,97 @@ presenceEqual(expect, value) =
 - 收侧 `response_match` / `sequence_plan` 零改动（本就支持）。
 
 **R34 ✅ —— §8.53「checksum 的 `byte_order` 未立项，需另开」的账已还清。**
+
+## 8.67 R35 前端路由级拆包（752kB 单 chunk 收口 · 2026-10-05）
+
+> **一句话**：8 个页面在 `App.jsx` 里全是静态 import，`vite build` 把它们连同首屏
+> 外壳揉成一个 **752.85kB** 的 `index.js`（每次都越 500kB 警告线），而用户一次只开
+> 一页 —— 改成按路由动态载入 + 侧栏悬停预取，首屏降到 **325.42kB**，警告消失。
+
+### 一 · 定位
+
+| 项 | 内容 |
+|---|---|
+| 来源 | **无既有登记项**：`vite build` 每批输出的「chunk larger than 500 kB」警告本身就是债，凭据即 build 输出 |
+| 排期 | 2026-10-05 用户在「路由级拆包 / 只分 vendor / 发前路由 / 拆包+trim 连做」四选项中拍板选**路由级拆包** |
+| DDL | **零** → 无 `chore(db)` |
+| 字节影响 | **零**（纯前端构建层，**BE 一行未改**，`/dispatch` 缺省口径不变） |
+| 本批性质 | 构建 / 装配层重构，**不给任何一页新增能力** → `pageStatus.json` 零改动（见「五」） |
+
+### 二 · 体量账（两次 `npx vite build` 实测）
+
+| 指标 | 改前（HEAD `15b197f`） | 改后 |
+|---|---|---|
+| `assets/index-*.js` | 752.85 kB（gzip 243.50 kB） | **325.42 kB（gzip 113.64 kB）** |
+| 500 kB 体积警告 | 每次 build 触发 | **消失** |
+| 页面 chunk | 0（8 页全在首屏） | **8 个，10.43 – 56.63 kB** |
+
+页面 chunk 明细（kB）：`Trash 10.43` · `DataHub 23.19` · `Protocol 27.06` ·
+`InstructionProcessor 30.56` · `Orchestration 33.62` · `Sequences 34.01` ·
+`Terminal 36.26` · `Instruction 56.63` —— 合计约 252 kB 不再进首屏。
+
+### 三 · 改动表（FE 四处）
+
+| # | 位置 | 要点 |
+|---|---|---|
+| ① | `frontend/src/utils/routeChunks.js`（新） | **页面模块单一登记表** `ROUTE_LOADERS`（8 个动态 import，与 `PAGE_REGISTRY` 同集）+ `routeComponent(pageKey)` 返回**缓存过的** `React.lazy` 实例（不缓存则每次渲染新建组件 → 整页重挂载）+ `prefetchRoute` 复用同一份 pending Promise（**幂等**：hover 多少次只发一次；失败 `.catch(→null)` 不打断导航）+ `__resetRouteCaches` 仅供测试隔离模块级缓存 |
+| ② | `frontend/src/components/RouteLoading.jsx`（新） | Suspense fallback：`[ MODULE LOAD ]` 工业标记 + 按 `useLocation` 查 `PAGE_STATUS_BY_PATH` 出中文页名（**未知路由回落站点名，不臆造页面名**）+ `role="status"` / `aria-live="polite"`；**只陈述事实不断言进度** —— 拆包加载没有可度量的进度，画假百分比等于编造数字，8 段待机格只表达「等待中」 |
+| ③ | `frontend/src/App.jsx` · 渲染 | **删 8 行静态 `import ... from './pages/…'`** → `renderRouteElement` 先 `routeComponent(pageKey)` 取组件再按页分支**原样注入各页 props**（prop 契约一行未动），未知 key 仍 `<Navigate to="/protocol" replace />` |
+| ④ | `frontend/src/App.jsx` · 悬停预取 | `NavItem` 增 `pageKey`，`onMouseEnter` / `onFocus` 触发 `prefetchRoute` —— 键盘 Tab 与鼠标 hover 同待遇；**`<Suspense>` 边界放在 `key={location.pathname}` 之外**，换路由时边界自身不重建，已访问过的页面切回来不重闪 fallback |
+
+**`manualChunks` 为什么不做（三候选里的 B′ 判负）**：依赖极轻 —— `react` / `react-dom` /
+`react-router-dom` / `@dnd-kit/*` / `clsx` / `tailwind-merge` / `uuid`，无 lodash、无图表库、
+无大三方件；vendor 分出去只能砍约 200 kB，而**本项目自己的代码就 >500 kB**，警告照报。
+只有路由级 lazy 才把首屏真正切开。
+
+### 四 · 红测先行有据
+
+新增两份测试，**实现落笔前先证红**：
+
+- `frontend/src/utils/__tests__/routeChunks.test.js`（9 例）
+- `frontend/src/components/__tests__/RouteLoading.test.jsx`（4 例）
+
+| 轮次 | 结果 | 红因归属 |
+|---|---|---|
+| 实现前 | 2 个测试文件**整体失败**（`Failed to resolve import "../routeChunks"` / `"../RouteLoading"`） | **缺特性本身**（模块不存在）→ 合格红 |
+| 落实现后 | 1 failed：`expected 'object' to be 'function'` | **测试自身 bug** —— React 19 的 `React.lazy` 返回 lazy 组件对象而非函数；按纪律**先修测试**（改断言 `$$typeof === Symbol.for('react.lazy')`）再算数 |
+| 修测试后 | **13 / 13 全绿** | 红→绿闭合 |
+
+钉住的四条语义：
+
+1. **`PAGE_REGISTRY` 8 页每个各有、且只有一个载入器**（无缺无多）—— 拆包前提，
+   将来加页忘登记会红；
+2. **同页重复取用返回同一引用**（lazy 不缓存 → 整页重挂载）；
+3. **prefetch 幂等**（计数桩验证 N 次 hover 只 1 次载入）+ **失败吞异常不打断导航**；
+4. fallback **只按 `PAGE_STATUS_BY_PATH` 报页名**，未知路由回落站点名。
+
+### 五 · `pageStatus.json` 为何零改动
+
+`pageStatus.json` 按页登记「**本页**具备哪些能力」（`availableNow`）与「本页下一步」
+（`nextSteps`），并生成 `docs/PAGE_STATUS.md`。R35 是**应用外壳 / 构建层**改动
+（首屏变小、切页多一个 loading 态），**不给任何一页新增能力** —— 塞进任一页的
+`availableNow` 都是张冠李戴。故本批 json 与生成物 `docs/PAGE_STATUS.md` **双双不动**，
+记账改走 §1 表 + 本节 + HANDOVER 条目 84（与 `chore(db)` 批次同类：
+无页面能力变化即不登记）。
+
+### 六 · 验收
+
+- **BE 977/977（持平，本批零后端改动）**、**FE 1349 → 1362/1362（87 文件，+13）**；
+- `npx vite build` EXIT=0（**无 chunk 体积警告**）· `npm run lint` EXIT=0 ·
+  yorha-ui 校验器改动 5 文件 **0 违规** · md 表列数 mismatches = 0 · index blob 卫生
+  STAGED / BAD = 0；
+- **零 DDL → 无 `chore(db)`**、不引 pytest、**无新 pip 依赖**、
+  `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、`/dispatch` 缺省口径不变。
+
+### 七 · 明确留白（本批不做）
+
+- **不做 `manualChunks` 分 vendor**（理由见「三」，判负）；
+- **不做路由预渲染 / SSR**：内网单页应用，无 SEO 诉求，引入渲染层得不偿失；
+- **发前路由仍红**（`BUSINESS_SCENARIOS` G1 尾注；§8.52 C-1 拍板 A 不立项，翻案需用户确认），
+  本批不涉；
+- **`byte_order` trim 归一**（§8.66 留白）本批不涉。
+
+**R35 ✅ —— 每页只加载自己那块，首屏 752kB → 325kB。**
 
 ## 9. 保留勿动（非任务，勿清理）
 

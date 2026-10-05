@@ -2960,6 +2960,53 @@
       既有字节行为）；收侧零改动。
       提交 = `feat(R34)` 单笔（**零 DDL** → 无 `chore(db)`）。
 
+84. **R35 · 前端路由级拆包（首屏 752kB → 325kB；PLAN §8.67 · 2026-10-05 排期拍板）**
+
+    - **来源与拍板**：**无既有登记项** —— `vite build` 每批报的
+      「chunk larger than 500 kB」警告本身就是债。2026-10-05 排期时在
+      「路由级拆包 / 只分 vendor / 发前路由 / 拆包+trim 连做」四选项中拍板选**路由级拆包**。
+    - **为什么真需要**：8 个页面在 `App.jsx` 里全是静态 import，vite 把它们连同首屏外壳
+      揉成一个 **752.85kB** 的 `index.js`，而用户一次只开一页 —— 首屏白拉了 8 页中 7 页的代码。
+    - **实现（FE 四处，零 DDL）**：
+
+      | # | 位置 | 要点 |
+      |---|---|---|
+      | ① | `frontend/src/utils/routeChunks.js`（新） | **页面模块单一登记表** `ROUTE_LOADERS`（8 个动态 import，与 `PAGE_REGISTRY` 同集）+ `routeComponent` 返回**缓存过的** `React.lazy` 实例（不缓存 → 每次渲染新建组件 = 整页重挂载）+ `prefetchRoute` **幂等**（复用同一份 pending Promise，失败 `.catch(→null)` 不打断导航）+ `__resetRouteCaches` 仅测试隔离 |
+      | ② | `frontend/src/components/RouteLoading.jsx`（新） | Suspense fallback：`[ MODULE LOAD ]` 标记 + 按 `useLocation` 查 `PAGE_STATUS_BY_PATH` 出中文页名（未知路由回落站点名，**不臆造**）+ `role="status"` / `aria-live`；**不画假百分比**（拆包加载没有可度量的进度），8 段待机格只表达「等待中」 |
+      | ③ | `frontend/src/App.jsx` · 渲染 | **删 8 行静态页面 import** → `renderRouteElement` 按 `pageKey` 取组件后**原样注入各页 props**（prop 契约一行未动），未知 key 仍 `<Navigate to="/protocol">` |
+      | ④ | `frontend/src/App.jsx` · 预取 + 边界 | `NavItem` 增 `pageKey` 走 `onMouseEnter` / `onFocus` 预取（键盘 Tab 与鼠标同待遇）；**`<Suspense>` 放在 `key={location.pathname}` 之外** → 换路由时边界自身不重建，已访问过的页切回来不重闪 fallback |
+
+    - **`manualChunks` 分 vendor 判负（候选 B′）**：依赖极轻（react / react-dom /
+      react-router-dom / dnd-kit / clsx / tailwind-merge / uuid，无 lodash 无图表库），
+      vendor 只砍约 200kB 而**本项目代码自身就 >500kB**，警告照报 —— 只有路由级 lazy 能切开首屏。
+    - **体量账（两次 `npx vite build` 实测）**：`assets/index-*.js`
+      **752.85kB（gzip 243.50）→ 325.42kB（gzip 113.64）**，8 个页面 chunk
+      **10.43–56.63kB**（Trash 10.43 / DataHub 23.19 / Protocol 27.06 /
+      InstructionProcessor 30.56 / Orchestration 33.62 / Sequences 34.01 /
+      Terminal 36.26 / Instruction 56.63），**500kB 警告消失**。
+    - **零字节影响**：纯前端构建层，**BE 一行未改**，`/dispatch` 缺省口径不变，
+      出线 hex / `LEN` / 导出一个字节都不动；行为面唯一变化 = 切页时多一个终端风格 loading 态。
+    - **`pageStatus.json` 零改动**：该文件按页登记「本页具备哪些能力」，本批是外壳 / 构建层
+      改动**不给任一页新增能力** → 塞进任一页 `availableNow` 都是张冠李戴，故 json 与生成物
+      `docs/PAGE_STATUS.md` 双双不动（与 `chore(db)` 批次同类：无页面能力变化即不登记），
+      记账走 PLAN §1 表 + §8.67 + 本条。
+    - **测试（红测先行有据）**：新增 `routeChunks.test.js`（9 例）+
+      `RouteLoading.test.jsx`（4 例）。实现前 **2 文件整体红 = 模块不存在**（缺特性本身）；
+      落实现后剩 1 failed 是**测试自身 bug**（React 19 的 `lazy` 返回 lazy 组件对象非函数）
+      → 按纪律**先修测试**（断言 `$$typeof === Symbol.for('react.lazy')`）再算数；修后 **13/13 全绿**。
+      钉住：8 页载入器无缺无多 / 同页同引用 / prefetch 幂等且失败不炸 / fallback 只认已登记路由。
+    - **验收**：**BE 977/977（持平）**、**FE 1349 → 1362/1362（87 文件，+13）**、
+      `npx vite build` EXIT=0（无体积警告）、`npm run lint` EXIT=0、yorha-ui 校验器改动
+      5 文件 **0 违规**、md 表列数 mismatches = 0；**零 DDL → 无 `chore(db)`**、不引 pytest、
+      无新 pip 依赖、`processor.py` / `graph.py` / `Blueprint.jsx` 未碰。
+    - **文档同步（同批）**：PLAN **§8.67 新节** + §1 新增 `R35` 行；本条 + 目录地图补
+      `routeChunks.js` / `RouteLoading.jsx`；`pageStatus.json` 不改（见上）。
+    - **状态**：**R35 ✅ —— 每页只加载自己那块。**
+      **明确留白**：不做 `manualChunks` 分 vendor（判负）、不做路由预渲染 / SSR、
+      **发前路由仍红**（`BUSINESS_SCENARIOS` G1 尾注，§8.52 C-1 拍板 A 不立项，翻案需用户确认）、
+      `byte_order` trim 归一（§8.66 留白）不涉。
+      提交 = `feat(R35)` 单笔（**零 DDL** → 无 `chore(db)`）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
@@ -3014,6 +3061,9 @@
 | `src/utils/blockMerge.js` | 编排页纯逻辑（协议+指令合并、slot 注入、`buildLanes` / `getTotalBytes`） | ✅ 新增（自 Orchestration.jsx 抽出） |
 | `src/utils/toFrameBlocks.js` | 导出映射 `byte_len→byte_length`、`op_code→type`（供 `/export/binary`） | ✅ 新增（自 Orchestration.jsx 抽出） |
 | `src/utils/download.js` | `triggerBlobDownload`（.hex / .bin 下载共用） | ✅ 新增 |
+| `src/App.jsx` | 路由壳：`PAGE_REGISTRY` 驱动侧栏与 `Routes`，`renderRouteElement` 按 `pageKey` 取组件后注入各页 props；R35 起页面改动态 import + `<Suspense>`（首屏拆包），`NavItem` 悬停/聚焦预取 | ✅ |
+| `src/utils/routeChunks.js` | **页面模块单一登记表** `ROUTE_LOADERS`（8 页动态 import）+ 缓存的 `React.lazy` + 幂等 `prefetchRoute` + `__resetRouteCaches`（仅测试） | ✅ 新增（R35） |
+| `src/components/RouteLoading.jsx` | 路由级拆包的 Suspense fallback：`[ MODULE LOAD ]` + 按路由出中文页名，未知路由回落站点名，不画假百分比 | ✅ 新增（R35） |
 | `src/hooks/useInstructionData.js` | 指令数据加载/保存/CRUD（归一化逻辑在 `utils/normalizeInstruction.js`，此处 re-export） | ✅ |
 | `src/hooks/useInstructionForm.js` | 表单输入 + 编码 memo | ✅ |
 | `src/components/ui/` | `NieRModal` / `NieRDatePicker` 通用 UI（FeaturePlaceholder 已随第 13 单死代码清理批删除） | ✅ |

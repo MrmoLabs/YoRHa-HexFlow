@@ -1,13 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom';
-import Protocol from './pages/Protocol';
-import Instruction from './pages/Instruction';
-import InstructionProcessor from './pages/InstructionProcessor';
-import Orchestration from './pages/Orchestration';
-import Terminal from './pages/Terminal';
-import DataHub from './pages/DataHub';
-import Sequences from './pages/Sequences';
-import Trash from './pages/Trash';
+// R35：页面改为按路由动态载入，页面模块不再打进首屏 chunk。
+import { routeComponent, prefetchRoute } from './utils/routeChunks';
+import RouteLoading from './components/RouteLoading';
 import GlitchEffect from './components/visuals/GlitchEffect';
 import { api } from './api';
 import { PAGE_REGISTRY, PAGE_STATUS_BY_PATH } from './config/pageRegistry';
@@ -55,8 +50,13 @@ function Layout() {
     }, [loadInstructions, loadProtocols]);
 
     // Nav Item Helper
-    const NavItem = ({ to, label, shortcut }) => (
-        <NavLink to={to} className={({ isActive }) => `
+    // R35：hover / focus 时预取目标页 chunk，切页时模块已在缓存里。
+    const NavItem = ({ to, label, shortcut, pageKey }) => (
+        <NavLink
+            to={to}
+            onMouseEnter={() => prefetchRoute(pageKey)}
+            onFocus={() => prefetchRoute(pageKey)}
+            className={({ isActive }) => `
             group relative flex items-center justify-between px-4 py-3 text-xs tracking-widest transition-all duration-200
             ${isActive ? 'bg-nier-light text-nier-dark font-bold' : 'text-nier-light opacity-60 hover:opacity-100 hover:bg-nier-light/10'}
         `}>
@@ -73,23 +73,25 @@ function Layout() {
     );
 
     const renderRouteElement = (pageKey) => {
+        const Page = routeComponent(pageKey);
+        if (!Page) return <Navigate to="/protocol" replace />;
         switch (pageKey) {
             case 'protocol':
-                return <Protocol protocols={protocols} setProtocols={setProtocols} />;
+                return <Page protocols={protocols} setProtocols={setProtocols} />;
             case 'instruction':
-                return <Instruction instructions={instructions} setInstructions={setInstructions} onWebUpdate={setInstructions} reloadInstructions={loadInstructions} />;
+                return <Page instructions={instructions} setInstructions={setInstructions} onWebUpdate={setInstructions} reloadInstructions={loadInstructions} />;
             case 'processing':
-                return <InstructionProcessor instructions={instructions} setInstructions={setInstructions} reloadInstructions={loadInstructions} protocols={protocols} />;
+                return <Page instructions={instructions} setInstructions={setInstructions} reloadInstructions={loadInstructions} protocols={protocols} />;
             case 'orchestration':
-                return <Orchestration protocols={protocols} instructions={instructions} />;
+                return <Page protocols={protocols} instructions={instructions} />;
             case 'terminal':
-                return <Terminal />;
+                return <Page />;
             case 'datahub':
-                return <DataHub />;
+                return <Page />;
             case 'sequences':
-                return <Sequences />;
+                return <Page />;
             case 'trash':
-                return <Trash />;
+                return <Page />;
             default:
                 return <Navigate to="/protocol" replace />;
         }
@@ -111,7 +113,7 @@ function Layout() {
                 {/* Links */}
                 <div className="flex-1 flex flex-col py-4 gap-2">
                     {PAGE_REGISTRY.map((page) => (
-                        <NavItem key={page.key} to={page.path} label={page.titleZh} shortcut={page.shortcut} />
+                        <NavItem key={page.key} to={page.path} label={page.titleZh} shortcut={page.shortcut} pageKey={page.key} />
                     ))}
                 </div>
 
@@ -145,14 +147,18 @@ function Layout() {
                 </header>
 
                 {/* Page Content */}
-                <div key={location.pathname} className="flex-1 overflow-hidden relative flex flex-col">
-                    <Routes>
-                        <Route path="/" element={<Navigate to="/protocol" replace />} />
-                        {PAGE_REGISTRY.map((page) => (
-                            <Route key={page.key} path={page.path} element={renderRouteElement(page.key)} />
-                        ))}
-                    </Routes>
-                </div>
+                {/* Suspense 边界放在 key 之外：换路由时边界自身不重建，
+                    已预取/已访问过的页面切回来不闪 fallback。 */}
+                <Suspense fallback={<RouteLoading />}>
+                    <div key={location.pathname} className="flex-1 overflow-hidden relative flex flex-col">
+                        <Routes>
+                            <Route path="/" element={<Navigate to="/protocol" replace />} />
+                            {PAGE_REGISTRY.map((page) => (
+                                <Route key={page.key} path={page.path} element={renderRouteElement(page.key)} />
+                            ))}
+                        </Routes>
+                    </div>
+                </Suspense>
             </main>
         </div>
     );
