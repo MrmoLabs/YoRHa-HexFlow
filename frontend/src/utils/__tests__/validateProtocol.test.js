@@ -217,6 +217,31 @@ describe('validateProtocol（协议工作副本结构校验）', () => {
         expect(withOrder(undefined).warnings).toEqual([]);
     });
 
+    // R34 (§8.66 排期 · 校验和字节序): W5 同码覆盖 checksum 卡 —— R21 只开了
+    // length，本批补上成对缺口。两端对枚举外值一致 fail-open 回大端，只提醒不阻断。
+    it('W5 (R34) checksum 字节序枚举外 → BYTE_ORDER_UNKNOWN warning；枚举值/缺失/空不报', () => {
+        const withOrder = (byte_order) => validateProtocol(proto([
+            leaf('h'),
+            leaf('C', {
+                type: 'checksum',
+                parameter_config: {
+                    type: 'checksum', refs: ['h'], algorithm: 'CRC_16_MODBUS',
+                    ...(byte_order !== undefined ? { byte_order } : {})
+                }
+            })
+        ]));
+        const junk = withOrder('middle');
+        expect(junk.errors).toEqual([]);
+        expect(codes(junk.warnings)).toEqual(['BYTE_ORDER_UNKNOWN']);
+        expect(junk.warnings[0].message).toContain('middle');
+        expect(junk.warnings[0].message).toContain('校验字节序'); // 文案按块型分叉（长度 vs 校验）
+        expect(withOrder('big').warnings).toEqual([]);
+        expect(withOrder('little').warnings).toEqual([]);
+        expect(withOrder('BIG').warnings).toEqual([]);
+        expect(withOrder('').warnings).toEqual([]);
+        expect(withOrder(undefined).warnings).toEqual([]);
+    });
+
     it('条目带 blockId 可定位；种子协议形态零问题', () => {
         // backend/db/seed.py SAMPLE_PROTOCOLS 的形状（FA FA / ED / 无 hex 的 len·slot）
         const seedLike = proto([

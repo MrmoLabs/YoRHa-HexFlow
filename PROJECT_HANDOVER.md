@@ -2911,6 +2911,55 @@
       重新出现（判定驱动渲染，非写死），或到步骤编辑器（不隐藏）里改。
       提交 = `feat(R33)` 单笔（**零 DDL** → 无 `chore(db)`）。
 
+83. **R34 · 协议校验和字节序 `checksum.byte_order`（R21 成对缺口「另开」；PLAN §8.66 · 2026-10-05 排期拍板）**
+
+    - **来源与拍板**：§8.53（R21 长度域 BE/LE）尾行明写「checksum 的 `byte_order`
+      **未立项，需另开**」，`frontend/src/config/blockTypes.js` 代码注释同款留档 ——
+      文档与代码**双重登记**的成对缺口。2026-10-05 排期时在「校验和字节序 / 前端拆包 /
+      发前路由」三候选中拍板选此，节奏 = 自主连跑到完。
+    - **为什么真需要**：协议要求校验和**低字节先发**（Modbus CRC16 就是这个形态）此前
+      做不到 —— `ChecksumHandler` 两个 return 恒 `f"{result:0X}"` 大端格式化。
+    - **实现（BE 四处 + FE 四处，零 DDL）**：
+
+      | # | 位置 | 要点 |
+      |---|---|---|
+      | ① | `backend/handlers/base.py` | **字节序门面上移**：`byte_order_of` + `apply_byte_order` 从 `length.py` 移入 base → length / checksum **两个 handler 同用一个谓词**（不留第二套判据）；`length.py` re-export 保住既有 import |
+      | ② | `backend/handlers/checksum.py` | **两个 return 同位套用**（refs 模式 + 旧区间模式 —— 换一种引用方式不换出线形态） |
+      | ③ | `backend/core/frame_builder._with_byte_order` | 闸门放开到 checksum；**`_with_encoding` 一行未动**（varint 仍 length 专属） |
+      | ④ | `backend/core/response_generate._checksum_element` | 硬编码 `"byte_order": "big"` → **从 `pc` 取**（镜像 §8.53 表第 ④ 项 `_length_element`）—— 否则出线小端而比对规则按大端比**必然失配** |
+      | ⑤ | `frontend/src/config/blockTypes.js` | checksum 卡 `fields` 增 `'byte_order'`，**复用 R21 同一字段定义** → 面板走通用 select 分支，`ProtocolPropertiesPanel` **零 JSX 改动** |
+      | ⑥ | `frontend/src/utils/toFrameBlocks.js` | `withLogicParams` 闸门放开；`encoding` 另设 `type === 'length'` 二级闸（防 `pc.encoding='varint'` 误写进 checksum） |
+      | ⑦ | `frontend/src/utils/protocolTree.js` | **两个计算点同用一份反转（改一必改二）**：`collectDeterministicBytes`（容器内容 / 卡面递归）+ `injectRefsSigma`（卡中央值），抽 `isLittleOrder` / `reverseHexPairs` |
+      | ⑧ | `frontend/src/utils/validateProtocol.js` | W5 `BYTE_ORDER_UNKNOWN` 同码覆盖 checksum，文案按块型分叉（长度字节序 / 校验字节序）；W6 仍 length 专属 |
+
+    - **收侧本就支持、本批零改动**：`response_match._CHECKSUM_KEYS` 与
+      `sequence_plan._normalize_checksum` 早已含 `byte_order`（R21/R22 期留的口），
+      `test_response_match` / `test_sequence_plan` 既有锚继续有效。
+    - **共享向量（真值链不自证）**：`vectors/checksum_order.json` **12 行 = 6 算法 × 2 字节序**
+      两端同读 —— `expected_big` **逐字取自 R22 `checksum_algo.json` 的外部真值**
+      （zlib / binascii / 已发布 check 值，本批不重新验证算法），`expected_little` = 字节反转；
+      1 字节算法（SUM_8 / XOR_8 / LRC）两侧同串 → 把「单字节不反转」也钉进表里。
+      同批在 `vectorsLoader.test.js` 的 `TABLES` 登记（否则「表清单与 vectors 目录同集」红）。
+    - **缺省口径逐字节不变（§0）**：面板读侧是 `pc[propKey] ?? field.default`（**只回显不落值**）、
+      `createBlock` 不播种 → 存量与新建 checksum 块的 `parameter_config` **形状不变**，
+      只有真把下拉选到 `little` 才出现该键；未配 / `big` / 枚举外一律大端。
+    - **测试（红测先行有据）**：实现落笔前 **BE 11 failed / 14 tests**（big 行全绿、
+      little 行全红 → 红因全部由缺失特性引起）+ **FE 9 failed / 108 passed**；实现后
+      **BE +14、FE +14** 全绿。**三处既有测试同批翻面**（R21 的「checksum 不吃此键」断言随语义失效）：
+      `test_checksum_blocks_ignore_byte_order` → `..._honour_byte_order`、
+      `toFrameBlocks`「非 length 块不写」→「闸门只开两卡」、`blockTypes`「checksum 不列」。
+    - **验收**：**BE 963 → 977/977**、**FE 1335 → 1349/1349（85 文件，+14）**、
+      `npx vite build` EXIT=0、`npm run lint` EXIT=0、yorha-ui 校验器改动 10 文件 **0 违规**、
+      md 表列数 mismatches = 0；**零 DDL → 无 `chore(db)`**、不引 pytest、无新 pip 依赖、
+      `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、`/dispatch` 缺省口径不变。
+    - **文档同步（同批）**：PLAN **§8.66 新节** + §1 新增 `R34` 行 + §8.53 尾行与表第 ③ 项改指；
+      本条；pageStatus 协议页条目 + `npm run sync:page-status`。
+    - **状态**：**R34 ✅ —— §8.53「checksum 的 `byte_order` 未立项，需另开」的账已还清。**
+      **明确留白**：`cobs` / `slot` / `bitfield` 无字节序概念不加字段；指令域 `endianness`
+      （E1-2 B6）是另一个域不并入；**不引入 trim 归一**（谓词形态沿用 R21，避免本批顺带改
+      既有字节行为）；收侧零改动。
+      提交 = `feat(R34)` 单笔（**零 DDL** → 无 `chore(db)`）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
@@ -2940,7 +2989,8 @@
 | `backend/core/field_blocks.py` | 编译侧字段布局 SSOT（`fields_to_blocks` + `_presence_hit` + 内嵌 `to_block`：presence 门 · repeat ×N · endianness · align · `pad_to`）—— 自 `routers/datahub.py` **纯搬入**、`datahub` 原名再导出 | ✅ 编码与解码共用一份（§8.48，改一必改二） |
 | `backend/core/field_decode.py` | 应答逆向解码（`decode_hex` / `decode_blocks` / `decode_field_bytes` / `field_index`），值分派与 FE `utils/InstructionDecoder.js` 同序；非有限浮点落库前折字符串 | ✅ 写日志时回填 `dispatch_logs.fields_json`（§8.48） |
 | `backend/tests/` | 后端全量测试（stdlib `unittest`，**直调路由不用 TestClient**、不触 lifespan；共享向量读根目录 `vectors/`） | ✅ `python -m unittest discover -s backend/tests -t backend/tests` |
-| `backend/handlers/length.py`、`checksum.py` | 扁平流区间长度 / 校验计算 | ✅ |
+| `backend/handlers/base.py` | `LogicHandler` 抽象 + **字节序门面** `byte_order_of` / `apply_byte_order`（R21 length 起用，**R34 §8.66 上移** → length 与 checksum 两 handler 同用一份判据） | ✅ |
+| `backend/handlers/length.py`、`checksum.py` | 扁平流区间长度 / 校验计算（R34 起两者的出线 return 同位套用字节序门面；`length.py` 并 re-export 该门面） | ✅ |
 | `backend/db/models.py` | SQLAlchemy 模型（含 `BitField`） | ✅ |
 | `backend/db/database.py` | SQLite engine / Session / Base | ✅ |
 | `backend/db/seed.py` | 示例指令种子 | ✅ |

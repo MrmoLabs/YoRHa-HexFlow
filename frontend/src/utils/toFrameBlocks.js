@@ -48,16 +48,20 @@ const buildBitfieldConfig = (node) => ({
 //   无关块算进来，故不采用 target_start/end）；
 // - params.algorithm = 算法枚举映射（checksum 专属）；
 // - params.offset = 显式数值才带（协议侧无此概念，缺省 0 同两端）；
-// - params.byte_order = R21（长度域 BE/LE）：length pc.byte_order=little 才带
-//   （缺省 / big / 枚举外不写键 → params 形状与存量逐字节一致，后端
-//   LengthHandler 缺省回大端）。
+// - params.byte_order = R21（长度域 BE/LE）+ R34（校验和字节序）：length /
+//   checksum 卡 pc.byte_order=little 才带（缺省 / big / 枚举外不写键 → params
+//   形状与存量逐字节一致，后端 LengthHandler / ChecksumHandler 缺省回大端）；
+//   **encoding 仍 length 专属**（校验块没有「出线编码」概念，闸门不放开）。
 // pc.refs 键缺失（存量行无 parameter_config）→ 维持既有 config 直通，
 // 行为与批次四前逐字节一致（byte_order / encoding 仍生效，镜像后端 _build_logic_config）。
 // - params.encoding = R27（varint 变长长度前缀 · §8.59）：length pc.encoding=varint
 //   才带（缺省 / fixed / 枚举外不写键 → params 形状与存量逐字节一致，后端
 //   LengthHandler 缺省回定宽，§0 缺省口径同 R21）。
 const withLogicParams = (config, pc, type) => {
-    if (type !== 'length' || !pc) return config || null;
+    // R21（length）+ R34（checksum）: `byte_order` 两卡共用同一字段、同一闸门；
+    // `encoding`（R27 varint）仍锁 length —— 校验块没有「出线编码」这个概念，
+    // 闸门不放开（否则 pc.encoding 会被误写进 checksum 的 params）。
+    if ((type !== 'length' && type !== 'checksum') || !pc) return config || null;
     const base = config && typeof config === 'object' ? config : null;
     const params = { ...((base && base.params) || {}) };
     let touched = false;
@@ -65,7 +69,7 @@ const withLogicParams = (config, pc, type) => {
         params.byte_order = 'little';
         touched = true;
     }
-    if (String(pc.encoding || '').toLowerCase() === 'varint') {
+    if (type === 'length' && String(pc.encoding || '').toLowerCase() === 'varint') {
         params.encoding = 'varint';
         touched = true;
     }

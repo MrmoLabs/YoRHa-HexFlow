@@ -19,8 +19,12 @@ const { buildImportedProtocolPayload } = protocolTree;
 // vectors/length_order.json，与 backend/tests/test_length_byte_order.py 同读一份。
 import { loadVectors } from '../../../../vectors/vectors.js';
 import lengthOrderVec from '../../../../vectors/length_order.json';
+// R34（§8.66 排期 · 校验和字节序）：checksum 字节序共享向量 —— 单一真相源 =
+// vectors/checksum_order.json，与 backend/tests/test_checksum_byte_order.py 同读一份。
+import checksumOrderVec from '../../../../vectors/checksum_order.json';
 
 const LENGTH_ORDER_VECTORS = loadVectors(lengthOrderVec);
+const CHECKSUM_ORDER_VECTORS = loadVectors(checksumOrderVec);
 
 // 构造器：children 树的最小持久化形状（A+B 批协议页内联展开的纯函数层）
 const leaf = (id, extra = {}) => ({ id, label: id, type: 'fixed', byte_length: 1, hex_value: '00', ...extra });
@@ -657,5 +661,95 @@ describe('R21 长度域字节序（共享向量 vectors/length_order.json · 双
         expect(protocolTree.injectContainerContent(
             buildProtocolLanes(p, ['g']), computeProtocolOffsets(p).byId, p
         )[0].items.find(i => i.id === 'g').parameter_config.computedValue).toBe(want);
+    });
+});
+
+// ─── R34（§8.66 排期 · 校验和字节序）：checksum 字节序双端同读向量 ────────────
+// 单一真相源 = vectors/checksum_order.json（本文件 + backend/tests/
+// test_checksum_byte_order.py 同读一份，新增向量只写一处）。真值链不自证：
+// expected_big 逐字取自 R22 vectors/checksum_algo.json 的外部真值，expected_little
+// = 字节反转（little 的定义）。
+// **两个计算点同用一份反转口径（改一必改二）**：
+//   ① injectRefsSigma —— checksum 卡中央值；
+//   ② injectContainerContent → collectDeterministicBytes —— 容器内内容。
+// 与后端 ChecksumHandler.apply_byte_order 同口径（缺省 / 枚举外一律大端 fail-open）。
+describe('R34 校验和字节序（共享向量 vectors/checksum_order.json · 双端同读）', () => {
+    const lanesOf = (protocol) => buildProtocolLanes(protocol, []);
+    const ckTree = (row, over = {}) => proto([
+        leaf('h', { hex_value: row.data, byte_length: row.data.length / 2 }),
+        {
+            id: 'C', label: 'C', type: 'checksum', byte_length: row.byte_length, hex_value: '00',
+            parameter_config: {
+                type: 'checksum', refs: ['h'], algorithm: row.algo, byte_order: row.byte_order, ...over
+            }
+        }
+    ]);
+    const cardValue = (p) => protocolTree.injectRefsSigma(
+        lanesOf(p), computeProtocolOffsets(p).byId, p
+    )[0].items.find(i => i.id === 'C').parameter_config.computedValue;
+
+    it('向量逐行：checksum 卡中央值按 byte_order 出线（little = 字节对反转）', () => {
+        for (const row of CHECKSUM_ORDER_VECTORS) {
+            expect(cardValue(ckTree(row)),
+                `${row.algo}/${row.byte_order}/${row.byte_length}B`)
+                .toBe(row.expected.match(/.{1,2}/g).join(' '));
+        }
+    });
+
+    it('缺省 / big / 枚举外 → 按大端出线（fail-open，与后端 byte_order_of 同口径）', () => {
+        const big = '4B 37';   // CRC_16_MODBUS("123456789") = 4B37（已发布 check 值）
+        for (const byte_order of [undefined, 'big', 'middle', '']) {
+            expect(cardValue(ckTree(
+                { data: '313233343536373839', algo: 'CRC_16_MODBUS', byte_length: 2, byte_order }
+            ))).toBe(big);
+        }
+        // 大小写不敏感（与 R21 length 分支 / 后端 byte_order_of 同口径）；
+        // 不额外引入 trim —— 沿用既有谓词形态，不改动字节行为。
+        expect(cardValue(ckTree(
+            { data: '313233343536373839', algo: 'CRC_16_MODBUS', byte_length: 2, byte_order: 'LITTLE' }
+        ))).toBe('37 4B');
+    });
+
+    it('改一必改二：容器内容路径（collectDeterministicBytes）同口径反转', () => {
+        const row = { data: '313233343536373839', algo: 'CRC_16_MODBUS', byte_length: 2 };
+        const inside = (byte_order) => {
+            const p = proto([
+                leaf('h', { hex_value: row.data, byte_length: row.data.length / 2 }),
+                cont('g', [{
+                    id: 'C', label: 'C', type: 'checksum', byte_length: 2, hex_value: '00',
+                    parameter_config: {
+                        type: 'checksum', refs: ['h'], algorithm: row.algo, ...(byte_order !== undefined ? { byte_order } : {})
+                    }
+                }])
+            ]);
+            return protocolTree.injectContainerContent(
+                lanesOf(p), computeProtocolOffsets(p).byId, p
+            )[0].items.find(i => i.id === 'g').parameter_config.computedValue;
+        };
+        expect(inside('little')).toBe('37 4B');
+        expect(inside('big')).toBe('4B 37');
+        expect(inside(undefined)).toBe('4B 37');
+        expect(inside('middle')).toBe('4B 37');
+    });
+
+    it('字节序只改排法、不改算法：1 字节算法（SUM_8）两侧同串', () => {
+        for (const byte_order of ['big', 'little']) {
+            expect(cardValue(ckTree(
+                { data: '313233343536373839', algo: 'SUM_8', byte_length: 1, byte_order }
+            ))).toBe('DD');   // sum("123456789") = 477 → 477 % 256 = 221 = 0xDD
+        }
+    });
+
+    it('Σ 回显口径不受字节序影响：设计期卡面仍是十进制字节数（length 分支不受牵连）', () => {
+        const p = proto([
+            leaf('h', { hex_value: 'AA'.repeat(6), byte_length: 6 }),
+            cont('g', [{
+                id: 'L', label: 'L', type: 'length', byte_length: 2, hex_value: '00',
+                parameter_config: { type: 'length', refs: ['h'], byte_order: 'little' }
+            }])
+        ]);
+        expect(protocolTree.injectRefsSigma(
+            buildProtocolLanes(p, ['g']), computeProtocolOffsets(p).byId, p
+        )[1].items.find(i => i.id === 'L').parameter_config.computedValue).toBe('6B');
     });
 });

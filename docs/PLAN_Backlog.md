@@ -56,6 +56,7 @@
 | R32 | **presence 判定归一** —— §8.61 第七节第 ① 项（首个**会改字节**的判定修正，用户拍板连做并接受字节变化）（§8.64；**非** §8.52 复议范围） | ✅ **已完成（2026-10-05，§8.64，纯 FE+BE · 零 DDL → 无 `chore(db)`）**：新增谓词 `presenceEqual(expect, value)` = `String()` 归一（N3 存量口径逐字保留：数值 1 命中 `"1"`）**∪ 十六进制归一**（expect 是**字符串**且整串 `^[0-9A-Fa-f]+$` 且在安全整数内 → 与 `comparableNumber(value)` 数值相等即判**命中**，`"01"` ≡ 1、`"0A"` ≡ 10 —— 样本② 拍板项）。**三个判定点同用一个谓词（改一必改二 + 一）**：FE `InstructionEncoder._presenceHit`（运行期）/ FE `byteOffsets.presenceStaticState`（设计期静态链，不跟就「编码命中、卡面按 0 字节排偏移」）/ BE `field_blocks._presence_hit` → `_presence_equal`（byte-equal 锚点）。三条边界**宁可少判**：仅字符串 expect（JSON 数字 `10` 不按 hex 解）、**不做 trim**（`" 1"` 非整串 hex）、超安全整数不归一（`Number.isSafeInteger` ↔ Python `2**53-1` 同阈）。**存量影响清单（会改字节的全集）**：`vectors/presence.json` 的 `[{"expect":"01"} → "AA"]` 翻成 `"AABB"` —— **唯一一条向量变化**（两端同读一份自动同步）；无 presence 的指令与其余 17 份向量**逐字节不变**，`/dispatch` 缺省口径不变；N3 四码 / fail-open 四支 / 判定先于 repeat 的顺序**一行未动**。**展示层随判定收口**：R30 的 miss 侧假阴性注记翻到**命中侧**（`· 按十六进制归一判等（expect "01" ≡ 值 1 = 1…）`）、R31 W `PRESENCE_HEX_PAD` **退役**（前提不复存在）、R31 W `PRESENCE_EXPECT_UNREACHABLE` 改用 `presenceEqual` 判候选（样本② 归一后可达 → 不再报）。红测先行有据（实现前 BE 4 failed / 14 passed + FE 6 failed / 51 passed → 实现后 BE 18/18、FE 57/57 全绿，R30/R31 展示层用例随语义翻面同批改写）；**BE 955 → 963/963、FE 1311 → 1323/1323（85 文件，+12）** |
 
 | R33 | **加工页 presence 未命中字段纯隐藏** —— 用户新需求「没触发的字段直接隐藏掉，防止干扰使用者」，两项 UX 取舍拍板（**纯隐藏不留入口** + **仅加工页**）（§8.65；**非** §8.52 复议范围，独立批次） | ✅ **已完成（2026-10-05，§8.65，纯 FE · 零 DDL → 无 `chore(db)`）**：`RunnerFieldTree` 新增 opt-in prop **`hidePresenceMissed = false`** —— 算出 `presenceMiss` 后直接 `return null`（**组与叶同一判定点**，组返回即整棵子树消失，递归透传至深层），**缺省 false 分支永不进入 → `Sequences.jsx` 一行未改**仍出降透明 + `[SKIP 0B]`；`InstructionRunner` 为唯一接线点；顶层全字段皆未命中时出兜底**事实行**（`[HIDDEN] 无可填字段…`，无按钮无展开入口 —— 否则空白被当成页面坏了，有任一可见字段即不出现）。**纯展示层**：判定表仍是同一张 `resolvePresenceStates`（同源判定 + 分叉展示），判定 / 编码 / 偏移尺 / 校验四码**一行未改 → 零字节变化**（测试锁「字段被藏 LEN 照样随判定 +1」）。红测先行有据（实现前 **7 failed / 26 passed** → 实现后全绿）；`InstructionRunner.presence` 装配测试**同批改写**（R29 靠 miss 形态证接线，R33 后加工页 miss 不可见 → 改两头锁：初始即命中出 `IF(hit)` + 默认未命中不出、改 ref 命中才出现、改回又消失）。**BE 963/963（持平）、FE 1323 → 1335/1335（85 文件，+12）** |
+| R34 | **校验和字节序** —— R21 长度域的**成对缺口**（§8.53 尾行登记「checksum 的 `byte_order` 未立项，需另开」+ `blockTypes.js` 代码注释同款留档，文档与代码双重登记）（§8.66；**非** §8.52 复议范围，独立批次） | ✅ **已完成（2026-10-05，§8.66，FE+BE · 零 DDL → 无 `chore(db)`）**：协议 checksum 卡增列 `byte_order` —— **复用 length 的同一 `BLOCK_PROPERTY_FIELDS.byte_order`**（同存点 / 同值域 / 同缺省 `big`），面板走既有通用 select 分支 → `ProtocolPropertiesPanel` **零 JSX 改动**。**同用一个字节序门面**：`byte_order_of` / `apply_byte_order` 上移 `handlers/base.py`，length + checksum 两个 handler 共用（`length.py` re-export 保住既有 import）。**BE 四处** = `ChecksumHandler` **两个 return 同位套用**（refs 模式 + 旧区间模式，换引用方式不换形态）· `frame_builder._with_byte_order` 闸门放开到 checksum（`_with_encoding` 一行未动 → varint 仍 length 专属）· `response_generate._checksum_element` 硬编码 `"big"` **改从 pc 取**（镜像 §8.53 表第 ④ 项 `_length_element`，否则出线小端而比对规则按大端比**必然失配**）。**FE 四处** = `blockTypes` 卡字段 · `toFrameBlocks.withLogicParams` 闸门放开（encoding 另设二级闸，防 `pc.encoding` 误写进 checksum）· `protocolTree` **两个计算点同用一份反转**（`collectDeterministicBytes` 容器内容 + `injectRefsSigma` 卡中央值）· `validateProtocol` W5 同码覆盖（文案按块型分叉）。**收侧本就支持、零改动**（`response_match._CHECKSUM_KEYS` 与 `sequence_plan` 早含 `byte_order`）。共享向量 `vectors/checksum_order.json` **12 行 = 6 算法 × 2 字节序**，真值链不自证（`expected_big` 逐字取自 R22 `checksum_algo.json` 的外部真值、`expected_little` = 字节反转；1 字节算法两侧同串 → 把「单字节不反转」也钉进表里）。**缺省路径逐字节不变**（§0）：面板读侧 `?? field.default` 只回显不落值、`createBlock` 不播种 → `parameter_config` 形状不变，只有真选到 `little` 才出现该键。红测先行有据（实现前 **BE 11 failed / 14 tests** + **FE 9 failed / 108 passed**），**三处既有测试同批翻面**（`test_checksum_blocks_ignore_byte_order` → `..._honour_byte_order`、`toFrameBlocks`「非 length 不写」→「闸门只开两卡」、`blockTypes`「checksum 不列」）。**BE 963 → 977/977、FE 1335 → 1349/1349（85 文件，+14）** |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -4352,12 +4353,13 @@ yorha-ui 校验器改动文件 0 违规 + 文档同步）+ **一批一提交**�
 |---|---|---|
 | ① | `frontend/src/config/blockTypes.js` | length 卡 `fields` 增 `byte_order`（`BLOCK_PROPERTY_FIELDS.byte_order`：`inputType='select'`、点路径 `parameter_config.byte_order`、`default='big'`、选项 big／little）—— 走**既有通用 select 分支**，`ProtocolPropertiesPanel.jsx` **零改动** |
 | ② | `backend/handlers/length.py` | `byte_order_of()` + `apply_byte_order()`：refs 模式与旧 range 模式**两个 return 同步套用**；little = 字节对反转；缺省／枚举外回大端（镜像算法枚举外回 `crc16_modbus`）；**奇数长度不反转**（值超 `byte_length` 的畸形输出，大端路径本就奇数位，不发明语义） |
-| ③ | `backend/core/frame_builder._with_byte_order` ↔ `frontend/src/utils/toFrameBlocks.js withByteOrder` | `pc.byte_order=little` → `config.params.byte_order`；**只在 little 时写键**（big／缺省／枚举外不写 → params 形状与存量逐字节一致）；**refs 缺失的 config 直通路径同样生效**（存量树只设字节序也走得通）；**checksum 块不吃此键** |
+| ③ | `backend/core/frame_builder._with_byte_order` ↔ `frontend/src/utils/toFrameBlocks.js withByteOrder` | `pc.byte_order=little` → `config.params.byte_order`；**只在 little 时写键**（big／缺省／枚举外不写 → params 形状与存量逐字节一致）；**refs 缺失的 config 直通路径同样生效**（存量树只设字节序也走得通）；**checksum 块当时不吃此键**（R21 范围，§8.66 起同闸门） |
 | ④ | `backend/core/response_generate._length_element` | 自动生成的回显规则 `byte_order` 改从 `pc` 取（原硬编码 `"big"`）—— 否则「出线小端、规则按大端比」必然失配 |
 | ⑤ | `frontend/src/utils/protocolTree.js` `collectDeterministicBytes` | length 分支按 `pc.byte_order` 反转，与 ② 同口径 → **设计期卡面与出线逐字节一致**；大小写不敏感（两端都 lowercase 收） |
 | ⑥ | `frontend/src/utils/validateProtocol.js` | W5 `BYTE_ORDER_UNKNOWN`（大小写归一后判、空串不报），镜像 W4 `ALGO_UNKNOWN` 的 fail-open 口径 |
 
-**仅 length 卡列此字段**（拍板范围 = 长度域；checksum 的 `byte_order` 未立项，需另开）。
+**仅 length 卡列此字段**（拍板范围 = 长度域；checksum 的 `byte_order` 当时**未立项、需另开**
+→ **已由 §8.66（R34）「另开」收掉**：checksum 卡复用同一字段定义、同一闸门、同一字节序门面）。
 `protocol_api.ProtocolNodeSchema.parameter_config` 是自由 dict → **零 schema 改动、零 DDL**。
 卡片 Σ 回显仍是十进制 `${sigma}B`（字节序只改「出线字节的排法」，不改长度字段的值）。
 
@@ -5422,6 +5424,94 @@ presenceEqual(expect, value) =
 - 隐藏字段的**编辑入口**由 R29 约束顺延：字段被藏后，改**引用字段**的值即让它重新出现（判定驱动渲染，非写死）；或到步骤编辑器（不隐藏）里改。
 
 **R33 ✅ —— 「未命中」从「降透明提示」改为「纯隐藏」，且仅作用于加工页。**
+
+## 8.66 R34 校验和字节序（R21 成对缺口「另开」· 2026-10-05）
+
+> **一句话**：§8.53（R21 长度域 BE/LE）当时登记的「checksum 的 `byte_order`
+> 未立项，需另开」**开出来做完** —— 协议 checksum 卡同样支持小端出线
+> （Modbus CRC16「低字节先发」就是这个形态），**复用 length 的同一字段定义、
+> 同一闸门、同一字节序门面**，不新建第二套判据。
+
+### 一 · 定位
+
+| 项 | 内容 |
+|---|---|
+| 来源 | §8.53 尾行 + `blockTypes.js` 代码注释（「校验块 byte_order 不在 R21 范围」）—— 文档与代码**双重登记**的成对缺口 |
+| 排期 | 2026-10-05 用户在「校验和字节序 / 前端拆包 / 发前路由」三候选中拍板选此 |
+| DDL | **零**（`protocol_api.ProtocolNodeSchema.parameter_config` 是自由 dict）→ 无 `chore(db)` |
+| 字节影响 | **缺省路径逐字节不变**（§0）：未配 `byte_order` / `big` / 枚举外一律大端 |
+
+### 二 · 改动表（BE 四处）
+
+| # | 位置 | 要点 |
+|---|---|---|
+| ① | `backend/handlers/base.py` | **字节序门面上移**：`byte_order_of` + `apply_byte_order` 从 `length.py` 移入 base —— length / checksum **两个 handler 同用一个谓词**（不留第二套判据）；`length.py` re-export，保住既有 `from backend.handlers.length import byte_order_of` |
+| ② | `backend/handlers/checksum.py` | **两个 return 同位套用** `apply_byte_order(...)` —— refs 模式与旧区间模式（镜像 R22「算法同位扩」的规矩：换一种引用方式不换出线形态） |
+| ③ | `backend/core/frame_builder._with_byte_order` | 闸门 `ntype != "length"` → `ntype not in ("length", "checksum")`；**`_with_encoding` 闸门一行未动**（varint 仍 length 专属） |
+| ④ | `backend/core/response_generate._checksum_element` | 原硬编码 `"byte_order": "big"` → **从 `pc` 取**（镜像 §8.53 表第 ④ 项 `_length_element` 同款修法）—— 否则「出线小端、比对规则按大端比」**必然失配** |
+
+**收侧本就支持、本批零改动**：`response_match` 的 `_CHECKSUM_KEYS` 早已含 `byte_order`
+（`checksum_value(...).to_bytes(field_bl, cs["byte_order"])`）、`sequence_plan._normalize_checksum`
+同 —— R21/R22 期留的口，`test_response_match` / `test_sequence_plan` 既有锚继续有效。
+
+### 三 · 改动表（FE 四处）
+
+| # | 位置 | 要点 |
+|---|---|---|
+| ⑤ | `config/blockTypes.js` | checksum 卡 `fields` 由 `['length','refs','algo']` 增为 `+ 'byte_order'`，**复用 `BLOCK_PROPERTY_FIELDS.byte_order` 同一定义**（同存点 / 同值域 / 同缺省 `big`）→ `ProtocolPropertiesPanel` **零 JSX 改动**（走既有通用 select 分支） |
+| ⑥ | `utils/toFrameBlocks.js withLogicParams` | 闸门放开到 checksum；**`encoding` 另设 `type === 'length'` 二级闸** —— 否则 `pc.encoding='varint'` 会被误写进 checksum 的 params |
+| ⑦ | `utils/protocolTree.js` | **两个计算点同用一份反转（改一必改二）**：`collectDeterministicBytes`（容器内容 / 卡面递归）+ `injectRefsSigma`（checksum 卡中央值）；抽出 `isLittleOrder` / `reverseHexPairs` 两个 helper |
+| ⑧ | `utils/validateProtocol.js` | W5 `BYTE_ORDER_UNKNOWN` **同码覆盖 checksum**，文案按块型分叉（长度字节序 / 校验字节序）；W6 `ENCODING_UNKNOWN` 仍 length 专属 |
+
+**面板读侧不写值**：`ProtocolPropertiesPanel` 取 `pc[propKey] ?? field.default`（**只读回显**）、
+`createBlock` 也不播种 → 存量与新建 checksum 块的 `parameter_config` **形状不变**，
+只有用户真把下拉改到 `little` 才出现该键。
+
+### 四 · 共享向量（真值链不自证）
+
+`vectors/checksum_order.json` —— **12 行 = 6 算法 × 2 字节序**，两端同读
+（`backend/tests/test_checksum_byte_order.py` ↔ `protocolTree.test.js`，与 `vectorsLoader`
+表清单同批登记）。
+
+- `expected_big` **逐字取自 R22 `vectors/checksum_algo.json`**（zlib / binascii /
+  已发布 check 值 —— 本批**不重新验证算法**，只锁字节序）；
+- `expected_little` = 同串**字节反转**（little 的定义，与 R21 `length_order.json` 同一套）；
+- 输入统一取标准 check 输入 `"123456789"`；其中 SUM_8 / XOR_8 / LRC 是 **1 字节**
+  → 反转后与大端相同，正好把「单字节不反转」钉进表里。
+
+### 五 · 测试（红测先行有据）
+
+- **红测证据（实现落笔前）**：BE 新增 `test_checksum_byte_order.py` → **11 failed / 14 tests**
+  （big 行全绿、little 行全红 → 红因全部由缺失特性引起）；FE 四文件新增 → **9 failed / 108 passed**。
+- 新增 **BE 14 例 + FE 14 例**：向量逐行（refs 模式）/ 区间模式与 refs 同字节序 / fail-open 四支
+  （缺省·big·枚举外·大小写）/ `_build_logic_config` 写键与不写键 / 无 refs 直通路径 /
+  比对规则声明跟随 / 卡面与容器内容**两个计算点**同口径 / W5 覆盖 / 卡字段 SSOT 单份锁。
+- **三处既有测试同批翻面**（R21 当年的「checksum 不吃此键」断言随语义失效）：
+
+  | 文件 | 原断言 | 翻面后 |
+  |---|---|---|
+  | `backend/tests/test_length_byte_order.py` | `test_checksum_blocks_ignore_byte_order` | `test_checksum_blocks_honour_byte_order`（写键 + 缺省仍不写 + length 不受牵连） |
+  | `frontend/src/utils/__tests__/toFrameBlocks.test.js` | 「非 length 块不写 byte_order」 | 「闸门只开两卡 —— 第三类块型仍不吃」（fixed / slot / cobs 仍 `null`） |
+  | `frontend/src/config/__tests__/blockTypes.test.js` | 「checksum 不列 byte_order」 | 「checksum 列 byte_order（R21 范围拍板已由 §8.66 收掉）」 |
+
+### 六 · 验收
+
+- **BE 963 → 977/977**、**FE 1335 → 1349/1349（85 文件，+14）**；
+- `npx vite build` EXIT=0 · `npm run lint` EXIT=0 · yorha-ui 校验器改动 10 文件 **0 违规** ·
+  md 表列数 mismatches = 0；
+- **零 DDL → 无 `chore(db)`**、不引 pytest、**无新 pip 依赖**、
+  `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、`/dispatch` 缺省口径不变。
+
+### 七 · 明确留白（本批不做）
+
+- `cobs` / `slot` / `bitfield` 无字节序概念，不加字段；
+- 指令域字段的 `endianness`（E1-2 B6）是**另一个域**，不并入本批；
+- **不引入 trim 归一**：谓词形态沿用 R21（`String(pc.byte_order || '').toLowerCase() === 'little'`），
+  避免本批顺带改动既有字节行为 —— BE `byte_order_of` 的 `.strip()` 仍只是防御
+  （UI 下拉产不出带空白的值），两端在可达输入上本就同判；
+- 收侧 `response_match` / `sequence_plan` 零改动（本就支持）。
+
+**R34 ✅ —— §8.53「checksum 的 `byte_order` 未立项，需另开」的账已还清。**
 
 ## 9. 保留勿动（非任务，勿清理）
 

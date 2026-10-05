@@ -14,6 +14,7 @@ import alignVec from '../../../../vectors/align.json';
 import bcdScaledVec from '../../../../vectors/bcd_scaled.json';
 import bitfieldVec from '../../../../vectors/bitfield.json';
 import checksumAlgoVec from '../../../../vectors/checksum_algo.json';
+import checksumOrderVec from '../../../../vectors/checksum_order.json';
 import conditionVec from '../../../../vectors/condition.json';
 import escapeVec from '../../../../vectors/escape.json';
 import framingVec from '../../../../vectors/framing.json';
@@ -41,6 +42,7 @@ const TABLES = {
     bcd_scaled: bcdScaledVec,
     bitfield: bitfieldVec,
     checksum_algo: checksumAlgoVec,
+    checksum_order: checksumOrderVec,
     condition: conditionVec,
     escape: escapeVec,
     float_ieee: floatIeeeVec,

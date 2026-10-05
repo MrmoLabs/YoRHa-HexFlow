@@ -388,6 +388,19 @@ const strictSigma = (owner, byId, root) => {
 const bytesToHex = (bytes) => bytes
     .map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
 
+// ─── R34（§8.66 排期 · 校验和字节序）：checksum 卡字节序 —— **两个计算点同用
+// 一份反转口径（改一必改二）**：① `collectDeterministicBytes`（容器内容 / 卡面
+// 递归），② `injectRefsSigma`（checksum 卡中央值）。与后端
+// `ChecksumHandler.apply_byte_order` 同口径：仅 `little` 反转，缺省 / `big` /
+// 枚举外一律大端 fail-open（§0 缺省口径）。谓词形态沿用 R21 的 length 分支 ——
+// 不另起一套、也不额外引入归一化（避免本批顺带改动既有字节行为）。
+const isLittleOrder = (pc) => String(pc?.byte_order || '').toLowerCase() === 'little';
+
+// 展示串（"4B 37"）按**字节对**反转。单字节串反转后与原串相同 —— 「1 字节不
+// 反转」是反转的自然结果，不是特例（后端 apply_byte_order 同理）。
+const reverseHexPairs = (hex) =>
+    (hex.replace(/\s/g, '').match(/.{1,2}/g) || []).reverse().join(' ');
+
 // collectDeterministicBytes: 严格可确定性 —— 引用内容全部为字面/可计算才出
 // 字节数组，否则 null（卡维持等量 ??）。fixed = 字面 hex；length = Σ 值的大端
 // 字节（超宽由 formatToHex 截低位，与编码器同口径；R27 配 varint → LEB128
@@ -442,8 +455,11 @@ const collectDeterministicBytes = (node, byId, root) => {
         const bytes = collectRefsBytes(node, byId, root);
         if (bytes == null) return null;
         const algo = mapChecksumAlgo(node.parameter_config?.algorithm || node.parameter_config?.algo);
-        return (formatToHex(calculateChecksum(algo, bytes), node.byte_length).replace(/\s/g, '').match(/.{1,2}/g) || [])
+        const out = (formatToHex(calculateChecksum(algo, bytes), node.byte_length).replace(/\s/g, '').match(/.{1,2}/g) || [])
             .map(p => parseInt(p, 16));
+        // R34（校验和字节序）: 计算点 ① —— pc.byte_order=little → 字节对反转
+        // （与 ② injectRefsSigma 同一份谓词，改一必改二）。
+        return isLittleOrder(node.parameter_config) ? out.slice().reverse() : out;
     }
     const hexVal = String(node.hex_value || node.parameter_config?.hex || '').replace(/\s/g, '');
     if (hexVal && /^[\dA-Fa-f]+$/.test(hexVal)) {
@@ -489,8 +505,11 @@ export const injectRefsSigma = (lanes, byId, root) => (lanes || []).map(lane => 
             const bytes = collectRefsBytes(item, byId, root);
             if (bytes == null) return item;
             const algo = mapChecksumAlgo(item.parameter_config?.algorithm || item.parameter_config?.algo);
+            const hex = formatToHex(calculateChecksum(algo, bytes), item.byte_length);
+            // R34（校验和字节序）: 计算点 ② —— pc.byte_order=little → 字节对反转
+            // （与 ① collectDeterministicBytes 同一份谓词，改一必改二）。
             return withComputedValue(item,
-                formatToHex(calculateChecksum(algo, bytes), item.byte_length));
+                isLittleOrder(item.parameter_config) ? reverseHexPairs(hex) : hex);
         }
         return item;
     })

@@ -2,24 +2,13 @@ from typing import List, Tuple
 
 from backend.core.framing import encode_varint
 from backend.core.framing import normalize_encoding as _normalize_encoding
-from backend.handlers.base import LogicHandler
+# R34（§8.66 · 校验和字节序）: `byte_order_of` / `apply_byte_order` 上移到
+# `handlers.base` —— length 与 checksum 两个 handler **同用一个门面**（同判据，
+# 不留第二套）。`byte_order_of` 在此为 re-export：既有
+# `from backend.handlers.length import byte_order_of`（test_length_byte_order）
+# 不破；`apply_byte_order` 仍是 format_total 的出线口。
+from backend.handlers.base import LogicHandler, apply_byte_order, byte_order_of
 from backend.schemas.block import Block
-
-
-def byte_order_of(block: Block) -> str:
-    """R21（§8.52 排期 · 长度域 BE/LE）: config.params.byte_order → 'big' | 'little'。
-
-    存点是协议 length 卡的 `parameter_config.byte_order`，由 frame_builder::
-    _build_logic_config / toFrameBlocks buildLogicConfig 同形翻译进 params。
-    缺失 / 非 big-little 的值一律 fail-open 回 'big'（镜像 ChecksumHandler 算法
-    枚举外回 crc16_modbus 的口径）—— 缺省路径与本批之前逐字节一致（§0）。
-    """
-    params = getattr(block.config, "params", None)
-    order = (params or {}).get("byte_order")
-    if order is None:
-        return "big"
-    order = str(order).strip().lower()
-    return order if order in ("big", "little") else "big"
 
 
 def encoding_of(block: Block) -> str:
@@ -32,19 +21,6 @@ def encoding_of(block: Block) -> str:
     不配 varint 就与本批之前逐字节一致（§0 硬约束）。
     """
     return _normalize_encoding(getattr(block.config, "params", None))
-
-
-def apply_byte_order(hex_str: str, block: Block) -> str:
-    """大端格式化结果 → 按 block 的 byte_order 出线（little = 字节对反转）。
-
-    big（缺省）逐字节原样；**奇数长度不反转** —— 那是值超出 byte_length 的畸形
-    输出（大端路径同样输出奇数位），此处不发明语义，保持既有形态。
-    """
-    if byte_order_of(block) != "little":
-        return hex_str
-    if len(hex_str) % 2:
-        return hex_str
-    return "".join(hex_str[i:i + 2] for i in range(len(hex_str) - 2, -1, -2))
 
 
 class LengthHandler(LogicHandler):

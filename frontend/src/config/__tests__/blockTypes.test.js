@@ -91,10 +91,48 @@ describe('blockTypes 长度字节序（R21 长度域 BE/LE）', () => {
         expect(getBlockFields('length').map(x => x.id)).toEqual(['length', 'refs', 'byte_order', 'encoding']);
     });
 
-    it('checksum 不列 byte_order（R21 拍板范围 = 长度域）；其它块型字段不变', () => {
-        expect(BLOCK_TYPES.find(b => b.type === 'checksum').fields).toEqual(['length', 'refs', 'algo']);
+    it('R34 翻面：checksum 列 byte_order（R21「仅 length 卡」的范围拍板已由 §8.66 收掉）；其它块型字段不变', () => {
+        expect(BLOCK_TYPES.find(b => b.type === 'checksum').fields).toEqual(['length', 'refs', 'algo', 'byte_order']);
         expect(BLOCK_TYPES.find(b => b.type === 'fixed').fields).toEqual(['length', 'hex']);
         expect(BLOCK_TYPES.find(b => b.type === 'slot').fields).toEqual(['length', 'fit']);
+    });
+});
+
+// R34（§8.66 排期 · 校验和字节序）：R21 的成对缺口 —— 当年拍板「仅 length 卡列
+// 此字段，checksum 的 byte_order 未立项需另开」，本批即「另开」的那一批。checksum
+// 卡复用**同一个** BLOCK_PROPERTY_FIELDS.byte_order（同一存点 / 同一值域 / 同一
+// 缺省），面板走既有通用 select 分支 → ProtocolPropertiesPanel 零 JSX 改动。
+describe('blockTypes 校验和字节序（R34 §8.66）', () => {
+    it('checksum 卡列 byte_order（紧随 algo，palette/其它块型字段均不变）', () => {
+        expect(BLOCK_TYPES.find(b => b.type === 'checksum').fields)
+            .toEqual(['length', 'refs', 'algo', 'byte_order']);
+        // 非本批范围的块型逐个钉死，防顺手扩散
+        expect(BLOCK_TYPES.find(b => b.type === 'fixed').fields).toEqual(['length', 'hex']);
+        expect(BLOCK_TYPES.find(b => b.type === 'slot').fields).toEqual(['length', 'fit']);
+        expect(BLOCK_TYPES.find(b => b.type === 'bitfield').fields).toEqual(['length', 'bits']);
+        expect(BLOCK_TYPES.find(b => b.type === 'cobs').fields).toEqual(['term']);
+    });
+
+    it('复用 R21 的同一字段定义（存点 / 值域 / 缺省 / inputType 全同，不新建字段）', () => {
+        const shared = BLOCK_PROPERTY_FIELDS.byte_order;
+        expect(shared.key).toBe('parameter_config.byte_order');
+        expect(shared.inputType).toBe('select');
+        expect(shared.default).toBe('big');
+        expect(shared.options.map(o => o.value)).toEqual(['big', 'little']);
+        // getBlockFields 每次 `{ id, ...fields }` 新建对象 → 比值不比引用
+        const of = (type) => getBlockFields(type).find(x => x.id === 'byte_order');
+        for (const type of ['length', 'checksum']) {
+            expect(of(type)).toEqual({ id: 'byte_order', ...shared });
+        }
+        // 「同用一个谓词」在 SSOT 层的锁：指向同一存点的字段定义**只有这一个**
+        const samePath = Object.entries(BLOCK_PROPERTY_FIELDS)
+            .filter(([, v]) => v && v.key === 'parameter_config.byte_order');
+        expect(samePath.map(([k]) => k)).toEqual(['byte_order']);
+    });
+
+    it('length 卡字段顺序不变（byte_order 仍在 refs 与 encoding 之间）', () => {
+        expect(getBlockFields('length').map(x => x.id))
+            .toEqual(['length', 'refs', 'byte_order', 'encoding']);
     });
 });
 

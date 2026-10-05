@@ -68,12 +68,13 @@ export const BLOCK_PROPERTY_FIELDS = {
         label: '装填策略 (Fit Policy)',
         inputType: 'fit'
     },
-    // R21（§8.52 排期 · 长度域 BE/LE）: 长度块字节序 —— 存点
-    // parameter_config.byte_order（big | little，缺省 big），与**收侧**回显规则
-    // response_spec.length.byte_order **同值域**（能判也能发）；出线由后端
-    // LengthHandler 按此反转字节对（toFrameBlocks / frame_builder._build_logic_config
-    // 同形翻译进 config.params），设计期卡面同口径（protocolTree）。仅 length 卡
-    // 列此字段（校验块 byte_order 不在 R21 范围）。
+    // R21（§8.52 排期 · 长度域 BE/LE）+ R34（§8.66 · 校验和字节序）: 字节序 ——
+    // 存点 parameter_config.byte_order（big | little，缺省 big），与**收侧**回显
+    // 规则 response_spec.*.byte_order **同值域**（能判也能发）；出线由后端
+    // LengthHandler / ChecksumHandler 按此反转字节对（toFrameBlocks /
+    // frame_builder._build_logic_config 同形翻译进 config.params），设计期卡面
+    // 同口径（protocolTree）。R21 期只列 length 卡；R34 起 **checksum 卡复用同一
+    // 字段定义**（同存点 / 同值域 / 同缺省，不新建字段 → 面板零 JSX 改动）。
     byte_order: {
         key: 'parameter_config.byte_order',
         label: '长度字节序 (Byte Order)',
@@ -166,7 +167,10 @@ export const BLOCK_TYPES = [
         palette: { title: '添加校验 (Checksum)', mainLabel: '校验', subLabel: 'CRC', dashed: false },
         // A2: checksum 卡加 refs（编码期 PASS2 按算法吃 refs 字节）。
         // 批次四: + algo 算法下拉（存 parameter_config.algorithm）。
-        fields: ['length', 'refs', 'algo']
+        // R34（§8.66 · 校验和字节序）: + byte_order —— **复用 length 的同一字段
+        // 定义**（同存点 / 同值域 / 同缺省），紧随 algo；出线小端时校验字节对
+        // 反转（Modbus CRC16「低字节先发」即此形态）。
+        fields: ['length', 'refs', 'algo', 'byte_order']
     },
     {
         type: 'slot',

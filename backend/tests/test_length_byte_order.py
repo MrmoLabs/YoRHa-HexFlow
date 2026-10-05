@@ -12,6 +12,11 @@
 
 缺省 / `big` / 枚举外 → 逐字节与本批之前一致（§0 硬约束）；收侧
 `response_match.VALID_BYTE_ORDERS` 本就支持两值（test_response_match 已锚）。
+
+> **R34（§8.66 · 校验和字节序）接手**：本文件当年明写的「仅 length 卡列此
+> 字段，checksum 的 `byte_order` 未立项需另开」已由 `test_checksum_byte_order.py`
+> 「另开」收掉 —— 下方 `test_checksum_blocks_*` 随之**翻面**（不写键 → 同闸门
+> 写键），其余 length 断言一行未改。
 """
 import unittest
 
@@ -181,13 +186,36 @@ class FrameBuilderMapping(unittest.TestCase):
         self.assertEqual(_build_logic_config(node, "length", by_id),
                          {"params": {"byte_order": "little"}})
 
-    def test_checksum_blocks_ignore_byte_order(self):
-        # 校验块 byte_order 不在 R21 范围（拍板为长度域）—— 原样不写键。
+    def test_checksum_blocks_honour_byte_order(self):
+        # R34（§8.66 · 校验和字节序）**翻面**：R21 期此处断言「校验块 byte_order
+        # 不在范围 → 原样不写键」；本批把成对缺口「另开」收掉 → checksum 卡与
+        # length 卡同一存点、同一值域、同一闸门（改一必改二，正主见
+        # test_checksum_byte_order.py）。
         node = {"id": "C", "type": "checksum",
                 "parameter_config": {"refs": [], "byte_order": "little"}}
         self.assertEqual(
             _build_logic_config(node, "checksum", {}),
+            {"params": {"refs": [], "algorithm": "crc16_modbus",
+                        "byte_order": "little"}},
+        )
+        # 缺省仍不写键 —— params 形状与 R21 期逐字节一致（§0 硬约束）。
+        node["parameter_config"] = {"refs": []}
+        self.assertEqual(
+            _build_logic_config(node, "checksum", {}),
             {"params": {"refs": [], "algorithm": "crc16_modbus"}},
+        )
+        # length 卡不受牵连（仍只出自己的两个键）。
+        ref = {"id": "h", "type": "fixed", "byte_length": 2, "hex_value": "AB",
+               "children": []}
+        len_node = {"id": "L", "type": "length", "byte_length": 2,
+                    "parameter_config": {"refs": ["h"], "byte_order": "little",
+                                         "encoding": "varint"}}
+        by_id = {}
+        _index_nodes([ref, len_node], by_id)
+        self.assertEqual(
+            _build_logic_config(len_node, "length", by_id),
+            {"params": {"refs": ["h"], "byte_order": "little",
+                        "encoding": "varint"}},
         )
 
 

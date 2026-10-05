@@ -175,18 +175,25 @@ export function validateProtocol(protocol) {
             warnings.push({ blockId: node.id, code: 'ALGO_UNKNOWN', message: `「${label}」校验算法「${pc.algorithm}」不在枚举内（两端回退口径不一，请重新选择）` });
         }
 
-        // --- R21 (§8.52 排期 · 长度域 BE/LE): W5 length 字节序枚举外 —— 镜像 W4
-        // 口径：两端对枚举外值一致 fail-open 回大端（FE 卡面 / BE LengthHandler /
-        // 应答规格生成同口径），不阻断保存但必须可见；重新下拉选择即归一。
-        // 大小写归一后再判（两端都 lowercase 收），空串 = 未配置 → 不报。 ---
-        if (node.type === 'length') {
+        // --- R21 (§8.52 排期 · 长度域 BE/LE) + R34 (§8.66 · 校验和字节序):
+        // W5 字节序枚举外 —— 镜像 W4 口径：两端对枚举外值一致 fail-open 回大端
+        //（FE 卡面 / BE LengthHandler·ChecksumHandler / 应答规格生成同口径），
+        // 不阻断保存但必须可见；重新下拉选择即归一。R34 起同一码覆盖 checksum 卡，
+        // 文案按块型分叉（长度字节序 / 校验字节序）。大小写归一后再判（两端都
+        // lowercase 收），空串 = 未配置 → 不报。 ---
+        if (node.type === 'length' || node.type === 'checksum') {
             const order = String(pc.byte_order ?? '').trim().toLowerCase();
             if (order && !VALID_BYTE_ORDERS.has(order)) {
-                warnings.push({ blockId: node.id, code: 'BYTE_ORDER_UNKNOWN', message: `「${label}」长度字节序「${pc.byte_order}」不在枚举内（两端回退大端，请重新选择）` });
+                const noun = node.type === 'length' ? '长度字节序' : '校验字节序';
+                warnings.push({ blockId: node.id, code: 'BYTE_ORDER_UNKNOWN', message: `「${label}」${noun}「${pc.byte_order}」不在枚举内（两端回退大端，请重新选择）` });
             }
-            // --- R27 (§8.52 排期 · varint / COBS 出线): W6 length 出线编码枚举外 ---
-            // 镜像 W5 口径：两端对枚举外值一致 fail-open 回定宽 fixed（FE 编码器 /
-            // BE LengthHandler / 卡面同口径），不阻断保存但必须可见；重新下拉即归一。
+        }
+
+        // --- R21 (§8.52 排期 · varint / COBS 出线): W6 length 出线编码枚举外 ---
+        // 镜像 W5 口径：两端对枚举外值一致 fail-open 回定宽 fixed（FE 编码器 /
+        // BE LengthHandler / 卡面同口径），不阻断保存但必须可见；重新下拉即归一。
+        // R34 不碰：出线编码是 length 专属（checksum 卡无此字段）。 ---
+        if (node.type === 'length') {
             const enc = String(pc.encoding ?? '').trim().toLowerCase();
             if (enc && !VALID_LENGTH_ENCODINGS.has(enc)) {
                 warnings.push({ blockId: node.id, code: 'ENCODING_UNKNOWN', message: `「${label}」出线编码「${pc.encoding}」不在枚举内（两端回退定宽 fixed，请重新选择）` });

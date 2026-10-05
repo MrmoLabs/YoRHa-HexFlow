@@ -1,5 +1,8 @@
 from typing import List, Tuple
-from backend.handlers.base import LogicHandler
+# R34（§8.66 排期 · 校验和字节序）: 与 LengthHandler **同用 handlers.base 的
+# 字节序门面**（同判据，不留第二套）—— 缺省 / 枚举外 fail-open 回大端，出线
+# 逐字节与本批之前一致（§0 硬约束）。
+from backend.handlers.base import LogicHandler, apply_byte_order
 from backend.schemas.block import Block
 
 class ChecksumHandler(LogicHandler):
@@ -47,7 +50,9 @@ class ChecksumHandler(LogicHandler):
                 result = self.crc32(data_bytes)
             elif algo == "lrc":
                 result = self.lrc(data_bytes)
-            return f"{result:0{block.byte_length * 2}X}"
+            # R34（§8.66）: 大端结果 → 按 byte_order 出线（little = 字节对反转；
+            # 缺省/枚举外回大端，形状与本批之前一致）。
+            return apply_byte_order(f"{result:0{block.byte_length * 2}X}", block)
 
         start_id = block.config.target_start_id
         end_id = block.config.target_end_id
@@ -95,7 +100,9 @@ class ChecksumHandler(LogicHandler):
         elif algo == "lrc":
             result = self.lrc(data_bytes)
         
-        return f"{result:0{block.byte_length * 2}X}"
+        # R34（§8.66）: 区间模式与 refs 模式**同位套用**字节序 —— 换一种引用方式
+        # 不换出线形态（镜像 R22 算法同位扩的规矩）。
+        return apply_byte_order(f"{result:0{block.byte_length * 2}X}", block)
 
     def crc16(self, data: bytearray, poly=0xA001):
         crc = 0xFFFF

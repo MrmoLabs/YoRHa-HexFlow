@@ -513,7 +513,13 @@ def _checksum_element(geo: Dict[str, Any], warnings: List[str], where: str) -> O
         "field_byte_length": bl,
         "span_start": span_start,
         "span_end": span_end,
-        "byte_order": "big",
+        # R34（校验和字节序）：出线 checksum 卡设了小端时，生成的比对规则必须
+        # 跟着用小端 —— 否则「出线反转、收侧按大端比」必然不匹配。镜像上方
+        # _length_element 的 R21 同款（收侧 response_match 的 _CHECKSUM_KEYS 本就
+        # 含 byte_order，此处只是把声明补上）。枚举外 → 回大端。
+        "byte_order": "little"
+        if str(pc.get("byte_order") or "").strip().lower() == "little"
+        else "big",
         "span_end_pad": pad,
     }
     # position 用的是统一键名 offset / offset_from_end，落表改字段名。

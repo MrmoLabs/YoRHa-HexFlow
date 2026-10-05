@@ -166,14 +166,16 @@ def _index_nodes(nodes, by_id: dict) -> None:
 
 
 def _with_byte_order(config, pc, ntype: str):
-    """R21（长度域 BE/LE）：length 卡 `parameter_config.byte_order=little` →
-    `config.params.byte_order`（镜像 toFrameBlocks buildLogicConfig 同名分支）。
+    """R21（长度域 BE/LE）+ R34（校验和字节序）：length / checksum 卡
+    `parameter_config.byte_order=little` → `config.params.byte_order`
+    （镜像 toFrameBlocks buildLogicConfig 同名分支）。
 
     只在值为 little 时写键 —— 缺省 / big / 枚举外的值一律不写，params 形状与
     本批之前逐字节一致（§0 缺省口径）；refs 缺失的直通路径同样生效（存量树
-    可只设字节序）。仅 length 块（校验块 byte_order 不在 R21 范围）。
+    可只设字节序）。**仅此二卡**：`encoding`（R27 varint）仍是 length 专属 ——
+    `_with_encoding` 的闸门一行未动，校验块没有「出线编码」这个概念。
     """
-    if ntype != "length" or not isinstance(pc, dict):
+    if ntype not in ("length", "checksum") or not isinstance(pc, dict):
         return config
     order = str(pc.get("byte_order") or "").strip().lower()
     if order != "little":

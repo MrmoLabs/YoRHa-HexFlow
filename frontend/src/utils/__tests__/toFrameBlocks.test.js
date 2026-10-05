@@ -151,16 +151,69 @@ describe('toFrameBlocks（R21: length 字节序出口翻译）', () => {
         expect(b.config).toEqual({ legacy: 1, params: { byte_order: 'little' } });
     });
 
-    it('非 length 块不写 byte_order（checksum 仍只出算法枚举）', () => {
-        const b = toFrameBlocks([
+    it('R34 翻面：闸门只开 length / checksum 两卡 —— 第三类块型仍不吃 byte_order', () => {
+        // R21 期本用例断言「非 length 一律不写（checksum 也在外）」；R34 把
+        // checksum 收进闸门（§8.66 成对缺口「另开」）后，剩下的真命题是
+        // **第三类块型仍不吃** —— 闸门没有整体放开。
+        const byType = (type) => toFrameBlocks([
+            leaf('a', { type: 'fixed' }),
+            leaf('X', { type, parameter_config: { byte_order: 'little' } })
+        ])[1];
+        expect(byType('fixed').config).toBeNull();
+        expect(byType('slot').config).toBeNull();
+        expect(byType('cobs').config).toBeNull();
+        // 对照：两卡在闸门内（checksum 的算法枚举照常并存）
+        expect(toFrameBlocks([
             leaf('a', { type: 'fixed' }),
             leaf('C', {
                 type: 'checksum',
                 parameter_config: { type: 'checksum', refs: ['a'], byte_order: 'little' }
             })
-        ])[1];
-        expect(b.config.params).toEqual({ refs: ['a'], algorithm: 'crc16_modbus' });
-        expect(b.config.params.byte_order).toBeUndefined();
+        ])[1].config.params).toEqual({ refs: ['a'], algorithm: 'crc16_modbus', byte_order: 'little' });
+    });
+});
+
+// R34（§8.66 排期 · 校验和字节序）：checksum 卡字节序出口翻译 —— 镜像后端
+// frame_builder._with_byte_order（两处同形，改一必改二）。**R21 的成对缺口**：
+// 当年拍板「仅 length 卡」，checksum 的 byte_order 留到本批「另开」。同样只在
+// 值为 little 时写键，缺省 / big / 枚举外不写 → params 形状与存量逐字节一致（§0）。
+// encoding（R27 varint）仍是 length 专属 —— checksum 卡无此字段，闸门不放开。
+describe('toFrameBlocks（R34: checksum 字节序出口翻译）', () => {
+    const checksumParamsOf = (pc) => toFrameBlocks([
+        leaf('a', { type: 'fixed' }),
+        leaf('C', {
+            type: 'checksum',
+            parameter_config: { type: 'checksum', refs: ['a'], ...pc }
+        })
+    ])[1].config.params;
+
+    it('little → params.byte_order = little（后端 ChecksumHandler 据此反转字节对）', () => {
+        expect(checksumParamsOf({ byte_order: 'little' }))
+            .toEqual({ refs: ['a'], algorithm: 'crc16_modbus', byte_order: 'little' });
+    });
+
+    it('big / 缺省 / 枚举外 / 大小写非 little → 不写键（形状与存量逐字节一致）', () => {
+        for (const byte_order of ['big', undefined, 'middle', '']) {
+            expect(checksumParamsOf(byte_order === undefined ? {} : { byte_order }))
+                .toEqual({ refs: ['a'], algorithm: 'crc16_modbus' });
+        }
+    });
+
+    it('算法枚举照常翻译（字节序不是算法的替代，两者并存）', () => {
+        expect(checksumParamsOf({ algorithm: 'CRC_32', byte_order: 'little' }))
+            .toEqual({ refs: ['a'], algorithm: 'crc32', byte_order: 'little' });
+    });
+
+    it('checksum 不吃 length 专属的 varint 出线编码（闸门只对 byte_order 放开）', () => {
+        expect(checksumParamsOf({ encoding: 'varint' }))
+            .toEqual({ refs: ['a'], algorithm: 'crc16_modbus' });
+    });
+
+    it('无 refs 的直通路径同样带上字节序（镜像 length 直通）', () => {
+        const [b] = toFrameBlocks([
+            leaf('C', { type: 'checksum', config: { legacy: 1 }, parameter_config: { byte_order: 'little' } })
+        ]);
+        expect(b.config).toEqual({ legacy: 1, params: { byte_order: 'little' } });
     });
 });
 

@@ -1,0 +1,86 @@
+[
+ {
+  "algo": "CRC_16_CCITT",
+  "byte_order": "big",
+  "byte_length": 2,
+  "data": "313233343536373839",
+  "expected": "29B1"
+ },
+ {
+  "algo": "CRC_16_CCITT",
+  "byte_order": "little",
+  "byte_length": 2,
+  "data": "313233343536373839",
+  "expected": "B129"
+ },
+ {
+  "algo": "CRC_16_MODBUS",
+  "byte_order": "big",
+  "byte_length": 2,
+  "data": "313233343536373839",
+  "expected": "4B37"
+ },
+ {
+  "algo": "CRC_16_MODBUS",
+  "byte_order": "little",
+  "byte_length": 2,
+  "data": "313233343536373839",
+  "expected": "374B"
+ },
+ {
+  "algo": "CRC_32",
+  "byte_order": "big",
+  "byte_length": 4,
+  "data": "313233343536373839",
+  "expected": "CBF43926"
+ },
+ {
+  "algo": "CRC_32",
+  "byte_order": "little",
+  "byte_length": 4,
+  "data": "313233343536373839",
+  "expected": "2639F4CB"
+ },
+ {
+  "algo": "LRC",
+  "byte_order": "big",
+  "byte_length": 1,
+  "data": "313233343536373839",
+  "expected": "23"
+ },
+ {
+  "algo": "LRC",
+  "byte_order": "little",
+  "byte_length": 1,
+  "data": "313233343536373839",
+  "expected": "23"
+ },
+ {
+  "algo": "SUM_8",
+  "byte_order": "big",
+  "byte_length": 1,
+  "data": "313233343536373839",
+  "expected": "DD"
+ },
+ {
+  "algo": "SUM_8",
+  "byte_order": "little",
+  "byte_length": 1,
+  "data": "313233343536373839",
+  "expected": "DD"
+ },
+ {
+  "algo": "XOR_8",
+  "byte_order": "big",
+  "byte_length": 1,
+  "data": "313233343536373839",
+  "expected": "31"
+ },
+ {
+  "algo": "XOR_8",
+  "byte_order": "little",
+  "byte_length": 1,
+  "data": "313233343536373839",
+  "expected": "31"
+ }
+]
