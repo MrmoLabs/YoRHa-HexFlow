@@ -2788,6 +2788,46 @@
       新页面默认就有）。**剩余待拍板 2 项** = expect/枚举十六进制归一（**会改字节**）、ref 无值链校验提醒（新 W 码）。
       提交 = `feat(R30)` 单笔（**零 DDL** → 无 `chore(db)`）。
 
+80. **R31 · presence 设计期效度三码 —— 「配了却不成立」在保存前就点破（PLAN §8.63 · §8.61 第七节第 ② 项正主）**
+    （2026-10-05，**纯 FE、零 DDL → 无 `chore(db)`**、`models.py` 一行未动、
+    `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、**出线字节逐字不变**、
+    BE 零改动 —— BE 本就无 presence 校验码，四码 + 三码均 FE-only）：
+    - **来源**：R29/R30 只把「为什么判不等」摆在**加工页 / 步骤编辑器**的 hover（运行前的填写现场）；
+      **指令管理页（设计期）看不到** —— 用户配完保存，等真机上「一个字节都不发」才发现，太晚。
+      §8.61 第七节第 ② 项「ref 无值链的校验提醒（新 W 码）」是本批正主，扩成**三码**。
+    - **三码（全落 warnings → 保存只拦 errors → 零行为变更）**：
+      | 码 | 形态 | 结论 |
+      |---|---|---|
+      | W `PRESENCE_REF_NO_SOURCE` | 引用字段无 `pc.value`、非输入型（`INPUT`/`STRING`/`variable`）、无选项、非计算类，**且**是只读固定算子（`HEX_RAW`/`FIXED`/`HEADER`/`TAIL`/`SCRAMBLE` 或 `readOnly`） | 编码期 `_refValue` 只能取 `undefined` → **恒 fail-open 判命中 = 等于没配** |
+      | W `PRESENCE_EXPECT_UNREACHABLE` | 有下拉选项（**封闭集**）→「选项归一值 ∪ 静态值」**无一**与 `String(expect)` 相等 | **选哪一项都不成立**（恒未命中 → 0 字节）——样本② 的设计期可见版 |
+      | W `PRESENCE_HEX_PAD` | 静态值与 expect 十六进制解析相等、`String` 归一判不等，且非自由键入、无选项集 | 补零/进制假阴性 → **静态链恒未命中**（与 R30 hover 归因同一谓词） |
+    - **判据一律「表外不算、宁可少判」**：可自由键入（`STRING` / `type='string'`）、非锁定、
+      无候选全集 → 一律不提醒（误报会让用户对提醒脱敏）；悬空 ref 归 `PRESENCE_REF_MISSING`、
+      配置不完整归 `PRESENCE_INCOMPLETE` → **不叠报效度码**。
+    - **SSOT 抽取（本批唯一重构）**：新叶子模块 **`frontend/src/utils/presenceSemantics.js`**
+      （零 import → **无环**）承载 `hexNorm` / `comparableNumber` / `radixPadMismatch` /
+      `normalizeOptionValue` / `formatEnumOptions` / `enumCandidates`；`runnerRenderRules.js`（R30 hover）
+      与 `validateInstruction.js`（R31 提醒）**import 同一实现**，`formatEnumOptions` 从
+      `runnerRenderRules` **re-export** → 既有 importer 与 70 例回归**一行未改**。
+      理由：同一条「为什么不等」出现在两处，必须共用一个谓词，否则文案与判定会悄悄分叉
+      （与 `_presence_hit` ↔ `_presenceHit` 的「改一必改二」同一纪律，只是这一对在 FE 内部）。
+    - **边界**：判定 / 校验四码 / normalize / 编码分支**一行未动** → 出线字节逐字不变；
+      **不新增 error** → 保存门行为不变；**零 DDL**。
+    - **测试（红测先行有据）**：新增 **21 例**（FE **1290 → 1311**）——
+      `utils/__tests__/validateInstruction.presenceValidity.test.js`：① 8 例（含悬空/不完整不叠报）、
+      ② 5 例、③ 6 例、零行为总闸 2 例。**红测证据**：实现落笔前跑该文件 → **7 failed / 14 passed**
+      （恰是 7 个正向断言，码尚不存在）；实现后 `git stash push -- validateInstruction.js runnerRenderRules.js`
+      → **再红 7 failed / 14 passed**，`stash pop` → 21 例全绿；R30 既有 19 例 + `runnerRenderRules.test`
+      70 例（重构回归）同步全绿。
+    - **验收**：**BE 955/955（持平）**、**FE 1290 → 1311/1311（85 文件，+21）**、`npx vite build` EXIT=0、
+      `npm run lint` EXIT=0、yorha-ui 校验器改动 js/jsx **4 文件 0 违规**、md 表列数 mismatches = 0；
+      **零 DDL → 无 `chore(db)`**；不引 pytest、**无新 pip 依赖**。
+    - **文档同步（同批）**：PLAN **§8.63 新节** + §1 新增 `R31` 行 + §8.62 尾行改指 §8.63；本条；
+      pageStatus 指令管理页新条 + `npm run sync:page-status`。
+    - **状态**：**R31 ✅** —— §8.61 第七节第 ② 项**已收掉**（扩成三码）。**唯一剩余待拍板** =
+      expect/枚举十六进制归一（`"01" ≡ 1`，**会改字节**）→ 下一批 **R32（§8.64）**。
+      提交 = `feat(R31)` 单笔（**零 DDL** → 无 `chore(db)`）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

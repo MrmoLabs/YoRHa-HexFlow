@@ -11,6 +11,11 @@ import { SCRAMBLE_MODES, cleanHexText } from '../utils/scramble';
 // R29 (§8.61): presence 展示状态只**委托**编码端判定（同源 fail-open，改一必改二）。
 // InstructionEncoder 不回引本文件 → 无环。
 import { InstructionEncoder } from '../utils/InstructionEncoder';
+// R30 (§8.62) / R31 (§8.63): presence 的**比较口径**（补零/进制谓词 + 选项归一）
+// 与 utils/validateInstruction 的设计期校验**共用同一实现** —— leaf 模块零依赖，无环。
+// 改一必改二：本文件的角标 hover 与设计期提醒必须说同一件事。
+import { formatEnumOptions, hexNorm, comparableNumber } from '../utils/presenceSemantics';
+export { formatEnumOptions };
 
 // DRY Helper: Get Date object for the field's base time (epoch).
 // Accepts both 'YYYY-MM-DDTHH:mm:ss' and 'YYYY-MM-DD HH:mm:ss'.
@@ -128,25 +133,8 @@ export const classifyRunnerField = (field = {}) => {
     return { params, originalOp, isEpoch, isCalculated, isTimeCumulative, isFixed, isEditable, hasOptions, isEnum };
 };
 
-// Normalize option values with the SAME rule InstructionEncoder.getInitialValues
-// uses (hex-looking string -> number). The stored input state is numeric, so if
-// option values stayed hex strings, String(opt.value) would never match
-// String(displayValue) and the controlled <select> renders blank.
-const normalizeOptionValue = (v) =>
-    (typeof v === 'string' && /^[0-9A-Fa-f]+$/.test(v)) ? (parseInt(v, 16) || 0) : v;
-
-// Accepts: array of {label,value} objects / array of primitives / object map.
-export const formatEnumOptions = (rawOptions) => {
-    if (Array.isArray(rawOptions)) {
-        return rawOptions.map(opt => (typeof opt === 'object'
-            ? { ...opt, value: normalizeOptionValue(opt.value) }
-            : { label: String(opt), value: normalizeOptionValue(opt) }));
-    }
-    if (rawOptions) {
-        return Object.entries(rawOptions).map(([k, v]) => ({ label: k, value: normalizeOptionValue(v) }));
-    }
-    return [];
-};
+// 选项归一（normalizeOptionValue / formatEnumOptions）已上移到
+// utils/presenceSemantics —— 设计期校验也要按同一口径枚举「可取值」，故并线维护。
 
 // TIME_CUMULATIVE display: seconds since base_time -> 'YYYY-MM-DD HH:mm:ss'.
 // Negative seconds (before base time) are allowed.
@@ -605,7 +593,7 @@ export const resolvePresenceStates = (fields = [], inputs = {}, computedValues =
         // 样本 ② expect 存 "01" 而枚举值被 parseInt(x,16) 转成数值 1 正属此类。
         let radixNote = '';
         if (!hit && Number.isFinite(hexNorm(expect))) {
-            const refNum = numOf(refVal);
+            const refNum = comparableNumber(refVal);
             if (Number.isFinite(refNum) && refNum === hexNorm(expect)) {
                 radixNote = ` · ⚠ 按十六进制解析 "${String(expect)}" = ${hexNorm(expect)}`
                     + ` 与当前值 ${refNum} 相等，String 归一判不等（补零/进制差异 → 未命中）`;
@@ -620,22 +608,5 @@ export const resolvePresenceStates = (fields = [], inputs = {}, computedValues =
     return states;
 };
 
-// 十六进制整串解析（仅 `0-9A-Fa-f` 允许 —— `parseInt('0x1',16)` 这类前缀形态
-// 一律拒绝，避免把用户写错的东西也"解释"成相等）。
-const hexNorm = (v) => {
-    if (v === undefined || v === null) return NaN;
-    const s = String(v).trim();
-    if (s === '' || !/^[0-9A-Fa-f]+$/.test(s)) return NaN;
-    const n = parseInt(s, 16);
-    return Number.isFinite(n) ? n : NaN;
-};
-
-// 当前值 → 可比较的数（number 原样；纯十进制字符串取 Number，其余 NaN）。
-const numOf = (v) => {
-    if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
-    if (typeof v === 'string' && v.trim() !== '' && /^[+-]?\d+(\.\d+)?$/.test(v.trim())) {
-        const n = Number(v.trim());
-        return Number.isFinite(n) ? n : NaN;
-    }
-    return NaN;
-};
+// hexNorm / comparableNumber / radixPadMismatch / 选项归一：见 utils/presenceSemantics
+// （R30 角标 hover 与 R31 设计期提醒共用同一谓词，改一必改二）。

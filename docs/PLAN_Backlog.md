@@ -51,6 +51,8 @@
 
 | R30 | **presence 可见性收口** —— R29 自己登记的两个「半成品」（§8.62；同属「看得见没」主题，**非** §8.52 复议范围） | ✅ **已完成（2026-10-05，§8.62，纯 FE · 零 DDL → 无 `chore(db)`）**：① **进制/补零假阴性提示** —— `resolvePresenceStates` 的 `title` 仅在「miss 侧 + expect 整串十六进制可解析 + 解析值与当前值数值相等」三条同时成立时追加（`01`↔1 会提示、`9`↔1 与 `ALPHA` 不提示，宁可少判不误判），纯展示不参与比对；② **第二消费方自算** —— `RunnerFieldTree` 的 `presenceStates` 缺省语义由「`null` = 零渲染」改为「`undefined` = 用本组件手上的 `fields`/`inputs` 自算」（与显式传表**同一个 helper**，顶层只算一次、递归透传），`Sequences.jsx` **一行未改**即出同款 `IF` / `[SKIP 0B]`，加工页与步骤编辑器口径必然同源；显式 `null` 逃生口与 `InstructionRunner` 的 memo 显式表**均保留**。**判定 / 编码 / 校验四码一行未改 → 出线字节逐字不变**，判定归一继续挂 §8.61 第七节待拍板；红测先行（stash 两实现文件 → presence 三文件 7 failed / 31 passed + `Sequences` 1 failed / 27 passed → pop 后 42 例全绿）；**BE 955/955（持平）、FE 1275 → 1290/1290（84 文件，+15）** |
 
+| R31 | **presence 设计期效度三码** —— §8.61 第七节第 ② 项「ref 无值链校验提醒」的正主，扩成三个面（§8.63；同属「这条条件到底成不成立」主题，**非** §8.52 复议范围） | ✅ **已完成（2026-10-05，§8.63，纯 FE · 零 DDL → 无 `chore(db)`）**：新增三条 **W 码**（全落 warnings → 保存只拦 errors，**零行为变更**）——① `PRESENCE_REF_NO_SOURCE`：引用字段无 `pc.value` / 非输入型 / 无选项 / 非计算类**且**是只读固定算子 → 编码期只能取 `undefined` → **恒 fail-open 判命中 = 等于没配**；② `PRESENCE_EXPECT_UNREACHABLE`：有下拉选项（封闭集）却**无一**与 `String(expect)` 相等 → **选哪项都不成立**（样本② 的设计期可见版）；③ `PRESENCE_HEX_PAD`：静态值与 expect 十六进制解析相等却 `String` 判不等 → **静态链恒未命中**。判据一律**表外不算、宁可少判**（可自由键入 / 非锁定 / 无候选全集一律不报），悬空 ref 与不完整配置各归原码**不叠报**。同批把 R30 的比较谓词抽成叶子模块 `utils/presenceSemantics.js`（零依赖无环）→ **角标 hover 与设计期提醒 import 同一实现**（`formatEnumOptions` 从 `runnerRenderRules` re-export，既有 70 例一行未改）；**判定 / 校验四码 / normalize / 编码分支一行未改 → 出线字节逐字不变**，BE 零改动（BE 本就无 presence 校验码）。红测先行有据（实现前 7 failed / 14 passed → stash 复红 7 failed / 14 passed → pop 后 21 例全绿）；**BE 955/955（持平）、FE 1290 → 1311/1311（85 文件，+21）** |
+
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
 ## 2. M1 明细（实现完成，待人工验证）
@@ -5231,7 +5233,70 @@ expected = len(frame) + offset_val - (width - byte_length)
 - ref 无值链的**校验提醒**（新 W 码，零行为变更）。
 
 **R30 ✅ —— §8.61 第七节 3 项里「Sequences 同款角标」已由本批以「组件自算」方式收掉（且不止同款：新页面默认就有）。
-下一批：待用户排期。**
+下一批 → R31（§8.63）。**
+
+### 8.63 R31 · presence **设计期效度**三码 —— 「配了却不成立」在保存前就点破 —— 2026-10-05
+
+#### 一 · 来源
+
+- R29/R30 把「**为什么**判不等」放进了加工页 / 步骤编辑器的 hover（运行前的填写现场）；
+  **指令管理页（设计期）看不到** —— 用户配完保存，等真机上「一个字节都不发」才发现，太晚。
+- §8.61 第七节第 ② 项「ref 无值链的校验提醒（新 W 码）」是本批的**直接来源**；本批把范围
+  扩成**三码**（同一条主题的三个面：拿不到值 / 取值封闭却不相等 / 补零假阴性）。
+- **零行为变更**：三码全落 warnings，保存只拦 errors → 判定与出线字节一行未动。
+
+#### 二 · 三码（W 码 · 不阻断保存）
+
+| 码 | 设计期形态 | 点破的结论 |
+|---|---|---|
+| W `PRESENCE_REF_NO_SOURCE` | 引用字段**拿不到可判定的值**：无 `pc.value`、非输入型（`INPUT`/`STRING`/`variable`）、无选项、非计算类，**且**为只读/固定算子（`HEX_RAW`/`FIXED`/`HEADER`/`TAIL`/`SCRAMBLE` 或 `readOnly`） | 编码期 `_refValue` 只能取到 `undefined` → **恒 fail-open 判命中 = 等于没配** |
+| W `PRESENCE_EXPECT_UNREACHABLE` | 有下拉选项（取值**封闭集**）→ 枚举「选项归一值 ∪ 静态值」**无一**与 `String(expect)` 相等 | **选哪一项都不成立**（恒未命中 → 0 字节）——样本② 的设计期可见版 |
+| W `PRESENCE_HEX_PAD` | 静态值与 expect **十六进制解析相等、`String` 归一判不等**，且非自由键入、无选项集 | 补零/进制假阴性 → **静态链恒未命中**（与 R30 hover 归因**同一谓词**） |
+
+- 判据一律「**表外不算、宁可少判**」：可自由键入（`STRING` / `type='string'`，键入相符值即命中）、
+  非锁定（拿不准它将来能不能改）、无候选全集（没有选项 → 取值不封闭）→ **一律不提醒**
+  （误报会让用户对提醒脱敏，这是 `validateInstruction` 头注「when in doubt, make it a warning」的延伸）。
+- 悬空 ref 由 `PRESENCE_REF_MISSING` 单独覆盖、配置不完整由 `PRESENCE_INCOMPLETE` 单独覆盖 →
+  **两者都不叠报效度码**（判不了就不出，避免同一条问题刷三条）。
+
+#### 三 · SSOT 抽取（本批唯一的一处重构）
+
+- 新叶子模块 **`utils/presenceSemantics.js`**（零 import → 任何一层都能用，**无环**）：
+  `hexNorm` / `comparableNumber` / `radixPadMismatch` / `normalizeOptionValue` / `formatEnumOptions` / `enumCandidates`。
+- `runnerRenderRules.js`（R30 角标 hover）与 `validateInstruction.js`（R31 设计期提醒）**import 同一实现**；
+  `formatEnumOptions` 从 `runnerRenderRules` **re-export**（`export { formatEnumOptions }`），既有 importer 与
+  70 例回归测试**一行未改**。
+- 理由：同一条「为什么不等」出现在**两个地方**，必须共用一个谓词，否则文案与判定会悄悄分叉
+  （与 BE↔FE `_presence_hit` ↔ `_presenceHit` 的「改一必改二」同一纪律，只是这一对在 FE 内部）。
+
+#### 四 · 明确不改
+
+- 判定 / 校验四码 / normalize / 编码分支**一行未动** → **出线字节逐字不变**；BE 零改动
+  （BE 本就无 presence 校验码，四码 + 三码都是 FE-only）；`models.py` 未动 → **零 DDL → 无 `chore(db)`**。
+- **不新增 error** → 保存门（`useInstructionData` 只拦 errors）行为不变，`errors` 恒为空。
+
+#### 五 · 测试（红测先行有据）
+
+- 新增 **21 例**（FE **1290 → 1311**）`utils/__tests__/validateInstruction.presenceValidity.test.js`：
+  ① `REF_NO_SOURCE` 8 例（含「悬空不叠报」「不完整不叠报」）、② `EXPECT_UNREACHABLE` 5 例
+  （含样本②原样 / 归一后命中 / 真不同值 / 静态值在候选集 / 无选项不报）、③ `HEX_PAD` 6 例
+  （含 `0A` 带字母 / 真不同值 / 判等 / 可自由键入 / 选项归 ② 不叠报）、**零行为总闸** 2 例。
+- **红测证据**：实现落笔前先跑该文件 → **7 failed / 14 passed**（恰是 7 个正向断言，码尚不存在）；
+  实现后 `git stash push -- validateInstruction.js runnerRenderRules.js` → **再红 7 failed / 14 passed**，
+  `stash pop` → 21 例全绿；R30 既有 19 例 + `runnerRenderRules.test` 70 例（重构回归）同步全绿。
+
+#### 六 · 验收
+
+- **BE 955/955（持平）**、**FE 1290 → 1311/1311（85 文件，+21）**、`npx vite build` EXIT=0、
+  `npm run lint` EXIT=0、yorha-ui 校验器改动 js/jsx **4 文件 0 违规**、md 表列数 mismatches = 0；
+  **零 DDL → 无 `chore(db)`**；不引 pytest、**无新 pip 依赖**。
+
+#### 七 · §8.61 / §8.62 第七节去向
+
+- ②「ref 无值链的校验提醒（新 W 码）」→ **本批以 `PRESENCE_REF_NO_SOURCE` 收掉**（且扩成三码）；
+- ① expect / 枚举**十六进制归一**（`"01" ≡ 1`）→ **仍待拍板**，是唯一会改字节的一项 → 下一批 **R32（§8.64）**。
+
+**R31 ✅。下一批 → R32（§8.64）：判定归一（`"01" ≡ 1`），会改字节，须 BE/FE 同步 + 存量影响清单。**
 
 ## 9. 保留勿动（非任务，勿清理）
 

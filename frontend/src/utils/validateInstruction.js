@@ -12,6 +12,9 @@ import { getBlockLimitRefs, ENCODER_LIMITS } from './encoderLimits';
 import { padSpec } from './padSpec';
 import { scrambleParamError } from './scramble';
 import { OP_CODES } from '../constants';
+// R31 (§8.63): presence 的比较口径与「可取值」枚举 —— 与加工页角标 hover
+// （runnerRenderRules → resolvePresenceStates）**共用同一实现**，改一必改二。
+import { radixPadMismatch, enumCandidates } from './presenceSemantics';
 
 // N1 护栏批（PLAN §8.16 · G5）：编码器已知算子全集 = OP_CODES 17 项（含 N2 的
 // STRING、R23 的 TIME_EPOCH、R25 的 SCRAMBLE）+ encoder legacy 5 项（INPUT/FIXED/HEADER/TAIL/
@@ -28,6 +31,17 @@ const normalizeHex = (h) => String(h || '').replace(/\s/g, '');
 const refList = (r) => (r === undefined || r === null ? [] : (Array.isArray(r) ? r : [r]));
 const fieldLabel = (f) => f.name || f.label || '';
 const isChecksumOp = (op) => String(op || '').toUpperCase().includes('CHECKSUM');
+
+// R31 (§8.63): presence **设计期效度**三码的判据全集。三组一律「**表外不算**」——
+// 拿不准（可自由键入 / 非锁定 / 无候选全集）就不提醒，宁可少判不误判（误报会让
+// 用户对提醒脱敏）。判据本身不参与判定：判定的 SSOT 仍是 InstructionEncoder._presenceHit。
+// 锁定算子 = 加工页渲染成只读固定板（与 runnerRenderRules 的 isFixed 同族），
+// 用户键不进去 → 它既不能当值源，也不能靠改值去命中。
+const PRESENCE_LOCKED_OPS = new Set(['HEX_RAW', 'FIXED', 'HEADER', 'TAIL', 'SCRAMBLE']);
+// 计算类 = 编码期由 computedValues 供值（含 readOnly 的 time/counter/checksum 形态）
+const PRESENCE_CALC_OPS = new Set(['CALCULATED', 'LENGTH_CALC', 'CHECKSUM_CRC',
+    'TIME_EPOCH', 'TIME_ACCUMULATOR', 'AUTO_COUNTER']);
+const PRESENCE_CALC_TYPES = new Set(['length', 'checksum', 'time', 'counter', 'time_epoch']);
 
 // Detect directed cycles among formula [Label] references (E5).
 // - Tokens matching the field's OWN name are skipped (LHS declaration pattern
@@ -222,6 +236,63 @@ export function validateInstruction(instruction) {
                 errors.push({ blockId: f.id, code: 'PRESENCE_SELF', message: `「${label || f.id}」条件存在引用了自身（presence 自引用）` });
             } else if (hasRef && !byId.has(pres.ref_id)) {
                 warnings.push({ blockId: f.id, code: 'PRESENCE_REF_MISSING', message: `「${label || f.id}」条件存在引用了不存在的字段 (${pres.ref_id})：编码将按命中处理（fail-open）——请核对引用` });
+            } else if (hasRef && hasExpect) {
+                // --- R31 (§8.63): presence **设计期效度**三码 —— 零行为变更 -------
+                // R29/R30 只把「为什么判不等」摆在**加工页/步骤编辑器**的 hover 里
+                // （运行前的填写现场）；**指令管理页（设计期）看不到**，等用户发现
+                // 「配了一个字节都不发」已经晚了。这里在保存前把三种「这条条件根本
+                // 不可能成立」的形态点出来。
+                // 全部落 warnings —— 保存只拦 errors，判定 / 编码一行未动 → 出线字节逐字不变。
+                const ref = byId.get(pres.ref_id);
+                const rpc = ref?.parameter_config || {};
+                const refOp = String(ref?.op_code || '');
+                const refLabel = fieldLabel(ref) || String(pres.ref_id);
+                const refType = String(rpc.type || '');
+                const expectRaw = String(pres.expect);
+
+                const isCalcRef = PRESENCE_CALC_OPS.has(refOp)
+                    || rpc.formula === 'auto'
+                    || PRESENCE_CALC_TYPES.has(refType);
+                const isLockedRef = PRESENCE_LOCKED_OPS.has(refOp) || rpc.readOnly === true;
+                const optionValues = enumCandidates(rpc.options, undefined);   // 只取选项值
+                const hasOptions = optionValues.length > 0;
+                // 自由键入（可凭键入得到 expect → 不是"恒"）—— 一律不提醒
+                const isFreeText = refOp === 'STRING' || refType === 'string';
+
+                // ① 引用字段拿不到可判定的值 → 编码恒 fail-open 判命中 = 等于没配
+                const hasValueSource = rpc.value !== undefined
+                    || refOp === 'INPUT' || refOp === 'STRING' || Boolean(rpc.variable)
+                    || hasOptions || isCalcRef;
+                if (!hasValueSource && isLockedRef) {
+                    warnings.push({
+                        blockId: f.id,
+                        code: 'PRESENCE_REF_NO_SOURCE',
+                        message: `「${label || f.id}」条件存在（presence）引用字段「${refLabel}」拿不到可判定的值（无静态值、非输入型、无选项、非计算类，且为只读/固定算子）：编码期 ref 只能取到 undefined → 按 fail-open 恒判命中，等于没配——请给引用字段一个值来源或清除条件`,
+                    });
+                }
+
+                // ② 可取值是封闭集（有下拉选项）却无一与 expect 相等 → 选哪项都不成立
+                const candidates = enumCandidates(rpc.options, rpc.value);
+                if (hasOptions && candidates.every(v => String(v) !== expectRaw)) {
+                    warnings.push({
+                        blockId: f.id,
+                        code: 'PRESENCE_EXPECT_UNREACHABLE',
+                        message: `「${label || f.id}」条件存在（presence）引用字段「${refLabel}」的 ${candidates.length} 项可取值与 expect "${expectRaw}" 全都不相等：无论选哪一项条件都不成立（恒未命中 → 0 字节）——请把 expect 改成某一可取值`,
+                    });
+                }
+
+                // ③ 静态值与 expect 十六进制解析相等、String 归一判不等（补零/进制假阴性，
+                //    样本② 同款）→ 静态链恒未命中。选项集已由 ② 覆盖 → 不叠报。
+                if (!hasOptions && !isFreeText && rpc.value !== undefined) {
+                    const pad = radixPadMismatch(expectRaw, rpc.value);
+                    if (pad) {
+                        warnings.push({
+                            blockId: f.id,
+                            code: 'PRESENCE_HEX_PAD',
+                            message: `「${label || f.id}」条件存在（presence）静态值 ${String(rpc.value)} 与 expect "${expectRaw}" 按十六进制解析同为 ${pad.expectNum}（补零/进制差异 → String 归一判不等）：编码恒按未命中处理（0 字节）——请把 expect 改成 ${String(rpc.value)} 或把值改成 ${expectRaw}`,
+                        });
+                    }
+                }
             }
         }
 
