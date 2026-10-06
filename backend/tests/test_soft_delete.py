@@ -540,7 +540,9 @@ class TrashSequenceProfileRecipeTest(_TrashBase):
 
 class TrashScopeTest(_TrashBase):
     def test_kind_whitelist_excludes_logs_templates_and_transport(self):
-        """拍板只要 7 类可回收：日志（追加型审计）、模板与单行配置不进站。"""
+        """拍板的 7 类可回收 + R36 的路由规则 = 8 类；
+        日志（追加型审计）、模板与单行配置**始终不进站** —— 这三张表有
+        `deleted_at` 却无用户删除入口，不是漏配白名单。"""
         self.assertEqual(
             set(KINDS),
             {
@@ -551,8 +553,13 @@ class TrashScopeTest(_TrashBase):
                 "sequence",
                 "profile",
                 "response_spec",
+                # R36（§8.68）：规则是用户手写的配置，删了必须能找回 —— 缺了这条
+                # 白名单，软删标记就变成永久不可见的行
+                "routing_rule",
             },
         )
+        for never in ("dispatch_logs", "operator_templates", "transport_settings"):
+            self.assertNotIn(never, KINDS)
         self.assertEqual(self._trash(), [])  # 夹具里有日志/模板/配置 → 站是空的
 
     def test_trash_list_counts_and_labels(self):

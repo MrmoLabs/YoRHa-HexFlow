@@ -30,6 +30,7 @@ from backend.db.models import (
     ProtocolBinding,
     ProtocolTemplate,
     ResponseSpec,
+    RoutingRule,
     Sequence,
     SequenceStep,
 )
@@ -113,6 +114,15 @@ KINDS = {
         model=ResponseSpec,
         label=_spec_label,
         hide=lambda row, dead: row.instruction_id in dead["instruction"],
+    ),
+    # R36 发前路由（§8.68）：规则是用户手写的配置，删了必须能找回 —— 没有这条
+    # 白名单，`DELETE /routing-rules/{id}` 打的软删标记会变成**永久不可见**的行
+    # （读侧 `alive()` 滤掉、回收站又不认识它）。
+    # 指令级联**暂不**做：目标指令入站时规则留作悬空行，`/dispatch/routed` 记进
+    # `invalid` 跳过、不 500；级联 + 引用计数文案归 R37（牵动 FE describeReferences）。
+    "routing_rule": _Kind(
+        model=RoutingRule,
+        label=lambda row, db: row.name or row.id,
     ),
 }
 

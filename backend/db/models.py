@@ -306,3 +306,32 @@ class FrameRecipe(Base):
     updated_at = Column(Text, nullable=True)  # ISO-8601 UTC
     # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
     deleted_at = Column(String(40), nullable=True)
+
+
+# 14. Routing Rules（R36 发前路由 —— §8.52 C-1 选项 C 经翻案立项）。
+#
+# **§0**：本类是**仅新增表**（明文允许）；`routing_rules` 对既有库由
+# `Base.metadata.create_all` 在启动时建出（新表不走 migrate.py —— REGISTRY 五条
+# 全是加列，create_all 补不了列、但建得了新表）。**不加 FK**：`instruction_id`
+# 是逻辑外键，与 `sequence_steps.op_code` 同先例 —— 悬空目标由查询侧拦（已入
+# 回收站的指令不作候选），免得软删/恢复语义被 FK 绑死。
+class RoutingRule(Base):
+    __tablename__ = "routing_rules"
+
+    id = Column(String(36), primary_key=True)
+    # 规则名唯一。注意软删行**继续占用**唯一键（§8.43 已知取舍）→ 判重查全表
+    # （不排回收站），先 400 拦住，别漏到 DB 报 500。
+    name = Column(String(128), nullable=False, unique=True)
+    # 受限表达式（SSOT = core/condition.py），保存侧 parse_condition 校验 → 400。
+    condition = Column(String(200), nullable=False)
+    # 逻辑外键 → instructions.id（活行才有意义，见上）。
+    instruction_id = Column(String(36), nullable=False)
+    # 匹配优先级：升序，小者先判；同值按 name 稳序（core/routing.py 定序键）。
+    sort_order = Column(Integer, nullable=False, default=0, server_default="0")
+    # 0/1。停用 = 暂时踢出匹配，行保留（临时关一条规则不该丢掉它）。
+    enabled = Column(Integer, nullable=False, default=1, server_default="1")
+    description = Column(Text, nullable=True)
+    created_at = Column(Text, nullable=True)  # ISO-8601 UTC
+    updated_at = Column(Text, nullable=True)  # ISO-8601 UTC
+    # R6 软删除（§8.43）：NULL=活行，非 NULL=回收站时间戳（级联子行同戳）。
+    deleted_at = Column(String(40), nullable=True)

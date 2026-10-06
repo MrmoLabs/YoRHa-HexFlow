@@ -3003,9 +3003,72 @@
       `routeChunks.js` / `RouteLoading.jsx`；`pageStatus.json` 不改（见上）。
     - **状态**：**R35 ✅ —— 每页只加载自己那块。**
       **明确留白**：不做 `manualChunks` 分 vendor（判负）、不做路由预渲染 / SSR、
-      **发前路由仍红**（`BUSINESS_SCENARIOS` G1 尾注，§8.52 C-1 拍板 A 不立项，翻案需用户确认）、
-      `byte_order` trim 归一（§8.66 留白）不涉。
+      **发前路由**（`BUSINESS_SCENARIOS` G1 尾注，§8.52 C-1 拍板 A 不立项，翻案需用户确认）
+      **→ 2026-10-06 已翻案立项，见第 85 条 / PLAN §8.68**；`byte_order` trim 归一
+      （§8.66 留白）不涉。
       提交 = `feat(R35)` 单笔（**零 DDL** → 无 `chore(db)`）。
+
+85. **R36 · 发前路由 · BE 数据层（新表 + 匹配器 + 解析端点；PLAN §8.68 · 2026-10-06 翻案拍板）**
+
+    - **来源与拍板**：§8.36 C-1 三选项（A 不立项 / B 序列级分支 / C 发前路由），
+      §8.52 复议**只立项了 B**（R26），拍板表明写「C 发前路由**仍不在本列**，要做另议」。
+      **2026-10-06 用户对 A 不立项翻案**，按**原选项 C** 规格立项，分 2–3 批。
+      例 B（只有 C 解得了）：同一个执行按钮，`meter_id = 0001` 发指令 X、`= 0002` 发指令 Y，
+      发生在**进入序列之前** —— 序列分支结构上解不了。
+    - **批次切分**：**R36（本批）= 纯 BE**（表 + CRUD + 匹配器 + 解析端点）；
+      **R37 = FE**（规则编辑 UI + 加工页自动选指令接线 + 指令删除引用计数 / 级联集成）。
+    - **新表 `routing_rules`（§0 合规）**：`id` / `name`（唯一）/ `condition` /
+      `instruction_id`（**逻辑外键**，同 `op_code` 先例不加 FK）/ `sort_order` / `enabled` /
+      `description` / `created_at` / `updated_at` / `deleted_at` —— 属 §0「**仅新增表**」
+      明文允许，`models.py` 无改列删列。**零 Migration**：`create_all` 对既有库也会建新表
+      （补不了列、建得了表），REGISTRY 五条全是加列 → **不动 REGISTRY**；新表批历史上有
+      `chore(db): 同步 yorha.db` 先例，但现行节奏**排除 `yorha.db`** → **单笔 feat、无
+      `chore(db)`**。
+    - **匹配器 `backend/core/routing.py` 复用 `core/condition.py`，不造第二套判据**
+      （与 `sequence_steps.condition` 同一门语言、同一份 SSOT，FE `utils/condition.js`
+      逐行同语义）。五条口径：`(sort_order, name, id)` 定序 · **first-match-wins** ·
+      停用与回收站行不参与 · 条件**语法**坏掉记 `invalid` **继续往下扫** ·
+      变量不在输入里 = **普通不命中不记 `invalid`**（后两条同抛 `ConditionError`，
+      靠**先单独 `parse_condition`** 区分：解析期挂 = 规则坏了，求值期挂 = 输入没给键）。
+      **全无命中 → `matched=false`，绝不回落第一条。**
+    - **端点（§0）**：`POST /dispatch/routed` **新增且只解析不发送** —— 回执六键
+      `matched / rule / instruction_id / instruction / invalid / considered`，
+      **无 `status`·`attempts`·`hex_string`**（有测试逐键断言）；命中顺带回指令全文。
+      `POST /dispatch/` 与 `/dispatch/transaction` **一行不改**。CRUD `/routing-rules`
+      按 `response_spec.py` 范式：判重查全表（软删占名 → 先 400 不漏 500）、目标须为**活**
+      指令、**先校验再落笔**。**回收站白名单补 `routing_rule`**（否则 `DELETE` 打的软删
+      标记是永久黑洞）。
+    - **意外发现并修好（真故障）**：`migrate.py` 0002 / 0004 / 0005 三条 verify 是
+      「**metadata 全量派生 + 精确集合断言**」，新表天生带 `deleted_at` / `sort_order` /
+      `condition` → 三条同时红 → `run_pending_migrations` 整条回滚 → **每个库都起不来**
+      （BE 全量一度 16 errors + 3 failures）。改口径为 **`_scope_tables` = 冻结史实名单
+      ∩ models**：冻结名单保史实（新表由 `create_all` 整表建出，轮不到这条 ALTER），
+      交集保防漏卡（名单里哪张表在 models 被误删该列 → `len != 13` 照样报错）。
+      **两个防漏方向都还在、既有 0 条测试需改** —— 改的是口径本身，不是挪球门。
+      `migrate.R6_TABLES` 与测试的 `EXPECTED_13_TABLES` 各写一份、互为交叉校验。
+    - **测试（红测先行有据）**：新增 `backend/tests/test_routing.py`（22 例）。实现前
+      **整体红 = `ModuleNotFoundError: backend.core.routing`**（缺特性本身）；落一轮后
+      剩 1 failed 是**测试自身 bug**（恢复后原行仍占名，本就该 400，§8.43）
+      → 按纪律**先修测试**再算数；修后 **22/22 全绿**。全量回归再翻 **1 条既有钉**：
+      `TrashScopeTest`「白名单恰好 7 类」实得 8 类 —— 属**测试随新事实改写**（非缺特性、
+      也非测试写错），改写时补显式 `assertNotIn` 强化原意。三档性质分开记账。
+    - **验收**：**BE 977 → 999/999**、**FE 1362/1362（持平，纯 BE 批）**、
+      `npx vite build` EXIT=0、`npm run lint` EXIT=0、md 表列数 mismatches = 0、
+      index blob 卫生 STAGED / BAD = 0；**仅新增表 → 零 Migration、无 `chore(db)`**、
+      不引 pytest、无新 pip 依赖、`processor.py` / `graph.py` / `Blueprint.jsx` 未碰。
+      实机：`openapi.json` 上 `/dispatch/routed` 与 `/routing-rules` 五方法齐备、
+      `/dispatch/` 与 `/transaction` 原样；建规则 → 命中回指令全文 → 不命中
+      `matched=false` → 空输入 `considered=1`·`invalid=0` → 删除后回收站可见。
+    - **文档同步（同批）**：PLAN **§8.68 新节** + §1 新增 `R36` 行 + §8.36 拍板表与
+      §8.52 拍板表各补翻案行 + §8.67 留白改指；`BUSINESS_SCENARIOS` 挂账行
+      「按输入值选指令模板 / 报文」🔴 → ✅ 与 G1 尾注；本条 + 目录地图补 4 个新文件。
+    - **状态**：**R36 ✅ —— 「该发哪条指令」有了数据层答案，`/dispatch` 缺省口径一个字节没动。**
+      **明确留白（→ R37）**：规则编辑 UI、加工页自动选指令接线、指令删除的引用计数与
+      级联（现状 = 目标指令入站后规则留作悬空行，解析时记 `INSTRUCTION_MISSING` 跳过，
+      优雅降级不 500）、`Trash.jsx` 的 `KIND_LABELS` 补 `routing_rule` 中文名
+      （`kindLabel` 有原始 key 回落、不会崩；R36 无 FE 入口故不动 FE）、
+      `byte_order` trim 归一（§8.66 留白）不涉。
+      提交 = `feat(R36)` 单笔（**仅新增表** → 无 Migration、无 `chore(db)`）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
@@ -3030,7 +3093,11 @@
 | `backend/routers/operator.py` | 算子模板 + `seed_operator_templates`（含 BITFIELD） | ✅ |
 | `backend/routers/compile.py` | `POST /compile`（块森林 → Orchestrator → hex），原内联于 `main.py` | ✅ |
 | `backend/routers/export.py` | `/export/hex`、`/export/binary`、`hex_to_bytes` | ✅ 新增 |
-| `backend/routers/dispatch.py` | `/dispatch` 环回通道 + 有界历史 | ✅ 新增 |
+| `backend/routers/dispatch.py` | `/dispatch` 环回通道 + 有界历史；**R36 增 `POST /routed`（只解析不发送）**，`/dispatch/` 与 `/transaction` 一行未改 | ✅ 新增 |
+| `backend/routers/routing.py` | **R36 发前路由**：`/routing-rules` CRUD（语法 / 活指令 / 全表判重三道校验，先校验再落笔）+ `resolve_route` 只读解析（两层静态跳过记 `invalid`） | ✅ 新增（§8.68） |
+| `backend/core/routing.py` | 匹配器 `select_rule` —— **复用 `core/condition.py` 不造第二套判据**；`(sort_order, name, id)` 定序 · first-match-wins · 停用 / 回收站不参与 · 解析期坏条件记 `invalid` 并继续扫 · 求值期未定义变量 = 普通不命中 · **无命中不猜** | ✅ 新增（§8.68） |
+| `backend/schemas/routing_api.py` | 规则读写体 + `POST /dispatch/routed` 入参回执（**六键，无 `status`·`attempts`·`hex_string`** —— 有那三个即说明串进了 `/dispatch` 缺省口径） | ✅ 新增（§8.68） |
+| `backend/tests/test_routing.py` | R36 单测 22 例（匹配语义 / CRUD 四拒 / 解析不猜 / 回收站往返与占名） | ✅ 新增（§8.68） |
 | `backend/core/orchestrator.py` | 块森林 → hex 编译（`/compile`、`/export/binary` 使用） | ✅ |
 | `backend/core/diagnostics.py` | 统一诊断：`Diagnostic` / `DiagError` / `DiagHTTPException` + `install(app)` → 错误体 `{"detail": 原文, "diagnostic": {…}}`（`detail` 逐字不变，只做加法） | ✅ 新增（§8.32） |
 | `backend/core/field_blocks.py` | 编译侧字段布局 SSOT（`fields_to_blocks` + `_presence_hit` + 内嵌 `to_block`：presence 门 · repeat ×N · endianness · align · `pad_to`）—— 自 `routers/datahub.py` **纯搬入**、`datahub` 原名再导出 | ✅ 编码与解码共用一份（§8.48，改一必改二） |
@@ -3042,7 +3109,7 @@
 | `backend/db/database.py` | SQLite engine / Session / Base | ✅ |
 | `backend/db/seed.py` | 示例指令种子 | ✅ |
 | `backend/db/yorha.db` | SQLite 数据库文件 | ✅ 已被 git 跟踪（保留） |
-| `backend/db/migrate.py` | **版本化迁移**（`schema_migrations` 裸 SQL 表 + `Migration` 注册表 + 升级前整库快照到 `backups/` + 单事务 apply/verify + `integrity_check` 终检 + CLI `python -m backend.db.migrate status\|up`） | ✅ 权威升级机制（§8.30） |
+| `backend/db/migrate.py` | **版本化迁移**（`schema_migrations` 裸 SQL 表 + `Migration` 注册表 + 升级前整库快照到 `backups/` + 单事务 apply/verify + `integrity_check` 终检 + CLI `python -m backend.db.migrate status\|up`）；**R36 起四条 verify 的范围口径改为 `_scope_tables` = 冻结史实名单 ∩ models**（原「metadata 全量派生 + 精确集合」被后来的新表误伤 → 0002/0004/0005 全红 → 每个库都起不来） | ✅ 权威升级机制（§8.30，口径修正见 §8.68 五） |
 | `backend/db/backups/` | 迁移/恢复的整库快照落点（`pre-restore-*` 为恢复前安全快照） | ✅ gitignore，不入库 |
 | `backend/db/migrations/*.sql` | `schema.sql` / `seed_data.sql` **非权威参考**（见同目录 `README.md`），无自动执行 | ⚠️ 仅供参考（真正的版本化迁移在 `backend/db/migrate.py`） |
 | `backend/core/processor.py` | 旧编译链 | ⚠️ **未接线**（Phase-2 遗留，保留勿删，勿引入新依赖） |

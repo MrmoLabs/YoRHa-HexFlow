@@ -18,6 +18,10 @@ from backend.db.database import get_db
 from backend.db.log_store import resolve_log_fields, safe_log
 from backend.db.models import ResponseSpec, ProtocolTemplate
 from backend.routers.export import hex_to_bytes
+# R36 发前路由（§8.68）：/dispatch/routed 是**新增**端点，只解析不发送 ——
+# 下面 /dispatch/ 与 /dispatch/transaction 两处缺省口径一行未动。
+from backend.routers.routing import resolve_route
+from backend.schemas.routing_api import RouteResolveRequest, RouteResolveResponse
 
 router = APIRouter(prefix="/dispatch", tags=["dispatch"])
 
@@ -618,3 +622,18 @@ def dispatch_transaction(request: TransactionRequest, db: Session = Depends(get_
         error=reason, fields=decoded,
     )
     return record
+
+
+# ---------------------------------------------------------------------------
+# R36 发前路由（PLAN §8.68 · §8.52 C-1 选项 C）—— 进序列**之前**该发哪条指令
+#
+# 与上面两个端点的本质区别：这里**只解析、不发送**。回执是
+# RouteResolveResponse（matched / rule / instruction / invalid / considered），
+# **没有** DispatchRecord 的 status / attempts / hex_string —— 出现即说明串进了
+# /dispatch 缺省口径（违 §0）。命中也不产生任何副作用：真正的发送仍走
+# /dispatch/ 或 /dispatch/transaction，缺省逐字节不变。
+# ---------------------------------------------------------------------------
+@router.post("/routed", response_model=RouteResolveResponse)
+def dispatch_routed(request: RouteResolveRequest, db: Session = Depends(get_db)):
+    """按输入值解析「该发哪条指令」；无命中 → matched=false（**不猜**）。"""
+    return resolve_route(request.inputs, db)

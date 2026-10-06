@@ -27,7 +27,7 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional
+from typing import Callable, Iterable, List, Optional, Tuple
 
 from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
@@ -113,19 +113,60 @@ def _baseline_apply(conn):
 # --------------------------------------------------------------------------
 # 0002 · R6 软删除（PLAN §8.43）：13 表统一加 `deleted_at`
 # --------------------------------------------------------------------------
+#
+# **范围 = 冻结史实名单 ∩ models**（0002–0005 四条 verify 共用口径，`_scope_tables`）。
+#
+# 早先这里是从 `Base.metadata` **全量**派生，即把「当前 schema 里带该列的所有表」
+# 都算作**这条历史迁移**的范围，verify 再按精确集合报错。schema 一旦往前长就必然
+# 误伤：R36 加 `routing_rules`（天生带 `deleted_at` / `condition` / `sort_order`）
+# 当场把 0002 / 0004 / 0005 三条 verify 全打红 → `run_pending_migrations` 整条回滚
+# → **每个库都起不来**。多一张新表本来就不归某条历史 ALTER 管。
+#
+# 拆开看，两半各保一件事：
+#   * **冻结名单** = 这条迁移当时动过哪些表（史实，不随 schema 演进而改）。
+#     新表由 `create_all` 整表建出，轮不到这条 ALTER 去补列；
+#   * **∩ models** = 防漏卡：名单里哪张表在 models 里被误删了该列，交集立刻缩水
+#     → `len(tables) != 13` 报错，不会变成「apply 跳过 + verify 走过场」。
+#
+# 于是 verify 的两个方向都还在：**少一张报错**（防静默漏改）、**DB 缺列报错**
+# （防迁移没真跑）；只是不再因为「多了一张新表」而误伤。
+
+
+def _scope_tables(scope: Iterable[str], column: str) -> List[str]:
+    """冻结名单 ∩ models（哪个表声明了 `column`）—— 四条 verify 的公共范围口径。"""
+    tables = Base.metadata.tables
+    return sorted(
+        name for name in scope if name in tables and column in tables[name].columns
+    )
+
+
+#: 0002 的史实范围：R6（§8.37 拍板）统一加 `deleted_at` 的 13 张表。
+#: 与 `tests/test_soft_delete.py` 的 `EXPECTED_13_TABLES` **各自手写一份**、
+#: 互为交叉校验（两边必须相等，改一处不改另一处会当场红）。
+R6_TABLES: Tuple[str, ...] = (
+    "bit_fields",
+    "device_profiles",
+    "dispatch_logs",
+    "frame_recipes",
+    "instruction_fields",
+    "instructions",
+    "operator_templates",
+    "protocol_bindings",
+    "protocols",
+    "response_specs",
+    "sequence_steps",
+    "sequences",
+    "transport_settings",
+)
 
 
 def soft_delete_tables() -> List[str]:
-    """需要 `deleted_at` 的表 = **models 里带该列的表**（SSOT，不另抄一张名单）。
+    """0002 的目标表 = `R6_TABLES` ∩ models 里确实声明了 `deleted_at` 的表。
 
-    从 `Base.metadata` 派生 → models 加列、迁移范围自动跟随；verify 侧再钉死
-    「恰好 13 张」，防有人误删某表的列而迁移静默漏改。
+    「需要 `deleted_at` 的表」这个说法在这里只对 R6 那 13 张成立 —— 后来新增、
+    天生就带该列的表（`routing_rules` 起）由 `create_all` 负责，不归 0002 管。
     """
-    return sorted(
-        name
-        for name, table in Base.metadata.tables.items()
-        if "deleted_at" in table.columns
-    )
+    return _scope_tables(R6_TABLES, "deleted_at")
 
 
 def _column_names(conn, table: str) -> set:
@@ -164,15 +205,14 @@ def _soft_delete_verify(conn):
 # 0003 · R10 入库回写（PLAN §8.48）：`dispatch_logs.fields_json` 仅新增列
 # --------------------------------------------------------------------------
 
-#: R10 要落 `fields_json` 的表（**全计划唯一 DDL 批**）—— 与 0002 同款口径：
-#: 表单从 `models` 派生（加列只写一处），verify 再钉死「恰好这一张」，防有人
-#: 误删列后迁移静默漏改、或误给别的表也加上这列（§0 只允许新增列，不做改列）。
+#: R10 的史实范围：只给 `dispatch_logs` 加 `fields_json`（全计划唯一 DDL 批）。
+#: 范围口径与 0002 相同 —— 见 `_scope_tables` 上方的说明。
+R10_TABLES: Tuple[str, ...] = ("dispatch_logs",)
+
+
 def decode_json_tables() -> List[str]:
-    return sorted(
-        name
-        for name, table in Base.metadata.tables.items()
-        if "fields_json" in table.columns
-    )
+    """0003 的目标表 = `R10_TABLES` ∩ models 里确实声明了 `fields_json` 的表。"""
+    return _scope_tables(R10_TABLES, "fields_json")
 
 
 def _decode_json_apply(conn):
@@ -206,15 +246,15 @@ def _decode_json_verify(conn):
 # 0004 · R20 档案自定义排序（PLAN §8.50 ②-3）：`device_profiles.sort_order` 仅新增列
 # --------------------------------------------------------------------------
 
-#: R20 要落 `sort_order` 的表（**仅新增列**）—— 表单从 `models` 派生（加列只写一处，
-#: 同 0002 / 0003 口径），verify 再钉死「恰好 device_profiles 一张」，防有人误删列后
-#: 迁移静默漏改、或误给别的表也加上这列（§0 只允许新增列，不做改列）。
+#: R20 的史实范围：只给 `device_profiles` 加 `sort_order`。口径见 `_scope_tables`
+#: 上方说明 —— 冻结史实 ∩ models，既防误删列静默漏改，也不误伤后来新增的同名列
+#: （R36 的 `routing_rules.sort_order`）。
+R20_TABLES: Tuple[str, ...] = ("device_profiles",)
+
+
 def profile_sort_tables() -> List[str]:
-    return sorted(
-        name
-        for name, table in Base.metadata.tables.items()
-        if "sort_order" in table.columns
-    )
+    """0004 的目标表 = `R20_TABLES` ∩ models 里确实声明了 `sort_order` 的表。"""
+    return _scope_tables(R20_TABLES, "sort_order")
 
 
 def _profile_sort_apply(conn):
@@ -248,15 +288,16 @@ def _profile_sort_verify(conn):
 # 0005 · R26 序列级分支（PLAN §8.58）：`sequence_steps.condition` 仅新增列
 # --------------------------------------------------------------------------
 
-#: R26 要落 `condition` 的表（**仅新增列**）—— 表单从 `models` 派生（加列只写一处，
-#: 同 0002 / 0003 / 0004 口径），verify 再钉死「恰好 sequence_steps 一张」，防有人
-#: 误删列后迁移静默漏改、或误给别的表也加上这列（§0 只允许新增列，不做改列）。
+#: R26 的史实范围：只给 `sequence_steps` 加 `condition`。口径见 `_scope_tables`
+#: 上方说明 —— 冻结史实 ∩ models，既防误删列静默漏改，也不误伤后来新增的同名列
+#: （R36 的 `routing_rules.condition`，与 `sequence_steps.condition` 同一套受限
+#: 表达式语言，共用一个列名恰是复用的信号）。
+R26_TABLES: Tuple[str, ...] = ("sequence_steps",)
+
+
 def condition_tables() -> List[str]:
-    return sorted(
-        name
-        for name, table in Base.metadata.tables.items()
-        if "condition" in table.columns
-    )
+    """0005 的目标表 = `R26_TABLES` ∩ models 里确实声明了 `condition` 的表。"""
+    return _scope_tables(R26_TABLES, "condition")
 
 
 def _condition_apply(conn):
