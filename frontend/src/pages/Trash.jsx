@@ -3,7 +3,7 @@ import { api } from '../api';
 import NieRModal from '../components/ui/NieRModal';
 import { PAGE_STATUS_BY_KEY } from '../config/pageRegistry';
 
-// R6-2（PLAN §8.44）：回收站页 —— 后端 7 类可回收对象的统一落点。
+// R6-2（PLAN §8.44）：回收站页 —— 后端 8 类可回收对象的统一落点。
 //
 // 语义对齐 backend/routers/trash.py：
 //   · 列表 = `GET /trash`，**最近删的在前**；被父行连带入站的子行不单列
@@ -14,6 +14,10 @@ import { PAGE_STATUS_BY_KEY } from '../config/pageRegistry';
 // 已知取舍（§8.43 四，UI 必须如实告诉用户）：
 //   ① 软删行**继续占用唯一键** → 站内同名新建/改名 400，彻底删除才释放；
 //   ② 配方/档案的指针（默认配方 / 激活指针）在删除期已解除、恢复不回填。
+//
+// R37（§8.69）：第 8 类 `routing_rule`（发前路由规则）。它**不走**「宿主在站就
+// 隐藏」的代理过滤 —— 独立入站的规则与宿主入站时间戳不同，宿主恢复带不回它，
+// 一旦被隐藏就再也看不见；所以它始终自己占一行。
 
 const KIND_LABELS = {
     protocol: '协议',
@@ -22,7 +26,8 @@ const KIND_LABELS = {
     recipe: '配方',
     sequence: '序列',
     profile: '档案',
-    response_spec: '应答规格'
+    response_spec: '应答规格',
+    routing_rule: '路由规则'
 };
 
 const kindLabel = (kind) => KIND_LABELS[kind] || kind;

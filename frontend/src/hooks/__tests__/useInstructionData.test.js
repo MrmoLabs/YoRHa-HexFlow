@@ -714,4 +714,40 @@ describe('describeReferences / describeDeletion 三分口径', () => {
         expect(msg).toContain('通讯日志 5 条 → 只读保留');
         expect(msg).not.toContain('无引用');
     });
+
+    // R37（PLAN §8.69）：发前路由规则归「活配置」—— 单列一行、计入 total
+    it('describeReferences：发前路由规则单列一行并计入总数', () => {
+        const msg = describeReferences({
+            bindings: 0, response_specs: 0, sequence_steps: 0, dispatch_logs: 0,
+            routing_rules: 2, total: 2
+        });
+        expect(msg).toContain('本指令被 2 处引用');
+        expect(msg).toMatch(/发前路由规则 2 条 → 随删入站/);
+        expect(msg).not.toContain('无引用');
+    });
+
+    it('describeReferences：只有发前路由规则被引用时也不冒充无引用', () => {
+        const msg = describeReferences({
+            bindings: 0, response_specs: 0, sequence_steps: 0, dispatch_logs: 0,
+            routing_rules: 1, total: 1
+        });
+        expect(msg).toContain('本指令被 1 处引用');
+        expect(msg).toContain('发前路由规则 1 条');
+        expect(msg).not.toContain('无引用');
+    });
+
+    it('describeDeletion：发前路由规则级联非零才报（零不占位）', () => {
+        expect(
+            describeDeletion({
+                deleted_bindings: 0, deleted_response_specs: 0,
+                orphaned_sequence_steps: 0, deleted_routing_rules: 3
+            })
+        ).toBe('已移入回收站（指令） · 发前路由规则 3 条级联');
+        expect(
+            describeDeletion({
+                deleted_bindings: 0, deleted_response_specs: 0,
+                orphaned_sequence_steps: 0, deleted_routing_rules: 0
+            })
+        ).toBe('已移入回收站（指令）');
+    });
 });

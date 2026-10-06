@@ -12,6 +12,11 @@
 它们不该在回收站里单独占一行（恢复父行会一并回来）—— 判据 = 子行的宿主也在
 回收站里。独立删掉的绑定/规格（宿主是活的）正常显示。
 
+**例外：`routing_rule` 不隐藏（R37 §8.69）。** 上面那条判据是**时间戳的代理**，
+对独立入站的行会失手 —— 规则先独立删除、指令随后入站时，它被判为「宿主在站」
+而隐藏，但恢复指令按**同戳**捞子行、捞不回时间戳更早的它 → 从此再也看不见。
+规则始终自己占一行，代价只是列表多几行，换来「任何一行都够得着」。
+
 不进回收站的三张表（只加列、不改行为）：`dispatch_logs`（清空日志 = 追加型
 审计数据，删除即不可恢复是既有口径）、`operator_templates`（种子数据无删除
 入口）、`transport_settings`（单行配置无删除入口）。
@@ -86,6 +91,9 @@ KINDS = {
         children=(
             ("bindings", ProtocolBinding, ProtocolBinding.instruction_id),
             ("response_specs", ResponseSpec, ResponseSpec.instruction_id),
+            # R37（§8.69）：发前路由规则随目标指令同戳入站 → 恢复时一并捞回，
+            # 不留悬空规则（`/dispatch/routed` 的 INSTRUCTION_MISSING 只是兜底）
+            ("routing_rules", RoutingRule, RoutingRule.instruction_id),
         ),
     ),
     "binding": _Kind(

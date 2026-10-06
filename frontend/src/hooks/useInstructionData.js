@@ -11,18 +11,21 @@ import { useHistory } from './useHistory';
 export { normalizeFieldPayload, normalizeInstructionPayload };
 
 // 批次二 (D12/D14②): 删除确认与回执文案 —— 四表按数据性质三分：
-// 活配置（protocol_bindings / response_specs）随删一并移入回收站、冻结快照
-// （sequence_steps）保留并标失效、日志（dispatch_logs）只读保留。
+// 活配置（protocol_bindings / response_specs / routing_rules）随删一并移入回收站、
+// 冻结快照（sequence_steps）保留并标失效、日志（dispatch_logs）只读保留。
 // R6-2（PLAN §8.44）: 文案口径由「删了就没了」改为「移入回收站、可恢复」——
 // 不可逆的警告只保留在回收站页的「彻底删除」确认里。导出便于单测钉口径。
+// R37（PLAN §8.69）：发前路由规则归「活配置」—— 目标指令入站时同戳级联，
+// 恢复指令时一起回来；只数活行，已在回收站的规则不构成新影响。
 export const describeReferences = (refs) => {
     const head = '警告：确认将此指令移入回收站？';
     if (!refs || !refs.total) {
-        return `${head}\n\n无引用：绑定 / 应答规格 / 序列步骤 / 通讯日志均未指向本指令。`;
+        return `${head}\n\n无引用：绑定 / 应答规格 / 发前路由规则 / 序列步骤 / 通讯日志均未指向本指令。`;
     }
     const lines = [head, '', `本指令被 ${refs.total} 处引用：`];
     if (refs.bindings) lines.push(`· 协议绑定 ${refs.bindings} 条 → 随删入站（活配置，随指令恢复）`);
     if (refs.response_specs) lines.push(`· 应答规格 ${refs.response_specs} 条 → 随删入站（活配置，随指令恢复）`);
+    if (refs.routing_rules) lines.push(`· 发前路由规则 ${refs.routing_rules} 条 → 随删入站（活配置，随指令恢复）`);
     if (refs.sequence_steps) lines.push(`· 序列步骤 ${refs.sequence_steps} 条 → 保留（帧已冻结可继续运行，编辑入口标失效）`);
     if (refs.dispatch_logs) lines.push(`· 通讯日志 ${refs.dispatch_logs} 条 → 只读保留`);
     lines.push('', '删除后移入回收站，可在「回收站」页恢复；彻底删除才不可恢复。确认继续？');
@@ -34,6 +37,7 @@ export const describeDeletion = (result) => {
     const parts = ['已移入回收站（指令）'];
     if (result.deleted_bindings) parts.push(`绑定 ${result.deleted_bindings} 条级联`);
     if (result.deleted_response_specs) parts.push(`应答规格 ${result.deleted_response_specs} 条级联`);
+    if (result.deleted_routing_rules) parts.push(`发前路由规则 ${result.deleted_routing_rules} 条级联`);
     if (result.orphaned_sequence_steps) parts.push(`序列步骤 ${result.orphaned_sequence_steps} 条留失效`);
     return parts.join(' · ');
 };

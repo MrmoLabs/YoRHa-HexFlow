@@ -14,6 +14,7 @@ from backend.db.models import (
     DispatchLog,
     ProtocolBinding,
     ResponseSpec,
+    RoutingRule,
     SequenceStep,
 )
 from backend.db.soft_delete import alive, mark_deleted, mark_related, now_iso
@@ -436,6 +437,11 @@ def get_instruction_references(id: str, db: Session = Depends(get_db)):
       Runner 发送不查指令行 → 删宿主后仍可运行，只是编辑器回选不到）；
     - **日志** `dispatch_logs` → **只读保留**。
     前端据本端点在弹窗里列出受影响项后再确认。
+
+    R37（§8.69）：**发前路由规则 `routing_rules` 归第一类「活配置」** —— 用户手写、
+    指向本指令的配置，目标入站时一并级联（同戳 → 恢复时一起回来）。**不数进这条
+    就等于对用户隐瞒一次删改**：规则没了目标指令会变悬空行，`/dispatch/routed`
+    只能记 `INSTRUCTION_MISSING` 跳过。
     """
     if (
         alive(db.query(Instruction.id), Instruction)
@@ -451,13 +457,23 @@ def get_instruction_references(id: str, db: Session = Depends(get_db)):
         .filter(ProtocolBinding.instruction_id == id).count(),
         "response_specs": alive(db.query(ResponseSpec), ResponseSpec)
         .filter(ResponseSpec.instruction_id == id).count(),
+        # R37: 同样只数活行 —— 已在回收站的规则不构成新影响
+        "routing_rules": alive(db.query(RoutingRule), RoutingRule)
+        .filter(RoutingRule.instruction_id == id).count(),
         "sequence_steps": db.query(SequenceStep)
         .filter(SequenceStep.instruction_id == id).count(),
         "dispatch_logs": db.query(DispatchLog)
         .filter(DispatchLog.instruction_id == id).count(),
     }
     counts["total"] = sum(
-        counts[k] for k in ("bindings", "response_specs", "sequence_steps", "dispatch_logs")
+        counts[k]
+        for k in (
+            "bindings",
+            "response_specs",
+            "routing_rules",
+            "sequence_steps",
+            "dispatch_logs",
+        )
     )
     return counts
 
@@ -473,6 +489,10 @@ def delete_instruction(id: str, db: Session = Depends(get_db)):
     R6（§8.43）起「级联删」= **级联软删**：指令与被它连带的绑定/规格**共用
     同一时间戳**，回收站恢复指令时按同戳把它们一并捞回；冻结快照与日志口径
     不变（前者保留、后者只读保留）。回执形状与计数键全部不变。
+
+    R37（§8.69）：发前路由规则并入**活配置**那一档，同戳级联 —— 让规则留在站外
+    只会产出悬空行（解析时 `INSTRUCTION_MISSING`）；同戳的另一重意义是恢复指令
+    时规则一起回来，不留需要手工收拾的残局。
     """
     db_inst = (
         alive(db.query(Instruction), Instruction).filter(Instruction.id == id).first()
@@ -495,6 +515,12 @@ def delete_instruction(id: str, db: Session = Depends(get_db)):
         [ResponseSpec.instruction_id == id],
         ts,
     )
+    deleted_rules = mark_related(
+        db.query(RoutingRule),
+        RoutingRule,
+        [RoutingRule.instruction_id == id],
+        ts,
+    )
     # 冻结快照：保留（序列步骤 payload 自含，删宿主不破坏可运行性）
     orphaned_steps = (
         db.query(SequenceStep).filter(SequenceStep.instruction_id == id).count()
@@ -507,5 +533,6 @@ def delete_instruction(id: str, db: Session = Depends(get_db)):
         "id": id,
         "deleted_bindings": deleted_bindings,
         "deleted_response_specs": deleted_specs,
+        "deleted_routing_rules": deleted_rules,
         "orphaned_sequence_steps": orphaned_steps,
     }

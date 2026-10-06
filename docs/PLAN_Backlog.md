@@ -59,6 +59,7 @@
 | R34 | **校验和字节序** —— R21 长度域的**成对缺口**（§8.53 尾行登记「checksum 的 `byte_order` 未立项，需另开」+ `blockTypes.js` 代码注释同款留档，文档与代码双重登记）（§8.66；**非** §8.52 复议范围，独立批次） | ✅ **已完成（2026-10-05，§8.66，FE+BE · 零 DDL → 无 `chore(db)`）**：协议 checksum 卡增列 `byte_order` —— **复用 length 的同一 `BLOCK_PROPERTY_FIELDS.byte_order`**（同存点 / 同值域 / 同缺省 `big`），面板走既有通用 select 分支 → `ProtocolPropertiesPanel` **零 JSX 改动**。**同用一个字节序门面**：`byte_order_of` / `apply_byte_order` 上移 `handlers/base.py`，length + checksum 两个 handler 共用（`length.py` re-export 保住既有 import）。**BE 四处** = `ChecksumHandler` **两个 return 同位套用**（refs 模式 + 旧区间模式，换引用方式不换形态）· `frame_builder._with_byte_order` 闸门放开到 checksum（`_with_encoding` 一行未动 → varint 仍 length 专属）· `response_generate._checksum_element` 硬编码 `"big"` **改从 pc 取**（镜像 §8.53 表第 ④ 项 `_length_element`，否则出线小端而比对规则按大端比**必然失配**）。**FE 四处** = `blockTypes` 卡字段 · `toFrameBlocks.withLogicParams` 闸门放开（encoding 另设二级闸，防 `pc.encoding` 误写进 checksum）· `protocolTree` **两个计算点同用一份反转**（`collectDeterministicBytes` 容器内容 + `injectRefsSigma` 卡中央值）· `validateProtocol` W5 同码覆盖（文案按块型分叉）。**收侧本就支持、零改动**（`response_match._CHECKSUM_KEYS` 与 `sequence_plan` 早含 `byte_order`）。共享向量 `vectors/checksum_order.json` **12 行 = 6 算法 × 2 字节序**，真值链不自证（`expected_big` 逐字取自 R22 `checksum_algo.json` 的外部真值、`expected_little` = 字节反转；1 字节算法两侧同串 → 把「单字节不反转」也钉进表里）。**缺省路径逐字节不变**（§0）：面板读侧 `?? field.default` 只回显不落值、`createBlock` 不播种 → `parameter_config` 形状不变，只有真选到 `little` 才出现该键。红测先行有据（实现前 **BE 11 failed / 14 tests** + **FE 9 failed / 108 passed**），**三处既有测试同批翻面**（`test_checksum_blocks_ignore_byte_order` → `..._honour_byte_order`、`toFrameBlocks`「非 length 不写」→「闸门只开两卡」、`blockTypes`「checksum 不列」）。**BE 963 → 977/977、FE 1335 → 1349/1349（85 文件，+14）** |
 | R35 | **前端路由级拆包** —— `vite build` 每批报的「chunk > 500kB」技术债（**无既有登记项**，build 输出本身即凭据：8 个页面在 `App.jsx` 全是静态 import，用户一次只开一页却全进首屏）（§8.67；**非** §8.52 复议范围，独立批次） | ✅ **已完成（2026-10-05，§8.67，纯 FE 构建层 · 零 DDL → 无 `chore(db)`）**：新增 `utils/routeChunks.js`（**页面模块单一登记表** `ROUTE_LOADERS` = 8 个动态 import · `routeComponent` 返回**缓存过的** `React.lazy` 实例（不缓存则每次渲染新建组件 → 整页重挂载）· `prefetchRoute` 复用同一份 pending Promise（hover 多少次只发一次、失败 `.catch(→null)` 不打断导航）· `__resetRouteCaches` 仅测试隔离）+ 新增 `components/RouteLoading.jsx`（Suspense fallback：`[ MODULE LOAD ]` 工业标记 + 按 `useLocation` 查 `PAGE_STATUS_BY_PATH` 出中文页名、**未知路由回落站点名不臆造** + `role="status"`/`aria-live`；**只陈述「正在载入哪页」不画假百分比** —— 拆包加载没有可度量的进度，8 段待机格表达「等待」）。`App.jsx` **删 8 行静态 import** → `renderRouteElement` 改按 `pageKey` 取组件后**原样注入各页 props**（未知 key 仍 `<Navigate to="/protocol">`）、`NavItem` 增 `pageKey` 走 `onMouseEnter`/`onFocus` 预取、**Suspense 边界放在 `key={location.pathname}` 之外**（换路由时边界自身不重建，已访问过的页切回来不重闪 fallback）。**体量账（两次 `npx vite build` 实测）**：`assets/index-*.js` **752.85kB（gzip 243.50）→ 325.42kB（gzip 113.64）**，8 个页面 chunk **10.43–56.63kB**，**500kB 警告消失**；`manualChunks` 分 vendor 判为无效（依赖极轻：react / router / dnd-kit 无 lodash 无图表库，vendor 只砍约 200kB 而本项目代码自身就超线）故不选。**零字节影响**（BE 一行未改，`/dispatch` 缺省口径不变）。**pageStatus.json 零改动**（该文件按页登记「本页具备哪些能力」，本批是外壳/构建层改动不给任一页新增能力 → 生成物 `docs/PAGE_STATUS.md` 同步为零）。红测先行有据（实现前 **2 个测试文件整体红 = 模块不存在**；落一轮后剩 1 failed 属**测试自身 bug** —— React 19 的 `lazy` 返回 lazy 组件对象非函数，先修测试再算数）；**BE 977/977（持平）、FE 1349 → 1362/1362（87 文件，+13）** |
 | R36 | **发前路由 · BE 数据层** —— §8.52 复议时被**明确划在本列外**的「C-1 C 发前路由」（§8.36 例 B：同一个执行按钮，`meter_id = 0001` 该发指令 X、`= 0002` 该发指令 Y，发生在**进入序列之前**），2026-10-06 用户对 §8.52 拍板 A 不立项**翻案**，按**原选项 C** 规格立项、分 2–3 批（§8.68） | ✅ **已完成（2026-10-06，§8.68，纯 BE · 仅新增表 → 零 Migration、无 `chore(db)`）**：**新表 `routing_rules`**（`id` / `name` 唯一 / `condition` / `instruction_id` 逻辑外键 / `sort_order` / `enabled` / `description` / `created_at` / `updated_at` / `deleted_at`）—— 合 §0「仅新增表」明文；**新表不走 `migrate.py`**（`create_all` 对既有库也会建出，REGISTRY 五条全是加列）。**匹配器 `backend/core/routing.py` 直接复用 `core/condition.py` 受限表达式，不造第二套判据**（与 `sequence_steps.condition` 同一门语言、同一份 SSOT、FE `utils/condition.js` 逐行同语义），口径五条：`(sort_order 升序, name 升序, id 升序)` 定序（不依赖插入顺序与返回顺序）· **first-match-wins** · 停用（`enabled=0`）与回收站行不参与 · 条件**语法**坏掉记进 `invalid` 并**继续往下扫**（保存侧 `parse_condition` 已拦 400，运行期踩到只可能来自直接改库 —— 一条坏规则既不该让整条路由 500，更不该让它误命中）· 变量不在输入里 / 类型不可比 = **普通不命中、不记 `invalid`**（第 4、5 条抛的同为 `ConditionError`，靠**先单独 `parse_condition` 过一遍**区分开：解析期挂 = 规则坏了，求值期挂 = 这次输入没给它要的键）；**全无命中 → `matched=false`，绝不回落第一条**（不猜）。**端点 `POST /dispatch/routed`（新增）只解析不发送**，回执 `matched / rule / instruction_id / instruction / invalid / considered` **六键、无 `status`·`attempts`·`hex_string`**（出现即说明串进了 `/dispatch` 缺省口径）；命中顺带回**指令全文**（FE 省一次 `/instructions` 往返）。CRUD `/routing-rules` 按 `response_spec.py` 同款范式：判重查**全表**（软删行继续占名 → 先 400 拦住不漏 500）· 目标必须是**活**指令 · **先校验再落笔**（条件/指令/名字任一不合法整单中止，不留半改状态）。**回收站白名单补 `routing_rule`** —— 没有它，`DELETE /routing-rules/{id}` 打的软删标记就是**永久黑洞**（读侧 `alive()` 滤掉、回收站又不认识）。**意外收获：修好 `migrate.py` 三条 verify 的范围钉**（详见 §8.68 五）—— 原「从 `Base.metadata` 全量派生 + 精确集合断言」被新表当场打红（0002/0004/0005 三条同时红 → `run_pending_migrations` 整条回滚 → **每个库都起不来**），改口径为**冻结史实名单 ∩ models**，两个防漏方向都保住、只是不再误伤后来新增的同名列。红测先行有据（实现前 1 个测试文件**整体红 = `ModuleNotFoundError: backend.core.routing`**，属缺特性本身；落一轮后剩 1 failed 属**测试自身 bug** —— 恢复后原行仍占名，按 §8.43 改断言再算数；全量回归再翻 **1 条既有钉** —— 回收站白名单「恰好 7 类」实得 8 类，属**测试随新事实改写**并补显式 `assertNotIn`，三档性质分开记账）；**BE 977 → 999/999、FE 1362/1362（持平，纯 BE 批）** |
+| R37 | **发前路由 · 集成收尾** —— 把 R36 §8.68 八 挂的两条留白（指令删除的引用计数与级联、回收站中文名）一次补完（§8.69）。**拆批理由**：这两件事与 UI 无关、却决定「删指令会不会留下悬空规则」—— **先把数据完整性洞补上，再让 R38 的 UI 造出命中它的数据** | ✅ **已完成（2026-10-06，§8.69，BE 小改 + FE 文案 · 零 DDL → 无 `chore(db)`）**：**BE 三处** —— ① `get_instruction_references` 加 `routing_rules`（**只数活行**，与 R6 同口径）并计入 `total`（弹窗不先说清 = 对用户隐瞒一次删改）；② `delete_instruction` 加 `mark_related(RoutingRule)` **同戳级联** + 回执 `deleted_routing_rules`（归 D14② 三分口径的**活配置**那一档）；③ `trash.py` 的 `instruction` `children` 补 `routing_rules` —— **漏了这一步，恢复指令时规则还留在站外**，同戳级联等于白做。**回收站对 `routing_rule` 刻意不做「宿主在站就隐藏」的代理过滤**：那条判据是时间戳的代理，对独立入站的行会失手（规则先删、指令后入站 → 被判隐藏，但恢复按同戳捞子行**捞不回时间戳更早的它** → 从此再也看不见）；代价只是列表多几行，换来**任何一行都够得着**。**FE 两处** —— `describeReferences` 新增「发前路由规则 N 条 → 随删入站」行 + 无引用句补一词、`describeDeletion` 新增「发前路由规则 N 条级联」（沿用**只报非零**口径）、`Trash.jsx` `KIND_LABELS` 加 `routing_rule: 路由规则`（`KIND_ORDER` = `Object.keys(KIND_LABELS)` 自动跟上，筛选 chip 不用另配）。**`pageStatus.json` 改两处已陈旧的陈述**（「四表计数」→ 五表、「7 类对象」→ 8 类 + 回收站例外说明）并 `npm run sync:page-status`。**红测先行有据**：BE 4 errors + 1 failure（`KeyError: 'routing_rules'`、级联没做 → 规则仍在列）+ FE 3 failed（文案缺项），**红因全部 = 缺特性本身**；落实现后 BE 仍剩 1 failed = 恢复路径 `children` 没接，**同属缺特性**；全量回归再翻 **3 条既有钉**（`res.related` 回执多出 `routing_rules` 键）→ **测试随新事实改写**，三档分开记账。**BE 999 → 1002/1002、FE 1362 → 1365/1365（+3）** |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -3000,7 +3001,7 @@ D15 关联项 1（17 例 + BE 630/630）。**本项无需再拍**，此处只留
 
 | 项 | 拍板 | 落地含义 | 编入 |
 |---|---|---|---|
-| **C-1 自动选指令路由** | **A · 本轮不立项** | 维持「人工选 + N3 设计期双支并列」，序列仍严格线性 | 不排批（重启条件 = 真出现跨代设备 / 多设备族共用入口，届时须一并论证 §0「`/dispatch` 缺省口径不变」）→ **✅ 2026-10-06 用户翻案重启**：按**原选项 C（发前路由）**立项，编入 **R36（BE 数据层 ✅ §8.68）+ R37（FE 接线）**；§0 论证 = 新表属「仅新增表」明文允许、`/dispatch/routed` 是**新增端点**，`/dispatch/` 与 `/transaction` 一行不改 |
+| **C-1 自动选指令路由** | **A · 本轮不立项** | 维持「人工选 + N3 设计期双支并列」，序列仍严格线性 | 不排批（重启条件 = 真出现跨代设备 / 多设备族共用入口，届时须一并论证 §0「`/dispatch` 缺省口径不变」）→ **✅ 2026-10-06 用户翻案重启**：按**原选项 C（发前路由）**立项，编入 **R36（BE 数据层 ✅ §8.68）+ R37（引用计数与级联 ✅ §8.69）+ R38（FE 接线待排）**；§0 论证 = 新表属「仅新增表」明文允许、`/dispatch/routed` 是**新增端点**，`/dispatch/` 与 `/transaction` 一行不改 |
 | **C-2 响应解码为字段** | **C · 入库回写** | 按选项 C 的定义 = B（解码面板）+ C（`dispatch_logs.fields_json`，**仅新增列**）两步做完 | **R9（B 展示 ✅ §8.47）→ R10（C 入库 ✅ §8.48）—— 两半均已完成** |
 | **C-3 全量项目包迁移** | **C · 补域 + manifest 折中** | `bundle` 扩 8 域 + 按域导入端点 + `manifest.domainVersion`；**整机/跨版本迁移仍走 backup/restore**；不选 B（重复造 backup） | **R1（pre-import 快照 ✅ §8.38）→ R7（导出补域 ✅ §8.45）→ R8（导入补端点 ✅ §8.46）** |
 | **C-4 应答是否带转义** | **确认接受** | 「应答带转义字节 + 先线上、后逻辑双口径」正式定案，§9.7 ④ 与 D15 关联项 1 销项 | 已落地（§8.35，提交 `dbe15a4`） |
@@ -4312,7 +4313,7 @@ C-4 / §8.49 三·① 与 R18 终态 / §8.27 复跑第 1 项 / §1 新行、`PR
 | 挂账 ③ 创建后切换 op | 不排期 | **立项** | **R24** —— **✅ 已完成（2026-10-03，§8.56）** |
 | 挂账 ② 加扰 / 混淆字段 | 不排期 | **立项** | **R25** —— **✅ 已完成（2026-10-04，§8.57）** |
 | C-1 B 序列级分支 | A 不立项 | **立项 B**（C 发前路由**仍不在本列**，要做另议） | **R26** —— **✅ 已完成（2026-10-04，§8.58）** |
-| C-1 C 发前路由 | A 不立项 | 复议时**仍划在本列外**（上一行明写「要做另议」） | **2026-10-06 用户翻案另议 → 立项**：**R36 BE 数据层 ✅ + R37 FE 接线**（§8.68） |
+| C-1 C 发前路由 | A 不立项 | 复议时**仍划在本列外**（上一行明写「要做另议」） | **2026-10-06 用户翻案另议 → 立项**：**R36 BE 数据层 ✅ + R37 引用计数与级联 ✅ + R38 FE 接线待排**（§8.68 / §8.69） |
 | C-5 ③ varint / COBS | 明确不做 | **立项**，按原建议拆「出线 / 解包」两批 | **R27 出线 + R28 解包** |
 | 加工页传输展示 + 本页切换 | 维持 D9-A 不立项 | **复议维持不立项** | 不排期 |
 
@@ -5617,10 +5618,13 @@ presenceEqual(expect, value) =
 
 §8.36 C-1 立了三个选项：**A** 不立项 / **B** 序列级分支 / **C** 发前路由。
 §8.52 复议**只立项了 B**（编入 R26），拍板表里并明写「C 发前路由**仍不在本列**，要做
-另议」。本批即那次「另议」：用户对 A 不立项**翻案**，按**原选项 C** 规格立项，分 2–3 批。
+另议」。本批即那次「另议」：用户对 A 不立项**翻案**，按**原选项 C** 规格立项，分三批
+（承诺的是「2–3 批」，实分 3 批 —— 拆分点在 §8.68 八 的留白自然分界）。
 
 - **R36（本批）**：新表 + 匹配器 + CRUD + `POST /dispatch/routed` 解析；
-- **R37**：规则编辑 UI + 加工页自动选指令接线 + 指令删除的引用计数与级联集成。
+- **R37**：引用计数与级联集成 + 回收站中文名（**✅ §8.69**）—— 先把「删指令会留下
+  悬空规则」这个数据完整性洞补上，**再**让 UI 能造出命中它的数据；
+- **R38**：规则编辑 UI + 加工页自动选指令接线（真正「换指令」的动作，待排）。
 
 **例 B（只有 C 解得了）**：同一个「执行」按钮，输入 `meter_id = 0001` 该发指令 X、
 `= 0002` 该发指令 Y —— 这发生在**进入序列之前**；R26 的序列分支只在「已选定的指令链
@@ -5750,20 +5754,119 @@ presenceEqual(expect, value) =
   `matched=false` → 空输入 `considered=1`·`invalid=0`（未定义变量不记缺陷）→
   删除后回收站可见。
 
-### 八 · 明确留白（本批不做 → R37）
+### 八 · 明确留白（本批不做 → R37 / R38）
 
-- **规则编辑 UI**（FE）—— R36 纯 BE，页面上看不到也建不了规则；
-- **加工页自动选指令接线**（FE）—— 真正「换指令」的动作发生在 R37；
-- **指令删除的引用计数与级联**：`instruction.get_instruction_references` 与
-  `delete_instruction` 的 `mark_related` 尚未接入 `routing_rules` —— 现状是目标指令
-  入站后规则**留作悬空行**，`/dispatch/routed` 记进 `invalid` 跳过（优雅降级、不 500）；
-  牵动 FE `describeReferences` / `describeDeletion` 文案，故归 R37；
-- **回收站 FE 中文名**：`Trash.jsx` 的 `KIND_LABELS` 未加 `routing_rule`，条目会以
-  原始 key 显示（`kindLabel` 有回落、不会崩）。R36 无 FE 入口 → 建不出来也进不了
-  回收站，故不动 FE；R37 随规则 UI 一并补；
+- **指令删除的引用计数与级联**（`get_instruction_references` 加 `routing_rules` 键 +
+  `delete_instruction` 的 `mark_related`）与 **回收站 FE 中文名** →
+  **R37 已落地 ✅（§8.69）**，本节留白**已销两条**；
+- **规则编辑 UI**（FE）—— R36 纯 BE，页面上看不到也建不了规则 → **R38**；
+- **加工页自动选指令接线**（FE）—— 真正「换指令」的动作发生在 R38；
 - **`byte_order` trim 归一**（§8.66 留白）本批不涉。
 
 **R36 ✅ —— 「该发哪条指令」有了数据层答案，`/dispatch` 缺省口径一个字节没动。**
+
+## 8.69 R37 发前路由 · 集成收尾（引用计数 + 同戳级联 + 回收站）
+
+**批次**：2026-10-06 · **BE 小改 + FE 文案，零 DDL → 无 `chore(db)`、无 Migration**
+—— R36 §8.68 八 挂的两条留白一次销完。
+
+### 一 · 为什么先做这个，而不是直接做 UI
+
+R36 的留白里有三件事，性质完全不同：
+
+| 项 | 不做的后果 | 拆批 |
+|---|---|---|
+| 引用计数 + 级联 | 删指令 → 规则变**悬空行**（解析时 `INSTRUCTION_MISSING` 跳过），用户**从头到尾不知道自己删掉了什么** | **本批（R37）** |
+| 规则编辑 UI | 页面上看不到也建不了规则 | R38 |
+| 加工页接线 | 「换指令」的动作没落地 | R38 |
+
+前一件是**数据完整性**，后两件是**可见性**。顺序反了的代价是：UI 先上线，用户在 UI 里
+造出成批规则，然后一个不留神删掉目标指令 —— 一次性产出成批悬空规则，而 UI 当时**没有
+任何一处**会提示。先把洞补上，再开闸。
+
+### 二 · 三分口径归类：`routing_rules` 是「活配置」
+
+D14② 把四张表按数据性质分三类（活配置级联 / 冻结快照留失效 / 日志只读留）。新表落位：
+
+- **`routing_rules` = 活配置** —— 用户手写、指向某条指令的配置，与 `protocol_bindings`
+  / `response_specs` 同档。目标入站时**同戳**级联，恢复时一并捞回。
+
+三处改动，缺一环就断：
+
+| # | 位置 | 改动 | 漏了会怎样 |
+|---|---|---|---|
+| ① | `instruction.get_instruction_references` | 加 `routing_rules`（**只数活行**）并计入 `total` | 弹窗不提规则 = **对用户隐瞒一次删改** |
+| ② | `instruction.delete_instruction` | `mark_related(RoutingRule, instruction_id, ts)` + 回执 `deleted_routing_rules` | 规则留在站外成悬空行 |
+| ③ | `trash.py` 的 `instruction` `children` | 补 `("routing_rules", RoutingRule, instruction_id)` | 同戳级联**白做** —— 恢复了宿主，规则还留在站外 |
+
+③ 是最隐蔽的一处：②只管**进去**，③才管**回来**。写测试时正是它单独红了一轮，
+`KeyError` 和断言双红之后才暴露。
+
+### 三 · 刻意的例外：`routing_rule` 在回收站**不隐藏**
+
+`trash.py` 有一条通用规则 —— **「宿主在回收站就连带子行一起隐藏」**（判据 = 子行的宿主
+也在站里），理由是「恢复父行会一并回来，它们不该单独占一行」。这条对 `routing_rule`
+**不成立**：
+
+> 判据是**时间戳的代理**。规则先独立删除（戳 `t1`）、指令随后入站（戳 `t2`）时，它被判
+> 「宿主在站」而**隐藏**；但恢复指令按**同戳 `t2`** 捞子行 —— 捞不回 `t1` 的它。于是它
+> 既不在列表里、也没被恢复，**从此再也看不见**。
+
+这正是 R36 给 `routing_rule` 立白名单时点名要防的「永久黑洞」，只是换了个入口进来。
+`routing_rules` 因此**始终自己占一行**：代价是宿主连带入站时列表多几行，
+换来**任何一行都够得着**（可恢复、可彻底删除）。`binding` / `response_spec` 沿用原判据不动
+——— 它们的既有行为由 `test_standalone_child_keeps_its_own_entry_across_parent_restore`
+钉着，本批不顺手改别人的口径。
+
+### 四 · FE 文案与页签（`useInstructionData.js` + `Trash.jsx`）
+
+- `describeReferences` 新增一行 `· 发前路由规则 N 条 → 随删入站（活配置，随指令恢复）`，
+  **排在应答规格之后、序列步骤之前** —— 三类活配置连着排，读者一眼看出同档；
+  无引用句补一词（`绑定 / 应答规格 / 发前路由规则 / 序列步骤 / 通讯日志`）；
+- `describeDeletion` 新增 `发前路由规则 N 条级联`，沿用 **R18「只报非零那一段」**口径 ——
+  零不占位、不写「0 条」；
+- `Trash.jsx` 的 `KIND_LABELS` 加 `routing_rule: 路由规则`；`KIND_ORDER = Object.keys(
+  KIND_LABELS)` **自动跟上**，筛选 chip 不用另配；`relatedText` 通用求和，恢复回执多了
+  `routing_rules` 键也自动并入「级联 N 条」。
+- 模块注释与 `KIND_LABELS` 上方说明同步改写（7 类 → 8 类 + 例外说明）。
+
+### 五 · `pageStatus.json` 两处陈述已陈旧（改后跑 `sync:page-status`）
+
+| 位置 | 改前 | 为什么必须改 |
+|---|---|---|
+| 指令页 · 删除前引用计数 | 「四表计数」/「活配置（协议绑定 / 应答规格）」 | 计数与清单都是**当前事实**，加了第五表就是错了 |
+| 回收站页 · 软删除 | 「7 类对象」 | 同上，现为 8 类 |
+| 回收站页 · summary / 统一入口 | 未列「路由规则」；隐藏规则未说例外 | 页面用途与已知取舍必须如实 |
+
+改完在 `frontend/` 跑 `npm run sync:page-status` 再校 `docs/PAGE_STATUS.md`。
+
+### 六 · 红测先行有据
+
+| 轮次 | 结果 | 红因归属 |
+|---|---|---|
+| 实现前（BE） | 4 errors + 1 failure：`KeyError: 'routing_rules'`、`list_rules` 里规则仍在列 | **缺特性本身**（计数键 + 级联都没做）→ 合格红 |
+| 实现前（FE） | 3 failed：文案不含「发前路由规则」 | **缺特性本身** → 合格红 |
+| 落实现后 | BE 仍剩 1 failed：恢复后 `['rr-2'] != ['rr-1','rr-2']` | **缺特性本身** —— `trash.py` 的 `children` 没接（§二 ③），同档红因 |
+| 全量回归 | 3 failed：`res.related` 多出 `routing_rules: 0` 键 | **测试随新事实改写**（回执从两键变三键），补键不补语义 |
+
+钉住的语义：计数**只数活行** · 级联**同戳**且恢复**一起回来** · 独立入站的规则
+**不被宿主吞掉也不被隐藏** · 引用弹窗与删除回执**非零才报**。
+
+### 七 · 验收
+
+- **BE 999 → 1002/1002**（`test_instruction_delete` 9 例）、**FE 1362 → 1365/1365（+3）**；
+- `npx vite build` EXIT=0 · `npm run lint` EXIT=0 · yorha-ui 校验器 **4 个改动文件
+  （3 js/jsx + `pageStatus.json`）0 违规** · md 表列数 mismatches = 0；
+- **零 DDL → 无 Migration、无 `chore(db)`**、不引 pytest、无新 pip 依赖、
+  `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、**`/dispatch` 缺省口径未动**。
+
+### 八 · 留白（→ R38）
+
+- **规则编辑 UI**（规则的增删改查页面）；
+- **加工页自动选指令接线**（真正「换指令」的动作）；
+- **`byte_order` trim 归一**（§8.66 留白）不涉。
+
+**R37 ✅ —— 删指令不再留下没人知道的悬空规则，恢复也一并回来。**
 
 ## 9. 保留勿动（非任务，勿清理）
 

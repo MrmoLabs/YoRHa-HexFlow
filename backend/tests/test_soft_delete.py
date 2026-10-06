@@ -364,7 +364,12 @@ class TrashInstructionTest(_TrashBase):
 
         res = restore_trash_item("instruction", "i-1", db=self.db)
 
-        self.assertEqual(res.related, {"bindings": 1, "response_specs": 1})
+        # `routing_rules` 是 R37（§8.69）新登记的第三张子表 —— 夹具里没有指向
+        # i-1 的规则，故为 0，但**键必须在**（回执形状 = 三张子表）
+        self.assertEqual(
+            res.related,
+            {"bindings": 1, "response_specs": 1, "routing_rules": 0},
+        )
         self.assertIn("i-1", [i.id for i in get_instructions(db=self.db)])
         self.assertEqual({b.id for b in get_bindings(db=self.db)}, {"b-1", "b-2"})
         self.assertEqual(
@@ -377,7 +382,10 @@ class TrashInstructionTest(_TrashBase):
 
         res = purge_trash_item("instruction", "i-1", db=self.db)
 
-        self.assertEqual(res.related, {"bindings": 1, "response_specs": 1})
+        self.assertEqual(
+            res.related,
+            {"bindings": 1, "response_specs": 1, "routing_rules": 0},
+        )
         self.assertEqual(
             self.db.query(Instruction).filter(Instruction.id == "i-1").count(), 0
         )
@@ -416,7 +424,10 @@ class TrashInstructionTest(_TrashBase):
 
         res = restore_trash_item("instruction", "i-2", db=self.db)
         # b-2 不算在内（戳不同 → 不是被连带入站的那一批）
-        self.assertEqual(res.related, {"bindings": 0, "response_specs": 1})
+        # `routing_rules` 同理：夹具无规则 → 0，键在回执里
+        self.assertEqual(
+            res.related, {"bindings": 0, "response_specs": 1, "routing_rules": 0}
+        )
         self.assertEqual(self._ids("binding"), ["b-2"])  # 宿主回来 → 重新露出
 
 
