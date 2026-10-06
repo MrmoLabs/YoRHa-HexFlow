@@ -90,6 +90,9 @@ function Layout() {
                 return <Page />;
             case 'sequences':
                 return <Page />;
+            // R38（§8.70）：只吃指令列表（目标指令下拉要用），不写共享状态
+            case 'routing':
+                return <Page instructions={instructions} />;
             case 'trash':
                 return <Page />;
             default:

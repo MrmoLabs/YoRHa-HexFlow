@@ -2971,7 +2971,7 @@
 
       | # | 位置 | 要点 |
       |---|---|---|
-      | ① | `frontend/src/utils/routeChunks.js`（新） | **页面模块单一登记表** `ROUTE_LOADERS`（8 个动态 import，与 `PAGE_REGISTRY` 同集）+ `routeComponent` 返回**缓存过的** `React.lazy` 实例（不缓存 → 每次渲染新建组件 = 整页重挂载）+ `prefetchRoute` **幂等**（复用同一份 pending Promise，失败 `.catch(→null)` 不打断导航）+ `__resetRouteCaches` 仅测试隔离 |
+      | ① | `frontend/src/utils/routeChunks.js`（新） | **页面模块单一登记表** `ROUTE_LOADERS`（R35 落笔 8 个动态 import，与 `PAGE_REGISTRY` 同集；R38 加路由规则页起 9 个）+ `routeComponent` 返回**缓存过的** `React.lazy` 实例（不缓存 → 每次渲染新建组件 = 整页重挂载）+ `prefetchRoute` **幂等**（复用同一份 pending Promise，失败 `.catch(→null)` 不打断导航）+ `__resetRouteCaches` 仅测试隔离 |
       | ② | `frontend/src/components/RouteLoading.jsx`（新） | Suspense fallback：`[ MODULE LOAD ]` 标记 + 按 `useLocation` 查 `PAGE_STATUS_BY_PATH` 出中文页名（未知路由回落站点名，**不臆造**）+ `role="status"` / `aria-live`；**不画假百分比**（拆包加载没有可度量的进度），8 段待机格只表达「等待中」 |
       | ③ | `frontend/src/App.jsx` · 渲染 | **删 8 行静态页面 import** → `renderRouteElement` 按 `pageKey` 取组件后**原样注入各页 props**（prop 契约一行未动），未知 key 仍 `<Navigate to="/protocol">` |
       | ④ | `frontend/src/App.jsx` · 预取 + 边界 | `NavItem` 增 `pageKey` 走 `onMouseEnter` / `onFocus` 预取（键盘 Tab 与鼠标同待遇）；**`<Suspense>` 放在 `key={location.pathname}` 之外** → 换路由时边界自身不重建，已访问过的页切回来不重闪 fallback |
@@ -2994,7 +2994,7 @@
       `RouteLoading.test.jsx`（4 例）。实现前 **2 文件整体红 = 模块不存在**（缺特性本身）；
       落实现后剩 1 failed 是**测试自身 bug**（React 19 的 `lazy` 返回 lazy 组件对象非函数）
       → 按纪律**先修测试**（断言 `$$typeof === Symbol.for('react.lazy')`）再算数；修后 **13/13 全绿**。
-      钉住：8 页载入器无缺无多 / 同页同引用 / prefetch 幂等且失败不炸 / fallback 只认已登记路由。
+      钉住：每页各有且仅有一个载入器（按 registry 派生 —— R35 时 8 页、R38 加路由规则页起 9 页）/ 同页同引用 / prefetch 幂等且失败不炸 / fallback 只认已登记路由。
     - **验收**：**BE 977/977（持平）**、**FE 1349 → 1362/1362（87 文件，+13）**、
       `npx vite build` EXIT=0（无体积警告）、`npm run lint` EXIT=0、yorha-ui 校验器改动
       5 文件 **0 违规**、md 表列数 mismatches = 0；**零 DDL → 无 `chore(db)`**、不引 pytest、
@@ -3018,7 +3018,10 @@
       发生在**进入序列之前** —— 序列分支结构上解不了。
     - **批次切分**：**R36 = 纯 BE**（表 + CRUD + 匹配器 + 解析端点）；
       **R37 = 集成收尾**（引用计数 / 同戳级联 / 回收站中文名，**✅ §8.69，见第 86 条**）
-      —— 先补数据完整性洞；**R38 = 规则编辑 UI + 加工页自动选指令接线**（待排）。
+      —— 先补数据完整性洞；**R38 = 规则编辑 UI（独立「发前路由规则」页）**
+      （**✅ §8.70，见第 87 条**）；**R39 = 加工页自动选指令接线**（待排）。
+      **后两批经 2026-10-06 用户拍板再拆一次**（question 工具回执）：先管理面、后接线 ——
+      两件事验收面不同，CRUD 纯 FE 可全自动验收，接线须实机冒烟。
     - **新表 `routing_rules`（§0 合规）**：`id` / `name`（唯一）/ `condition` /
       `instruction_id`（**逻辑外键**，同 `op_code` 先例不加 FK）/ `sort_order` / `enabled` /
       `description` / `created_at` / `updated_at` / `deleted_at` —— 属 §0「**仅新增表**」
@@ -3065,9 +3068,9 @@
       §8.52 拍板表各补翻案行 + §8.67 留白改指；`BUSINESS_SCENARIOS` 挂账行
       「按输入值选指令模板 / 报文」🔴 → ✅ 与 G1 尾注；本条 + 目录地图补 4 个新文件。
     - **状态**：**R36 ✅ —— 「该发哪条指令」有了数据层答案，`/dispatch` 缺省口径一个字节没动。**
-      **明确留白（→ R38）**：规则编辑 UI、加工页自动选指令接线、`byte_order` trim 归一
+      **明确留白（→ R37 / R38 / R39）**：加工页自动选指令接线、`byte_order` trim 归一
       （§8.66 留白）不涉。原挂的「指令删除的引用计数与级联」与「`Trash.jsx` 中文名」
-      **已由 R37 销掉 ✅（§8.69）**。
+      **已由 R37 销掉 ✅（§8.69）**，「规则编辑 UI」**已由 R38 销掉 ✅（§8.70）**。
       提交 = `feat(R36)` 单笔（**仅新增表** → 无 Migration、无 `chore(db)`）。
 
 86. **R37 · 发前路由 · 集成收尾（引用计数 + 同戳级联 + 回收站；PLAN §8.69 · 2026-10-06）**
@@ -3113,9 +3116,56 @@
       批次切分与留白改指 + 两处拍板表改「R36 ✅ / R37 ✅ / R38 待排」；本条 + 目录地图
       改 `instruction.py` / `trash.py` / `useInstructionData.js` / `Trash.jsx` 四行。
     - **状态**：**R37 ✅ —— 删指令不再留下没人知道的悬空规则，恢复也一并回来。**
-      **明确留白（→ R38）**：规则编辑 UI、加工页自动选指令接线；`byte_order` trim 归一
-      （§8.66 留白）不涉。
+      **明确留白（→ R38 / R39）**：规则编辑 UI（**R38 已落地 ✅ §8.70**）、
+      加工页自动选指令接线（R39 待排）；`byte_order` trim 归一（§8.66 留白）不涉。
       提交 = `feat(R37)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+
+87. **R38 · 发前路由 · 管理面（独立「发前路由规则」页 · CRUD + 排序草稿 + 启停；PLAN §8.70 · 2026-10-06）**
+    - **为什么**：R36 给了数据层答案、R37 补齐删改时的数据完整性，但**页面上看不到也建不了
+      规则** —— R38 给规则表第一个家。**纯 FE、零 DDL**，`backend/` 一个字节没碰。
+    - **落点与拆批（用户拍板，question 工具回执 2026-10-06）**：① **新建独立页**
+      （`/routing`，第 9 页，快捷键 `H`，插在回收站之前）而非挂指令页 / 加工页面板 ——
+      规则是独立实体、还要跨规则调 `sort_order`（first-match-wins 的语义全在顺序上），
+      塞进任一现有页都装不下；② **拆两批**：R38 只做 CRUD、R39 才做加工页接线 ——
+      前者红测全落在文案与请求形状上（纯 FE 可自动验收），后者改变「执行」行为（须实机冒烟）。
+    - **页面四件事**：列表顺序 = 匹配顺序（照后端 `(sort_order, name, id)` 定序渲染，
+      FE 不重排不重算，保存一律稠密重编使 `(name, id)` 兜底永不生效）；表单就地校验
+      （`validateRuleDraft` 委托 `utils/condition.checkCondition` 同一 SSOT，非法即红字
+      **一个请求都不发**）；启停 / 删除（`NieRModal` 二次确认）逐行 PUT / DELETE；
+      **排序只改草稿** —— 上移 / 下移零请求，点「保存顺序 SAVE ORDER」才按草稿
+      **只 PUT `sort_order` 真变化的行**（后端无批量排序端点），「放弃 REVERT」零调用重拉。
+    - **新增 3 个文件**：`frontend/src/pages/RoutingRules.jsx`、
+      `frontend/src/utils/routingView.js`（7 个纯函数，逐个有专测）、
+      `frontend/src/api/routing.js`（`/routing-rules` 五方法，PUT 是整体替换恒六字段）。
+    - **接缝四处**：`api/index.js` barrel、`pageStatus.json` **第 9 条**（key `path`
+      快捷键 `H`，数组序 = 侧栏序）+ `npm run sync:page-status`、`routeChunks.js` 载入器、
+      `App.jsx` `case 'routing'`（只注入 `instructions`，不写共享状态）。
+      前三处由 `pageRegistry` / `routeChunks` 既有测试互钉（键集与载入器集同集的断言
+      R35 就挂好了，忘登记即红）；**`App.jsx` 的 case 无自动化测试** —— 漏写即静默回落
+      `/protocol`，**本批实机冒烟已验**（直达 `GET /routing` 渲染本页未回落；建规则 →
+      下移（**后端仍 0/1 = 草稿期零请求**、界面 `● 2 条顺序待保存`）→ 保存顺序（后端变
+      `beta=0/alpha=1`、`更新 2 条 · 未变 0 条`）→ 删除（确认前未发 DELETE、确认后软删进
+      回收站中文名正确），冒烟数据已清）。
+    - **测试（红测先行有据，两档记账）**：实现前 4 个文件全红 —— 3 个新测试文件
+      `Failed to resolve import`（模块不存在）、注册表断言 `undefined to be '/routing'`，
+      **红因全部 = 缺特性本身**；落实现后翻 1 条**测试自身 bug**（`renderPage` 辅助写死
+      等某一行 → 空态列表里没有该行 → 改等恒存在的表头计数）**先修再算数**；
+      另有 1 处**落笔自查改正**（顺序脏计数初稿断言 `1`，两行换位实为两行要写 → 改 `2`，
+      该断言在红跑里因模块不存在从未执行到，不计红）。
+    - **验收**：**FE 1365 → 1405/1405（+40 = 7 api + 21 routingView + 11 页面 + 1 注册表）**、
+      **BE 1002/1002**（零 BE 改动复跑）、`npx vite build` EXIT=0、`npm run lint` EXIT=0、
+      yorha-ui 校验器 **11 个改动文件 0 违规**、md 表列数 mismatches = 0；
+      产物 **9 个页面 chunk**（`RoutingRules` 15.67 kB），首屏 `index` 仍无 >500kB 警告
+      （R35 拆包前提未被破坏）。
+    - **文档同步（同批）**：PLAN **§8.70 新节** + §1 新增 `R38` 行 + §8.68 一 改 4 批 /
+      八 留白改指 + §8.69 拆批表与留白改指 + §8.67 的「`PAGE_REGISTRY` 8 页」改计数无关措辞
+      + 两处拍板表改「R38 ✅ / R39 待排」；`BUSINESS_SCENARIOS` 72 / 91 两行改指；
+      本条 + 目录地图改 `api/` / `App.jsx` / `routeChunks.js`（8 页 → 9 页）/
+      `pageStatus.json` 四行并补 `RoutingRules.jsx` / `routingView.js` 两行。
+    - **状态**：**R38 ✅ —— 规则第一次能在页面上被建出来、排序出来、停掉、删掉。**
+      **明确留白（→ R39）**：加工页自动选指令接线 + 规则页「试解析」入口；
+      `byte_order` trim 归一（§8.66 留白）不涉。
+      提交 = `feat(R38)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
@@ -3167,7 +3217,7 @@
 ### frontend/src/
 | 文件 | 职责 | 状态 |
 |---|---|---|
-| `src/api/` | 全部 HTTP 调用，按域拆分：`client.js`（fetch 助手）/ `protocols.js` / `instructions.js` / `operators.js` / `export.js` / `bindings.js` / `compile.js` / `dispatch.js` / `responseSpecs.js` / `sequences.js` 等 + `index.js` 桶导出 `api` 对象；**导入路径 `./api` 不变** | ✅ 原 `src/api.js` 已拆 |
+| `src/api/` | 全部 HTTP 调用，按域拆分：`client.js`（fetch 助手）/ `protocols.js` / `instructions.js` / `operators.js` / `export.js` / `bindings.js` / `compile.js` / `dispatch.js` / `responseSpecs.js` / `sequences.js` / **`routing.js`（R38：`/routing-rules` 五方法）** 等 + `index.js` 桶导出 `api` 对象；**导入路径 `./api` 不变** | ✅ 原 `src/api.js` 已拆 |
 | `src/constants.js` | `OP_CODES` / `CATEGORIES` / `OP_PRIORITY` / `CATEGORY_ORDER`（BITFIELD 已含） | ✅ |
 | `src/utils/InstructionEncoder.js` | **编码核心**（hex 生成、依赖解析、BITFIELD 打包） | ✅ 权威编码逻辑，勿随意改 |
 | `src/utils/formula.js` | 公式求值 / 校验和算法 | ✅ |
@@ -3176,8 +3226,9 @@
 | `src/utils/blockMerge.js` | 编排页纯逻辑（协议+指令合并、slot 注入、`buildLanes` / `getTotalBytes`） | ✅ 新增（自 Orchestration.jsx 抽出） |
 | `src/utils/toFrameBlocks.js` | 导出映射 `byte_len→byte_length`、`op_code→type`（供 `/export/binary`） | ✅ 新增（自 Orchestration.jsx 抽出） |
 | `src/utils/download.js` | `triggerBlobDownload`（.hex / .bin 下载共用） | ✅ 新增 |
-| `src/App.jsx` | 路由壳：`PAGE_REGISTRY` 驱动侧栏与 `Routes`，`renderRouteElement` 按 `pageKey` 取组件后注入各页 props；R35 起页面改动态 import + `<Suspense>`（首屏拆包），`NavItem` 悬停/聚焦预取 | ✅ |
-| `src/utils/routeChunks.js` | **页面模块单一登记表** `ROUTE_LOADERS`（8 页动态 import）+ 缓存的 `React.lazy` + 幂等 `prefetchRoute` + `__resetRouteCaches`（仅测试） | ✅ 新增（R35） |
+| `src/utils/routingView.js` | **R38 规则页纯逻辑**：`emptyRuleDraft` / `defaultSortOrder`（新建落末位）/ `validateRuleDraft`（名称+条件+目标指令，条件**委托 `condition.checkCondition` 同一 SSOT**）/ `moveRule`（上移下移，只改草稿）/ `renumber`（稠密重编 0..N-1）/ `changedSortOrder`（**只回写真变化的行**）/ `describeRoutingSaveError`（后端 detail → 中文事实文案） | ✅ 新增（R38 · §8.70） |
+| `src/App.jsx` | 路由壳：`PAGE_REGISTRY` 驱动侧栏与 `Routes`，`renderRouteElement` 按 `pageKey` 取组件后注入各页 props（**R38 加 `case 'routing'`，只注入 `instructions`**）；R35 起页面改动态 import + `<Suspense>`（首屏拆包），`NavItem` 悬停/聚焦预取 | ✅ |
+| `src/utils/routeChunks.js` | **页面模块单一登记表** `ROUTE_LOADERS`（**9 页动态 import**，R38 加第 9 页）+ 缓存的 `React.lazy` + 幂等 `prefetchRoute` + `__resetRouteCaches`（仅测试） | ✅ 新增（R35） |
 | `src/components/RouteLoading.jsx` | 路由级拆包的 Suspense fallback：`[ MODULE LOAD ]` + 按路由出中文页名，未知路由回落站点名，不画假百分比 | ✅ 新增（R35） |
 | `src/hooks/useInstructionData.js` | 指令数据加载/保存/CRUD（归一化逻辑在 `utils/normalizeInstruction.js`，此处 re-export）；导出 `describeReferences` / `describeDeletion` 删除文案纯函数（**R37 加发前路由规则行/段，沿用只报非零**，改文案必改测试） | ✅（§8.69） |
 | `src/hooks/useInstructionForm.js` | 表单输入 + 编码 memo | ✅ |
@@ -3189,7 +3240,8 @@
 | `src/pages/Instruction.jsx` | 指令管理页（含 `handleAddBlock` 默认 bits 初始化） | ✅ |
 | `src/pages/Blueprint.jsx` | 旧蓝图页 | ⚠️ **未接线**（保留勿删，不进路由） |
 | `src/pages/Trash.jsx` | 回收站页：`KIND_LABELS`（**8 类**中文名，R37 补 `routing_rule`）+ `KIND_ORDER = Object.keys(KIND_LABELS)` 筛选 chip + 恢复 / 彻底删除 / 批量；`relatedText` **通用求和**（回执多一个键自动并入，无需改） | ✅（§8.44 / §8.69） |
-| `src/config/pageStatus.json` | 页面状态唯一数据源 | ✅ 改后重跑脚本 |
+| `src/pages/RoutingRules.jsx` | **发前路由规则页**（第 9 页 · `/routing` · 快捷键 `H`）：列表顺序 = 匹配顺序、表单就地校验、启停 / 删除二次确认、**排序只改草稿、保存顺序只 PUT 真变化的行** | ✅ 新增（R38 · §8.70） |
+| `src/config/pageStatus.json` | 页面状态唯一数据源（**9 页**，数组序 = 侧栏序） | ✅ 改后重跑脚本 |
 
 ### 文档
 | 文件 | 说明 |

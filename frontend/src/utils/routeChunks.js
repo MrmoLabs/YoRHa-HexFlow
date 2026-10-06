@@ -20,6 +20,8 @@ export const ROUTE_LOADERS = {
     terminal: () => import('../pages/Terminal'),
     datahub: () => import('../pages/DataHub'),
     sequences: () => import('../pages/Sequences'),
+    // R38（§8.70）：第 9 页 —— 发前路由规则的管理面（解析 / 自动选指令归 R39）
+    routing: () => import('../pages/RoutingRules'),
     trash: () => import('../pages/Trash'),
 };
 

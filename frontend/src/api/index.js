@@ -26,6 +26,8 @@ import { getDatahubStatus, createDbBackup, restoreDbBackup, exportDataBundle, im
 import { getProfiles, createProfile, updateProfile, deleteProfile, activateProfile, reorderProfiles } from './profiles';
 // R6（PLAN §8.43）：软删除 / 回收站 —— 列条目 / 恢复 / 彻底删除
 import { listTrash, restoreTrashItem, purgeTrashItem } from './trash';
+// R38（PLAN §8.70）：发前路由规则 CRUD（/routing-rules 五方法）
+import { listRoutingRules, getRoutingRule, createRoutingRule, updateRoutingRule, deleteRoutingRule } from './routing';
 import { getResponseSpec, saveResponseSpec, deleteResponseSpec, getResponseSpecTargets, generateResponseSpec, sendTransaction } from './responseSpecs';
 import {
     listSequences,
@@ -115,6 +117,13 @@ export const api = {
     listTrash,
     restoreTrashItem,
     purgeTrashItem,
+
+    // Routing rules (R38 · PLAN §8.70: 发前路由规则 CRUD，只解析口径在 BE)
+    listRoutingRules,
+    getRoutingRule,
+    createRoutingRule,
+    updateRoutingRule,
+    deleteRoutingRule,
 
     // Response specs / transaction (P2: 应答规格按指令持久化 + /dispatch/transaction)
     getResponseSpec,

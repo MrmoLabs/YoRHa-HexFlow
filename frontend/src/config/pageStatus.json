@@ -254,6 +254,29 @@
     ]
   },
   {
+    "key": "routing",
+    "path": "/routing",
+    "shortcut": "H",
+    "titleZh": "发前路由规则",
+    "titleEn": "Routing Rules",
+    "implemented": true,
+    "status": "规则增删改查 + 顺序草稿 + 启停（R38 · PLAN §8.70，纯 FE 零 DDL）",
+    "summary": "发前路由规则页维护「进入序列之前先按输入条件挑指令」的规则表：列表顺序即匹配顺序（first-match-wins），可增删改规则、上移下移调整优先级、停用或启用单条；命中条件在保存前就地校验（与序列步骤条件同一套受限表达式，不送后端吃 400），目标指令必须是在册活指令。R38 是纯管理面 —— 解析与加工页自动选指令的接线归 R39。",
+    "availableNow": [
+      "规则列表 = 匹配顺序（后端按 (sort_order, name, id) 定序，前端照单渲染不自作聪明）：每行出 #位次、名称、命中条件、目标指令名与 ON/OFF 启停章 —— first-match-wins 意味着排在前面的先判真。",
+      "新建 / 编辑表单：名称（1..128，与后端 max_length 同一个数）、命中条件（受限表达式，保存前经 utils/condition.checkCondition 就地校验，非法即红字且不发请求）、目标指令下拉（须在册活指令）、说明。",
+      "启停开关：单条 PUT 翻 enabled —— 停用的规则不参与匹配（后端 select_rule 静态跳过），不删行、随时可开回。",
+      "删除需二次确认（NieRModal），走 DELETE /routing-rules/{id} 软删进回收站（kind = routing_rule，可从回收站恢复；R37 起目标指令入站时同戳级联、恢复指令会一并捞回）。",
+      "顺序只改草稿：上移 / 下移立刻改展示序但零请求，底部出「● N 条顺序待保存」，点「保存顺序 SAVE ORDER」才按草稿稠密重编 0..N-1 并且只 PUT sort_order 真变化的行（没动的行不发），「放弃 REVERT」零调用重拉。",
+      "口径常驻说明条：条件语法坏掉记进 invalid 并继续往下扫、变量不在本次输入里 = 普通不命中不记 invalid、全无命中 matched=false 不猜（维持人工选指令）。",
+      "名称在前端只拦得到活行，回收站里占名的软删行由后端 400 兜底 —— detail 原样透出并指出去回收站释放，不改写、不吞。"
+    ],
+    "nextSteps": [
+      "R39：加工页自动选指令接线 —— 接 POST /dispatch/routed（只解析不发送），把命中结果接到加工页的选指令动作上；本页届时补一个「试解析」入口（输入键值 → 看会命中哪条、为什么没命中）。",
+      "规则表未进数据中心的 8 域清单（BUNDLE_DOMAIN_VERSIONS 里没有 routing_rules）—— 若要随数据包迁移另议，不擅自扩域。"
+    ]
+  },
+  {
     "key": "trash",
     "path": "/trash",
     "shortcut": "G",
