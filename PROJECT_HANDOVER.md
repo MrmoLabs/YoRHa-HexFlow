@@ -3739,8 +3739,59 @@
       **过期悬账（R35 人工验证点）就地销掉**（四处复核查无出处，不挂用户欠账）；本条插入。
     - **状态**：**R48 ✅ —— md 进了校验器：散文还是散文，围栏才是代码。**
       **明确留白**：skill 自检那 9 条既有违规（8 条自身源码 + 1 条 `components.md` 示例）
-      另议排批；`~~~` 围栏与缩进代码块不判（fail-open）；`.txt` 等非扫描扩展名不纳入。
+      另议排批 —— **→ R49 已落地 ✅（2026-10-08，见条目 98 / PLAN §8.81）**：9 → **0**，
+      自指 8 条走豁免、示例 2 条修内容，规则一字未改；`~~~` 围栏与缩进代码块不判（fail-open）；
+      `.txt` 等非扫描扩展名不纳入。
       提交 = `feat(R48)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+
+98. **R49 · 校验器自检收口（自指豁免 + 示例补工业标记；PLAN §8.81 · 2026-10-08）**
+    - **来源与拍板**：R48 §8.80 七 第 1 条登记的留白 —— validator 扫**它自己那份 skill** 出
+      **9 条条目 / 13 处匹配**（8 条 = 它自身的规则正则字面量与 FIXES 文案里的禁词，
+      `rounded` / `shadow` / `text-shadow` / `#0ff` …；1 条 = `components.md`「Page skeleton」
+      两行缩略示例 `class="yorha-panel"` ×2 缺 `[ ± ]`）。**2026-10-08 question 回执两问都选
+      推荐项**：① 自指那 8 条 → **自指豁免 + 报告里写明**（否掉基线棘轮、否掉行内抑制注释 ——
+      后者就是最初留白里的「白名单」方向，会软化全仓「改动文件 0 违规」）；② 示例那 2 条 →
+      **修示例补 header**（否掉规则放行省略号 —— JSX 的 `{...props}` 也带 `...`，会出洞；
+      否掉改占位 —— 骨架图就不示范真实类名了）。**分野**：前者是口径（规则表最后两个载体，
+      且校验器早已 `stripComments`），后者是内容。
+    - **文件（5 个）**：**仓外 4 个**（`scripts/validate-yorha-ui.mjs` 加 `SELF_PATH` /
+      `isSelfSource` + `validateSource` 首行豁免 + `formatReport` 四行说明 + 文件头与 usage；
+      `references/rules.md` 新增 **§10**；`references/components.md` 骨架两块面板补 header 与
+      `[ + ] MODULE_A // 0x01` / `MODULE_B // 0x02`；`SKILL.md` 步骤 4 补一句）；**仓内 1 个**
+      （新 `scripts/test-yorha-selfscan.mjs`）。**fixture 零新增** —— 复用 R48 的 `plain.js.txt`
+      与 `css-block.md.txt`。**零业务代码改动**：`backend/` 与 `frontend/src/` 一字未碰。
+    - **规则链没被碰**：`validateYoRHaCode` 与 `RULES` 表 8 条规则**一行未改**，豁免落在
+      `validateSource`、**位于规则链之前**。四重取证：R48 的 8 条断言复跑全绿 / 外部 fixture
+      仍判 `NO_BOX_SHADOW` + `NO_BORDER_RADIUS` 且 exit 1 / R48 的 skill 字节核验与 9 项口径
+      落位复跑 `BAD=0` / 自检报告 7 文件全绿、豁免行在场（全文留档）。
+    - **四条边界**：按路径判不按名判（`resolve` + 小写，`<stdin>` 不参与）；**只此一文件**，
+      本脚本的副本换名照判；**不静默**（文本四行 + `--json` `selfExempt: true`）；**不买什么**
+      —— 真把 CSS 贴进这个脚本不会被抓，该文件没有样式、只有拒绝样式的模式。
+    - **仓外改动不进本仓提交**（skill 是共享资产）：本仓记**事实 + 可复跑测试**当防回滚护栏，
+      改动要点逐条写在 PLAN §8.81「三」「四」。
+    - **测试（红测先行有据，三档 + 护栏单列）**：新增 7 条 → **4 红 3 护栏**，红因全为缺特性
+      （自检 exit 1 / 报告无豁免说明 / 仍有 `MISSING_INDUSTRIAL_TAG` / `components.md` 单独扫
+      exit 1 且 `Line: 153 (md fence)`）；护栏 = **豁免不扩大**（外部文件同样违规仍 exit 1）/
+      R48 md 围栏回归 / 全仓 14 份 md 0 违规，**实现前即绿不冒充红测**；**三档** = 缺特性 4 /
+      测试自身 bug 先修 2（都在临时取证脚本 `r49_regress.py`：`"FAIL" in out` 撞上汇总行
+      `FAIL 0`、一处少传 `node`）/ 随新事实改写 0（R48 那 8 条一字未改）。**实现一发即绿，
+      实现 bug 0**（与 R48 抓到裸 token 归一 bug 不同，如实记）。终态 **7/7 绿**。
+    - **验收**：**BE 1033/1033 持平**、**FE 1501/1501 持平**（两项均零改动）、`npx vite build`
+      EXIT=0、`npm run lint` EXIT=0 **且 0 warning**、yorha-ui 校验器（**2 个 `mjs`** +
+      **全仓 14 份 md**）**0 违规**、md 口径测试 **8/8**、**自检收口测试 7/7**、
+      `ev40` TOTAL_PROBLEMS=0、`ev33` STAGED=0 BAD=0；**零 DDL → 无 Migration、
+      无 `chore(db)`**、不引 pytest、无新 pip 依赖、`processor.py` / `graph.py` /
+      `Blueprint.jsx` 未碰、**`/dispatch` 缺省口径未动**。
+    - **人工验证**：**无应用代码改动 → 不启 8055 / 5174、不做浏览器冒烟**，改以四件可复跑的
+      事实为准（自检 7/7 · md 8/8 · skill 自检 exit 0 且写明豁免 · 外部 fixture 照旧被判）。
+      `pageStatus.json` 与 `PAGE_STATUS.md` **双双不动**（不给任何一页新增能力）。
+    - **文档同步（同批）**：PLAN **§8.81 新节** + §1 新增 `R49` 行；**销 §8.80 七 第 1 条**
+      （原文就地标注 → R49 已落地、9 → 0）；本条插入 + 条目 97 留白处销项 + 目录地图补 1 行。
+    - **状态**：**R49 ✅ —— 校验器不判自己：尺不量尺，但要把「不量」说出口。**
+      **明确留白**：行内抑制注释机制不做（口径扩到全仓会软化「改动文件 0 违规」，真要开豁免口
+      另议排批连「谁能开、开什么」一起拍）；`~~~` 围栏与缩进代码块仍不判；`.txt` 等非扫描扩展名
+      仍不纳入；`Terminal.test.jsx` 抖动治理仍未排（候选之一）。
+      提交 = `feat(R49)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
@@ -3755,6 +3806,7 @@
 | `scripts/generate-page-status.mjs` | 由 `pageStatus.json` 生成 `docs/PAGE_STATUS.md` | ✅ 改 JSON 后需重跑 |
 | `scripts/inspect_db.py` | SQLite 调试脚本（原根目录 `inspect_db.py`；DB 路径按脚本位置解析，任意 cwd 可跑） | ✅ |
 | `scripts/test-yorha-md-validator.mjs` | R48 新增：yorha-ui 校验器 **md 口径**的 8 条断言（围栏才判 / 散文·行内·无标注·非样式围栏不判 / 违规出行号 / 语言别名 / 全仓 md 0 违规），兼**仓外 skill 的防回滚护栏** · 跑法 `node scripts/test-yorha-md-validator.mjs` | ✅ 固定验收新增一项（R48 起） |
+| `scripts/test-yorha-selfscan.mjs` | R49 新增：校验器**自检收口**的 7 条断言（自检 exit 0 / 报告写明豁免 / 无工业标记违规 / `components.md` 0 违规 / **外部文件照旧被判** / R48 围栏回归 / 全仓 md 0 违规），兼**仓外 skill 的防回滚护栏** · 跑法 `node scripts/test-yorha-selfscan.mjs` | ✅ 固定验收新增一项（R49 起） |
 | `scripts/fixtures/md-validator/*.txt` | 上一条测试的 fixture 数据（**故意违规**才测得到，故放 `.txt` 数据文件：`.txt` 不在校验器扫描面内，也不会被「全仓 md 0 违规」咬住） | ✅ 勿改成 `.md`、勿并进源码 |
 | `requirements.txt`（根目录） | **不存在**；requirements 在 `backend/` 下 | ⚠️ 勿在文档中引用根目录版本 |
 

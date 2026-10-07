@@ -79,6 +79,8 @@
 
 | R48 | **校验器 md 口径（`.md` 纳入 · 只扫围栏代码块）** —— §8.73 八 与 HANDOVER 条目 90 两处同挂的留白正主：34 条历史 CSS 字样（`rounded-sm` / `shadow-md` …，全是当年「改掉它」的史实记述）要让 md 过检**须二选一** —— 改写史实措辞，或给校验器加白名单，后者改**仓外** `~/.agents/skills/yorha-ui` 故「另议」（§8.80；2026-10-07 question 回执拍板选此项**并授权改仓外 skill**，余三候选为输入表持久化（已顺延 R47 ✅）/ `Terminal.test.jsx` 抖动治理 / 暂不排批） | ✅ **已完成（2026-10-07，§8.80，仓外 skill 改动 + 仓内新增可复跑测试 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 与零 FE 业务代码改动）**：**走第三条路 —— 把 md 的扫描面收到围栏代码块**，于是二选一**都不必发生**（史实措辞一字未改、白名单一个没建）。仓外 `validate-yorha-ui.mjs`：`.md` 进 `SCANNED_EXTENSIONS` + 新增 `validateMarkdown` / `validateSource` 按文件名分流 + 围栏抽取（只认反引号围栏、语言标注须在样式语言集内、`typescript`→`.ts` 等 GitHub 别名走别名表、裸 token 先归一成带点扩展名）+ 违规贴回 `Line: N (md fence)`；`validateYoRHaCode` **逐字未改** —— md 只是多一个扫描面，不是第二套判据；同步 skill 的 `references/rules.md` §9 与 `SKILL.md` 工作流。**取数（修正枚举后）**：仓内 **14 份 md**（与 `git ls-files` 同数；初测 16 含 2 份 `venv` 第三方 LICENSE 已排除）、26 个围栏块、进扫描面 1 个（`typescript` 标注，其内 0 违规）→ 围栏口径 **0 违规**；同一批文件按**整文件判**（R48 之前的行为）= **3 文件 36 条**。**红测先行有据**：新增 `scripts/test-yorha-md-validator.mjs` 7 条（fixture 放 `scripts/fixtures/md-validator/*.txt` 数据文件）→ **3 红 4 护栏**，红因全为缺特性（md 无行号 / 散文被咬 6 条 / 全仓 md 36 条）；首跑另有 **1 条测试自身 bug**（js fixture 写 camelCase，规则族本就不判）**先修再算数**；实现后追加 1 条 `typescript` 别名护栏**单列不冒充红测**，终态 **8/8 绿**。**三档记账**：缺特性 3 / 测试自身 bug 先修 1 / 随新事实改写 0（护栏 4，追加 1 单列）。**验收** = BE **1033/1033 持平** · FE **1501/1501 持平** · `npx vite build` 0 · `npm run lint` 0 · 校验器（1 个 `mjs` + **全仓 14 份 md**）**0 违规** · md 口径测试 **8/8** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 BAD=0 |
 
+| R49 | **校验器自检收口（自指豁免 + 示例补工业标记）** —— R48 §8.80 七 第 1 条登记的留白：validator 扫**它自己那份 skill** 出 **9 条既有违规** —— 8 条是它自身的规则正则字面量与 FIXES 文案里的禁词（`rounded` / `shadow` / `text-shadow` / `#0ff` …，即「用来判别人的词必然出现在它自己身上」），1 条是 `components.md` 骨架示例 `x2` 缺 `[ ± ]` 工业标记（§8.81；2026-10-08 question 回执拍板两问：**自指那 8 条** → 自指豁免**且报告写明**、**示例那 2 条** → 修示例补 header，规则一字不改；余候选 `Terminal.test.jsx` 抖动治理 / 暂不排批） | ✅ **已完成（2026-10-08，§8.81，仓外 skill 改动 + 仓内新增可复跑测试 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 与零 FE 业务代码改动）**：**自指豁免按路径判、按名判不放过** —— `validateSource` 先看是不是本脚本自己的路径（`resolve` 归一 + 小写比对），是则返回空违规 + `selfExempt: true`，`formatReport` 打出四行说明、`--json` 带同一字段，**不静默**；范围**只有这一个文件**，副本换个名字照判。`validateYoRHaCode` 与 8 条规则**一行未动**（等价抽样：外部 fixture 仍判 `NO_BOX_SHADOW` + `NO_BORDER_RADIUS`）。仓外同步 `references/rules.md` 新增 **§10**、`SKILL.md` 步骤 4、校验器文件头与 usage 各补一句；`components.md` 骨架那两块面板补上 header 与 `[ + ] MODULE_A // 0x01` 工业标记 —— 正文本就该示范「面板必须带标记」，原文恰恰在示范反例。**取数**：skill 自检 **9 → 0**（7 个文件全绿，豁免行随报告打出）。**红测先行有据**：新增 `scripts/test-yorha-selfscan.mjs` **7 条** → **4 红 3 护栏**，红因全为缺特性（自检 exit 1 / 报告无豁免说明 / 仍有 `MISSING_INDUSTRIAL_TAG` / `components.md` 单独扫 exit 1）；取证脚本 `r49_regress.py` 首跑 **2 处自身 bug 先修**（`"FAIL" in out` 撞上 `FAIL 0` 汇总行、一处少传 `node`）；**三档记账**：缺特性 4 / 测试自身 bug 先修 2 / 随新事实改写 0（护栏 3 = 豁免不扩大 / R48 围栏回归 / 全仓 md 0 违规）。**fixture 零新增**，复用 R48 的 `plain.js.txt` 与 `css-block.md.txt`。**验收** = BE **1033/1033 持平** · FE **1501/1501 持平** · `npx vite build` 0 · `npm run lint` 0 · 校验器（**2 个 `mjs`** + **全仓 14 份 md**）**0 违规** · md 口径测试 **8/8** · **自检收口测试 7/7** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 BAD=0 |
+
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
 ## 2. M1 明细（实现完成，待人工验证）
@@ -7088,6 +7090,9 @@ R47 ✅、`Terminal.test.jsx` 抖动治理、暂不排批）。两问一次问�
 - **skill 自检那 9 条既有违规不在本批范围** —— 8 条 validator 自身源码的正则字面量 +
   1 条 `components.md` 围栏示例，**都早于 R48**；要收须改 skill 内容（那是内容问题不是
   口径问题），**另议排批**；
+  **→ R49 已落地 ✅（2026-10-08，§8.81）**：9 条 → **0 条**。自指那 8 条走**自指豁免**
+  （按本脚本路径判、报告与 `--json` 都写明，副本照判），示例那 2 条**修内容**（骨架两块面板
+  补 header 工业标记），规则一字未改 —— 分开处理，正是「内容问题与口径问题不是一回事」；
 - **`~~~` 围栏与缩进代码块不判**（fail-open），要认它们另议；
 - **`.txt` 等其余非扫描扩展名不纳入** —— 一旦纳入，fixture 的放置就要重议（见「三 · 2」）。
 
@@ -7097,6 +7102,114 @@ R47 ✅、`Terminal.test.jsx` 抖动治理、暂不排批）。两问一次问�
 `PROJECT_HANDOVER.md` 新增条目 97 + 条目 90 留白处销项；`pageStatus.json` 不动（理由见「五」）。
 
 **R48 ✅ —— md 进了校验器：散文还是散文，围栏才是代码。**
+
+## 8.81 R49 校验器自检收口（自指豁免 + 示例补工业标记 · 2026-10-08）
+
+**批次**：2026-10-08 · **仓外 skill 改动（2026-10-08 question 回执选中即为授权 —— 选项里写明「改动全在仓外 skill」）+ 仓内新增可复跑测试 · 零 DDL、零 BE 改动、零 FE 业务代码改动** —— 动的是 `~/.agents/skills/yorha-ui`，仓内只多一个测试脚本（fixture 零新增，复用 R48 那两份）；`models.py` 无改列改表、**无 Migration、无 `chore(db)`**、不引 pytest、无新 pip 依赖，`processor.py` / `graph.py` / `Blueprint.jsx` 未碰，**`/dispatch` 缺省口径一行未动**。
+
+### 一 · 来源与拍板（R48 §8.80 七 第 1 条留白）
+
+R48 原文：
+
+> - **skill 自检那 9 条既有违规不在本批范围** —— 8 条 validator 自身源码的正则字面量 +
+>   1 条 `components.md` 围栏示例，**都早于 R48**；要收须改 skill 内容（那是内容问题不是
+>   口径问题），**另议排批**；
+
+2026-10-08 question 回执两问一次问齐，**两问都选了推荐项**：
+
+| 问 | 拍板 | 另两个候选为什么不要 |
+|---|---|---|
+| validator 自己那 8 条怎么收 | **自指豁免 + 报告里写明** | **基线棘轮**（9 条留着 + 已知清单比对）最透明，但自检永远 exit 1、报告常飘 9 条；**行内抑制注释**（`// yorha-ui: allow`）正是最初留白里那个「白名单」方向 —— 口径会扩到全仓，仓内代码今后能一行注释绕过校验，「改动文件 0 违规」当场软掉 |
+| `components.md` 那 2 条怎么收 | **修示例，补上 header** | **规则放行省略号** —— JSX 里 `{...props}` 也带 `...`，真漏挂标记的面板会跟着放过，规则出洞；**示例改非 panel 占位** —— 骨架图就不再示范真实类名，读者照抄抄不到 `yorha-panel` |
+
+**为什么自指那 8 条算「口径」而不是「内容」**：这 8 条**没有一条是这个文件里真写了样式** ——
+它们是规则正则字面量与 FIXES 说明文案，即**规则表本身**。校验器早就 `stripComments`（注释里的
+禁词不判），等于已经承认「叙述不是代码」；字符串与正则只是规则表**最后两个未被覆盖的载体**。
+所以这一步不是给内容开例外，是把已有口径**补完**；`components.md` 那 2 条才是内容问题，
+**修内容、不动规则** —— 两问分开拍，正是这个分野。
+
+### 二 · 取数（实现前摸底）
+
+拿改前的校验器扫它自己那份 skill，**9 条条目 / 13 处匹配**，两个文件：
+
+| 出处 | 条目 | 命中（report 原样） |
+|---|---|---|
+| `scripts/validate-yorha-ui.mjs` | 8 | `NO_BORDER_RADIUS` `rounded` ×1；`NO_BOX_SHADOW` `shadow` ×4、`drop-shadow` ×1；`NO_TEXT_SHADOW` `text-shadow` ×1；`NO_CYBERPUNK_NEON` `#0ff` `#f0f` `#00ffff` `#ff00ff` 各 ×1 |
+| `references/components.md` | 1 | `MISSING_INDUSTRIAL_TAG` `class="yorha-panel"` ×2 —— 是「Page skeleton」那两行缩略示例，header 被 `...` 省掉了，向前 600 字符窗口里找不到 `[ ± ]`；**上面那份完整 Panel 示例没被咬**（它带 `[ + ] SYSTEM_STATE // 0x3F`） |
+
+收敛后：**skill 自检 9 → 0，7 个文件全绿**，豁免行随 validator 那一段一起打出来。
+
+### 三 · 改动（仓外 4 个文件 + 仓内 1 个测试，fixture 零新增）
+
+| 文件 | 改动 | 为什么 |
+|---|---|---|
+| `~/.agents/skills/yorha-ui/scripts/validate-yorha-ui.mjs` | 新增 `SELF_PATH`（`fileURLToPath(import.meta.url)` → `resolve` → 小写归一）与 `isSelfSource(name)`；`validateSource` 首行判自身，返回 `{violations: [], advisories: [], selfExempt: true}`；`formatReport` 打四行豁免说明；文件头与 `printUsage` 各补一段；新增 `import { fileURLToPath }` | 豁免落在 `validateSource` 这一层，**位于规则链之前**，规则一个字不用碰 |
+| `~/.agents/skills/yorha-ui/references/rules.md` | 新增 **§10 Self-source exemption (自指豁免)**，边界一句一条 | 口径落进规则文档，不留口头口径 |
+| `~/.agents/skills/yorha-ui/references/components.md` | 骨架两块面板补 header 与 `[ + ] MODULE_A // 0x01`、`[ + ] MODULE_B // 0x02` | 正文本就该示范「面板必须带工业标记」，原文恰恰在示范反例 |
+| `~/.agents/skills/yorha-ui/SKILL.md` | 步骤 4 补一句「本脚本自身豁免并写明，见 §10」 | 读 skill 的人不会以为报告少报了 |
+| `scripts/test-yorha-selfscan.mjs`（仓内 · 新） | 7 条断言的可复跑测试 | 仓外改动不进本仓提交，靠它当防回滚护栏 |
+
+**`validateYoRHaCode` 与 `RULES` 表 8 条规则一行未改** —— 豁免是「换入口前先看一眼是不是自己」，
+不是「改判据」。
+
+### 四 · 四条边界（豁免的边界，等于豁免本身）
+
+1. **按路径判，不按名判** —— `resolve` 归一 + 小写比对，`<stdin>` 与普通 label 不参与判定；
+2. **只此一文件** —— 本脚本的**副本**换个名字照样被判（护栏 5 用一份外部 js 装同样的禁词，
+   仍 exit 1）；
+3. **不静默** —— 文本报告四行说明 + `--json` 带 `selfExempt: true`，干净也留痕；
+4. **不买什么** —— 真把 CSS 贴进这个脚本不会被抓。该文件没有样式，只有拒绝样式的模式。
+
+### 五 · 红测先行有据
+
+新增 `scripts/test-yorha-selfscan.mjs`，**实现落笔前先证红**（7 条）：
+
+| 档 | 条数 | 明细 |
+|---|---|---|
+| 缺特性（真红测） | **4** | ① skill 自检 exit 0（当时 1）；② 报告写明豁免（当时没有）；③ 不再报 `MISSING_INDUSTRIAL_TAG`（当时 1 条 x2）；④ `components.md` 单独扫 0 违规（当时 exit 1，`Line: 153 (md fence)`） |
+| 护栏（实现前即绿） | **3** | ⑤ 外部文件同样违规仍 exit 1（**豁免不扩大**，最关键的一条）；⑥ R48 的 md 围栏违规仍 exit 1；⑦ 本仓 14 份 md 仍 0 违规 |
+| 测试自身 bug 先修 | **2** | 取证脚本 `r49_regress.py` 首跑两处：`"FAIL" not in out` 撞上汇总行 `FAIL 0` → 改为断言 `\n  FAIL`；另一处 `run([VAL, …])` 少传 `node` → `WinError 193`。**两处都在临时取证脚本里，仓内测试零 bug** |
+| 测试随新事实改写 | **0** | R48 那 8 条断言一字未改，复跑全绿 |
+
+**实现一发即绿** —— 4 条红全部转绿，红测**没有**抓到实现 bug。与 R48 那次不同（当时抓到
+「裸 token 未归一 → css 块不判」），这里如实记 **实现 bug 0**，不把绿测说成红测。
+
+**验收**：BE **1033/1033 持平**（零改动）· FE **1501/1501 持平**（零改动）· `npx vite build`
+EXIT=0 · `npm run lint` EXIT=0（0 问题 0 警告）· yorha-ui 校验器（**2 个 `mjs`** + **全仓 14 份
+md**）**0 违规** · md 口径测试 **8/8** · **自检收口测试 7/7** · `ev40` TOTAL_PROBLEMS=0 ·
+`ev33` STAGED=0 BAD=0 · **零 DDL → 无 Migration、无 `chore(db)`**、不引 pytest、无新 pip 依赖、
+`processor.py` / `graph.py` / `Blueprint.jsx` 未碰、**`/dispatch` 缺省口径一行未动**。
+
+**规则链没被碰的四重取证**：① R48 的 md 口径 8 条断言复跑全绿；② 外部 fixture
+`plain.js.txt` 仍被判 `NO_BOX_SHADOW` + `NO_BORDER_RADIUS`、exit 1；③ R48 的 skill 字节核验与
+9 项口径落位检查复跑 `BAD=0`；④ 自检报告 7 文件全绿、豁免行在场（全文留档）。
+
+### 六 · 人工验证（无应用代码改动 → 不做浏览器冒烟）
+
+与 R48 §8.80「五」同款：**零页面能力变化、零请求、零后端改动**，浏览器里没有可验的新东西，
+故不启 8055 / 5174。人工验证以四件**可复跑**事实为准：① 自检收口测试 **7/7**；② md 口径测试
+**8/8**；③ skill 自检 **exit 0 且报告写明豁免**；④ 外部 fixture 照旧被判（护栏 5）。
+`pageStatus.json` 与生成物 `docs/PAGE_STATUS.md` **双双不动** —— 理由同 R48：不给任何一页新增
+能力，塞进任一页的 `availableNow` 都是张冠李戴。
+
+### 七 · 固定验收清单（R49 起 = 9 项）
+
+BE 全量 + FE 全量 + `npx vite build` + `npm run lint` + **yorha-ui 校验器（本批改动的 js / jsx / json + 全仓 md）** + **md 口径测试** + **自检收口测试 `node scripts/test-yorha-selfscan.mjs`** + `ev40` mismatches = 0 + `ev33` BAD = 0。
+
+### 八 · 明确留白（本批不做）
+
+- **行内抑制注释机制（`// yorha-ui: allow` 之类）不做** —— 那是最初留白里的「白名单」方向，
+  口径会从「只豁免这一个文件」扩到「谁写一行注释谁就过检」，软化全仓「改动文件 0 违规」；
+  真要给仓内文件开豁免口，**另议排批并连「谁能开、开什么」一起拍**；
+- **`~~~` 围栏与缩进代码块仍不判**（fail-open）、**`.txt` 等非扫描扩展名仍不纳入** —— 两条都沿
+  R48 §8.80 七 原样，fixture 的放置口径因此不变；
+- **`Terminal.test.jsx` 抖动治理仍未排**（候选之一，见 §8.80 七 之后的排批记录）。
+
+**文档同步（同批）**：§1 新增 `R49` 行 + §8.81 本节；**销 §8.80 七 第 1 条**（原文就地标注
+→ R49 已落地，9 → 0）；`PROJECT_HANDOVER.md` 新增条目 98 + 条目 97 留白处销项 + 目录地图补 1 行；
+`pageStatus.json` 不动（理由见「六」）。
+
+**R49 ✅ —— 校验器不判自己：它身上挂着的正是判别人的那把尺，尺不量尺，但要把它不量这件事说出口。**
 
 ## 9. 保留勿动（非任务，勿清理）
 
