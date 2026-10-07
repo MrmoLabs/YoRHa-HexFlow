@@ -71,6 +71,8 @@
 
 | R44 | **规则表进数据包（`routing_rules` 第 9 域）** —— R7（§8.45）拍板的「原 3 域 → 8 域」里**刻意不含规则表**，留白原文就是「若要随数据包迁移另议，不擅自扩域」（§8.70 六 / §8.71 七 / §8.72 八 / §8.73 三 / §8.75 七 五处同挂）；R36–R43 四批把规则做成了可建、可排序、可试解析、可读轨迹的实体，却**换不了机** —— 别的域一个 ZIP 就走，唯独规则只能一条条手抄（§8.76；2026-10-07 question 工具回执拍板选此项，余三候选为输入表持久化 / 校验器 md 口径 / 暂不排批） | ✅ **已完成（2026-10-07，§8.76，BE+FE · 零 DDL → 无 Migration、无 `chore(db)`、**`/dispatch` 缺省口径一行未动**）**：**8 域 → 9 域** —— `ROUTING_RULES_SCHEMA_VERSION = 1` 入 `BUNDLE_DOMAIN_VERSIONS` **排末尾**（前面 8 域的相对导出序一个字节没动，只在尾部多一域），`GET /datahub/export/bundle` 多出 `routing_rules.json`、`manifest` 的 `domainVersion` / `domainCounts` 多一键（漂移守卫 `ValueError: 域清单不一致` 顺带把 counts 表也钉住），新端点 `POST /datahub/import/routing_rules`。**四条口径全部镜像既有纪律、不另起炉灶** —— ① 只出活行，`created_at` / `updated_at` / `deleted_at` **三个记账列不进包**（回灌后用目标机时钟，也不搬源机回收站状态）；② **行序 = 匹配顺序** `(sort_order, name, id)`（即 `core/routing.py` 定序键），排序**收在 `routing_rules_export_payload` 一处**，调用方传进来的顺序不作数；③ **条件语法交 SSOT** `core/condition.parse_condition`（规则页保存侧同一入口，datahub 不写第二套判据），**目标指令必须是活行** → 缺失单行跳过（镜像 `import_sequences`「宿主缺失整条跳过」，不写出一进包就悬空、在发前路由里变成 `INSTRUCTION_MISSING` 缺陷行的规则）；④ 名称唯一**查全表含回收站占名**（同 `routing._ensure_name_free`）、id 自己在站 → 跳过并提示先恢复或彻底删除。`sort_order` / `enabled` 是**可选行字段**（在场必须合法、`bool` 不算数；缺席则建行取 0 / 1、改行保留目标库已有的值，镜像 R20 `profiles.sort_order`）。FE 四处接线：`BUNDLE_DOMAINS` 第 9 颗芯片、`DOMAIN_KEYS` / `DOMAIN_LABELS` 自动识别 + 中文名、`SAMPLE_DOMAINS` 第 6 个示例域（保持「示例包 = 按域导入能吃的范围」那句既有不变量成立），全量导出文案与面板提示 8 → 9。**红测先行有据**：BE 新建 `test_datahub_routing_rules.py` **18 条全红**（`AttributeError` 缺 4 个符号 + `AssertionError` / `KeyError` / `400 未知域：routing_rules` + `routing_rules.json not found`）—— 红因**全为缺特性**；FE 用 `git stash` 只暂存实现文件跑出 **5 红**（`R44` 新测 1 条 + 随新事实改写过的 4 条对旧实现红），还原后两次全量绿。**三档记账**：缺特性 19 条（BE 18 + FE 1）；测试随新事实改写 9 条（BE 5：`test_eight_domain_inventory` → `test_nine_domain_inventory` 清单与 `len 8→9`、`test_counts_and_legacy_keys` 的 counts 表补键、`test_zip_carries_eight_domains` → `test_zip_carries_nine_domains` 补文件与计数、bundle_domains 的 `default_is_still_the_full_*` 与 `explicit_all_*` 两处更名；FE 4：芯片清单与顺序注释、全量导出文案、示例包数组、域键识别用例）；测试自身 bug 档 **0 条**。**验收** = BE **1015 → 1033/1033（+18）** · FE **1472 → 1473/1473（95 文件，+1）** · `npx vite build` 0 · `npm run lint` 0（0 问题 0 警告）· yorha-ui 校验器改动 **3 个 js / jsx / json 文件 0 违规** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 BAD=0（FE 全量首跑出过 1 条 `Terminal.test.jsx` 历史预览红 —— 本批未触碰该页、单跑 29/29 绿、随后两次全量 95 文件 1473 条全绿，按**测试抖动**记账，不改测试也不改实现） |
 
+| R45 | **加工页判定轨迹（同一份回执，两页共用一张轨迹表）** —— R43（§8.75 七）落地轨迹时**刻意留白**「加工页不加轨迹」：`describeResolve` 消费的是同一份 `POST /dispatch/routed` 回执，但加工页是「命中即切」的动作语境，一行事实已够 —— 结果是规则作者在规则页能读到「为什么不命中」，**在真正按下「解析 RESOLVE」并真切指令的那个页面反而读不到**（§8.77；2026-10-07 question 工具回执拍板选此项，余三候选为输入表持久化 / 校验器 md 口径 / 暂不排批） | ✅ **已完成（2026-10-07，§8.77，纯 FE · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`/dispatch` 缺省口径一行未动）**：**`describeTrace` 由 `describeDryRun` 的私有函数提为导出** —— 同一份回执两处消费（规则页试解析 / 加工页真解析），轨迹**必须走同一张表**不许各排各的，`describeDryRun` 内部改调它、返回值逐字不变（R43 的 8 条既有用例一次不改全绿 = 提取没改行为的证据）。加工页 `InstructionProcessor.jsx` 新增 `routeTrace`：**一次解析开始就清、失败也清**（不残留上一次），成功则存 `describeTrace(res?.trace)`；轨迹块挂**状态条下方、与展开态无关**（结论属于状态条那一层，收起输入表不该把结论一起收走），testid `route-trace-{n}` 与规则页 `dry-trace-{n}` 同形不同名、`MATCHED` 行黄字同款。**三条边界写死**：① 回执没给 `trace`（旧后端）→ `describeTrace` 出 `[]` → 不出块，状态条照旧写事实；② 轨迹**只回显不改判** —— 命中才切 / 无命中不切仍是 R39 原口径，FE 不自己扫第二遍条件；③ **`回到上一条` 只改状态条不清轨迹**（轨迹是那次解析的事实记录，规则与条件都没变）。**红测先行有据**：新增 8 条（util 3 + 页面 5）→ **7 红 1 绿**，红因全为缺特性（`describeTrace does not provide an export named` ×3、页面查无 `逐条判定轨迹 (TRACE)` ×4）；那 1 条「回执不带 trace 就不出块」**实现前即绿属护栏，不冒充红测**。**三档记账**：缺特性 7 / 随新事实改写 0 / 测试自身 bug 0。**验收** = BE **1033/1033 持平**（零改动）· FE **1473 → 1481/1481（95 文件，+8）** · `npx vite build` 0 · `npm run lint` 0（0 问题 0 警告）· yorha-ui 校验器 5 文件 0 违规（4 js/jsx + 1 json）· `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 BAD=0；**实机冒烟**（后端 8055 + dev 5174）三条规则各占一类（条件假 / 变量不在输入 / 停用），`meter_id=999` → 无命中状态条 + 轨迹三行 `比较不成立` / `变量不在本次输入里：line` / `已停用（不参与匹配）`，`meter_id=1` → `命中规则「R45 smoke A」→ 已切到指令「示例心跳帧」` + #1 `判真命中` **黄字**、#2 #3 `未轮到`，`回到上一条` 后状态条换文案而**轨迹仍三行**；**控制台 A/B 对照** = 暂存 R45 运行时改动后同一页面同样出 2 条 `GET /response-specs/{id} 404`（该指令无存档应答规格，FE 本就按 404 处理），**本批新增 0 error**；清场后规则表 `[]`、回收站 0 条，8055 / 5174 两个后台壳已停 |
+
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
 ## 2. M1 明细（实现完成，待人工验证）
@@ -6506,7 +6508,8 @@ R40 把「试解析」做到了回执级：扫了几条 / 哪几条是结构性�
 **明确留白（本批不做）**：
 
 - **加工页不加轨迹** —— `describeResolve` 消费的是同一份回执，但加工页是「命中即切」的动作语境，
-  一行事实已够；要加另议；
+  一行事实已够；要加另议 —— **→ R45 已落地 ✅（2026-10-07，§8.77，`describeTrace` 提为导出、
+  两页共用一张轨迹表）**；
 - **不为「数值 / 字符串互换」这类高频错单独开码** —— `TYPE_INCOMPARABLE` 的 `detail` 已经把
   两个类型名带出来了，再细分是文案不是判据；
 - **输入表不做持久化**（§8.71 七 同款留白）—— 不涉；**规则表仍不在数据中心 8 域清单**
@@ -6642,6 +6645,108 @@ R7（§8.45）拍板「原 3 域 → 8 域」时**刻意不含规则表**，留�
 + 留白销项 + `nextSteps` 改指，并 `npm run sync:page-status` 重生成 `PAGE_STATUS.md`。
 
 **R44 ✅ —— 规则表终于随包走：换一台机，规则与指令、配方、序列一起进 ZIP，而不是一条条手抄。**
+
+## 8.77 R45 加工页判定轨迹（同一份回执两页共用 · 2026-10-07）
+
+### 一 · 来源（§8.75 七 那条刻意留白）
+
+R43 给回执加 `trace` 时**明确留了白**：
+
+> **加工页不加轨迹** —— `describeResolve` 消费的是同一份回执，但加工页是「命中即切」的动作语境，
+> 一行事实已够；要加另议；
+
+理由本身当时成立（加工页是动作语境、面板紧贴执行区）。但 R43 落地后账面上出现一个**不对称**：
+同一份 `POST /dispatch/routed` 回执，规则作者在 `/routing` 的「试解析」里能读到三行「为什么不命中」，
+**在 `/processing` 真按下「解析 RESOLVE」并真切了指令的那一刻，却只有一行状态条** —— 要看轨迹得
+换到另一个页面、按同一份输入再解析一次。留白说的是「另议」，本批即那次另议。
+
+**2026-10-07 question 工具回执拍板选此项**（余三候选：输入表持久化 / 校验器 md 口径 / 暂不排批）。
+
+### 二 · 改动（2 个文件，纯 FE）
+
+| 文件 | 改动 | 为什么 |
+|---|---|---|
+| `frontend/src/utils/routeResolve.js` | `const describeTrace` → **`export const describeTrace`**（一行） | 同一份回执两处消费，轨迹**必须走同一张表** |
+| `frontend/src/pages/InstructionProcessor.jsx` | 新增 `routeTrace` 状态 + 状态条下方出轨迹块 | 销 §8.75 七 留白 |
+
+`describeDryRun` 内部改调同一个 `describeTrace`，**返回值逐字不变** —— R43 在
+`routeResolve.dryrun.test.js` / `RoutingRules.dryrun.test.jsx` 里的 8 条既有用例**一次不改全绿**，
+即「提取没改行为」的证据。
+
+### 三 · 三条边界
+
+1. **回执没给 `trace`**（旧后端 / 字段缺席）→ `describeTrace` 出 `[]` → 不出块，
+   状态条照旧写事实。**不硬造一行**（与规则页同款口径）。
+2. **只回显不改判** —— 命中才切、无命中不切**仍是 R39 原口径**；条件求值在后端
+   `core/condition.py`，FE 连第二遍条件都不扫。轨迹是那次解析的**事实记录**，不是新的判定点。
+3. **`回到上一条 (UNDO)` 只改状态条、不清轨迹** —— 撤回的是「切指令」这个动作，
+   规则与输入都没变，那次解析为什么命中仍是真的。
+
+**清理口径**：一次解析开始就 `setRouteTrace([])`、失败也清 —— **不残留上一次的轨迹**
+（否则失败时会把上一次成功的三行留在屏上，读者会以为是本次结果）。
+
+**落点**：轨迹块挂在**状态条下方、与 `routeExpanded` 无关** —— 结论属于状态条那一层，
+收起输入表是为让出执行区高度，不该把结论一起收走。`data-testid="route-trace-{n}"`
+与规则页 `dry-trace-{n}` **同形不同名**（同一页两个 testid 前缀会撞）。
+
+### 四 · 红测先行有据
+
+新增 **8 条**（util 3 + 页面 5），实现前 **7 红 1 绿**：
+
+| 档 | 条数 | 明细 |
+|---|---|---|
+| 缺特性（真红测） | **7** | util 3 条整文件加载即红 —— `describeTrace does not provide an export named 'describeTrace'`；页面 4 条 `Unable to find an element with the text: 逐条判定轨迹 (TRACE) …` |
+| 护栏（实现前即绿） | **1** | 「回执不带 `trace` → 不出块」—— 实现前本就没有轨迹块，断言自然成立；**如实登记，不冒充红测** |
+| 测试随新事实改写 | **0** | 本批没有既有断言被新事实推翻 |
+| 测试自身 bug 先修 | **0** | 本批无 |
+
+页面 5 条覆盖：命中出块 + `MATCHED` 黄字 + 真切指令 / 码走同一张码表（中文 + `detail` 接尾 +
+**不认识的码原样透出不猜**）/ 无命中也出轨迹且**仍不切指令** / 旧后端不带 `trace` 不出块 /
+失败清轨迹。
+
+**验收**：BE **1033/1033 持平**（零改动）· FE **1473 → 1481/1481（95 文件，+8）** ·
+`npx vite build` EXIT=0 · `npm run lint` EXIT=0（0 问题 0 警告）· yorha-ui 校验器改动
+**4 个 js / jsx + 1 json 文件 0 违规** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 BAD=0 ·
+**零 DDL → 无 Migration、无 `chore(db)`**、不引 pytest、无新 pip 依赖、
+`processor.py` / `graph.py` / `Blueprint.jsx` 未碰、**`/dispatch` 缺省口径一行未动**。
+
+> **FE 全量首跑出过 1 条 `Terminal.test.jsx` 历史预览红**（`Unable to find an element with the
+> text: AA 55 ……`）—— **与 R44 §8.76 登记的是同一条**，本批未触碰该页；单跑 29/29 绿，
+> 随后**两次全量 95 文件 1481 条全绿**。按**测试抖动**记账：不改测试、不改实现，如实登记。
+
+### 五 · 实机冒烟（后端 8055 + dev 5174 · 回收站清零）
+
+三条规则各占一类 —— `R45 smoke A`（`meter_id == 1`，启用）、`R45 smoke B`（`line == 1`，变量
+不在输入）、`R45 smoke C`（同 A 条件，**停用**）。`POST /dispatch/routed` 先把回执看清楚：
+
+| 输入 | 状态条 | 轨迹 |
+|---|---|---|
+| `meter_id=999` | 无命中 —— 扫过 2 条规则都不成立，维持当前指令不猜 | #1 `比较不成立` · #2 `变量不在本次输入里：line` · #3 `已停用（不参与匹配）` |
+| `meter_id=1` | 命中规则「R45 smoke A」→ 已切到指令「示例心跳帧」 | #1 `判真命中`**黄字** · #2 #3 `未轮到 —— 前面已有命中，按 first-match-wins 不再看` |
+| 点 `回到上一条 (UNDO)` | 已回到指令「示例心跳帧」 | **轨迹仍三行**（边界 ③） |
+
+**控制台做了 A/B 对照**（本批唯一一处需要定性的 error）：带 R45 的页面出 2 条
+`Failed to load resource: 404` → `git stash` 暂存两份运行时改动、同一 URL 重开一页 →
+**同样出 2 条**，且都是 `GET /response-specs/{instruction_id} 404`（该指令无存档应答规格，
+FE 自 P2 起就按 404 当「未配置」处理，测试里也这么 mock）。**定性 = 既有口径，本批新增 0 error。**
+清场后规则表 `[]`、**回收站 0 条**，8055 / 5174 两个后台壳已停。
+
+> `git stash` 往返把两份文件写成了 CRLF（各 326 / 221 行）—— 当场转回 LF 并复核，
+> 提交前字节核验 BAD=0。
+
+### 六 · 明确留白（本批不做）
+
+- **输入表不做持久化**（§8.71 七 同款留白）、**校验器 md 口径**（改仓外 skill 须另议）—— 不涉；
+- **不为轨迹块做折叠 / 虚拟列表** —— 规则条数目前个位数，未见上限问题；条数真上来再说，
+  不预设不存在的性能问题；
+- **轨迹不进 `pageStatus` 之外的任何持久面** —— 它是回执的瞬时呈现，不落库、不进导出包。
+
+**文档同步（同批）**：§1 新增 `R45` 行 + §8.77 本节 + §8.75 七 留白改指；`PROJECT_HANDOVER.md`
+新条目 94 + 条目 92 留白改指 + 目录地图 `routeResolve.js` / `InstructionProcessor.jsx` 两行；
+`pageStatus.json` `/processing` 补记 + `/routing` 的 `nextSteps` 改指，并
+`npm run sync:page-status` 重生成 `PAGE_STATUS.md`。
+
+**R45 ✅ —— 解析发生在哪一页，「为什么」就在哪一页读得到，而且是同一张表。**
 
 ## 9. 保留勿动（非任务，勿清理）
 

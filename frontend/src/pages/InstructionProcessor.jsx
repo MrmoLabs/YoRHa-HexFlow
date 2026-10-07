@@ -9,6 +9,7 @@ import {
     addRouteInput,
     describeResolve,
     describeResolveError,
+    describeTrace,
     emptyRouteInputs,
     filledInputCount,
     mergeResolvedInstruction,
@@ -156,12 +157,17 @@ export default function InstructionProcessor({
     const [routeBusy, setRouteBusy] = useState(false);
     const [routeMsg, setRouteMsg] = useState(null);   // { kind: 'ok'|'miss'|'sys'|'err', text }
     const [routeUndo, setRouteUndo] = useState(null); // 切换前那条 { id, name }
+    // R45（§8.75 七 留白销项）：最近一次**成功**回执的逐条判定轨迹，只回显不改判 ——
+    // 一次解析开始就清、失败也清（不残留上一次）；「回到上一条」只改状态条、不动它
+    // （轨迹是那次解析的事实记录，规则与条件没变）。
+    const [routeTrace, setRouteTrace] = useState([]);
 
     const instructionLabel = (inst) => inst?.name || inst?.code || inst?.id || null;
 
     const runResolve = async () => {
         setRouteBusy(true);
         setRouteMsg(null);
+        setRouteTrace([]);   // 本次回执说了算，不残留上一次的轨迹
         try {
             const res = await api.resolveRoute(toInputsMap(routeRows));
             const targetId = resolveInstructionId(res);
@@ -173,12 +179,15 @@ export default function InstructionProcessor({
                 setInstructionsState((prev) => mergeResolvedInstruction(prev, res));
                 setActiveInstructionId(targetId);
             }
+            // R45：同一份回执的 trace，与规则页试解析共用 describeTrace 一张表
+            setRouteTrace(describeTrace(res?.trace));
             setRouteMsg({
                 kind: res?.matched ? 'ok' : 'miss',
                 text: describeResolve(res, { previousName: instructionLabel(currentInstruction) }).text,
             });
         } catch (err) {
             setRouteUndo(null);
+            setRouteTrace([]);
             setRouteMsg({ kind: 'err', text: describeResolveError(err) });
         } finally {
             setRouteBusy(false);
@@ -236,6 +245,44 @@ export default function InstructionProcessor({
                         ].join(' ')}>
                             {routeMsg.kind === 'err' ? 'ERR: ' : 'SYS: '}
                             {routeMsg.text}
+                        </div>
+                    )}
+
+                    {/* R45（§8.75 七 留白销项）逐条判定轨迹 —— 与规则页「试解析」共用
+                        describeTrace 同一张表，这里只排版不改判；判据（比较 / 变量 / 类型）
+                        全在后端 condition.py，FE 不自己扫第二遍条件。回执没带 trace（旧后端）
+                        → describeTrace 出 [] → 不出块，状态条照旧写事实。 */}
+                    {routeTrace.length > 0 && (
+                        <div className="border-t border-nier-light/20 px-4 py-2 flex flex-col gap-1.5">
+                            <div className="text-[10px] font-mono tracking-[0.2em] opacity-60">
+                                {`逐条判定轨迹 (TRACE) · ${routeTrace.length} 条`}
+                            </div>
+                            <ol className="border border-nier-light/20">
+                                {routeTrace.map((row) => (
+                                    <li
+                                        key={`route-trace-${row.index}`}
+                                        data-testid={`route-trace-${row.index - 1}`}
+                                        className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-nier-light/10 px-3 py-1.5 last:border-b-0 text-[11px] font-mono"
+                                    >
+                                        <span className="shrink-0 text-nier-light/50">
+                                            {`#${row.index}`}
+                                        </span>
+                                        <span className={row.code === 'MATCHED'
+                                            ? 'shrink-0 text-yellow-300'
+                                            : 'shrink-0'}>
+                                            {row.name}
+                                        </span>
+                                        <span className="min-w-0 break-all opacity-60">
+                                            {row.condition}
+                                        </span>
+                                        <span className={row.code === 'MATCHED'
+                                            ? 'min-w-0 text-yellow-300'
+                                            : 'min-w-0'}>
+                                            {row.text}
+                                        </span>
+                                    </li>
+                                ))}
+                            </ol>
                         </div>
                     )}
 

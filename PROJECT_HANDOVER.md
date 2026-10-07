@@ -3440,7 +3440,8 @@
       「不涉」一并改指）+ 目录地图改 `routeResolve.js` / `RoutingRules.jsx` 两行；
       `pageStatus.json` `/routing` 补记 + `npm run sync:page-status` 重生成 `PAGE_STATUS.md`。
     - **状态**：**R43 ✅ —— 规则作者第一次能逐条读到「为什么不命中」，而不必逐条去猜。**
-      **明确留白**：**加工页不加轨迹**（同一份回执，但那边是「命中即切」的动作语境，一行事实已够）；
+      **明确留白**：**加工页不加轨迹**（同一份回执，但那边是「命中即切」的动作语境，一行事实已够）
+      → **R45 已落地 ✅（2026-10-07，§8.77）**；
       **不为「数值 / 字符串互换」单独开码**（`TYPE_INCOMPARABLE` 的 `detail` 已带出两个类型名，
       再细分是文案不是判据）；输入表持久化仍不涉；规则表进 8 域清单 → **R44 已落地 ✅（§8.76）**。
       提交 = `feat(R43)` 单笔（**BE+FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
@@ -3511,6 +3512,68 @@
       「指令不存在」逐行告知，不新开编排）；输入表持久化、校验器 md 口径仍不涉。
       提交 = `feat(R44)` 单笔（**BE+FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
 
+94. **R45 · 加工页判定轨迹（同一份回执两页共用一张轨迹表；PLAN §8.77 · 2026-10-07）**
+    - **为什么**：R43 落地 `trace` 时**刻意留白**「加工页不加轨迹」（条目 92，理由是那边是
+      「命中即切」的动作语境、一行事实已够）。落地后账面出现一个**不对称** —— 同一份
+      `POST /dispatch/routed` 回执，规则作者在 `/routing` 的试解析里能读到三行「为什么不命中」，
+      **在 `/processing` 真按下「解析 RESOLVE」并真切了指令的那一刻却只有一行状态条**，
+      要看轨迹得换页再解析一次。**2026-10-07 question 工具回执拍板**选此项（同批候选：
+      输入表持久化 / 校验器 md 口径 / 暂不排批）。
+    - **它现在怎么解决**：`routeResolve.js` 的 **`describeTrace` 由 `describeDryRun` 私有函数
+      提为导出**（一行）—— 同一份回执两处消费，轨迹**必须走同一张表**不许各排各的，
+      `describeDryRun` 内部改调它、**返回值逐字不变**（R43 的 8 条既有用例一次不改全绿 =
+      提取没改行为的证据）。`InstructionProcessor.jsx` 新增 `routeTrace`：**一次解析开始就清、
+      失败也清**（不残留上一次），成功存 `describeTrace(res?.trace)`；轨迹块挂**状态条下方、
+      与展开态无关**（结论属于状态条那一层，收起输入表不该把结论一起收走），
+      testid `route-trace-{n}` 与规则页 `dry-trace-{n}` 同形不同名、`MATCHED` 行黄字同款。
+    - **三条边界**：① 回执没给 `trace`（旧后端）→ `[]` → 不出块，状态条照旧写事实；
+      ② **只回显不改判** —— 命中才切 / 无命中不切仍是 R39 原口径，FE 不自己扫第二遍条件；
+      ③ **`回到上一条` 只改状态条不清轨迹** —— 撤回的是「切指令」这个动作，规则与输入都没变，
+      那次解析为什么命中仍是真的。
+    - **文件（4 个）**：**改 2 个 FE 实现** —— `frontend/src/utils/routeResolve.js` +
+      `frontend/src/pages/InstructionProcessor.jsx`；**改 2 个 FE 测试** ——
+      `frontend/src/utils/__tests__/routeResolve.dryrun.test.js` +
+      `frontend/src/pages/__tests__/InstructionProcessor.test.jsx`。
+      **纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`、零 BE 改动、不引 pytest、
+      无新 pip 依赖、`processor.py` / `graph.py` / `Blueprint.jsx` 未碰、
+      **`/dispatch` 缺省口径未动**。
+    - **测试（红测先行有据）**：新增 **8 条**（util 3 + 页面 5），实现前 **7 红 1 绿** ——
+      util 3 条整文件加载即红（`describeTrace does not provide an export named 'describeTrace'`）+
+      页面 4 条 `Unable to find … 逐条判定轨迹 (TRACE)`，**红因全为缺特性**；那 1 条
+      「回执不带 `trace` → 不出块」**实现前即绿属护栏**（当时本就没有轨迹块），
+      **如实登记，不冒充红测**。
+    - **三档记账**：**缺特性 7 条**；**测试随新事实改写 0 条**（本批没有既有断言被推翻）；
+      **测试自身 bug 档 0 条**。
+    - **验收**：**BE 1033/1033 持平**（零改动）、**FE 1473 → 1481/1481（95 文件，+8）**、
+      `npx vite build` EXIT=0、`npm run lint` EXIT=0 **且 0 warning**、yorha-ui 校验器改动
+      **5 个 js / jsx / json 文件 0 违规**（4 js/jsx + 1 json）、`ev40` TOTAL_PROBLEMS=0、
+      `ev33` STAGED=0 BAD=0；**零 DDL → 无 Migration、无 `chore(db)`**、不引 pytest、
+      无新 pip 依赖、`processor.py` / `graph.py` / `Blueprint.jsx` 未碰、
+      **`/dispatch` 缺省口径未动**。
+      > **FE 全量首跑出过 1 条 `Terminal.test.jsx` 历史预览红**（`Unable to find an element
+      > with the text: AA 55 ……`）—— **与 R44 §8.76 登记的是同一条**，本批未触碰该页；
+      > 单跑 29/29 绿，随后**两次全量 95 文件 1481 条全绿**。按**测试抖动**记账：
+      > 不改测试、不改实现，如实登记。
+    - **实机冒烟**（后端 8055 + dev 5174）：三条规则各占一类（条件假 / 变量不在输入 / 停用），
+      `meter_id=999` → 无命中状态条 + 轨迹三行 `比较不成立` / `变量不在本次输入里：line` /
+      `已停用（不参与匹配）`；`meter_id=1` → `命中规则「R45 smoke A」→ 已切到指令「示例心跳帧」`
+      + #1 `判真命中` **黄字**、#2 #3 `未轮到`；点 `回到上一条` 后状态条换文案而**轨迹仍三行**。
+      **控制台做了 A/B 对照**：带 R45 的页面出 2 条 404 → `git stash` 暂存两份运行时改动、
+      同一 URL 重开一页 → **同样出 2 条**，且都是 `GET /response-specs/{id} 404`（该指令无存档
+      应答规格，FE 自 P2 起按 404 当「未配置」处理，测试里也这么 mock）→ **定性为既有口径，
+      本批新增 0 error**。清场后规则表 `[]`、**回收站 0 条**，8055 / 5174 两个后台壳已停。
+      > `git stash` 往返把两份文件写成 CRLF（326 / 221 行）—— 当场转回 LF 并复核，
+      > 提交前字节核验 BAD=0。
+    - **文档同步（同批）**：PLAN **§8.77 新节** + §1 新增 `R45` 行 + §8.75 七 留白改指；
+      本条插入 + 条目 92 一处留白改指 + 目录地图 `routeResolve.js` /
+      `InstructionProcessor.jsx` 两行；`pageStatus.json` `/processing` 补记 +
+      `/routing` 的 `nextSteps` 改指，并 `npm run sync:page-status` 重生成 `PAGE_STATUS.md`。
+    - **状态**：**R45 ✅ —— 解析发生在哪一页，「为什么」就在哪一页读得到，而且是同一张表。**
+      **明确留白**：轨迹块**不做折叠 / 虚拟列表**（规则条数目前个位数，未见上限问题，
+      不预设不存在的性能问题）；轨迹**不落库、不进导出包**（回执的瞬时呈现）；
+      输入表持久化、校验器 md 口径仍不涉。
+      提交 = `feat(R45)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
@@ -3573,7 +3636,7 @@
 | `src/utils/toFrameBlocks.js` | 导出映射 `byte_len→byte_length`、`op_code→type`（供 `/export/binary`） | ✅ 新增（自 Orchestration.jsx 抽出） |
 | `src/utils/download.js` | `triggerBlobDownload`（.hex / .bin 下载共用） | ✅ 新增 |
 | `src/utils/routingView.js` | **R38 规则页纯逻辑**：`emptyRuleDraft` / `defaultSortOrder`（新建落末位）/ `validateRuleDraft`（名称+条件+目标指令，条件**委托 `condition.checkCondition` 同一 SSOT**）/ `moveRule`（上移下移，只改草稿）/ `renumber`（稠密重编 0..N-1）/ `changedSortOrder`（**只回写真变化的行**）/ `describeRoutingSaveError`（后端 detail → 中文事实文案） | ✅ 新增（R38 · §8.70） |
-| `src/utils/routeResolve.js` | **R39 加工页接线纯逻辑**：行增删改（`addRouteInput` / `removeRouteInput` / `patchRouteInput`）· **`parseInputValue` 值按 JSON 标量解析**（`0001` → 数字 1、`"0001"` → 字符串 0001、其余按原文串 —— 后端 `_equal` 数字/字符串不同型即不中）· `describeInputType` 类型徽标 · `toInputsMap`（键去空白、空键行不发、后写赢）· `resolveInstructionId` / `mergeResolvedInstruction`（不在册补列表，**已在册返回原引用**）· `describeResolve` **回执 → 中文事实文案四档**（命中 / 命中没目标 / 扫过无命中 / 零参与）+ `describeResolveError` · **R40 增 `describeDryRun`**（试解析回执 → **恒四行结果表**：命中规则 / 目标指令 / 参与扫描 / 缺陷跳过，文案断在「命中 / 无命中」**不搬「已切到」**）· **R43 增 `TRACE_LABELS` + `traceReasonText` + `describeTrace`**（回执 `trace` → **逐条判定轨迹**：码 → 中文 + `detail` 载荷；同一张码表也接 `describeInvalid`，同一条规则在「缺陷跳过」与轨迹里措辞同源）| ✅ 新增（R39 · §8.71），R40 增（§8.72）、R43 增（§8.75） |
+| `src/utils/routeResolve.js` | **R39 加工页接线纯逻辑**：行增删改（`addRouteInput` / `removeRouteInput` / `patchRouteInput`）· **`parseInputValue` 值按 JSON 标量解析**（`0001` → 数字 1、`"0001"` → 字符串 0001、其余按原文串 —— 后端 `_equal` 数字/字符串不同型即不中）· `describeInputType` 类型徽标 · `toInputsMap`（键去空白、空键行不发、后写赢）· `resolveInstructionId` / `mergeResolvedInstruction`（不在册补列表，**已在册返回原引用**）· `describeResolve` **回执 → 中文事实文案四档**（命中 / 命中没目标 / 扫过无命中 / 零参与）+ `describeResolveError` · **R40 增 `describeDryRun`**（试解析回执 → **恒四行结果表**：命中规则 / 目标指令 / 参与扫描 / 缺陷跳过，文案断在「命中 / 无命中」**不搬「已切到」**）· **R43 增 `TRACE_LABELS` + `traceReasonText` + `describeTrace`**（回执 `trace` → **逐条判定轨迹**：码 → 中文 + `detail` 载荷；同一张码表也接 `describeInvalid`，同一条规则在「缺陷跳过」与轨迹里措辞同源）· **R45 把 `describeTrace` 提为导出**（加工页与规则页**两处消费同一张轨迹表**，`describeDryRun` 内部改调它、返回值逐字不变）| ✅ 新增（R39 · §8.71），R40 增（§8.72）、R43 增（§8.75）、R45 提导出（§8.77） |
 | `src/App.jsx` | 路由壳：`PAGE_REGISTRY` 驱动侧栏与 `Routes`，`renderRouteElement` 按 `pageKey` 取组件后注入各页 props（**R38 加 `case 'routing'`，只注入 `instructions`**）；R35 起页面改动态 import + `<Suspense>`（首屏拆包），`NavItem` 悬停/聚焦预取 | ✅ |
 | `src/utils/routeChunks.js` | **页面模块单一登记表** `ROUTE_LOADERS`（**9 页动态 import**，R38 加第 9 页）+ 缓存的 `React.lazy` + 幂等 `prefetchRoute` + `__resetRouteCaches`（仅测试） | ✅ 新增（R35） |
 | `src/components/RouteInputTable.jsx` | 发前路由的**扁平键值行表**（键值框 + 类型徽标 + 行删除）—— 加工页「路由输入」与规则页「试解析」**共用同一张表**（类型徽标 / 空键不发 / 删到只剩一行禁删三条细口径只此一处）；`idPrefix` / `labels` 默认值 = 加工页原文，调用方不传即逐字节等价。**边界划在排版**：不持状态、不发请求、不渲染「+ 添加」按钮（按钮视觉语言两页不同，归页面） | ✅ 新增（R40 · §8.72） |
@@ -3583,7 +3646,7 @@
 | `src/components/ui/` | `NieRModal` / `NieRDatePicker` 通用 UI（FeaturePlaceholder 已随第 13 单死代码清理批删除） | ✅ |
 | `src/components/editor/` | 编辑器域组件：`Canvas` / `Block` / `BlockPropertiesPanel` / `ComponentPalette` / `BitFieldEditor` / `ParamConfigForm`（参数编辑器拆至 `editor/paramConfig/`）/ `InstructionListSidebar` / `ProtocolListSidebar` / `ProtocolPropertiesPanel` | ✅ |
 | `src/components/InstructionForm/InstructionRunner.jsx` | 动态表单 + 发送/导出按钮（已拆：`normalizeRunnerInstruction.js` 归一化、`RunnerFieldTree.jsx` 字段树、`TransmissionLog.jsx` 日志） | ✅ |
-| `src/pages/InstructionProcessor.jsx` | 指令加工页，`handleSend` 走 `/dispatch`；**R39 起顶部常驻「路由输入 (ROUTE INPUTS)」条** —— 键值行 + 类型徽标 + `解析 RESOLVE`（`POST /dispatch/routed`）+ 状态条 + `回到上一条 (UNDO)`，**命中即 `setActiveInstructionId` 选中、无命中不猜**；渲染条件为 `currentInstruction`（目标不在册落空态不崩）；行表本体自 **R40 起改用共用组件 `RouteInputTable`**（DOM 与 `aria-label` / `testid` 逐字节不变） | ✅（§8.71），R40 改用共用组件（§8.72） |
+| `src/pages/InstructionProcessor.jsx` | 指令加工页，`handleSend` 走 `/dispatch`；**R39 起顶部常驻「路由输入 (ROUTE INPUTS)」条** —— 键值行 + 类型徽标 + `解析 RESOLVE`（`POST /dispatch/routed`）+ 状态条 + `回到上一条 (UNDO)`，**命中即 `setActiveInstructionId` 选中、无命中不猜**；渲染条件为 `currentInstruction`（目标不在册落空态不崩）；行表本体自 **R40 起改用共用组件 `RouteInputTable`**（DOM 与 `aria-label` / `testid` 逐字节不变）；**R45 起状态条下方出「逐条判定轨迹 (TRACE) · N 条」**（`data-testid="route-trace-{n}"`，`MATCHED` 行黄字，回执不带 `trace` 就不出块；`routeTrace` 一次解析开始就清、失败也清，`回到上一条` 只改状态条不清它；挂载**与展开态无关**） | ✅（§8.71），R40 改用共用组件（§8.72），R45 增轨迹（§8.77） |
 | `src/pages/Orchestration.jsx` | 编排绑定页，EXPORT .BIN 走 `/export/binary` | ✅ |
 | `src/pages/Instruction.jsx` | 指令管理页（含 `handleAddBlock` 默认 bits 初始化） | ✅ |
 | `src/pages/DataHub.jsx` | 数据中心页：状态面板 + 聚合导出 + 备份与恢复 + 绑定矩阵；**R17 起「按域导出 DOMAINS」9 域芯片**（顺序 = `BUNDLE_DOMAIN_VERSIONS` 键序 = 导出序，送后端按表排序不看点击顺序）+ R19 示例包（**R44 起 6 域**，与按域导入能吃的范围逐字对齐）+ **按域导入选择器按顶层数组键识别域名**（含 `routing_rules`，FE 不兜白名单第二层） | ✅（§8.37），R17 起按域导出（§8.49），R44 补第 9 域（§8.76） |

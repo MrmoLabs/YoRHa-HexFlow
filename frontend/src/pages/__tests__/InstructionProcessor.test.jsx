@@ -764,3 +764,160 @@ describe('R39 发前路由：加工页按输入自动选指令（§8.71）', () 
         expect(screen.getByLabelText('路由键 1')).not.toBeNull();
     });
 });
+
+// R45（PLAN §8.75 七 留白销项）：加工页也出逐条判定轨迹。
+// 回执与规则页「试解析」是同一份（POST /dispatch/routed，R43 起带 trace）——
+// 加工页只把同一张轨迹表排版在状态条下方，**不改判**：命中才切 / 无命中不切
+// 仍是 R39 原口径，轨迹是那次解析的事实记录，FE 不自己扫第二遍条件。
+describe('R45 加工页逐条判定轨迹（§8.75 留白销项）', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        api.getResponseSpec.mockRejectedValue(
+            Object.assign(new Error('nf'), { response: { status: 404 } })
+        );
+        api.getOperatorTemplates.mockResolvedValue([]);
+        api.getRecipes.mockResolvedValue([]);
+        api.getBindings.mockResolvedValue([]);
+    });
+
+    const resolveBtn = () => screen.getByRole('button', { name: '解析 RESOLVE' });
+    const traceBlock = () => screen.queryByText(/逐条判定轨迹 \(TRACE\)/);
+
+    it('命中：出块 + 标题带条数 + 逐行 #序号 / 名 / 条件 / 中文事实，命中行黄字', async () => {
+        api.resolveRoute.mockResolvedValue({
+            matched: true,
+            rule: {
+                id: 'r-1', name: 'meter 0001', condition: 'meter_id == 1',
+                instruction_id: 'inst-2', sort_order: 0, enabled: 1,
+            },
+            instruction_id: 'inst-2',
+            instruction: INSTRUCTIONS[1],
+            invalid: [],
+            considered: 1,
+            trace: [
+                { id: 'r-1', name: 'meter 0001', condition: 'meter_id == 1', code: 'MATCHED', detail: '' },
+                { id: 'r-2', name: '没轮到', condition: 'site == "A"', code: 'NOT_EVALUATED', detail: '' },
+            ],
+        });
+        renderPage();
+        await selectInstruction();
+        await screen.findByText(/ID: inst-1/);
+
+        fireEvent.click(resolveBtn());
+        await screen.findByText(/命中规则「meter 0001」→ 已切到指令「关门指令」/);
+
+        // 轨迹块挂在状态条下方，条数 = 回执行数
+        await screen.findByText('逐条判定轨迹 (TRACE) · 2 条');
+        const row0 = screen.getByTestId('route-trace-0');
+        const row1 = screen.getByTestId('route-trace-1');
+        expect(row0.textContent).toContain('#1');
+        expect(row0.textContent).toContain('meter 0001');
+        expect(row0.textContent).toContain('meter_id == 1');
+        expect(row0.textContent).toContain('判真命中');
+        expect(row1.textContent).toContain('#2');
+        expect(row1.textContent).toContain('没轮到');
+
+        // MATCHED 行黄字（与规则页同款），其余行不刷黄
+        expect(row0.innerHTML).toContain('text-yellow-300');
+        expect(row1.innerHTML).not.toContain('text-yellow-300');
+
+        // 轨迹只回显 —— 命中仍真切了指令（R39 口径没被轨迹改掉）
+        expect(screen.getByText(/ID: inst-2/)).not.toBeNull();
+
+        // 「回到上一条」只改状态条，不清轨迹 —— 轨迹是那次解析的事实记录
+        fireEvent.click(screen.getByRole('button', { name: /回到上一条/ }));
+        await screen.findByText(/已回到指令「开门指令」/);
+        expect(screen.getByText('逐条判定轨迹 (TRACE) · 2 条')).not.toBeNull();
+    });
+
+    it('码走同一张码表：中文事实 + detail 接尾，不认识的码原样透出不猜', async () => {
+        api.resolveRoute.mockResolvedValue({
+            matched: false, rule: null, instruction_id: null, instruction: null,
+            invalid: [], considered: 3,
+            trace: [
+                { id: 'r-1', name: 'A', condition: 'a == 1', code: 'COND_FALSE', detail: '' },
+                { id: 'r-2', name: 'B', condition: 'meter_id == 2', code: 'VAR_UNDEFINED', detail: 'meter_id' },
+                { id: 'r-3', name: 'C', condition: 'c == 3', code: 'FUTURE_CODE', detail: '' },
+            ],
+        });
+        renderPage();
+        await selectInstruction();
+
+        fireEvent.click(resolveBtn());
+        await screen.findByText('逐条判定轨迹 (TRACE) · 3 条');
+
+        expect(screen.getByTestId('route-trace-0').textContent).toContain('比较不成立');
+        expect(screen.getByTestId('route-trace-1').textContent)
+            .toContain('变量不在本次输入里：meter_id');
+        expect(screen.getByTestId('route-trace-2').textContent).toContain('FUTURE_CODE');
+    });
+
+    it('无命中照样出轨迹，且仍不切指令（轨迹不改变「不猜」）', async () => {
+        api.resolveRoute.mockResolvedValue({
+            matched: false, rule: null, instruction_id: null, instruction: null,
+            invalid: [{ reason: 'INSTRUCTION_MISSING' }], considered: 2,
+            trace: [
+                { id: 'r-1', name: '悬空', condition: 'x == 1', code: 'INSTRUCTION_MISSING', detail: '' },
+            ],
+        });
+        renderPage();
+        await selectInstruction();
+        await screen.findByText(/ID: inst-1/);
+
+        fireEvent.click(resolveBtn());
+        await screen.findByText(/无命中 —— 扫过 2 条规则都不成立，维持当前指令「开门指令」不猜。/);
+
+        await screen.findByText('逐条判定轨迹 (TRACE) · 1 条');
+        expect(screen.getByTestId('route-trace-0').textContent).toContain('目标指令不在册');
+        // 缺陷跳过与轨迹两处措辞同源
+        await screen.findByText(/另有 1 条结构性缺陷已跳过/);
+        expect(screen.getByText(/ID: inst-1/)).not.toBeNull();
+        expect(screen.queryByRole('button', { name: /回到上一条/ })).toBeNull();
+    });
+
+    it('回执不带 trace（旧后端）→ 不出块，状态条照旧写事实', async () => {
+        api.resolveRoute.mockResolvedValue({
+            matched: true,
+            rule: { id: 'r-1', name: 'meter 0001' },
+            instruction_id: 'inst-2',
+            instruction: INSTRUCTIONS[1],
+            invalid: [],
+            considered: 1,
+        });
+        renderPage();
+        await selectInstruction();
+
+        fireEvent.click(resolveBtn());
+        await screen.findByText(/命中规则「meter 0001」→ 已切到指令「关门指令」/);
+
+        expect(traceBlock()).toBeNull();
+        expect(screen.queryByTestId('route-trace-0')).toBeNull();
+    });
+
+    it('解析失败 → 不出轨迹块（上一次的轨迹也不残留）', async () => {
+        api.resolveRoute.mockResolvedValue({
+            matched: true,
+            rule: { id: 'r-1', name: 'meter 0001' },
+            instruction_id: 'inst-2',
+            instruction: INSTRUCTIONS[1],
+            invalid: [],
+            considered: 1,
+            trace: [
+                { id: 'r-1', name: 'meter 0001', condition: 'meter_id == 1', code: 'MATCHED', detail: '' },
+            ],
+        });
+        renderPage();
+        await selectInstruction();
+
+        // 先成功一次 → 轨迹出块
+        fireEvent.click(resolveBtn());
+        await screen.findByText('逐条判定轨迹 (TRACE) · 1 条');
+
+        // 再失败一次 → 轨迹随本次回执一起清空
+        api.resolveRoute.mockRejectedValue(new Error('backend down'));
+        fireEvent.click(resolveBtn());
+        await screen.findByText(/解析失败 —— backend down/);
+        expect(traceBlock()).toBeNull();
+        expect(screen.queryByTestId('route-trace-0')).toBeNull();
+    });
+});

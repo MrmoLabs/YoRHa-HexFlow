@@ -168,7 +168,9 @@ const describeInvalid = (list) => {
 
 // R43（§8.75）逐条判定轨迹：一行 = 回执一条规则。序号 = 回执行序（= 定序），
 // 名 / 条件 / 码 / 文案全部原样转写 —— **FE 不扫第二遍条件**。
-const describeTrace = (list) => {
+// R45（§8.75 七 留白销项）提为导出：同一份回执两处消费（规则页试解析、
+// 加工页真解析），轨迹必须走同一张表，不许各排各的。
+export const describeTrace = (list) => {
     if (!Array.isArray(list)) return [];
     return list.map((entry, index) => ({
         index: index + 1,

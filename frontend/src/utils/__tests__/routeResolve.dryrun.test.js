@@ -12,7 +12,7 @@
 // 下面两条 `toEqual` 的完整形状断言随之补 `trace: []`（**随新事实改写**，非放水：
 // 原有 matched / headline / rows 逐字未动）。
 import { describe, it, expect } from 'vitest';
-import { describeDryRun } from '../routeResolve';
+import { describeDryRun, describeTrace } from '../routeResolve';
 
 describe('routeResolve · describeDryRun（试解析回执 → 结果表）', () => {
     it('命中：headline 写清是哪条规则、哪条指令，并写明只解析不发送', () => {
@@ -203,5 +203,35 @@ describe('routeResolve · describeDryRun（R43 逐条判定轨迹）', () => {
             considered: 1,
         });
         expect(raw.rows[3].value).toBe('1 条 —— 规则「坏条件」：缺少比较运算符');
+    });
+});
+
+// ── R45（PLAN §8.75 七 留白销项）：加工页也吃同一张轨迹表 ──────────────────
+// `describeTrace` 从 describeDryRun 的私有函数提为导出 —— 同一份回执两处消费
+// （规则页试解析 / 加工页真解析），轨迹必须走同一张表，不许各排各的。
+describe('routeResolve · describeTrace（R45 两页共用轨迹表）', () => {
+    const TRACE = [
+        { id: 'r-1', name: 'meter 0001', condition: 'meter_id == 1', code: 'MATCHED', detail: '' },
+        { id: 'r-2', name: '看别的键', condition: 'line == 1', code: 'VAR_UNDEFINED', detail: 'line' },
+    ];
+
+    it('describeDryRun 的 trace 与 describeTrace 逐字相等（不许两处分叉）', () => {
+        expect(describeTrace(TRACE)).toEqual(describeDryRun({ trace: TRACE }).trace);
+    });
+
+    it('缺省 / 非数组 → []（加工页回执不带 trace 时不出块，也不抛）', () => {
+        expect(describeTrace(undefined)).toEqual([]);
+        expect(describeTrace(null)).toEqual([]);
+        expect(describeTrace('nope')).toEqual([]);
+        expect(describeTrace({})).toEqual([]);
+    });
+
+    it('序号从 1 起按回执行序，name / condition 缺值给占位（不渲染空引号）', () => {
+        expect(describeTrace([
+            { name: '', condition: '', code: 'COND_FALSE', detail: '' },
+        ])).toEqual([{
+            index: 1, name: '（未命名）', condition: '（无条件）',
+            code: 'COND_FALSE', text: '比较不成立',
+        }]);
     });
 });
