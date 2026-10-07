@@ -162,12 +162,10 @@ export const SmartInput = ({
     return (
         <div
             className={`flex flex-col gap-1 py-1 ${highlight ? 'animate-pulse' : ''} group w-full ${className} ${onClick || onSelect ? 'cursor-pointer hover:bg-nier-light/5' : ''}`}
-            onClick={(e) => {
-                if (onClick) {
-                    e.stopPropagation();
-                    onClick();
-                }
-                // 第 4 批 #2：行点击 → 上层选中字段（字节流高亮联动）
+            onClick={() => {
+                // 第 4 批 #2：行点击 → 上层选中字段（字节流高亮联动）。
+                // R46（§8.78）：开时间弹窗的 onClick 不在这一层 —— 触发点已
+                // 收到下方的值区，点标签 / 右徽标只做字节定位，不再整行误弹。
                 if (onSelect) onSelect();
             }}
         >
@@ -205,7 +203,14 @@ export const SmartInput = ({
                     </div>
                 )}
 
-                <div className="flex-1 flex items-stretch">
+                {/* R46（§8.78）：时间配置弹窗的触发点收在**值区**这一块 ——
+                    点标签、点右徽标只做字节定位选中，不再整行误弹。这里不
+                    stopPropagation，事件继续冒泡到最外层的 onSelect：点值区
+                    = 开弹窗 + 选中字段，两件事一起。 */}
+                <div
+                    className="flex-1 flex items-stretch"
+                    onClick={onClick ? () => onClick() : undefined}
+                >
                     {type === 'select' && !readOnly ? (
                         <select
                             className={`${baseClasses} ${editClasses}`}

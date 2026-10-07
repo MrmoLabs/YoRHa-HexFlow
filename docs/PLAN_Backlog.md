@@ -73,6 +73,8 @@
 
 | R45 | **加工页判定轨迹（同一份回执，两页共用一张轨迹表）** —— R43（§8.75 七）落地轨迹时**刻意留白**「加工页不加轨迹」：`describeResolve` 消费的是同一份 `POST /dispatch/routed` 回执，但加工页是「命中即切」的动作语境，一行事实已够 —— 结果是规则作者在规则页能读到「为什么不命中」，**在真正按下「解析 RESOLVE」并真切指令的那个页面反而读不到**（§8.77；2026-10-07 question 工具回执拍板选此项，余三候选为输入表持久化 / 校验器 md 口径 / 暂不排批） | ✅ **已完成（2026-10-07，§8.77，纯 FE · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`/dispatch` 缺省口径一行未动）**：**`describeTrace` 由 `describeDryRun` 的私有函数提为导出** —— 同一份回执两处消费（规则页试解析 / 加工页真解析），轨迹**必须走同一张表**不许各排各的，`describeDryRun` 内部改调它、返回值逐字不变（R43 的 8 条既有用例一次不改全绿 = 提取没改行为的证据）。加工页 `InstructionProcessor.jsx` 新增 `routeTrace`：**一次解析开始就清、失败也清**（不残留上一次），成功则存 `describeTrace(res?.trace)`；轨迹块挂**状态条下方、与展开态无关**（结论属于状态条那一层，收起输入表不该把结论一起收走），testid `route-trace-{n}` 与规则页 `dry-trace-{n}` 同形不同名、`MATCHED` 行黄字同款。**三条边界写死**：① 回执没给 `trace`（旧后端）→ `describeTrace` 出 `[]` → 不出块，状态条照旧写事实；② 轨迹**只回显不改判** —— 命中才切 / 无命中不切仍是 R39 原口径，FE 不自己扫第二遍条件；③ **`回到上一条` 只改状态条不清轨迹**（轨迹是那次解析的事实记录，规则与条件都没变）。**红测先行有据**：新增 8 条（util 3 + 页面 5）→ **7 红 1 绿**，红因全为缺特性（`describeTrace does not provide an export named` ×3、页面查无 `逐条判定轨迹 (TRACE)` ×4）；那 1 条「回执不带 trace 就不出块」**实现前即绿属护栏，不冒充红测**。**三档记账**：缺特性 7 / 随新事实改写 0 / 测试自身 bug 0。**验收** = BE **1033/1033 持平**（零改动）· FE **1473 → 1481/1481（95 文件，+8）** · `npx vite build` 0 · `npm run lint` 0（0 问题 0 警告）· yorha-ui 校验器 5 文件 0 违规（4 js/jsx + 1 json）· `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 BAD=0；**实机冒烟**（后端 8055 + dev 5174）三条规则各占一类（条件假 / 变量不在输入 / 停用），`meter_id=999` → 无命中状态条 + 轨迹三行 `比较不成立` / `变量不在本次输入里：line` / `已停用（不参与匹配）`，`meter_id=1` → `命中规则「R45 smoke A」→ 已切到指令「示例心跳帧」` + #1 `判真命中` **黄字**、#2 #3 `未轮到`，`回到上一条` 后状态条换文案而**轨迹仍三行**；**控制台 A/B 对照** = 暂存 R45 运行时改动后同一页面同样出 2 条 `GET /response-specs/{id} 404`（该指令无存档应答规格，FE 本就按 404 处理），**本批新增 0 error**；清场后规则表 `[]`、回收站 0 条，8055 / 5174 两个后台壳已停 |
 
+| R46 | **TIME 字段点击范围收窄（只有值区才开时间配置弹窗）** —— 2026-10-07 实机手工验证当场反馈：加工页 TIME 类字段（运行秒数）**点整行任意处都会弹时间配置**，只希望点值区那块才弹；**无既有登记项**（R36–R45 的留白已全部收口，这是新报上来的交互问题）（§8.78；question 工具回执拍板其作 R46，**原拍板的「输入表持久化」顺延 R47**） | ✅ **已完成（2026-10-07，§8.78，纯 FE · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`/dispatch` 缺省口径一行未动）**：**触发点从整行最外层挪到值区** —— `SmartInput.jsx` 原把 `onClick`（`RunnerFieldTree.handleTimeClick`）挂在**整行最外层 div**，点标签、点右徽标 `[TIME_PICKER]`、点值区都会开时间配置；现改为**值区 `div.flex-1` 独享 `onClick`**，最外层只留**字节定位选中 `onSelect`**（点行仍高亮字节 + 读数条，第 4 批 #2 的既有语义一行未改），值区**不 `stopPropagation`** → 事件继续冒泡到外层，点值区 = 开弹窗 + 选中字段两件事一起。非 TIME 字段的 `onClick` 本就 `undefined` → 值区不出处理器，**零行为变化**。**红测先行有据**：新增 5 条（`SmartInput.test.jsx` 3 + `InstructionProcessor.test.jsx` 2）→ **3 红 2 绿**，红因全为缺特性（单元级 `expected "vi.fn()" to not be called at all, but actually been called 1 times` ×2、页面级 `expected <span …></span> to be null` ×1，即点标签 / 点徽标仍误开弹窗）；那 2 条「点值区才开弹窗」**实现前即绿属护栏，不冒充红测**。**三档记账**：缺特性 3 / 随新事实改写 0 / 测试自身 bug 0。**验收** = BE **1033/1033 持平**（零改动）· FE **1481 → 1486/1486（95 文件，+5）** · `npx vite build` 0 · `npm run lint` 0（0 问题 0 警告）· yorha-ui 校验器 4 文件 0 违规（3 js/jsx + 1 json）· `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 BAD=0；**实机冒烟**（后端 8055 + dev 5174）三态 —— 点标签不出弹窗但字节定位照旧、点值区出 `时间配置 (TEMPORAL)`、点右徽标不出弹窗且定位保留；控制台仅 2 条 `GET /response-specs/{id} 404`（R45 §8.77 已 A/B 对照定性的既有口径），**本批新增 0 error** |
+
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
 ## 2. M1 明细（实现完成，待人工验证）
@@ -6747,6 +6749,97 @@ FE 自 P2 起就按 404 当「未配置」处理，测试里也这么 mock）。
 `npm run sync:page-status` 重生成 `PAGE_STATUS.md`。
 
 **R45 ✅ —— 解析发生在哪一页，「为什么」就在哪一页读得到，而且是同一张表。**
+
+## 8.78 R46 TIME 字段点击范围收窄（只有值区才开时间配置弹窗 · 2026-10-07）
+
+### 一 · 来源（实机反馈直提，无既有登记项）
+
+2026-10-07 实机手工验证 `/processing` 时当场反馈，两句原话指的是同一件事：
+
+> 对于时间类型的字段，希望点击这个元素才出现标记 —— 指值区那块
+> `div.flex-1.flex.items-stretch`（里面是取值框 + 年份后缀）
+
+> 现在是点击整个元素都会出现时间配置弹窗 —— 指整行
+> `div.flex.items-stretch.relative`（种类章 + IF 角标 + 标签 + 值区 + `[TIME_PICKER]` 徽标）
+
+**无既有登记项** —— R36–R45 的留白到 R45 收口时已全部销完，这是新报上来的交互问题，
+不是某条留白的正主。
+
+**2026-10-07 question 工具回执拍板其作 R46**（原拍板给 R46 的「输入表持久化」顺延 R47，
+校验器 md 口径仍待另议）。
+
+### 二 · 改动（1 个实现文件 + 2 个测试文件，纯 FE）
+
+| 文件 | 改动 | 为什么 |
+|---|---|---|
+| `frontend/src/components/InstructionForm/SmartInput.jsx` | 最外层 div 的 `onClick` 去掉开弹窗那一支、只留字节定位选中；值区 `div.flex-1` 新挂 `onClick` | 触发点从整行收窄到值区 |
+| `frontend/src/components/InstructionForm/__tests__/SmartInput.test.jsx` | 新增 3 条（值区 / 标签 / 徽标） | 单元级锁「谁能把弹窗叫出来」 |
+| `frontend/src/pages/__tests__/InstructionProcessor.test.jsx` | 新增 2 条（点标签不弹 / 点值区弹） | 页面级锁实机反馈那句话 |
+
+**改前**：`onClick`（`RunnerFieldTree.handleTimeClick` → `onOpenDatePicker`）与 `onSelect`
+两个回调**同挂最外层 div**，所以整行任意位置点下去都同时做两件事。
+**改后**：开弹窗只由**值区**触发，字节定位选中**仍在最外层**。
+
+### 三 · 三条边界
+
+1. **字节定位选中仍是全行语义** —— 点标签、点右徽标、点值区都会高亮字节 + 出读数条。
+   第 4 批 #2 的既有用例「点字段出 `SEL :: 字段名 · 偏移 · 长度`」**一次不改全绿**。
+2. **值区不 `stopPropagation`** —— 点值区先开弹窗，事件继续冒泡到外层的 `onSelect`，
+   两件事一起；原外层那句 `e.stopPropagation()` 随 `onClick` 一起退场，但
+   `RunnerFieldTree` 叶行外层的 `stopPropagation()` 仍在，「嵌套组内选中不被外层组 id
+   覆盖成整组」的既有隔离不受影响。
+3. **非 TIME 字段零变化** —— 它们的 `onClick` 本就是 `undefined`，值区不挂处理器；
+   可编辑字段的聚焦、键入、类型徽标与长度徽标照旧。
+
+### 四 · 红测先行有据
+
+新增 **5 条**（`SmartInput.test.jsx` 3 + `InstructionProcessor.test.jsx` 2），
+实现前 **3 红 2 绿**：
+
+| 档 | 条数 | 明细 |
+|---|---|---|
+| 缺特性（真红测） | **3** | 单元级点标签 / 点徽标 `expected "vi.fn()" to not be called at all, but actually been called 1 times` ×2；页面级点标签 `expected <span …></span> to be null` —— 三条红因同为「触发点还没收到值区」 |
+| 护栏（实现前即绿） | **2** | 单元级与页面级各一条「点值区 → 开时间配置弹窗」：改前整行就开，断言自然成立；**如实登记，不冒充红测** |
+| 测试随新事实改写 | **0** | 本批没有既有断言被新事实推翻 |
+| 测试自身 bug 先修 | **0** | 本批无 |
+
+**验收**：BE **1033/1033 持平**（零改动）· FE **1481 → 1486/1486（95 文件，+5）** ·
+`npx vite build` EXIT=0 · `npm run lint` EXIT=0（0 问题 0 警告）· yorha-ui 校验器改动
+**3 个 js / jsx + 1 json 文件 0 违规** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 BAD=0 ·
+**零 DDL → 无 Migration、无 `chore(db)`**、不引 pytest、无新 pip 依赖、
+`processor.py` / `graph.py` / `Blueprint.jsx` 未碰、**`/dispatch` 缺省口径一行未动**。
+
+> **FE 全量跑了三遍**：两遍 **95 文件 1486 条全绿**；一遍出 1 failed —— 正是 R44 §8.76 与
+> R45 §8.77 都登记过的那条 `Terminal.test.jsx` 历史预览抖动
+> （`Unable to find an element with the text: AA 55 ……`），本批未触碰该页，
+> **单跑 29/29 绿**。按**测试抖动**记账：不改测试、不改实现，如实登记。
+
+### 五 · 实机冒烟（后端 8055 + dev 5174 · 零数据改动）
+
+选中「示例心跳帧」（TIME 字段 `运行秒数`，`base_time` 折算显示 `2025`），三态：
+
+| 操作 | 时间配置弹窗 | 字节定位 |
+|---|---|---|
+| 点**标签** `运行秒数` | **不出** | `SEL :: 运行秒数 · 0X05-0X08 · 4B` + 该字段导轨亮（边界 ①） |
+| 点**值区**（取值框 + 年份后缀） | **出** —— `时间配置 (TEMPORAL)` · 年 月 日 时 分 秒 · 取消 确认 | 同上照旧 |
+| 点右徽标 `[TIME_PICKER]` | **不出** | 定位保留（边界 ①） |
+
+**控制台 0 条新增 error** —— 只有 2 条 `GET /response-specs/sample-inst-heartbeat 404`，
+与 R45 §8.77 已做 A/B 对照定性的是同一类（该指令无存档应答规格，FE 自 P2 起按 404 当
+「未配置」处理）。本批只改点击目标，**不创建、不删除任何数据**，无需清场。
+
+### 六 · 明确留白（本批不做）
+
+- **输入表持久化**（原定 R46，已顺延 **R47**）、**校验器 md 口径**（改仓外 skill 须另议）—— 不涉；
+- **不给值区加额外 hover 高亮 / 点击提示** —— 整行已有 `cursor-pointer hover:bg-nier-light/5`，
+  不为一次范围收窄新增视觉层；
+- **不改字节定位选中的全行语义** —— 要把它一并收窄到值区属于另一件事，另议排批。
+
+**文档同步（同批）**：§1 新增 `R46` 行 + §8.78 本节；`PROJECT_HANDOVER.md` 新条目 95；
+`pageStatus.json` `/processing` 补记一条，并 `npm run sync:page-status` 重生成 `PAGE_STATUS.md`
+（R36–R45 的留白改指**一条都不涉及** —— 本批无既有登记项可销）。
+
+**R46 ✅ —— 点哪一块就是哪一块：只有值区才弹时间配置，点标签与徽标只是把字节定位到那一行。**
 
 ## 9. 保留勿动（非任务，勿清理）
 

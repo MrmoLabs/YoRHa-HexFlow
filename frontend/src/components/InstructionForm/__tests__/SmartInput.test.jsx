@@ -269,3 +269,43 @@ describe('SmartInput 优化批 1：BIN 通道与进制前缀', () => {
         expect(screen.getByText('[HEX]')).toBeTruthy();
     });
 });
+
+// R46（PLAN §8.78）：TIME 字段「开时间配置弹窗」的点击范围**收窄到值区**。
+// 反馈原话：现在点整行（标签 / 右徽标 / 值区任意处）都会弹时间配置，只希望
+// 点**值区**那块才弹。字节定位选中（onSelect）仍是全行语义 —— 不在此批改动内。
+describe('SmartInput R46：时间配置弹窗只由值区触发', () => {
+    const TIME_PROPS = {
+        label: '运行秒数', value: '2026-01-01 00:00:00',
+        readOnly: true, pickerMode: true, type: 'text',
+    };
+    const setup = () => {
+        const onClick = vi.fn();
+        const onSelect = vi.fn();
+        render(<SmartInput {...TIME_PROPS} onChange={() => {}} onClick={onClick} onSelect={onSelect} />);
+        return { onClick, onSelect };
+    };
+
+    it('点值区（取值框）→ 触发 onClick 开弹窗，onSelect 照旧', () => {
+        const { onClick, onSelect } = setup();
+
+        fireEvent.click(screen.getByDisplayValue('2026-01-01 00:00:00'));
+        expect(onClick).toHaveBeenCalledTimes(1);
+        expect(onSelect).toHaveBeenCalledTimes(1);
+    });
+
+    it('点标签 → 不触发 onClick（只 onSelect：字节定位照旧）', () => {
+        const { onClick, onSelect } = setup();
+
+        fireEvent.click(screen.getByText('运行秒数'));
+        expect(onClick).not.toHaveBeenCalled();
+        expect(onSelect).toHaveBeenCalledTimes(1);
+    });
+
+    it('点右徽标 [TIME_PICKER] → 不触发 onClick（只 onSelect）', () => {
+        const { onClick, onSelect } = setup();
+
+        fireEvent.click(screen.getByText('[TIME_PICKER]'));
+        expect(onClick).not.toHaveBeenCalled();
+        expect(onSelect).toHaveBeenCalledTimes(1);
+    });
+});

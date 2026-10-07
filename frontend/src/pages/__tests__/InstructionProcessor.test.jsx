@@ -921,3 +921,43 @@ describe('R45 加工页逐条判定轨迹（§8.75 留白销项）', () => {
         expect(screen.queryByTestId('route-trace-0')).toBeNull();
     });
 });
+
+// R46（PLAN §8.78 留白销项）：TIME 字段「开时间配置弹窗」的点击范围收窄到**值区**。
+// 反馈原话：现在点整个字段行都会出时间配置弹窗，只希望点值区那块才出。
+// 锁两件事：① 点标签 → 只做字节定位选中，**不弹**；② 点值区 → 照旧弹。
+// 字节定位选中仍是全行语义（第 4 批 #2 的既有用例一行不改照绿）。
+describe('R46 TIME 字段点击范围收窄（§8.78 留白销项）', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        api.getResponseSpec.mockRejectedValue(
+            Object.assign(new Error('nf'), { response: { status: 404 } })
+        );
+        api.getOperatorTemplates.mockResolvedValue([]);
+        api.getRecipes.mockResolvedValue([]);
+        api.getBindings.mockResolvedValue([]);
+    });
+
+    const selectHeartbeat = async () => {
+        fireEvent.click(await sidebar().findByText('心跳指令'));
+        await screen.findByText('[TIME_PICKER]');
+    };
+    // 弹窗开着 = NieRDatePicker 渲染出的标题（关着时组件 return null）
+    const temporalDialog = () => screen.queryByText('时间配置 (TEMPORAL)');
+
+    it('点标签 → 只选中字段（字节读数条照旧），不弹时间配置', async () => {
+        renderPage();
+        await selectHeartbeat();
+
+        fireEvent.click(screen.getByText('运行秒数'));
+        expect(temporalDialog()).toBeNull();
+        expect(screen.getByTestId('byte-readout').textContent).toContain('运行秒数');
+    });
+
+    it('点值区（取值框）→ 弹出时间配置', async () => {
+        renderPage();
+        await selectHeartbeat();
+
+        fireEvent.click(screen.getByDisplayValue('2026-01-01 00:00:00'));
+        expect(screen.getByText('时间配置 (TEMPORAL)')).not.toBeNull();
+    });
+});

@@ -3574,6 +3574,56 @@
       输入表持久化、校验器 md 口径仍不涉。
       提交 = `feat(R45)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
 
+95. **R46 · TIME 字段点击范围收窄（只有值区才开时间配置弹窗；PLAN §8.78 · 2026-10-07）**
+    - **为什么**：实机手工验证 `/processing` 当场反馈 —— TIME 类字段（运行秒数）**点整行任意处
+      都会弹时间配置**，只希望点值区那块才弹。**无既有登记项**（R36–R45 的留白到 R45 已全部销完，
+      这是新报上来的交互问题）。**2026-10-07 question 工具回执拍板其作 R46**，
+      **原拍板给 R46 的「输入表持久化」顺延 R47**（校验器 md 口径仍待另议）。
+    - **它现在怎么解决**：`SmartInput.jsx` **把开弹窗的 `onClick` 从整行最外层挪到值区
+      `div.flex-1`** —— 原先 `onClick`（`RunnerFieldTree.handleTimeClick` → `onOpenDatePicker`）
+      与 `onSelect` 两个回调**同挂最外层**，点标签 / 点右徽标 `[TIME_PICKER]` / 点值区都同时做
+      「开弹窗 + 字节定位」两件事。改后最外层**只留 `onSelect`**，值区**不 `stopPropagation`**
+      → 事件继续冒泡，点值区 = 开弹窗 + 选中字段两件事一起。
+    - **三条边界**：① **字节定位选中仍是全行语义**（第 4 批 #2「点字段出读数条」的既有用例
+      一次不改全绿）；② 值区不 `stopPropagation`，但 `RunnerFieldTree` 叶行外层那句
+      `stopPropagation()` 仍在 —— 「嵌套组内选中不被外层组 id 覆盖成整组」的隔离不受影响；
+      ③ **非 TIME 字段零变化**（`onClick` 本就 `undefined`，值区不挂处理器）。
+    - **文件（3 个）**：**改 1 个 FE 实现** —— `frontend/src/components/InstructionForm/SmartInput.jsx`；
+      **改 2 个 FE 测试** —— 同目录 `__tests__/SmartInput.test.jsx` +
+      `frontend/src/pages/__tests__/InstructionProcessor.test.jsx`。
+      **纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`、零 BE 改动、不引 pytest、
+      无新 pip 依赖、`processor.py` / `graph.py` / `Blueprint.jsx` 未碰、
+      **`/dispatch` 缺省口径未动**。
+    - **测试（红测先行有据）**：新增 **5 条**（单元级 3 + 页面级 2），实现前 **3 红 2 绿** ——
+      红的三条全是「触发点还没收到值区」（单元级点标签 / 点徽标
+      `expected "vi.fn()" to not be called at all, but actually been called 1 times` ×2、
+      页面级点标签 `expected <span …></span> to be null`）；那 2 条「点值区 → 开时间配置弹窗」
+      **实现前即绿属护栏**（改前整行就开），**如实登记，不冒充红测**。
+    - **三档记账**：**缺特性 3 条**；**测试随新事实改写 0 条**；**测试自身 bug 档 0 条**。
+    - **验收**：**BE 1033/1033 持平**（零改动）、**FE 1481 → 1486/1486（95 文件，+5）**、
+      `npx vite build` EXIT=0、`npm run lint` EXIT=0 **且 0 warning**、yorha-ui 校验器改动
+      **3 个 js / jsx + 1 json 文件 0 违规**、`ev40` TOTAL_PROBLEMS=0、`ev33` STAGED=0 BAD=0；
+      **零 DDL → 无 Migration、无 `chore(db)`**、不引 pytest、无新 pip 依赖、
+      `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、**`/dispatch` 缺省口径未动**。
+      > **FE 全量跑了三遍**：两遍 95 文件 1486 条全绿；一遍出 1 failed，正是 R44 §8.76 与
+      > R45 §8.77 都登记过的那条 `Terminal.test.jsx` 历史预览抖动，本批未触碰该页，
+      > **单跑 29/29 绿**。按**测试抖动**记账：不改测试、不改实现，如实登记。
+    - **实机冒烟**（后端 8055 + dev 5174，**零数据改动**）：选中「示例心跳帧」的 TIME 字段
+      `运行秒数` —— 点**标签**不出弹窗但 `SEL :: 运行秒数 · 0X05-0X08 · 4B` 照旧 + 导轨亮；
+      点**值区**出 `时间配置 (TEMPORAL)`（年 月 日 时 分 秒 + 取消 确认）；点右徽标
+      `[TIME_PICKER]` 不出弹窗且定位保留。**控制台 0 条新增 error** —— 只有 2 条
+      `GET /response-specs/sample-inst-heartbeat 404`，与 R45 §8.77 已 A/B 定性的同类
+      （无存档应答规格，FE 按 404 当「未配置」）。本批不创建、不删除任何数据，无需清场。
+    - **文档同步（同批）**：PLAN **§8.78 新节** + §1 新增 `R46` 行；本条插入；
+      `pageStatus.json` `/processing` 补记一条，并 `npm run sync:page-status` 重生成
+      `PAGE_STATUS.md`（**R36–R45 的留白改指一条都不涉及** —— 本批无既有登记项可销）。
+    - **状态**：**R46 ✅ —— 点哪一块就是哪一块：只有值区才弹时间配置，点标签与徽标只是把字节
+      定位到那一行。**
+      **明确留白**：**不给值区加额外 hover 高亮 / 点击提示**（整行已有 `cursor-pointer` 与 hover 底色，
+      不为一次范围收窄新增视觉层）；**不改字节定位选中的全行语义**（要一并收窄另议）；
+      **输入表持久化已顺延 R47**、校验器 md 口径仍不涉。
+      提交 = `feat(R46)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
