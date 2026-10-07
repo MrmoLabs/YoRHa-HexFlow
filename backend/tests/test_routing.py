@@ -131,10 +131,138 @@ class SelectRuleTest(unittest.TestCase):
 
     def test_empty_ruleset(self):
         out = select_rule([], {"v": 1})
+        # R43（§8.75）起多一个 `trace` 键 —— 契约随新事实改写，其余四键原样
         self.assertEqual(
             out,
-            {"matched": False, "rule": None, "invalid": [], "considered": 0},
+            {"matched": False, "rule": None, "invalid": [], "considered": 0, "trace": []},
         )
+
+
+class SelectRuleTraceTest(unittest.TestCase):
+    """R43（PLAN §8.75）逐条判定轨迹 —— 「这条为什么没成立」逐条可见。
+
+    此前 `select_rule` 只回「命中哪条 / 扫了几条」，比较不成立、变量不在输入、
+    类型不可比在回执里**同为不命中**（R40 §8.72 八 登记的留白）。轨迹给每条
+    规则一行 `code`（机器码，FE 出中文）+ `detail`（后端事实载荷），判据仍只有
+    `core/condition.py` 一处 —— 轨迹只**记录**，不改判定。
+    """
+
+    def test_trace_one_row_per_rule_with_id_name_condition(self):
+        out = select_rule(
+            [_rule("不成立", "v == 99", id="a"), _rule("成立", "v == 1", id="b")],
+            {"v": 1},
+        )
+        self.assertEqual(
+            [sorted(e) for e in out["trace"]],
+            [["code", "condition", "detail", "id", "name"]] * 2,
+        )
+        self.assertEqual(
+            [(e["id"], e["name"], e["condition"]) for e in out["trace"]],
+            [("a", "不成立", "v == 99"), ("b", "成立", "v == 1")],
+        )
+
+    def test_every_outcome_has_its_own_code_in_scan_order(self):
+        out = select_rule(
+            [
+                _rule("停用", "v == 1", enabled=0, sort_order=0, id="off"),
+                _rule("坏条件", BAD_SYNTAX, sort_order=1, id="bad"),
+                _rule("看别的键", UNDEFINED_VAR, sort_order=2, id="undef"),
+                _rule("类型不比", "v == '1'", sort_order=3, id="type"),
+                _rule("不成立", "v == 99", sort_order=4, id="false"),
+                _rule("命中", "v == 1", sort_order=5, id="hit"),
+                _rule("没轮到", "v == 1", sort_order=6, id="tail"),
+            ],
+            {"v": 1},
+        )
+        self.assertEqual(
+            [(e["id"], e["code"]) for e in out["trace"]],
+            [
+                ("off", "DISABLED"),
+                ("bad", "CONDITION_INVALID"),
+                ("undef", "VAR_UNDEFINED"),
+                ("type", "TYPE_INCOMPARABLE"),
+                ("false", "COND_FALSE"),
+                ("hit", "MATCHED"),
+                ("tail", "NOT_EVALUATED"),
+            ],
+        )
+        # 命中即停 —— 尾巴上的规则**没被求值过**，所以不算进 considered；
+        # 停用与语法坏掉那两条本就不计（既有口径，轨迹不改它）
+        self.assertTrue(out["matched"])
+        self.assertEqual(out["rule"].id, "hit")
+        self.assertEqual(out["considered"], 4)
+        # 各自的 detail 是后端事实（变量名 / 两个类型名），FE 拿来出文案
+        details = {e["id"]: e["detail"] for e in out["trace"]}
+        self.assertEqual(details["undef"], "nope")
+        self.assertEqual(details["type"], "数字 与 字符串")
+        self.assertEqual(details["bad"], out["invalid"][0]["reason"])
+        self.assertEqual(details["off"], "")
+        self.assertEqual(details["false"], "")
+        self.assertEqual(details["tail"], "")
+
+    def test_in_operator_right_operand_is_its_own_code_not_a_silent_false(self):
+        # `v in 1` 语法合法、求值期抛「右侧须是数组或字符串」—— 既不是比较不成立
+        # 也不是类型不可比，归 COND_ERROR 兜底并把原文带回去
+        out = select_rule([_rule("in 坏", "v in 1", id="a")], {"v": 1})
+        self.assertEqual(out["trace"][0]["code"], "COND_ERROR")
+        self.assertIn("右侧须是数组或字符串", out["trace"][0]["detail"])
+
+    def test_trashed_rule_leaves_no_trace_row(self):
+        # 回收站行列表页根本看不见 —— 轨迹只覆盖「规则顺序」列表里看得见的行
+        out = select_rule(
+            [_rule("已删", "v == 1", deleted_at="2026-10-06T00:00:00+00:00", id="a")],
+            {"v": 1},
+        )
+        self.assertEqual(out["trace"], [])
+
+    def test_empty_ruleset_gives_empty_trace(self):
+        out = select_rule([], {"v": 1})
+        self.assertEqual(out["trace"], [])
+
+    def test_trace_does_not_change_match_semantics(self):
+        # 轨迹只是把原来「跳过」的地方改成「跳过并记一行」—— 判定一字未改
+        out = select_rule(
+            [_rule("一", "v == 1", sort_order=0, id="a"),
+             _rule("二", "v == 1", sort_order=1, id="b")],
+            {"v": 1},
+        )
+        self.assertEqual(out["rule"].id, "a")
+        self.assertEqual(out["invalid"], [])
+        self.assertEqual(out["considered"], 1)
+
+
+class EvalCodePrefixTest(unittest.TestCase):
+    """轨迹码是**按 `ConditionError` 文案前缀**分类的 —— 文案一漂移就得红。
+
+    这些文案由 `vectors/condition.json` 双端锁死，本类再从分类这一侧钉一遍：
+    静默漂移会让「变量不在输入」被记成兜底码，是能被测出来的。
+    """
+
+    def test_prefixes_still_match_condition_error_messages(self):
+        from backend.core.condition import ConditionError, evaluate_condition
+
+        from backend.core.routing import EVAL_CODE_PREFIXES
+
+        cases = [
+            ({"v": 1}, UNDEFINED_VAR, "VAR_UNDEFINED"),
+            ({"v": 1}, "v == '1'", "TYPE_INCOMPARABLE"),
+        ]
+        for variables, cond, want_code in cases:
+            with self.assertRaises(ConditionError) as ctx:
+                evaluate_condition(cond, variables)
+            msg = str(ctx.exception)
+            hits = [code for prefix, code in EVAL_CODE_PREFIXES if msg.startswith(prefix)]
+            self.assertEqual(hits, [want_code], msg)
+
+    def test_unmatched_message_falls_back_to_cond_error(self):
+        from backend.core.condition import ConditionError, evaluate_condition
+
+        from backend.core.routing import EVAL_CODE_PREFIXES
+
+        with self.assertRaises(ConditionError) as ctx:
+            evaluate_condition("v in 1", {"v": 1})
+        msg = str(ctx.exception)
+        self.assertFalse(any(msg.startswith(p) for p, _ in EVAL_CODE_PREFIXES), msg)
 
 
 class RoutingTestBase(unittest.TestCase):
@@ -257,6 +385,62 @@ class ResolveRouteTest(RoutingTestBase):
         # §0：新增端点只解析 —— 出现这三个键即说明串进了 /dispatch 缺省口径
         for leaked in ("status", "attempts", "hex_string"):
             self.assertNotIn(leaked, payload)
+
+
+class ResolveRouteTraceTest(RoutingTestBase):
+    """R43（PLAN §8.75）回执 `trace` —— 把 `select_rule` 的轨迹与
+    `resolve_route` 自己那层静态跳过（目标指令不在册）按**同一定序**并回一张表。"""
+
+    def test_trace_arrives_on_the_response(self):
+        self._create("读版本", "meter_id == 1", sort_order=0)
+        out = resolve_route({"meter_id": 999}, db=self.db)
+        self.assertEqual(
+            [(e.name, e.code) for e in out.trace],
+            [("读版本", "COND_FALSE")],
+        )
+        self.assertEqual(out.trace[0].condition, "meter_id == 1")
+        self.assertEqual(out.trace[0].detail, "")
+
+    def test_trace_merges_dangling_and_disabled_rows_in_list_order(self):
+        self._create("活", "meter_id == 1", sort_order=0)
+        self._create("停用", "meter_id == 1", sort_order=1, enabled=0)
+        self._create("悬空", "meter_id == 1", instruction_id=INSTR_B, sort_order=2)
+        self.db.query(Instruction).filter(Instruction.id == INSTR_B).update(
+            {"deleted_at": "2026-10-06T00:00:00+00:00"}
+        )
+        self.db.commit()
+
+        out = resolve_route({"meter_id": 999}, db=self.db)
+        # 列表顺序 = 轨迹顺序：悬空那条既在 invalid 里、也在轨迹里，各说各的
+        self.assertEqual(
+            [(e.name, e.code) for e in out.trace],
+            [("活", "COND_FALSE"), ("停用", "DISABLED"), ("悬空", "INSTRUCTION_MISSING")],
+        )
+        self.assertEqual([r["id"] for r in out.invalid], [out.trace[2].id])
+        self.assertEqual(out.trace[2].detail, "")
+
+    def test_matched_trace_stops_and_marks_the_tail(self):
+        self._create("先", "meter_id == 1", sort_order=0)
+        self._create("后", "meter_id == 1", sort_order=1)
+        out = resolve_route({"meter_id": 1}, db=self.db)
+        self.assertEqual(
+            [(e.name, e.code) for e in out.trace],
+            [("先", "MATCHED"), ("后", "NOT_EVALUATED")],
+        )
+
+    def test_trace_never_leaks_dispatch_record_fields(self):
+        # §0：/dispatch/routed 只解析 —— 轨迹是新增字段，不许顺带带出这三个
+        self._create("读版本", "meter_id == 1")
+        out = dispatch_routed(RouteResolveRequest(inputs={"meter_id": 1}), db=self.db)
+        payload = out.model_dump()
+        for leaked in ("status", "attempts", "hex_string"):
+            self.assertNotIn(leaked, payload)
+        self.assertIn("trace", payload)
+
+    def test_no_rules_gives_empty_trace_not_none(self):
+        out = resolve_route({"meter_id": 1}, db=self.db)
+        self.assertEqual(out.trace, [])
+        self.assertIsNone(out.instruction)
 
 
 class RoutingTrashTest(RoutingTestBase):

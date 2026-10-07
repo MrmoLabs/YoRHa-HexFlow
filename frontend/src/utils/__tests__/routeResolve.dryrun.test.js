@@ -8,6 +8,9 @@
 // 四行结果表（命中规则 / 目标指令 / 参与扫描 / 缺陷跳过）是回执的原样转写：
 // `considered` 与 `invalid` 由后端给，FE 不自己数、不自己扫第二遍
 // （不造第二套判据 —— 本页连条件求值都不做）。
+// R43（§8.75）起返回值多一项 `trace`（逐条判定轨迹，见文件尾 describe 那组）——
+// 下面两条 `toEqual` 的完整形状断言随之补 `trace: []`（**随新事实改写**，非放水：
+// 原有 matched / headline / rows 逐字未动）。
 import { describe, it, expect } from 'vitest';
 import { describeDryRun } from '../routeResolve';
 
@@ -30,6 +33,7 @@ describe('routeResolve · describeDryRun（试解析回执 → 结果表）', ()
                 { label: '参与扫描', value: '2 条' },
                 { label: '缺陷跳过', value: '0 条' },
             ],
+            trace: [],
         });
     });
 
@@ -75,6 +79,7 @@ describe('routeResolve · describeDryRun（试解析回执 → 结果表）', ()
                 { label: '参与扫描', value: '3 条' },
                 { label: '缺陷跳过', value: '0 条' },
             ],
+            trace: [],
         });
     });
 
@@ -119,5 +124,84 @@ describe('routeResolve · describeDryRun（试解析回执 → 结果表）', ()
         });
         expect(out.rows[0]).toEqual({ label: '命中规则', value: '（规则未回带名称）' });
         expect(out.headline).toContain('（规则未回带名称）');
+    });
+});
+
+// ── R43（PLAN §8.75）逐条判定轨迹 ─────────────────────────────────────────
+// 回执 `trace` 由后端给：**一行 = 一条规则 + 它为什么没成立**。FE 只做两件事 ——
+// 把机器码翻成中文事实、按回执原样排成表；**不自己扫第二遍条件**
+// （不造第二套判据 —— 比较 / 变量 / 类型的判定全在 `core/condition.py`）。
+describe('routeResolve · describeDryRun（R43 逐条判定轨迹）', () => {
+    const TRACE = [
+        { id: 'r-1', name: 'meter 0001', condition: 'meter_id == 1', code: 'COND_FALSE', detail: '' },
+        { id: 'r-2', name: '看别的键', condition: 'line == 1', code: 'VAR_UNDEFINED', detail: 'line' },
+        { id: 'r-3', name: '类型不比', condition: 'meter_id == "1"', code: 'TYPE_INCOMPARABLE', detail: '数字 与 字符串' },
+        { id: 'r-4', name: '停用', condition: 'meter_id == 1', code: 'DISABLED', detail: '' },
+        { id: 'r-5', name: '坏条件', condition: 'meter_id', code: 'CONDITION_INVALID', detail: '缺少比较运算符' },
+        { id: 'r-6', name: '悬空', condition: 'meter_id == 1', code: 'INSTRUCTION_MISSING', detail: '' },
+        { id: 'r-7', name: '没轮到', condition: 'meter_id == 1', code: 'NOT_EVALUATED', detail: '' },
+        { id: 'r-8', name: '命中', condition: 'meter_id == 1', code: 'MATCHED', detail: '' },
+    ];
+
+    it('轨迹码各出自己的中文事实，detail 只在有值时接在后面', () => {
+        const out = describeDryRun({
+            matched: false, rule: null, instruction_id: null, instruction: null,
+            invalid: [], considered: 6, trace: TRACE,
+        });
+        expect(out.trace.map((row) => row.text)).toEqual([
+            '比较不成立',
+            '变量不在本次输入里：line',
+            '类型不可比：数字 与 字符串',
+            '已停用（不参与匹配）',
+            '条件语法不成立：缺少比较运算符',
+            '目标指令不在册',
+            '未轮到 —— 前面已有命中，按 first-match-wins 不再看',
+            '判真命中',
+        ]);
+        // 序号 = 回执行序（= 匹配顺序），规则名与条件原样带出
+        expect(out.trace[1]).toEqual({
+            index: 2, name: '看别的键', condition: 'line == 1',
+            code: 'VAR_UNDEFINED', text: '变量不在本次输入里：line',
+        });
+    });
+
+    it('回执没给 code 或给的是不认识的码 → 不渲染空行、也不谎称知道原因', () => {
+        const bare = describeDryRun({
+            matched: false, rule: null, instruction_id: null, instruction: null,
+            invalid: [], considered: 1, trace: [{ id: 'r', name: '', condition: '', code: '', detail: '' }],
+        });
+        expect(bare.trace[0].name).toBe('（未命名）');
+        expect(bare.trace[0].text).toBe('（回执未给原因）');
+
+        const alien = describeDryRun({
+            matched: false, rule: null, instruction_id: null, instruction: null,
+            invalid: [], considered: 1, trace: [{ id: 'r', name: 'x', condition: 'a == 1', code: 'WHATEVER', detail: '' }],
+        });
+        expect(alien.trace[0].text).toBe('WHATEVER');
+    });
+
+    it('回执缺 trace / 不是数组 → 空轨迹（不抛、不硬造一行）', () => {
+        expect(describeDryRun({}).trace).toEqual([]);
+        expect(describeDryRun(undefined).trace).toEqual([]);
+        expect(describeDryRun({ trace: 'nope' }).trace).toEqual([]);
+    });
+
+    it('invalid 里的机器码同表翻成中文（同一规则两处出现，措辞不许各走各的）', () => {
+        const out = describeDryRun({
+            matched: false, rule: null, instruction_id: null, instruction: null,
+            invalid: [{ id: 'r-6', name: '悬空', condition: 'x == 1', reason: 'INSTRUCTION_MISSING' }],
+            considered: 1,
+        });
+        expect(out.rows[3]).toEqual({
+            label: '缺陷跳过',
+            value: '1 条 —— 规则「悬空」：目标指令不在册',
+        });
+        // 不是码的（后端给的中文原文）原样透出，不改写
+        const raw = describeDryRun({
+            matched: false, rule: null, instruction_id: null, instruction: null,
+            invalid: [{ id: 'r-5', name: '坏条件', condition: 'meter_id', reason: '缺少比较运算符' }],
+            considered: 1,
+        });
+        expect(raw.rows[3].value).toBe('1 条 —— 规则「坏条件」：缺少比较运算符');
     });
 });

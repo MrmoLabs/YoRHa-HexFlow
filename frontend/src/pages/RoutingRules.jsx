@@ -13,6 +13,9 @@
 //  ④ **试解析只回显**（R40 · §8.72）：给一组输入调 `POST /dispatch/routed` 看
 //     会命中哪条，**一行状态都不改**（不选中规则、不动表单与顺序）；后端只看得见
 //     已落库的行，故面板常驻写明「按已保存的规则计算」，顺序有草稿时当场点破。
+//  ⑤ **逐条轨迹只排版**（R43 · §8.75）：回执 `trace` 一条规则一行
+//     （`code` 机器码 + `detail` 后端事实载荷），中文由 `traceReasonText` 出；
+//     FE **不扫第二遍条件** —— 比较 / 变量 / 类型的判定全在后端 condition.py。
 //
 // 本仓未装 @testing-library/jest-dom → 组件里不依赖 matchers 扩展。
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -124,7 +127,7 @@ export default function RoutingRules({ instructions = [] }) {
     // 回执怎么翻译归 describeDryRun —— 这里只回显，不改本页任何状态。
     const [dryRows, setDryRows] = useState(emptyRouteInputs);
     const [dryBusy, setDryBusy] = useState(false);
-    const [dry, setDry] = useState(null);   // { kind: 'ok'|'miss'|'err', headline, rows }
+    const [dry, setDry] = useState(null);   // { kind: 'ok'|'miss'|'err', headline, rows, trace }
 
     const instructionName = useCallback((id) => {
         const hit = (instructions || []).find((item) => item.id === id);
@@ -316,15 +319,21 @@ export default function RoutingRules({ instructions = [] }) {
     };
 
     // ── R40（§8.72）试解析：只读调用，回执原样转写 ──────────────────────────
+    // R43（§8.75）多带一项 trace（逐条判定轨迹），同样只回显不改判。
     const runDry = async () => {
         setDryBusy(true);
         setDry(null);
         try {
             const res = await api.resolveRoute(toInputsMap(dryRows));
             const out = describeDryRun(res);
-            setDry({ kind: out.matched ? 'ok' : 'miss', headline: out.headline, rows: out.rows });
+            setDry({
+                kind: out.matched ? 'ok' : 'miss',
+                headline: out.headline,
+                rows: out.rows,
+                trace: out.trace,
+            });
         } catch (err) {
-            setDry({ kind: 'err', headline: describeResolveError(err), rows: [] });
+            setDry({ kind: 'err', headline: describeResolveError(err), rows: [], trace: [] });
         } finally {
             setDryBusy(false);
         }
@@ -376,6 +385,7 @@ export default function RoutingRules({ instructions = [] }) {
                         <li>· 匹配顺序 = 本列表顺序（后端按 sort_order, name, id 定序）；first-match-wins，排在前面的先判真。</li>
                         <li>· 停用行与已软删行不参与匹配（列表本来就只出活行）。</li>
                         <li>· 条件语法坏掉记进 invalid 并继续往下扫；变量不在本次输入里 = 普通不命中，不记 invalid。</li>
+                        <li>· 试解析还出「逐条判定轨迹」：一条规则一行「为什么」（比较不成立 / 变量不在本次输入里 / 类型不可比 / 已停用 / 未轮到），由后端回执给出，本页只排版不改判。</li>
                         <li>· 全无命中 = matched false，不猜：调用方维持人工选指令。</li>
                         <li>· 名称在本页只拦得到活行；软删行仍占用名称，撞名由后端 400 兜底、detail 原样透出。</li>
                     </ul>
@@ -657,10 +667,48 @@ export default function RoutingRules({ instructions = [] }) {
                                     </dl>
                                 )}
 
+                                {/* R43（§8.75）逐条判定轨迹 —— 后端给的机器码 + 事实载荷，
+                                    这里只排版；FE 不扫第二遍条件（判据在后端 condition.py）。
+                                    回执没给 trace（旧后端）→ describeDryRun 出 [] → 不出块。 */}
+                                {dry.kind !== 'err' && dry.trace.length > 0 && (
+                                    <div className="flex flex-col gap-1.5">
+                                        <div className="text-[10px] font-mono tracking-[0.2em] opacity-60">
+                                            {`逐条判定轨迹 (TRACE) · ${dry.trace.length} 条`}
+                                        </div>
+                                        <ol className="border border-nier-light/20">
+                                            {dry.trace.map((row) => (
+                                                <li
+                                                    key={`dry-trace-${row.index}`}
+                                                    data-testid={`dry-trace-${row.index - 1}`}
+                                                    className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-nier-light/10 px-3 py-1.5 last:border-b-0 text-[11px] font-mono"
+                                                >
+                                                    <span className="shrink-0 text-nier-light/50">
+                                                        {`#${row.index}`}
+                                                    </span>
+                                                    <span className={row.code === 'MATCHED'
+                                                        ? 'shrink-0 text-yellow-300'
+                                                        : 'shrink-0'}>
+                                                        {row.name}
+                                                    </span>
+                                                    <span className="min-w-0 break-all opacity-60">
+                                                        {row.condition}
+                                                    </span>
+                                                    <span className={row.code === 'MATCHED'
+                                                        ? 'min-w-0 text-yellow-300'
+                                                        : 'min-w-0'}>
+                                                        {row.text}
+                                                    </span>
+                                                </li>
+                                            ))}
+                                        </ol>
+                                    </div>
+                                )}
+
                                 {dry.kind === 'miss' && (
                                     <div className="text-[10px] font-mono leading-relaxed opacity-50">
                                         为什么没命中 —— 比较不成立 / 变量不在本次输入里 / 类型不可比，
-                                        三者都是普通不命中、不记缺陷；条件原文见左列表 COND 行。
+                                        三者都是普通不命中、不记缺陷；
+                                        是哪一条、哪一类见上方轨迹；条件原文见左列表 COND 行。
                                     </div>
                                 )}
                             </div>

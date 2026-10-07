@@ -42,6 +42,21 @@ class RouteResolveRequest(BaseModel):
     inputs: Dict[str, Any] = Field(default_factory=dict)
 
 
+class RouteTraceEntry(BaseModel):
+    """R43（PLAN §8.75）逐条判定轨迹的一行 —— 「这条规则为什么没成立」。
+
+    `code` 是机器码（见 `core/routing.TRACE_CODES`，FE `TRACE_LABELS` 同表），
+    中文文案由 FE 出；`detail` 是后端给的**事实载荷**（变量名 / 两个类型名 /
+    语法错误原文），FE 原样接在文案后面 —— 两者都不许 FE 自己推断。
+    """
+
+    id: str
+    name: str
+    condition: str
+    code: str
+    detail: str = ""
+
+
 class RouteResolveResponse(BaseModel):
     matched: bool
     rule: Optional[RoutingRuleResponse] = None
@@ -51,3 +66,5 @@ class RouteResolveResponse(BaseModel):
     # 结构性缺陷清单（条件语法坏掉 / 目标指令已进回收站）—— 静态跳过、不 500
     invalid: List[Dict[str, Any]] = Field(default_factory=list)
     considered: int = 0
+    # R43：逐条判定轨迹（= 定序全序，含停用 / 悬空 / 命中后未轮到的行）
+    trace: List[RouteTraceEntry] = Field(default_factory=list)

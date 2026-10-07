@@ -88,6 +88,34 @@ const invalidNote = (res) => {
     return `另有 ${count} 条结构性缺陷已跳过（条件语法坏掉 / 目标指令不在册）。`;
 };
 
+// ── R43（PLAN §8.75）轨迹码 → 中文事实 ─────────────────────────────────────
+// 后端 `core/routing.TRACE_CODES` 同表，改一必改二。**判定与事实都在后端**
+// （code 是机器码、detail 是后端给的载荷），这里只做呈现：不认识的码原样透出，
+// 不猜 —— 谎编一句原因比显示英文码更糟。
+const TRACE_LABELS = {
+    MATCHED: '判真命中',
+    COND_FALSE: '比较不成立',
+    VAR_UNDEFINED: '变量不在本次输入里',
+    TYPE_INCOMPARABLE: '类型不可比',
+    COND_ERROR: '求值未通过',
+    CONDITION_INVALID: '条件语法不成立',
+    INSTRUCTION_MISSING: '目标指令不在册',
+    DISABLED: '已停用（不参与匹配）',
+    NOT_EVALUATED: '未轮到 —— 前面已有命中，按 first-match-wins 不再看',
+};
+
+// 既服务 `invalid.reason`（它可能是个码，也可能是后端给的中文原文），也服务
+// 轨迹行 —— 同一条规则在「缺陷跳过」与轨迹里出现两次，措辞必须同源。
+export const traceReasonText = (code, detail = '') => {
+    const raw = String(code ?? '').trim();
+    const label = Object.prototype.hasOwnProperty.call(TRACE_LABELS, raw)
+        ? TRACE_LABELS[raw]
+        : raw;
+    if (!label) return '（回执未给原因）';
+    const tail = String(detail ?? '').trim();
+    return tail ? `${label}：${tail}` : label;
+};
+
 // 回执 → { matched, text }。matched 是**后端给的**，这里原样带出去供上层选样式；
 // text 只陈述已发生的事实（扫了几条、切没切、维持的是谁），不断言用户意图。
 export const describeResolve = (res, { previousName = null } = {}) => {
@@ -132,10 +160,23 @@ const describeInvalid = (list) => {
     if (!list.length) return '0 条';
     const items = list.map((item) => {
         const name = String(item?.name ?? '').trim() || '（未命名）';
-        const reason = String(item?.reason ?? '').trim() || '（未给原因）';
+        const reason = traceReasonText(item?.reason);
         return `规则「${name}」：${reason}`;
     });
     return `${list.length} 条 —— ${items.join('；')}`;
+};
+
+// R43（§8.75）逐条判定轨迹：一行 = 回执一条规则。序号 = 回执行序（= 定序），
+// 名 / 条件 / 码 / 文案全部原样转写 —— **FE 不扫第二遍条件**。
+const describeTrace = (list) => {
+    if (!Array.isArray(list)) return [];
+    return list.map((entry, index) => ({
+        index: index + 1,
+        name: String(entry?.name ?? '').trim() || '（未命名）',
+        condition: String(entry?.condition ?? '').trim() || '（无条件）',
+        code: String(entry?.code ?? '').trim(),
+        text: traceReasonText(entry?.code, entry?.detail),
+    }));
 };
 
 export const describeDryRun = (res) => {
@@ -171,6 +212,8 @@ export const describeDryRun = (res) => {
             },
             { label: '缺陷跳过', value: describeInvalid(invalid) },
         ],
+        // R43：逐条判定轨迹（回执给的是机器码，中文在这里出）
+        trace: describeTrace(res?.trace),
     };
 };
 

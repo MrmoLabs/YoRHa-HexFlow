@@ -3287,7 +3287,7 @@
     - **状态**：**R40 ✅ —— 规则作者第一次能在页面上验自己写的规则，而不必等一次真发送。**
       **明确留白**：**逐条规则的判定轨迹（trace）** 给不出「每条规则为什么没成立」—— 要给
       `POST /dispatch/routed` 回执加 `trace` 字段，属 **BE 契约改动**（现有逐键断言测试要随新
-      事实改写），**另议排批**；输入表不做持久化；`byte_order` trim 归一（§8.66）不涉；
+      事实改写），**另议排批** → **R43 已落地 ✅（§8.75）**；输入表不做持久化；`byte_order` trim 归一（§8.66） → **R42 已落地 ✅（§8.74）**；
       规则表仍不在数据中心 8 域清单。
       提交 = `feat(R40)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
 
@@ -3322,8 +3322,8 @@
     - **状态**：**R41 ✅ —— 登记面不再有指向未来批次的过期断言，历史排期快照原样留档。**
       **明确留白**：校验器 **md 口径**（34 条历史 CSS 字样要让 md 过检须二选一 —— 改写史实
       措辞，或给校验器 md 规则加白名单；后者改**仓外** `~/.agents/skills/yorha-ui`）**另议**；
-      规则 trace（BE 契约改动）、输入表持久化、规则表进 8 域清单、`byte_order` trim 归一
-      （§8.66）—— 均不涉。
+      输入表持久化、规则表进 8 域清单 —— 均不涉（**规则 trace** 已由 **R43 ✅ §8.75** 收掉、
+      **`byte_order` trim 归一**已由 **R42 ✅ §8.74** 收掉，两条都不再是留白）。
       提交 = `feat(R41)` 单笔（**零代码 · 零 DDL** → 无 Migration、无 `chore(db)`）。
 
 91. **R42 · `byte_order` trim 归一（FE 单点判据；PLAN §8.74 · 2026-10-07）**
@@ -3378,6 +3378,70 @@
       字节序。** **明确留白**：收侧 `response_match` / `sequence_plan` 不碰（fail-closed
       本就支持）；指令域 `endianness` 不并入；`pc.encoding` 不 trim。
       提交 = `feat(R42)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
+
+92. **R43 · 规则 trace（逐条判定轨迹；PLAN §8.75 · 2026-10-07）**
+    - **为什么**：R40 把试解析做到了回执级，但 **比较不成立 / 变量不在输入 / 类型不可比，三者在回执里
+      同为 `matched=false`** —— 规则作者只看得到「无命中」，说不出**自己那一条**卡在哪一类；规则攒到
+      五条以上，「扫过 3 条都不成立」基本没法定位。这条留白在 **§8.72 八（R40）与 §8.73 三（R41）
+      两处同挂**，原文已把做法写死：给 `POST /dispatch/routed` 回执加 `trace` 字段，属 **BE 契约改动**。
+    - **契约**：`RouteResolveResponse` 新增 `trace: List[RouteTraceEntry]`，**定序全序、一行一条规则**，
+      五键 = `id` / `name` / `condition` + 后端给的 `code`（机器码）+ `detail`（事实载荷：变量名 /
+      两个类型名 / 语法错误原文，可空）。**九种码** = `core/routing.TRACE_CODES` 八种（`MATCHED` /
+      `COND_FALSE` / `VAR_UNDEFINED` / `TYPE_INCOMPARABLE` / `COND_ERROR` / `CONDITION_INVALID` /
+      `DISABLED` / `NOT_EVALUATED`）+ `resolve_route` 静态跳过补的 `INSTRUCTION_MISSING` ——
+      `select_rule` 根本看不见悬空规则（进不了 `usable`），所以那张表里没有它，FE `TRACE_LABELS`
+      是它的**超集**，两处注释都写明了这层不对称。
+    - **只记录不判定**：判据仍是 `backend/core/condition.py` 一处，FE `utils/routeResolve.js` 连条件求值
+      都不做。`select_rule` 由四键变五键 —— 命中即 `return` 改成「记一行 `MATCHED` 后置 `stopped`、
+      走完循环只补 `NOT_EVALUATED`」，尾部规则**不 parse、不求值、不累加 `considered`**；停用与解析期
+      坏掉两处的裸 `continue` 改成「跳过并记一行」；**回收站行仍直接跳过不记**（列表页本就看不见）；
+      `matched` / `rule` / `invalid` / `considered` 四键逐字未改。**中文文案归 FE**
+      （`TRACE_LABELS` + `traceReasonText`），但 `detail` **不许 FE 自己从条件里抠** —— 那是
+      `condition.py` 抛出来的事实。
+    - **文件（9 个）**：**改 4 个 BE** —— `backend/core/routing.py`（`TRACE_CODES` /
+      `EVAL_CODE_PREFIXES` / `_eval_code` / `_trace_row` / `select_rule` 五键）、
+      `backend/schemas/routing_api.py`（新增 `RouteTraceEntry` + `trace` 字段）、
+      `backend/routers/routing.py`（两层按同一定序并表）、`backend/tests/test_routing.py`；
+      **改 5 个 FE** —— `frontend/src/utils/routeResolve.js`、`frontend/src/pages/RoutingRules.jsx`、
+      `frontend/src/api/dispatch.js` + 2 个测试文件（`utils/__tests__/routeResolve.dryrun.test.js`、
+      `pages/__tests__/RoutingRules.dryrun.test.jsx`）。**零 DDL** → 无 Migration、无 `chore(db)`、
+      不引 pytest、无新 pip 依赖、`processor.py` / `graph.py` / `Blueprint.jsx` 未碰、
+      **`/dispatch` 缺省口径未动**。
+    - **测试**：红测先行 —— BE 新增 **13 条**（`SelectRuleTraceTest` 6 + `EvalCodePrefixTest` 2 +
+      `ResolveRouteTraceTest` 5），实现前 **12 红**（`KeyError` / `AttributeError` / `ImportError` /
+      断言缺 `trace`）；FE 新增 **8 条**（`routeResolve.dryrun` 4 + `RoutingRules.dryrun` 4），
+      实现前 **6 红**（`describeDryRun().trace` 为 undefined、页面查无 `dry-trace-0`）——
+      **红因 18 条全为缺特性**；余下 2 条护栏实现前就绿（当时本就没有轨迹块），**不冒充红测**。
+      `EvalCodePrefixTest` 还从分类侧反向钉住 `ConditionError` **文案前缀**漂移（漂移会静默退化成
+      兜底码，两条测试一红就能叫出来）。
+    - **三档记账**：**随新事实改写 3 条** —— BE `test_empty_ruleset` 四键全等补 `trace: []`、
+      FE 两条完整形状 `toEqual` 各补 `trace: []`（`matched` / `headline` / `rows` 逐字未动，不是放水）；
+      **测试自身 bug 先修 2 条** —— 红批里写的两条页面护栏用 `/逐条判定轨迹/` 做**否定**断言，撞上
+      同批新加的**口径列表同名词**，改成锚到结果区标题 `/逐条判定轨迹 \(TRACE\)/`；其余为缺特性档。
+    - **验收**：**BE 1002 → 1015/1015（+13）**、**FE 1464 → 1472/1472（95 文件，+8）**、
+      `npx vite build` EXIT=0、`npm run lint` EXIT=0 **且 0 warning**、yorha-ui 校验器改动
+      **6 个 js / jsx / json 文件 0 违规**（5 js / jsx + 1 json）、md 表列数 mismatches = 0、`ev33` STAGED=0 BAD=0；
+      **零 DDL → 无 Migration、无 `chore(db)`**、不引 pytest、无新 pip 依赖、
+      `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、**`/dispatch` 缺省口径未动**。
+    - **实机冒烟（后端 8055 + dev 5174）**：5 条规则各占一类（`sort_order` 0..4），悬空那条用
+      **直接改库软删指令**造（`DELETE /instructions/{id}` 会级联软删规则，页面上留不下悬空行 ——
+      该分支本就只来自直改库 / R37 之前的旧行）。`meter_id=999` → `considered=3`、轨迹
+      `COND_FALSE` / `VAR_UNDEFINED(detail=line)` / `DISABLED` / `INSTRUCTION_MISSING` /
+      `COND_FALSE`；`meter_id=1` → `matched=true`、`considered=1`、#1 `MATCHED`、其后
+      `NOT_EVALUATED`（#4 仍 `INSTRUCTION_MISSING`，与 `invalid` 无条件收录它的既有口径一致）。
+      页面「缺陷跳过」由 `规则「…」：INSTRUCTION_MISSING` 变成
+      **`规则「R43 smoke dangling」：目标指令不在册`**；`逐条判定轨迹 (TRACE) · 5 条`、
+      `dry-trace-0..4` 五个 testid 齐、`MATCHED` 行黄字；控制台 **0 error 0 warning**；
+      清场后规则表回原状、**回收站 0 条**，8055 / 5174 两个后台壳已停。
+    - **文档同步（同批）**：PLAN **§8.75 新节** + §1 新增 `R43` 行 + §8.70 六 / §8.73 三
+      两处 trace 留白改指；本条插入 + 条目 89 / 90 两处留白改指（顺带把条目 89 里 R42 那句
+      「不涉」一并改指）+ 目录地图改 `routeResolve.js` / `RoutingRules.jsx` 两行；
+      `pageStatus.json` `/routing` 补记 + `npm run sync:page-status` 重生成 `PAGE_STATUS.md`。
+    - **状态**：**R43 ✅ —— 规则作者第一次能逐条读到「为什么不命中」，而不必逐条去猜。**
+      **明确留白**：**加工页不加轨迹**（同一份回执，但那边是「命中即切」的动作语境，一行事实已够）；
+      **不为「数值 / 字符串互换」单独开码**（`TYPE_INCOMPARABLE` 的 `detail` 已带出两个类型名，
+      再细分是文案不是判据）；输入表持久化、规则表进 8 域清单仍不涉。
+      提交 = `feat(R43)` 单笔（**BE+FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
@@ -3440,7 +3504,7 @@
 | `src/utils/toFrameBlocks.js` | 导出映射 `byte_len→byte_length`、`op_code→type`（供 `/export/binary`） | ✅ 新增（自 Orchestration.jsx 抽出） |
 | `src/utils/download.js` | `triggerBlobDownload`（.hex / .bin 下载共用） | ✅ 新增 |
 | `src/utils/routingView.js` | **R38 规则页纯逻辑**：`emptyRuleDraft` / `defaultSortOrder`（新建落末位）/ `validateRuleDraft`（名称+条件+目标指令，条件**委托 `condition.checkCondition` 同一 SSOT**）/ `moveRule`（上移下移，只改草稿）/ `renumber`（稠密重编 0..N-1）/ `changedSortOrder`（**只回写真变化的行**）/ `describeRoutingSaveError`（后端 detail → 中文事实文案） | ✅ 新增（R38 · §8.70） |
-| `src/utils/routeResolve.js` | **R39 加工页接线纯逻辑**：行增删改（`addRouteInput` / `removeRouteInput` / `patchRouteInput`）· **`parseInputValue` 值按 JSON 标量解析**（`0001` → 数字 1、`"0001"` → 字符串 0001、其余按原文串 —— 后端 `_equal` 数字/字符串不同型即不中）· `describeInputType` 类型徽标 · `toInputsMap`（键去空白、空键行不发、后写赢）· `resolveInstructionId` / `mergeResolvedInstruction`（不在册补列表，**已在册返回原引用**）· `describeResolve` **回执 → 中文事实文案四档**（命中 / 命中没目标 / 扫过无命中 / 零参与）+ `describeResolveError` · **R40 增 `describeDryRun`**（试解析回执 → **恒四行结果表**：命中规则 / 目标指令 / 参与扫描 / 缺陷跳过，文案断在「命中 / 无命中」**不搬「已切到」**） | ✅ 新增（R39 · §8.71），R40 增（§8.72） |
+| `src/utils/routeResolve.js` | **R39 加工页接线纯逻辑**：行增删改（`addRouteInput` / `removeRouteInput` / `patchRouteInput`）· **`parseInputValue` 值按 JSON 标量解析**（`0001` → 数字 1、`"0001"` → 字符串 0001、其余按原文串 —— 后端 `_equal` 数字/字符串不同型即不中）· `describeInputType` 类型徽标 · `toInputsMap`（键去空白、空键行不发、后写赢）· `resolveInstructionId` / `mergeResolvedInstruction`（不在册补列表，**已在册返回原引用**）· `describeResolve` **回执 → 中文事实文案四档**（命中 / 命中没目标 / 扫过无命中 / 零参与）+ `describeResolveError` · **R40 增 `describeDryRun`**（试解析回执 → **恒四行结果表**：命中规则 / 目标指令 / 参与扫描 / 缺陷跳过，文案断在「命中 / 无命中」**不搬「已切到」**）· **R43 增 `TRACE_LABELS` + `traceReasonText` + `describeTrace`**（回执 `trace` → **逐条判定轨迹**：码 → 中文 + `detail` 载荷；同一张码表也接 `describeInvalid`，同一条规则在「缺陷跳过」与轨迹里措辞同源）| ✅ 新增（R39 · §8.71），R40 增（§8.72）、R43 增（§8.75） |
 | `src/App.jsx` | 路由壳：`PAGE_REGISTRY` 驱动侧栏与 `Routes`，`renderRouteElement` 按 `pageKey` 取组件后注入各页 props（**R38 加 `case 'routing'`，只注入 `instructions`**）；R35 起页面改动态 import + `<Suspense>`（首屏拆包），`NavItem` 悬停/聚焦预取 | ✅ |
 | `src/utils/routeChunks.js` | **页面模块单一登记表** `ROUTE_LOADERS`（**9 页动态 import**，R38 加第 9 页）+ 缓存的 `React.lazy` + 幂等 `prefetchRoute` + `__resetRouteCaches`（仅测试） | ✅ 新增（R35） |
 | `src/components/RouteInputTable.jsx` | 发前路由的**扁平键值行表**（键值框 + 类型徽标 + 行删除）—— 加工页「路由输入」与规则页「试解析」**共用同一张表**（类型徽标 / 空键不发 / 删到只剩一行禁删三条细口径只此一处）；`idPrefix` / `labels` 默认值 = 加工页原文，调用方不传即逐字节等价。**边界划在排版**：不持状态、不发请求、不渲染「+ 添加」按钮（按钮视觉语言两页不同，归页面） | ✅ 新增（R40 · §8.72） |
@@ -3455,7 +3519,7 @@
 | `src/pages/Instruction.jsx` | 指令管理页（含 `handleAddBlock` 默认 bits 初始化） | ✅ |
 | `src/pages/Blueprint.jsx` | 旧蓝图页 | ⚠️ **未接线**（保留勿删，不进路由） |
 | `src/pages/Trash.jsx` | 回收站页：`KIND_LABELS`（**8 类**中文名，R37 补 `routing_rule`）+ `KIND_ORDER = Object.keys(KIND_LABELS)` 筛选 chip + 恢复 / 彻底删除 / 批量；`relatedText` **通用求和**（回执多一个键自动并入，无需改） | ✅（§8.44 / §8.69） |
-| `src/pages/RoutingRules.jsx` | **发前路由规则页**（第 9 页 · `/routing` · 快捷键 `H`）：列表顺序 = 匹配顺序、表单就地校验、启停 / 删除二次确认、**排序只改草稿、保存顺序只 PUT 真变化的行**；**R40 起页底常驻「试解析 (DRY RUN)」面板** —— 填键值调 `POST /dispatch/routed`，出一行事实 + 恒四行结果表（命中规则 / 目标指令 / 参与扫描 / 缺陷跳过），**按已保存的规则计算、只回显不改状态**，顺序有草稿时当场点破 | ✅ 新增（R38 · §8.70），R40 增试解析（§8.72） |
+| `src/pages/RoutingRules.jsx` | **发前路由规则页**（第 9 页 · `/routing` · 快捷键 `H`）：列表顺序 = 匹配顺序、表单就地校验、启停 / 删除二次确认、**排序只改草稿、保存顺序只 PUT 真变化的行**；**R40 起页底常驻「试解析 (DRY RUN)」面板** —— 填键值调 `POST /dispatch/routed`，出一行事实 + 恒四行结果表（命中规则 / 目标指令 / 参与扫描 / 缺陷跳过），**按已保存的规则计算、只回显不改状态**，顺序有草稿时当场点破；**R43 起结果表下方出「逐条判定轨迹 (TRACE) · N 条」**（`data-testid="dry-trace-{n}"`，`MATCHED` 行黄字，回执没给 `trace` 就不出块）+ 口径列表补一条 + 未命中脚注改指轨迹 | ✅ 新增（R38 · §8.70），R40 增试解析（§8.72），R43 增轨迹（§8.75） |
 | `src/config/pageStatus.json` | 页面状态唯一数据源（**9 页**，数组序 = 侧栏序） | ✅ 改后重跑脚本 |
 
 ### 文档

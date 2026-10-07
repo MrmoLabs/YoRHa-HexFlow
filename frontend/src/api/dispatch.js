@@ -54,9 +54,10 @@ export const clearDispatchHistory = async () => {
 
 // R39（PLAN §8.71）：发前路由解析 —— **只解析不发送**。
 // POST /dispatch/routed 与缺省 /dispatch/ 是两个端点：前者回执 RouteResolveResponse
-// （matched / rule / instruction / invalid / considered），**没有** status / attempts /
-// hex_string，也不产生任何 DispatchRecord（§0 硬约束：/dispatch 缺省口径逐字节不变）。
-// inputs 是**扁平字符串键值表**，与 evaluate_condition 的变量表同形。
+// （matched / rule / instruction / invalid / considered / trace），**没有** status /
+// attempts / hex_string，也不产生任何 DispatchRecord（§0 硬约束：/dispatch 缺省口径
+// 逐字节不变）。inputs 是**扁平字符串键值表**，与 evaluate_condition 的变量表同形。
+// R43（§8.75）起多一项 `trace`（逐条判定轨迹：一条规则一行 code + detail）。
 export const resolveRoute = async (inputs = {}) => {
     const response = await fetch(`${API_BASE}/dispatch/routed`, {
         method: 'POST',

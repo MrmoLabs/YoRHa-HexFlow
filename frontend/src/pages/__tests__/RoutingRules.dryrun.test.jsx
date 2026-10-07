@@ -173,3 +173,90 @@ describe('R40 规则页试解析（§8.72）', () => {
         expect(screen.getByText(/表单与顺序的未保存改动不参与/)).toBeTruthy();
     });
 });
+
+// ── R43（PLAN §8.75）逐条判定轨迹 ─────────────────────────────────────────
+// 「比较不成立 / 变量不在输入 / 类型不可比」三者在回执里同为不命中，此前页面只
+// 列出这**三类可能**、说不出**是哪条规则、哪一类**。轨迹把后端给的一行一规则
+// 摆出来 —— FE 只排版，判定仍在后端 `core/condition.py`。
+describe('R43 试解析 · 逐条判定轨迹（§8.75）', () => {
+    beforeEach(() => {
+        api.listRoutingRules.mockResolvedValue([RULE_A, RULE_B]);
+        api.createRoutingRule.mockResolvedValue(null);
+        api.updateRoutingRule.mockResolvedValue(RULE_A);
+        api.deleteRoutingRule.mockResolvedValue({ status: 'deleted', id: 'r-1' });
+    });
+
+    afterEach(() => {
+        vi.clearAllMocks();
+    });
+
+    it('未命中 → 结果表下方逐行列出每条规则与它的未命中原因', async () => {
+        api.resolveRoute.mockResolvedValue({
+            ...MISS,
+            trace: [
+                { id: 'r-1', name: 'meter 0001', condition: 'meter_id == 0001', code: 'VAR_UNDEFINED', detail: 'meter_id' },
+                { id: 'r-2', name: 'meter 0002', condition: 'meter_id == 0002', code: 'NOT_EVALUATED', detail: '' },
+            ],
+        });
+        await renderPage();
+        fillInputs('meter_id', '0003');
+        runDry();
+
+        expect(await screen.findByText(/^SYS: 无命中 —— 扫过 2 条规则都不成立。$/)).toBeTruthy();
+        expect(screen.getByText(/逐条判定轨迹 \(TRACE\) · 2 条/)).toBeTruthy();
+
+        const first = screen.getByTestId('dry-trace-0');
+        expect(first.textContent).toContain('#1');
+        expect(first.textContent).toContain('meter 0001');
+        expect(first.textContent).toContain('meter_id == 0001');
+        expect(first.textContent).toContain('变量不在本次输入里：meter_id');
+
+        const second = screen.getByTestId('dry-trace-1');
+        expect(second.textContent).toContain('#2');
+        expect(second.textContent).toContain('未轮到');
+        // 只回显：轨迹同样不选中规则、不发写请求
+        expect(api.updateRoutingRule).not.toHaveBeenCalled();
+    });
+
+    it('命中 → 轨迹同样出，命中那行标 MATCHED、其后规则标未轮到', async () => {
+        api.resolveRoute.mockResolvedValue({
+            ...HIT,
+            trace: [
+                { id: 'r-1', name: 'meter 0001', condition: 'meter_id == 0001', code: 'MATCHED', detail: '' },
+                { id: 'r-2', name: 'meter 0002', condition: 'meter_id == 0002', code: 'NOT_EVALUATED', detail: '' },
+            ],
+        });
+        await renderPage();
+        fillInputs('meter_id', '0001');
+        runDry();
+
+        expect(await screen.findByText(/^SYS: 命中 —— 规则「meter 0001」→ 指令「执行 X」（只解析，不发送）。$/)).toBeTruthy();
+        expect(screen.getByTestId('dry-trace-0').textContent).toContain('判真命中');
+        expect(screen.getByTestId('dry-trace-1').textContent).toContain('未轮到');
+    });
+
+    it('回执没有 trace（旧后端）→ 不出轨迹块，结果表照常', async () => {
+        api.resolveRoute.mockResolvedValue(HIT);
+        await renderPage();
+        fillInputs('meter_id', '0001');
+        runDry();
+
+        expect(await screen.findByText(/^SYS: 命中/)).toBeTruthy();
+        expect(screen.queryByText(/逐条判定轨迹 \(TRACE\)/)).toBeNull();
+        // 口径列表里也有「逐条判定轨迹」这个词 —— 断言锚到结果区标题，别误伤
+        expect(screen.queryByTestId('dry-trace-0')).toBeNull();
+        expect(screen.getByTestId('dry-result-0')).toBeTruthy();
+    });
+
+    it('后端失败 → 连轨迹块一起不出（回执都没有，不假装有轨迹）', async () => {
+        api.resolveRoute.mockRejectedValueOnce(new Error('backend down'));
+        await renderPage();
+        fillInputs('meter_id', '1');
+        runDry();
+
+        expect(await screen.findByText(/^ERR: 解析失败 —— backend down$/)).toBeTruthy();
+        expect(screen.queryByText(/逐条判定轨迹 \(TRACE\)/)).toBeNull();
+        // 口径列表里也有「逐条判定轨迹」这个词 —— 断言锚到结果区标题，别误伤
+        expect(screen.queryByTestId('dry-trace-0')).toBeNull();
+    });
+});

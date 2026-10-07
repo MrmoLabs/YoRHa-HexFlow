@@ -23,6 +23,7 @@ from backend.db.soft_delete import alive, mark_deleted, now_iso
 from backend.routers.instruction import serialize_instruction
 from backend.schemas.routing_api import (
     RouteResolveResponse,
+    RouteTraceEntry,
     RoutingRuleCreate,
     RoutingRuleResponse,
 )
@@ -156,6 +157,10 @@ def resolve_route(inputs: Dict, db: Session) -> RouteResolveResponse:
        「变量不在输入里」是正常不命中，不记）。
 
     全无命中 → `matched=False`，**不猜**：调用方维持人工选指令。
+
+    R43（§8.75）回执多一项 `trace`：`select_rule` 给的逐条轨迹，再把本层那
+    种静态跳过（`INSTRUCTION_MISSING`）按同一定序并进去 —— 列表里看得见的每条
+    规则在轨迹里都有一行。
     """
     rows = alive(db.query(RoutingRule), RoutingRule).order_by(*_ORDER).all()
 
@@ -188,9 +193,34 @@ def resolve_route(inputs: Dict, db: Session) -> RouteResolveResponse:
     result = select_rule(usable, inputs)
     invalid.extend(result["invalid"])
 
+    # R43（§8.75）轨迹：`select_rule` 只看得见 `usable`，把它那层静态跳过
+    # （目标指令不在册）按**同一定序**并回去 —— 顺序仍 = 列表顺序。
+    # 悬空那条优先标 INSTRUCTION_MISSING：它本来就不在 `usable` 里，
+    # 从未进过扫描，与 `invalid` 无条件收录它的口径一致。
+    by_id = {entry["id"]: entry for entry in result["trace"]}
+    trace: List[RouteTraceEntry] = []
+    for row in rows:
+        if row.instruction_id in live_ids:
+            entry = by_id.get(str(row.id))
+            if entry is not None:
+                trace.append(RouteTraceEntry(**entry))
+        else:
+            trace.append(
+                RouteTraceEntry(
+                    id=str(row.id),
+                    name=str(row.name or ""),
+                    condition=str(row.condition or ""),
+                    code="INSTRUCTION_MISSING",
+                    detail="",
+                )
+            )
+
     if not result["matched"]:
         return RouteResolveResponse(
-            matched=False, invalid=invalid, considered=result["considered"]
+            matched=False,
+            invalid=invalid,
+            considered=result["considered"],
+            trace=trace,
         )
 
     rule: RoutingRule = result["rule"]
@@ -204,4 +234,5 @@ def resolve_route(inputs: Dict, db: Session) -> RouteResolveResponse:
         instruction=serialize_instruction(instruction),
         invalid=invalid,
         considered=result["considered"],
+        trace=trace,
     )
