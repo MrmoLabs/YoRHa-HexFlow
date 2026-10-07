@@ -1,5 +1,5 @@
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import Terminal from '../Terminal';
 import { api } from '../../api';
@@ -82,14 +82,49 @@ const PROFILES = [
     }
 ];
 
+// R50（PLAN §8.82 · 2026-10-08）：mock 响应延迟开关 —— 把「等请求不等渲染」这类竞态
+// 从**概率性抖动**变成**确定性失败**。缺省 0ms 时与 mockResolvedValue /
+// mockRejectedValue 逐字等价；探测跑法：YORHA_API_DELAY_MS=15 npx vitest run
+const API_DELAY_MS = Number(globalThis.process?.env?.YORHA_API_DELAY_MS || 0); // eslint 只给了 browser 全局，process 走属性访问
+const ok = (fn, value) => fn.mockImplementation(
+    () => (API_DELAY_MS > 0
+        ? new Promise((resolve) => { setTimeout(() => resolve(value), API_DELAY_MS); })
+        : Promise.resolve(value)),
+);
+const fail = (fn, error) => fn.mockImplementation(
+    () => (API_DELAY_MS > 0
+        ? new Promise((_, reject) => { setTimeout(() => reject(error), API_DELAY_MS); })
+        : Promise.reject(error)),
+);
+
+// R50（PLAN §8.82 · 2026-10-08）：挂载后必须等数据回来才断言 / 才操作 —— 组件没有
+// loading 门，主界面是同步渲染的，所以「等请求被调用」不等于「数据已上屏」，两者
+// 之间的空档就是那 19 条抖动的来源。这里把等待收成一个口子：
+//   · 真实定时器：等满 API_DELAY_MS + 1ms（缺省 0ms 时也留一轮 flush）；
+//   · fake timers（R15 那类）：setTimeout 不会自己走，直接推进同样时长。
+const settle = async () => {
+    await act(async () => {
+        await new Promise((resolve) => {
+            setTimeout(resolve, API_DELAY_MS + 1);
+            if (vi.isFakeTimers()) vi.advanceTimersByTime(API_DELAY_MS + 1);
+        });
+        await Promise.resolve();
+    });
+};
+
+const renderTerminal = async () => {
+    render(<Terminal />);
+    await settle();
+};
+
 const mountApis = () => {
-    api.getTransportConfig.mockResolvedValue(CONFIG);
-    api.getTransportStatus.mockResolvedValue(STATUS);
-    api.getDispatchHistory.mockResolvedValue(RECORDS);
-    api.clearDispatchHistory.mockResolvedValue({ status: 'cleared', remaining: 0 });
-    api.getProfiles.mockResolvedValue(PROFILES);
+    ok(api.getTransportConfig, CONFIG);
+    ok(api.getTransportStatus, STATUS);
+    ok(api.getDispatchHistory, RECORDS);
+    ok(api.clearDispatchHistory, { status: 'cleared', remaining: 0 });
+    ok(api.getProfiles, PROFILES);
     // R14（PLAN §8.49）：串口端口枚举（只读，挂载即拉一次）
-    api.getTransportPorts.mockResolvedValue({
+    ok(api.getTransportPorts, {
         ports: [{ device: 'COM1', description: '通信端口' }],
         source: 'pyserial'
     });
@@ -101,8 +136,15 @@ describe('Terminal Page（E3 通讯调试）', () => {
         mountApis();
     });
 
+    // R50（PLAN §8.82）：收尾把**在途的异步链排空**再放行下一个测试 —— 否则上一个测试的
+    // apply / 更新之类 handler 在下一个测试里才落地，会把 mock 调用记到别人账上（实测：
+    // 下一个测试 status 多记 1 次而 history 不多记，正好等于 apply 只刷 status/profiles）。
+    afterEach(async () => {
+        await settle();
+    });
+
     it('挂载即拉取配置/状态/历史并渲染五区块', async () => {
-        render(<Terminal />);
+        await renderTerminal();
 
         await waitFor(() => expect(api.getTransportConfig).toHaveBeenCalledTimes(1));
         expect(api.getTransportStatus).toHaveBeenCalledTimes(1);
@@ -128,7 +170,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('点击历史行切换原始报文与错误详情', async () => {
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => screen.getByText('DE AD BE EF'));
 
         fireEvent.click(screen.getByText('DE AD BE EF')); // 表格预览格 → 选中 ERROR 记录
@@ -141,12 +183,12 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('切到 TCP 模式改 host 后应用，patch 数值字段为数字', async () => {
-        api.setTransportConfig.mockResolvedValue({
+        ok(api.setTransportConfig, {
             ...CONFIG,
             mode: 'tcp',
             tcp: { ...CONFIG.tcp, host: '10.0.0.5' }
         });
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => expect(api.getTransportConfig).toHaveBeenCalledTimes(1));
 
         fireEvent.click(screen.getByRole('button', { name: /网络 TCP/ }));
@@ -168,12 +210,12 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('串口模式暴露参数并按字符串→数字提交（stopbits 1.5）', async () => {
-        api.setTransportConfig.mockResolvedValue({
+        ok(api.setTransportConfig, {
             ...CONFIG,
             mode: 'serial',
             serial: { ...CONFIG.serial, baudrate: 115200, parity: 'E', stopbits: 1.5 }
         });
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => expect(api.getTransportConfig).toHaveBeenCalledTimes(1));
 
         fireEvent.click(screen.getByRole('button', { name: /串口 SERIAL/ }));
@@ -195,7 +237,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('发送：合法 hex 启用按钮并回写 SENT，非法 hex 禁用', async () => {
-        api.dispatchPayload.mockResolvedValue({
+        ok(api.dispatchPayload, {
             id: 9001,
             timestamp: '2026-09-23T02:00:00+00:00',
             channel: 'LOOPBACK',
@@ -209,7 +251,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
                 { type: 'response', hex_string: '01 02', message: null }
             ]
         });
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => expect(api.getDispatchHistory).toHaveBeenCalledTimes(1));
 
         const sendButton = screen.getByRole('button', { name: /发送 \(SEND\)/ });
@@ -233,7 +275,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('清空历史需确认；挂载失败时三处错误可见', async () => {
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => screen.getByText('DE AD BE EF'));
 
         fireEvent.click(screen.getByRole('button', { name: /清空 \(CLEAR\)/ }));
@@ -249,11 +291,11 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('挂载失败：三面板各自报错且布局可用', async () => {
-        api.getTransportConfig.mockRejectedValue(new Error('network down'));
-        api.getTransportStatus.mockRejectedValue(new Error('network down'));
-        api.getDispatchHistory.mockRejectedValue(new Error('network down'));
+        fail(api.getTransportConfig, new Error('network down'));
+        fail(api.getTransportStatus, new Error('network down'));
+        fail(api.getDispatchHistory, new Error('network down'));
 
-        render(<Terminal />);
+        await renderTerminal();
 
         await waitFor(() => {
             expect(screen.getByText('配置不可用')).toBeDefined();
@@ -267,7 +309,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
     // ---- P1 设备档案 ----
 
     it('P1: 挂载拉取档案并渲染选项与激活星标', async () => {
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => expect(api.getProfiles).toHaveBeenCalledTimes(1));
 
         expect(screen.getByText('设备档案 (DEVICE PROFILES)')).toBeDefined();
@@ -279,10 +321,10 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('P1: 输入名称存为档案 → createProfile({label}) + 列表刷新 + 输入清空', async () => {
-        api.createProfile.mockResolvedValue({
+        ok(api.createProfile, {
             id: 'pf-3', label: '新台架', config: CONFIG, is_active: true, modified: false
         });
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
 
         const saveBtn = screen.getByRole('button', { name: /存为档案/ });
@@ -299,7 +341,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('P1: 应用档案 → activate 回填生效配置、刷新状态与档案、展示徽标', async () => {
-        api.activateProfile.mockResolvedValue({
+        ok(api.activateProfile, {
             id: 'pf-2',
             label: '产线网关',
             is_active: true,
@@ -310,7 +352,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
                 tcp: { host: '10.1.2.3', port: 502, connect_timeout_ms: 3000, read_timeout_ms: 2000 }
             }
         });
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
 
         const actBtn = screen.getByRole('button', { name: /应用档案/ });
@@ -332,11 +374,11 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('P1: 更新写入当前生效配置；删除需确认后才 DELETE', async () => {
-        api.updateProfile.mockResolvedValue({
+        ok(api.updateProfile, {
             id: 'pf-1', label: '环回基准', config: CONFIG, is_active: false, modified: false
         });
-        api.deleteProfile.mockResolvedValue({ status: 'deleted', id: 'pf-1' });
-        render(<Terminal />);
+        ok(api.deleteProfile, { status: 'deleted', id: 'pf-1' });
+        await renderTerminal();
         await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
 
         fireEvent.change(screen.getByLabelText(/档案 PROFILE/), { target: { value: 'pf-1' } });
@@ -344,6 +386,9 @@ describe('Terminal Page（E3 通讯调试）', () => {
         await waitFor(() => expect(api.updateProfile).toHaveBeenCalledWith('pf-1', { config: CONFIG }));
         await waitFor(() => expect(screen.getByText(/档案已更新：环回基准/)).toBeDefined());
 
+        // R50：更新要等 refreshProfiles 跑完 busy 才放掉 —— busy 期间按钮文案是「处理中…」，
+        // 直接按 /删除档案/ 找不到（与「等请求不等渲染」同族：等的是真上屏，不是调用发生）。
+        await waitFor(() => expect(screen.getByRole('button', { name: /删除档案/ })).toBeDefined());
         fireEvent.click(screen.getByRole('button', { name: /删除档案/ }));
         expect(screen.getByText(/确认删除档案/)).toBeDefined();
         expect(api.deleteProfile).not.toHaveBeenCalled(); // 未确认不发 DELETE
@@ -356,8 +401,8 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('P1: 档案操作失败显示区内错误条', async () => {
-        api.createProfile.mockRejectedValue(new Error('档案名已存在：环回基准'));
-        render(<Terminal />);
+        fail(api.createProfile, new Error('档案名已存在：环回基准'));
+        await renderTerminal();
         await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
 
         fireEvent.change(screen.getByPlaceholderText(/新档案名称/), { target: { value: '环回基准' } });
@@ -369,7 +414,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
     // ---- N4 (G3): 传输层帧字节转义（配置面板） ----
 
     it('N4: 转义区渲染且缺省关闭、无规则时不显示样例', async () => {
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => expect(screen.getByText('帧字节转义 ESCAPE')).toBeDefined());
 
         expect(screen.getByText('关闭 DISABLED')).toBeDefined();
@@ -379,11 +424,11 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('N4: 增改规则行 + 启用后随 APPLY 全量提交 escape 段', async () => {
-        api.setTransportConfig.mockResolvedValue({
+        ok(api.setTransportConfig, {
             ...CONFIG,
             escape: { enabled: true, pairs: [['7D', '7D5D']] }
         });
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => expect(screen.getByText('帧字节转义 ESCAPE')).toBeDefined());
 
         fireEvent.click(screen.getByRole('button', { name: /添加规则/ }));
@@ -410,11 +455,11 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('N4: 删除规则行（多行仅删目标行）', async () => {
-        api.getTransportConfig.mockResolvedValue({
+        ok(api.getTransportConfig, {
             ...CONFIG,
             escape: { enabled: true, pairs: [['7D', '7D5D'], ['11', '7D31']] }
         });
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => expect(screen.getAllByPlaceholderText('7D')).toHaveLength(2));
 
         fireEvent.click(screen.getAllByRole('button', { name: '删除' })[1]);
@@ -424,23 +469,23 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('N4: 前缀未受保护时面板给出歧义提醒', async () => {
-        api.getTransportConfig.mockResolvedValue({
+        ok(api.getTransportConfig, {
             ...CONFIG,
             escape: { enabled: true, pairs: [['11', '7D31']] }
         });
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => expect(screen.getByText(/未列入受保护字节/)).toBeDefined());
     });
     // R2（PLAN §8.37）：回退上一配置 —— 按钮由 status.configHistoryDepth 决定是否置灰，
     // 成功后拿生效配置回填表单（同 APPLY 口径）并刷新状态与档案（配置变更会清激活指针）。
     it('R2 回退上一配置：调 /config/revert 并回填生效配置', async () => {
-        api.getTransportStatus.mockResolvedValue({ ...STATUS, configHistoryDepth: 1 });
-        api.revertTransportConfig.mockResolvedValue({
+        ok(api.getTransportStatus, { ...STATUS, configHistoryDepth: 1 });
+        ok(api.revertTransportConfig, {
             config: { ...CONFIG, mode: 'tcp', tcp: { ...CONFIG.tcp, host: '10.0.0.9' } },
             historyDepth: 0
         });
 
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => expect(api.getTransportConfig).toHaveBeenCalledTimes(1));
 
         const button = screen.getByRole('button', { name: /回退上一配置/ });
@@ -457,9 +502,9 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('R2 无可回退历史时按钮置灰', async () => {
-        api.getTransportStatus.mockResolvedValue({ ...STATUS, configHistoryDepth: 0 });
+        ok(api.getTransportStatus, { ...STATUS, configHistoryDepth: 0 });
 
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => expect(api.getTransportConfig).toHaveBeenCalledTimes(1));
 
         expect(screen.getByRole('button', { name: /回退上一配置/ }).disabled).toBe(true);
@@ -468,10 +513,10 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('R2 回退被后端拒（400）时把 detail 显示在配置区', async () => {
-        api.getTransportStatus.mockResolvedValue({ ...STATUS, configHistoryDepth: 1 });
-        api.revertTransportConfig.mockRejectedValue(new Error('没有可回退的上一配置'));
+        ok(api.getTransportStatus, { ...STATUS, configHistoryDepth: 1 });
+        fail(api.revertTransportConfig, new Error('没有可回退的上一配置'));
 
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => expect(api.getTransportConfig).toHaveBeenCalledTimes(1));
 
         fireEvent.click(screen.getByRole('button', { name: /回退上一配置/ }));
@@ -482,14 +527,14 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
     // ── R14 · 串口端口枚举 + 波特率预设（PLAN §8.49）────────────────────────────
     it('R14 串口枚举：挂载即拉一次，切 serial 后出端口芯片，点芯片填表单、点刷新重拉', async () => {
-        api.getTransportPorts.mockResolvedValue({
+        ok(api.getTransportPorts, {
             ports: [
                 { device: 'COM1', description: '通信端口' },
                 { device: 'COM3', description: 'USB-SERIAL CH340 (COM3)' }
             ],
             source: 'pyserial'
         });
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => expect(api.getTransportPorts).toHaveBeenCalledTimes(1));
 
         fireEvent.click(screen.getByRole('button', { name: /串口 SERIAL/ }));
@@ -511,12 +556,12 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('R14 波特率预设：点档位填输入框、随 APPLY 以数字提交（输入仍可任意键入）', async () => {
-        api.setTransportConfig.mockResolvedValue({
+        ok(api.setTransportConfig, {
             ...CONFIG,
             mode: 'serial',
             serial: { ...CONFIG.serial, baudrate: 115200 }
         });
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => expect(api.getTransportConfig).toHaveBeenCalledTimes(1));
 
         fireEvent.click(screen.getByRole('button', { name: /串口 SERIAL/ }));
@@ -535,12 +580,12 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('R14 枚举降级：source=unavailable → error 原文显示，配置区照常可用', async () => {
-        api.getTransportPorts.mockResolvedValue({
+        ok(api.getTransportPorts, {
             ports: [],
             source: 'unavailable',
             error: 'pyserial 未安装：No module named serial'
         });
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => expect(api.getTransportPorts).toHaveBeenCalledTimes(1));
 
         fireEvent.click(screen.getByRole('button', { name: /串口 SERIAL/ }));
@@ -556,8 +601,8 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
     // ── R15 · 档案重命名 + 自动轮询（PLAN §8.49）──────────────────────────────────
     it('R15 档案重命名：预填当前名 → 确认只 PUT label（不带 config）+ 列表刷新 + 回执', async () => {
-        api.updateProfile.mockResolvedValue({ ...PROFILES[0], label: '环回基准·产线' });
-        render(<Terminal />);
+        ok(api.updateProfile, { ...PROFILES[0], label: '环回基准·产线' });
+        await renderTerminal();
         await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
 
         fireEvent.change(screen.getByLabelText(/档案 PROFILE/), { target: { value: 'pf-1' } });
@@ -582,8 +627,8 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('R15 改名撞名 400：detail 原文显示且行不收起；放弃则零调用', async () => {
-        api.updateProfile.mockRejectedValue(new Error('档案名已存在：产线网关'));
-        render(<Terminal />);
+        fail(api.updateProfile, new Error('档案名已存在：产线网关'));
+        await renderTerminal();
         await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
 
         fireEvent.change(screen.getByLabelText(/档案 PROFILE/), { target: { value: 'pf-1' } });
@@ -606,7 +651,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
         vi.useFakeTimers();
         Object.defineProperty(document, 'hidden', { configurable: true, value: false });
         try {
-            render(<Terminal />);
+            await renderTerminal();
             await act(async () => { await Promise.resolve(); });
             // 挂载同步拉一次（状态 + 历史）
             expect(api.getTransportStatus).toHaveBeenCalledTimes(1);
@@ -643,7 +688,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('R16 显示格式：三面板共用一个开关 —— ascii 同时换历史预览与原始报文，切回 hex 逐字不变', async () => {
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => expect(api.getDispatchHistory).toHaveBeenCalledTimes(1));
 
         const HEX_PREVIEW = 'AA 55 01 02 03 04 05 06 07 08 …+2';
@@ -671,8 +716,8 @@ describe('Terminal Page（E3 通讯调试）', () => {
     // ---- R20 设备档案自定义排序（PLAN §8.50 ②-3 · 2026-10-03 拍板解禁 DDL）----
 
     it('R20 排序：只改草稿序、点「保存顺序」才 PUT，成功即用返回的新顺序替换列表', async () => {
-        api.reorderProfiles.mockResolvedValue([PROFILES[1], PROFILES[0]]);
-        render(<Terminal />);
+        ok(api.reorderProfiles, [PROFILES[1], PROFILES[0]]);
+        await renderTerminal();
         await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
         const select = screen.getByLabelText(/档案 PROFILE/);
         const optionLabels = () => [...select.options].map((node) => node.textContent);
@@ -695,14 +740,16 @@ describe('Terminal Page（E3 通讯调试）', () => {
         expect(api.reorderProfiles).toHaveBeenCalledWith(['pf-2', 'pf-1']);
 
         // 成功：排序区收起 + 回执 + 下拉按新顺序渲染（端点回的就是新顺序，不再多拉一次）
+        // R50：先等回执再查收起 —— 点保存后 busy='order'，按钮文案换成「处理中…」，
+        // 此时 toBeNull() 是**假通过**；回执与收起在同一趟提交里，等回执即等真结果。
+        await waitFor(() => expect(screen.getByText(/档案顺序已保存（2 条）/)).toBeDefined());
         await waitFor(() => expect(screen.queryByRole('button', { name: /保存顺序/ })).toBeNull());
-        expect(screen.getByText(/档案顺序已保存（2 条）/)).toBeDefined();
         expect(optionLabels()[1]).toContain('产线网关');
         expect(optionLabels()[2]).toContain('环回基准');
     });
 
     it('R20 排序：挪动后点「放弃」零调用且行收起，列表仍是原顺序', async () => {
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
         const select = screen.getByLabelText(/档案 PROFILE/);
 
@@ -716,10 +763,10 @@ describe('Terminal Page（E3 通讯调试）', () => {
     });
 
     it('R20 排序被后端拒（400）：detail 原文显示且草稿留着，可改完再存', async () => {
-        api.reorderProfiles.mockRejectedValue(
+        fail(api.reorderProfiles, 
             new Error("顺序与在册档案不一致：未列出 ['pf-3'] / 不认识 []")
         );
-        render(<Terminal />);
+        await renderTerminal();
         await waitFor(() => screen.getByText('设备档案 (DEVICE PROFILES)'));
 
         fireEvent.click(screen.getByRole('button', { name: /排序顺序 \(REORDER\)/ }));
@@ -727,7 +774,8 @@ describe('Terminal Page（E3 通讯调试）', () => {
         fireEvent.click(screen.getByRole('button', { name: /保存顺序 \(SAVE ORDER\)/ }));
 
         await waitFor(() => expect(api.reorderProfiles).toHaveBeenCalledTimes(1));
-        expect(screen.getByText(/ERR: 顺序与在册档案不一致/)).toBeDefined();
+        // R50：等的是回执上屏，不是「调用发生」—— 拒绝回执是 15ms 后才落地的。
+        await waitFor(() => expect(screen.getByText(/ERR: 顺序与在册档案不一致/)).toBeDefined());
         // 草稿不丢：排序区还开着、顺序仍是改过的那版（保存按钮仍亮，可改完再存）
         expect(screen.getByRole('button', { name: /保存顺序 \(SAVE ORDER\)/ }).disabled).toBe(false);
         expect(screen.getByText(/顺序已改动/)).toBeDefined();
