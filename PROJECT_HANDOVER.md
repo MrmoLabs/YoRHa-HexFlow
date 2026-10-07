@@ -3326,6 +3326,59 @@
       （§8.66）—— 均不涉。
       提交 = `feat(R41)` 单笔（**零代码 · 零 DDL** → 无 Migration、无 `chore(db)`）。
 
+91. **R42 · `byte_order` trim 归一（FE 单点判据；PLAN §8.74 · 2026-10-07）**
+    - **为什么**：R34 在 §8.66 七 留白里明写「**不引入 trim 归一**」，理由是「UI 下拉产不出
+      带空白的值，两端在可达输入上本就同判」—— 这个理由**只覆盖下拉这一个入口**：值照样能由
+      **导入 / API 直写**进来（冒烟就是 `POST /protocols/` 直写 ` LITTLE `）。而 BE
+      `handlers/base.py::byte_order_of` 从 R21 起就是 `str(order).strip().lower()`，它的
+      docstring 还写着「与 FE `.trim().toLowerCase()` 同口径」—— **那句在 FE 侧从来不成立**：
+      FE 三处谓词只有 `validateProtocol` 的 W5 一路带 `.trim()`。于是同一个 `' LITTLE '`
+      会**卡面判大端、后端判小端**。
+    - **改动（4 个 js，1 新增 + 3 接线）**：新增 **`frontend/src/utils/byteOrder.js`**
+      （`normalizeByteOrder` = `String(raw ?? '').trim().toLowerCase()`、
+      `isLittleByteOrder` = 归一后只认 `little`，其余含枚举外 fail-open 回大端，逐字对齐
+      `byte_order_of`；**只归一不判枚举**，W5「在枚举内才不报」语义不变）+ 三处接线：
+      `protocolTree.js`（checksum `isLittleOrder` 两个计算点共用 + length 分支就地谓词）、
+      `toFrameBlocks.js`（出口翻译闸门 `withLogicParams`）、`validateProtocol.js`（W5 收敛）。
+    - **范围钉死（按 §8.66 留白原文）**：只管 FE 谓词 + 卡面 / 出口翻译 / W5 四处；
+      **收侧 `response_match` / `sequence_plan` 零改动**（fail-closed 不动）；指令域
+      `endianness`（E1-2 B6）另一域不并入；`pc.encoding` 不 trim（未登记，超范围）。
+      **为什么新增单点而非就地加 3 个 `.trim()`**：对齐 BE `byte_order_of` 的单点判据纪律，
+      并坐实它 docstring 那句「同口径」—— R42 之前不实、R42 起才成立。
+    - **文件（12 个）**：**改 8 个 js** —— `utils/byteOrder.js`（**新**）、`utils/protocolTree.js`、
+      `utils/toFrameBlocks.js`、`utils/validateProtocol.js` + 4 个测试
+      （`utils/__tests__/byteOrder.test.js` **新**、`protocolTree.test.js`、
+      `toFrameBlocks.test.js`、`validateProtocol.test.js`）；**改 4 个 md / JSON** —— 本条、
+      `docs/PLAN_Backlog.md`、`config/pageStatus.json`、`docs/PAGE_STATUS.md`（重生成）。
+      **零 BE 改动**（`byte_order_of` / `frame_builder` / `response_generate` 本就 `.strip()`）。
+    - **测试**：红测先行 —— 新建 `byteOrder.test.js` **3 条整文件加载即红**（被测模块不存在）
+      + **3 条行为锚红**（`protocolTree.test.js` length `' LITTLE '` 期望 `06 00` 实得 `00 06`、
+      checksum `' little '` 期望 `37 4B` 实得 `4B 37`、`toFrameBlocks.test.js` params 未写键）
+      —— **红因 3 档全为「缺特性」**，无一条属测试自身 bug；`validateProtocol.test.js` 2 条
+      （`' LITTLE '` 不报 W5）**实现前就绿**（W5 原生带 `.trim()`，属已有特性，不冒充红测）。
+      顺手改写 1 条既有测试注释（原「不额外引入 trim」已失效），**原断言一字未动仍绿**。
+    - **验收**：**4 文件 105/105（+6）**、**FE 全量 1464/1464（95 文件，+1/+6）**、
+      **BE 1002/1002 持平**（零改动）、`npx vite build` EXIT=0、`npm run lint` EXIT=0
+      **且 0 warning**、yorha-ui 校验器改动 **9 个 js / json 文件 0 违规**（8 js + 1 json）、md 表列数
+      mismatches = 0、`ev33` STAGED=0 BAD=0；**零 DDL → 无 Migration、无 `chore(db)`**、
+      不引 pytest、无新 pip 依赖、`processor.py` / `graph.py` / `Blueprint.jsx` 未碰、
+      **`/dispatch` 缺省口径未动**。
+    - **实机冒烟（后端 8055 + dev 5174）**：`POST /protocols/` 直写 `byte_order=' LITTLE '`
+      （length × 1 + checksum × 1）与净值对照 `'little'`，后端**原样保留**脏值 → 卡面
+      `G(脏)` = `06 00`、`G2(净)` = `06 00`、`G3(脏校验)` = `FF 2E`（**修复前不 trim 判 big
+      → `00 06`**）；属性面板「⚠ 3 提醒」展开**三条全是既有的「HEX 与字节长度不一致」，
+      无一条 W5**（`BYTE_ORDER_UNKNOWN` 未报）；控制台 **0 error 0 warning**；
+      清场 `DELETE /protocols/{id}` + `DELETE /trash/protocol/{id}` 后**回收站 0 条**。
+    - **文档同步（同批）**：PLAN **§8.74 新节** + §1 新增 `R42` 行 + **§8.66 七 销项注** +
+      **7 处留白改指**（§8.67 七 / §8.68 七 / §8.69 八 / §8.70 六 / §8.71 七 / §8.72 八 /
+      §8.73 三 的「`byte_order` trim 归一不涉」→ **R42 ✅ §8.74**）；本条插入 + 目录地图补
+      `byteOrder.js` 一行；`pageStatus.json` 相关页补记 + `npm run sync:page-status`
+      重生成 `PAGE_STATUS.md`。
+    - **状态**：**R42 ✅ —— 同一个 `byte_order` 值，卡面、出线、W5、后端四方判成同一个
+      字节序。** **明确留白**：收侧 `response_match` / `sequence_plan` 不碰（fail-closed
+      本就支持）；指令域 `endianness` 不并入；`pc.encoding` 不 trim。
+      提交 = `feat(R42)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
@@ -3381,6 +3434,7 @@
 | `src/utils/InstructionEncoder.js` | **编码核心**（hex 生成、依赖解析、BITFIELD 打包） | ✅ 权威编码逻辑，勿随意改 |
 | `src/utils/formula.js` | 公式求值 / 校验和算法 | ✅ |
 | `src/utils/normalizeInstruction.js` | 保存前字段/指令载荷归一化（`normalizeFieldPayload` / `normalizeInstructionPayload`），由 `useInstructionData` re-export | ✅ |
+| `src/utils/byteOrder.js` | **R42 · FE 侧唯一的字节序取值判据**：`normalizeByteOrder(raw)`（trim + lower，`''` = 未配置）+ `isLittleByteOrder(raw)`（归一后只认 `little`，其余含枚举外 fail-open 回大端）—— 与 BE `handlers/base.py::byte_order_of` 的 `str(order).strip().lower()` 逐字对齐；**只归一不判枚举**（W5 的枚举判定留在 `validateProtocol`）。消费方三处：`protocolTree.js`（length 分支 + checksum `isLittleOrder`）/ `toFrameBlocks.js`（出口翻译闸门）/`validateProtocol.js`（W5）| ✅ 新增（R42 · §8.74） |
 | `src/utils/protocolTree.js` | 协议页纯树工具（`serializeProtocol` / `findNode`） | ✅ 新增（自 Protocol.jsx 抽出） |
 | `src/utils/blockMerge.js` | 编排页纯逻辑（协议+指令合并、slot 注入、`buildLanes` / `getTotalBytes`） | ✅ 新增（自 Orchestration.jsx 抽出） |
 | `src/utils/toFrameBlocks.js` | 导出映射 `byte_len→byte_length`、`op_code→type`（供 `/export/binary`） | ✅ 新增（自 Orchestration.jsx 抽出） |

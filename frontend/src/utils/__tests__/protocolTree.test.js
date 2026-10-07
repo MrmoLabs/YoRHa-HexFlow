@@ -636,6 +636,20 @@ describe('R21 长度域字节序（共享向量 vectors/length_order.json · 双
         expect(valueOf('LITTLE')).toBe('06 00'); // 大小写不敏感（两端同口径）
     });
 
+    it('R42 trim 归一：length 卡带首尾空白的 little 同样按小端出线（两端同口径）', () => {
+        // R34 §8.66 留白「不引入 trim 归一」已由本批销项：BE `byte_order_of`
+        // 早就是 `str(order).strip().lower()`，FE 这条 length 分支此前不 trim ——
+        // 同一个值可能在**卡面**判大端、在**出线**判小端。归一后两端同判。
+        const valueOf = (byte_order) => {
+            const p = lenTree({ byte_length: 2, total: 6, byte_order });
+            return containerValue(p, computeProtocolOffsets(p).byId);
+        };
+        expect(valueOf(' LITTLE ')).toBe('06 00');
+        expect(valueOf('\tlittle\t')).toBe('06 00');
+        expect(valueOf(' big ')).toBe('00 06');      // 归一后是 big → 大端
+        expect(valueOf(' middle ')).toBe('00 06');   // 归一后不在枚举 → fail-open 大端
+    });
+
     it('Σ 回显口径不受字节序影响：设计期卡面仍是十进制字节数', () => {
         // 字节序只改「出线字节的排法」，长度字段的**值**（= 引用尺寸之和）不变。
         const p = lenTree({ byte_order: 'little', byte_length: 2, total: 6 });
@@ -704,10 +718,40 @@ describe('R34 校验和字节序（共享向量 vectors/checksum_order.json · �
             ))).toBe(big);
         }
         // 大小写不敏感（与 R21 length 分支 / 后端 byte_order_of 同口径）；
-        // 不额外引入 trim —— 沿用既有谓词形态，不改动字节行为。
+        // R42（§8.74）起首尾空白一并归一 —— 见下条「带首尾空白的 little」用例。
         expect(cardValue(ckTree(
             { data: '313233343536373839', algo: 'CRC_16_MODBUS', byte_length: 2, byte_order: 'LITTLE' }
         ))).toBe('37 4B');
+    });
+
+    it('R42 trim 归一：checksum 卡带首尾空白的 little 同样按小端出线（两个计算点同口径）', () => {
+        // 计算点 ① collectDeterministicBytes（容器内容）+ ② injectRefsSigma（卡中央值）
+        // 共用 `isLittleOrder`，本条同时锁两处 —— trim 归一后不许再出现「一处判
+        // 大端、一处判小端」。R34 §8.66 留白的「不引入 trim 归一」已由本批销项。
+        const row = { data: '313233343536373839', algo: 'CRC_16_MODBUS', byte_length: 2 };
+        for (const byte_order of [' little ', ' LITTLE ']) {
+            expect(cardValue(ckTree({ ...row, byte_order })), byte_order).toBe('37 4B');
+        }
+        expect(cardValue(ckTree({ ...row, byte_order: ' big ' }))).toBe('4B 37');
+        expect(cardValue(ckTree({ ...row, byte_order: ' middle ' }))).toBe('4B 37');
+
+        const inside = (byte_order) => {
+            const p = proto([
+                leaf('h', { hex_value: row.data, byte_length: row.data.length / 2 }),
+                cont('g', [{
+                    id: 'C', label: 'C', type: 'checksum', byte_length: 2, hex_value: '00',
+                    parameter_config: {
+                        type: 'checksum', refs: ['h'], algorithm: row.algo,
+                        ...(byte_order !== undefined ? { byte_order } : {})
+                    }
+                }])
+            ]);
+            return protocolTree.injectContainerContent(
+                lanesOf(p), computeProtocolOffsets(p).byId, p
+            )[0].items.find(i => i.id === 'g').parameter_config.computedValue;
+        };
+        expect(inside(' little ')).toBe('37 4B');
+        expect(inside(' middle ')).toBe('4B 37');
     });
 
     it('改一必改二：容器内容路径（collectDeterministicBytes）同口径反转', () => {

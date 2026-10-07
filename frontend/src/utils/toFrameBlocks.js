@@ -6,6 +6,11 @@
 // Backend Block schema requires id/type/label/byte_length; frontend blocks
 // carry byte_len/op_code/name, so map them explicitly before posting.
 
+// R42（§8.74 · `byte_order` trim 归一）: 出口翻译的字节序闸门接单点判据 ——
+// 原就地写法不带 `.trim()`，而后端 `frame_builder._with_byte_order` 与
+// `byte_order_of` 一直 `.strip()`，同一个值两端可能判成不同字节序。
+import { isLittleByteOrder } from './byteOrder';
+
 // 批次四: ChecksumAlgo（前端枚举，formula.js）→ 后端 ChecksumHandler 枚举。
 // 缺省 CRC_16_MODBUS 与前端编码器 `params.algorithm || CRC_16_MODBUS` 同源
 // （后端 handler 自身的 "sum" 缺省只服务旧 range 模式，refs 模式下算法恒由
@@ -51,6 +56,8 @@ const buildBitfieldConfig = (node) => ({
 // - params.byte_order = R21（长度域 BE/LE）+ R34（校验和字节序）：length /
 //   checksum 卡 pc.byte_order=little 才带（缺省 / big / 枚举外不写键 → params
 //   形状与存量逐字节一致，后端 LengthHandler / ChecksumHandler 缺省回大端）；
+//   **R42（§8.74）起判据带 trim 归一**（`' LITTLE '` ≡ `little`，与后端
+//   `_with_byte_order` / `byte_order_of` 的 `.strip()` 同口径）；
 //   **encoding 仍 length 专属**（校验块没有「出线编码」概念，闸门不放开）。
 // pc.refs 键缺失（存量行无 parameter_config）→ 维持既有 config 直通，
 // 行为与批次四前逐字节一致（byte_order / encoding 仍生效，镜像后端 _build_logic_config）。
@@ -65,7 +72,7 @@ const withLogicParams = (config, pc, type) => {
     const base = config && typeof config === 'object' ? config : null;
     const params = { ...((base && base.params) || {}) };
     let touched = false;
-    if (String(pc.byte_order || '').toLowerCase() === 'little') {
+    if (isLittleByteOrder(pc.byte_order)) {
         params.byte_order = 'little';
         touched = true;
     }

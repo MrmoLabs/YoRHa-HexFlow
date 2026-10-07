@@ -213,6 +213,7 @@ describe('validateProtocol（协议工作副本结构校验）', () => {
         expect(withOrder('big').warnings).toEqual([]);
         expect(withOrder('little').warnings).toEqual([]);
         expect(withOrder('BIG').warnings).toEqual([]); // 大小写归一后判（两端 lowercase 收）
+        expect(withOrder(' LITTLE ').warnings).toEqual([]); // R42：首尾空白同样归一后判
         expect(withOrder('').warnings).toEqual([]);
         expect(withOrder(undefined).warnings).toEqual([]);
     });
@@ -238,6 +239,7 @@ describe('validateProtocol（协议工作副本结构校验）', () => {
         expect(withOrder('big').warnings).toEqual([]);
         expect(withOrder('little').warnings).toEqual([]);
         expect(withOrder('BIG').warnings).toEqual([]);
+        expect(withOrder(' LITTLE ').warnings).toEqual([]); // R42：首尾空白同样归一后判
         expect(withOrder('').warnings).toEqual([]);
         expect(withOrder(undefined).warnings).toEqual([]);
     });

@@ -13,6 +13,9 @@
 // （fromhex 失败静默 → 错帧），故 hex 非法字符在前端升级为闸。
 
 import { isNestable } from '../config/blockTypes';
+// R42（§8.74 · `byte_order` trim 归一）: W5 的归一与卡面 / 出口翻译同源
+// （本函数原先就自带 `.trim()` —— 是三处谓词里唯一带的，现收敛到单点）。
+import { normalizeByteOrder } from './byteOrder';
 
 const normalizeHex = (h) => String(h ?? '').replace(/\s/g, '');
 
@@ -179,10 +182,11 @@ export function validateProtocol(protocol) {
         // W5 字节序枚举外 —— 镜像 W4 口径：两端对枚举外值一致 fail-open 回大端
         //（FE 卡面 / BE LengthHandler·ChecksumHandler / 应答规格生成同口径），
         // 不阻断保存但必须可见；重新下拉选择即归一。R34 起同一码覆盖 checksum 卡，
-        // 文案按块型分叉（长度字节序 / 校验字节序）。大小写归一后再判（两端都
-        // lowercase 收），空串 = 未配置 → 不报。 ---
+        // 文案按块型分叉（长度字节序 / 校验字节序）。**R42 起归一走单点判据**
+        // （`normalizeByteOrder` = 首尾空白 + 大小写，与卡面 / 出口翻译同源），
+        // 空串 = 未配置 → 不报。 ---
         if (node.type === 'length' || node.type === 'checksum') {
-            const order = String(pc.byte_order ?? '').trim().toLowerCase();
+            const order = normalizeByteOrder(pc.byte_order);
             if (order && !VALID_BYTE_ORDERS.has(order)) {
                 const noun = node.type === 'length' ? '长度字节序' : '校验字节序';
                 warnings.push({ blockId: node.id, code: 'BYTE_ORDER_UNKNOWN', message: `「${label}」${noun}「${pc.byte_order}」不在枚举内（两端回退大端，请重新选择）` });

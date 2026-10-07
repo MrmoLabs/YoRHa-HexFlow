@@ -12,6 +12,9 @@ import { formatUnknown, calculateChecksum, formatToHex } from './formula';
 import { encodeCobsHex, encodeVarint, hexToBytes, normalizeEncoding } from './framing';
 import { mapChecksumAlgo } from './normalizeInstruction';
 import { sanitizeValueTable } from './bitMeta';
+// R42（§8.74 · `byte_order` trim 归一）: 三处字节序谓词收敛到单点判据
+// （卡面 length 分支 + checksum `isLittleOrder`），与 BE `byte_order_of` 同口径。
+import { isLittleByteOrder } from './byteOrder';
 import { v4 as uuidv4 } from 'uuid';
 
 export const serializeProtocol = (protocol) => JSON.stringify({
@@ -393,8 +396,10 @@ const bytesToHex = (bytes) => bytes
 // 递归），② `injectRefsSigma`（checksum 卡中央值）。与后端
 // `ChecksumHandler.apply_byte_order` 同口径：仅 `little` 反转，缺省 / `big` /
 // 枚举外一律大端 fail-open（§0 缺省口径）。谓词形态沿用 R21 的 length 分支 ——
-// 不另起一套、也不额外引入归一化（避免本批顺带改动既有字节行为）。
-const isLittleOrder = (pc) => String(pc?.byte_order || '').toLowerCase() === 'little';
+// 不另起一套。**R42（§8.74）起两者一起接到 `utils/byteOrder.js` 单点判据**
+// （trim 归一，销掉 §8.66 留白的「不引入 trim 归一」：原写法不带 `.trim()`，
+// 而 BE `byte_order_of` 一直是 `str(order).strip().lower()`）。
+const isLittleOrder = (pc) => isLittleByteOrder(pc?.byte_order);
 
 // 展示串（"4B 37"）按**字节对**反转。单字节串反转后与原串相同 —— 「1 字节不
 // 反转」是反转的自然结果，不是特例（后端 apply_byte_order 同理）。
@@ -447,7 +452,9 @@ const collectDeterministicBytes = (node, byId, root) => {
         // R21（长度域 BE/LE）：pc.byte_order=little → 字节对反转，与后端
         // LengthHandler.apply_byte_order 同口径（设计期卡面与出线逐字节一致）；
         // 缺省 / 枚举外一律大端（fail-open，镜像两端算法枚举口径）。
-        return String(node.parameter_config?.byte_order || '').toLowerCase() === 'little'
+        // R42（§8.74）: 谓词接到单点判据，首尾空白归一后判（与 checksum 侧
+        // `isLittleOrder` / BE `byte_order_of` 同口径）—— 原就地写法不 trim。
+        return isLittleByteOrder(node.parameter_config?.byte_order)
             ? bytes.slice().reverse()
             : bytes;
     }

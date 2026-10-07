@@ -144,6 +144,16 @@ describe('toFrameBlocks（R21: length 字节序出口翻译）', () => {
         expect(lengthParamsOf('middle')).toEqual({ refs: ['a'] });
     });
 
+    it('R42 trim 归一：带首尾空白的 little 照样写键；big / 枚举外仍不写', () => {
+        // 后端 `frame_builder._with_byte_order` 与 `byte_order_of` 一直带
+        // `.strip()`，FE 这道出口翻译此前不 trim —— 同一个值会让**出口翻译**不写键
+        // 而**后端按 pc 直读**写键。归一后两端同判（R34 §8.66 留白已销项）。
+        expect(lengthParamsOf(' LITTLE ')).toEqual({ refs: ['a'], byte_order: 'little' });
+        expect(lengthParamsOf(' little ')).toEqual({ refs: ['a'], byte_order: 'little' });
+        expect(lengthParamsOf(' big ')).toEqual({ refs: ['a'] });
+        expect(lengthParamsOf(' middle ')).toEqual({ refs: ['a'] });
+    });
+
     it('存量行（无 refs 键的直通路径）同样带上字节序', () => {
         const [b] = toFrameBlocks([
             leaf('L', { type: 'length', config: { legacy: 1 }, parameter_config: { byte_order: 'little' } })

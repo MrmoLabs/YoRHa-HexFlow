@@ -66,6 +66,7 @@
 
 | R40 | **发前路由 · 规则页试解析（DRY RUN）** —— §8.70 六 与 §8.71 七 **两处同挂**的那条留白正主：R38 建页时就登记了「在规则表上就地输一条输入 → 看会命中哪条 / 为什么没命中」，R39 只把接线落在加工页。四批闭环后规则作者仍处在「**写完规则没法验**」的状态，只能等真发送才知道挑中哪条（§8.72） | ✅ **已完成（2026-10-07，§8.72，纯 FE · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动）**：**页底通栏「试解析 (DRY RUN)」面板** —— 输入扁平键值（与加工页同一份 `toInputsMap`：键去空白、空键不发、值按 JSON 标量解析）点按钮调 `POST /dispatch/routed`，出 SYS / ERR 一行事实 + **恒四行结果表**（命中规则 / 目标指令 / 参与扫描 / 缺陷跳过，值 = 回执原样转写）。**新增 `describeDryRun`** 与 R39 的 `describeResolve` 同一份回执、**另一种动作语境** —— 规则页一行状态都不改，文案断在「命中 / 无命中」，绝不复用「已切到指令」那句。**事实边界写死**：口径行常驻「按已保存的规则计算（表单与顺序的未保存改动不参与）」（不推断用户改没改东西，推断错就是撒谎），顺序有草稿时当场亮 `N 条顺序待保存 —— 试解析按已落库顺序计算`（琥珀条），右栏固定一句「只回显结果 —— 不选中规则、不改表单与顺序」。**抽第二消费方共用组件 `components/RouteInputTable.jsx`**（新）：两页那张行表排版只留一处出处（类型徽标 / 空键不发 / 删到只剩一行禁删三条细口径不会分家），`idPrefix` / `labels` 默认值即加工页原文、`+ 添加` 按钮留页面（两页按钮视觉语言不同，不塞进共用组件），**R39 的 13 条既有用例一次不改全绿 = 抽取没改行为的证据**。**红测先行有据**：2 个新文件 **13 条全红**（7 纯逻辑 `describeDryRun is not a function` + 6 页面「面板 / 按钮 / 结果表不存在」），红因全部 = **缺特性本身**，无一条属「测试自身 bug」；落实现后翻 **1 条既有用例随新事实改写**（`findByText(/2 条顺序待保存/)` 撞上新琥珀条同子串 → 断言**收窄**到顺序条原文 `^● 2 条顺序待保存$`，是收窄不是放水）。**实机冒烟 8 组通过**：面板常驻 → 去空白命中 + 类型徽标 + 四行表 → 无命中两行 `（无命中）` + 三类原因脚注 → 值 `"0001"` 字符串对数字条件**仍不中**（类型语义从规则页可见）→ 加行/删行/只剩一行 × 禁用 → 顺序草稿琥珀条出与消 → **回加工页解析命中切到「示例状态包」（抽取后 R39 回归）** → `/routing` 控制台 0 error 0 warning，清场后规则 0 条、回收站 `routing_rule` 0 条。**FE 1445 → 1458/1458（+13 = 7 纯逻辑 + 6 页面）、BE 1002/1002 持平、`vite build` 0、`lint` 0（0 warning）、校验器 8 文件（js / jsx / json）0 违规** |
 | R41 | **文档卫生批（过期指路清零）** —— R1–R40 全部落地后，登记面上仍残留**指向未来批次的过期断言**（`pageStatus.json` 声称「下一批 R23，排期见 §8.52」「余下仅设备档案自定义排序（→ R20）」、§1 `R21–R28` 行首仍🔄、留白小节标题仍写「→ R37 / R38 / R39」）与**留白漏标**（同段体例已标 R37 / R38，却漏 R39）—— 不是功能缺口，是**读账会读错**的卫生问题（§8.73） | ✅ **已完成（2026-10-07，§8.73，纯文档 + `pageStatus.json` 文案 · 零功能改动、零 BE / FE 代码改动 · 零 DDL → 无 Migration、无 `chore(db)`、无 `feat`）**：**8 处过期标记就地改写** —— `pageStatus.json` 2 处（`/protocol`「下一批 R23（epoch …），排期见 §8.52」→ **R23 ✅ §8.55**；`/datahub`「余下仅设备档案自定义排序（→ R20，`sort_order` DDL 已由用户拍板解禁）」→ **R20 ✅ §8.50，nextSteps 无余项**）+ PLAN §1 `R21–R28` 行首 **🔄 → ✅**（该行**八个子批状态格本就全 ✅**，行首标记是漏翻）+ PLAN **3 处留白小节标题改指**（§8.68 八「→ R37 / R38 / R39」、§8.69 八「→ R38 / R39」、§8.70 六「→ R39 / R40 / 仍未排」各自补 ✅ —— **正文本就逐条标了 ✅，只动标题**）+ `PROJECT_HANDOVER.md` **2 处状态句**（条目 85 把「加工页自动选指令接线」仍列为留白而 R39 已销 → 补「**已由 R39 销掉 ✅（§8.71）**」；条目 86 括注同款补 ✅；**条目 87 本就已标 R39 / R40 ✅ 不动**）。**刻意不动的**：§8.5x / §8.6x 各节尾注「下一批 → Rx」是**当批的排期快照**（历史留档，改了才是造假），只改**声明当前状态**的登记面。`npm run sync:page-status` 重生成 `PAGE_STATUS.md`；**验收** = FE 1458/1458 · BE 1002/1002 · `vite build` 0 · `lint` 0（0 warning）· 校验器 1 文件（json）0 违规 · md 表列数 mismatches 0 · ev33 STAGED=0 BAD=0 |
+| R42 | **`byte_order` trim 归一（FE 单点判据）** —— R34（§8.66 七）留白里明写的「**不引入 trim 归一**」，其理由「UI 下拉产不出带空白的值」只覆盖下拉这一个入口；值可由导入 / API 直写进来，而 BE `handlers/base.py::byte_order_of` 从 R21 起就是 `str(order).strip().lower()`，它 docstring 里「与 FE `.trim().toLowerCase()` 同口径」那句在 FE 侧**从来不成立** —— 同一个 `' LITTLE '` 会卡面判大端、后端判小端（§8.74；**非** §8.52 复议范围，独立小批） | ✅ **已完成（2026-10-07，§8.74，纯 FE · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动）**：新增 `frontend/src/utils/byteOrder.js` 单点判据（`normalizeByteOrder` = trim + lower、`isLittleByteOrder` = 归一后只认 `little`，其余含枚举外 fail-open 回大端，逐字对齐 `byte_order_of`）+ **三处接线**（`protocolTree.js` length 分支与 checksum `isLittleOrder` 两个计算点 / `toFrameBlocks.js` 出口翻译闸门 / `validateProtocol.js` W5 归一收敛）→ **卡面、出线、W5、后端四方同判**。范围按 §8.66 留白原文钉死：收侧 `response_match` / `sequence_plan` **零改动**（fail-closed 不动）、指令域 `endianness`（E1-2 B6）另一域不并入、`pc.encoding` 不 trim（未登记，超范围）。**红测先行** = 新建 `utils/__tests__/byteOrder.test.js` 3 条（整文件加载即红，被测模块不存在）+ 3 条行为锚（`' LITTLE '` → `06 00`、`' little '` → `37 4B`、params 写键）—— 红因 3 条**全为缺特性本身**；`validateProtocol.test.js` 2 条本就绿（W5 原生带 `.trim()`，属已有特性不是红测）。**验收** = 4 文件 105/105（+6）· FE **1458 → 1464/1464（95 文件，+1/+6）** · BE **1002/1002 持平**（零改动）· `npx vite build` 0 · `npm run lint` 0（0 问题 0 警告）· yorha-ui 校验器改动 **9 个 js / json 文件 0 违规**（8 js + 1 json） · md 表列数 mismatches 0 · ev33 STAGED=0 BAD=0；**实机冒烟**（后端 8055 + dev 5174）：`POST /protocols/` 直写 `byte_order=' LITTLE '`，后端原样保留，卡面 length 出 `06 00`（修复前不 trim 判 big → `00 06`）、checksum 出 `FF 2E`、净值对照 `'little'` 同为 `06 00`，W5 未报；控制台 0 error；清场后回收站归零 |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -5523,7 +5524,8 @@ presenceEqual(expect, value) =
 - 指令域字段的 `endianness`（E1-2 B6）是**另一个域**，不并入本批；
 - **不引入 trim 归一**：谓词形态沿用 R21（`String(pc.byte_order || '').toLowerCase() === 'little'`），
   避免本批顺带改动既有字节行为 —— BE `byte_order_of` 的 `.strip()` 仍只是防御
-  （UI 下拉产不出带空白的值），两端在可达输入上本就同判；
+  （UI 下拉产不出带空白的值），两端在可达输入上本就同判
+  —— **已由 R42 收掉 ✅（2026-10-07，§8.74：新增 `utils/byteOrder.js` 单点判据）**；
 - 收侧 `response_match` / `sequence_plan` 零改动（本就支持）。
 
 **R34 ✅ —— §8.53「checksum 的 `byte_order` 未立项，需另开」的账已还清。**
@@ -5616,7 +5618,8 @@ presenceEqual(expect, value) =
 - **不做路由预渲染 / SSR**：内网单页应用，无 SEO 诉求，引入渲染层得不偿失；
 - **发前路由**（`BUSINESS_SCENARIOS` G1 尾注；§8.52 C-1 拍板 A 不立项，翻案需用户确认），
   本批不涉 —— **→ 2026-10-06 用户翻案已立项，见 §8.68**；
-- **`byte_order` trim 归一**（§8.66 留白）本批不涉。
+- **`byte_order` trim 归一**（§8.66 留白）本批不涉 ——
+  **→ R42 已落地 ✅（2026-10-07，§8.74）**。
 
 **R35 ✅ —— 每页只加载自己那块，首屏 752kB → 325kB。**
 
@@ -5778,7 +5781,8 @@ presenceEqual(expect, value) =
   **R38 已落地 ✅（§8.70）**，**本节留白已销第三条**；
 - **加工页自动选指令接线**（FE）—— 真正「换指令」的动作 →
   **R39 已落地 ✅（§8.71）**，**本节留白已销第四条**；
-- **`byte_order` trim 归一**（§8.66 留白）本批不涉。
+- **`byte_order` trim 归一**（§8.66 留白）本批不涉 ——
+  **→ R42 已落地 ✅（2026-10-07，§8.74）**。
 
 **R36 ✅ —— 「该发哪条指令」有了数据层答案，`/dispatch` 缺省口径一个字节没动。**
 
@@ -5885,7 +5889,7 @@ D14② 把四张表按数据性质分三类（活配置级联 / 冻结快照留�
 
 - **规则编辑 UI**（规则的增删改查页面）→ **R38 已落地 ✅（§8.70）**；
 - **加工页自动选指令接线**（真正「换指令」的动作）→ **R39 已落地 ✅（§8.71）**；
-- **`byte_order` trim 归一**（§8.66 留白）不涉。
+- **`byte_order` trim 归一**（§8.66 留白）不涉 —— **→ R42 已落地 ✅（2026-10-07，§8.74）**。
 
 **R37 ✅ —— 删指令不再留下没人知道的悬空规则，恢复也一并回来。**
 
@@ -5978,7 +5982,8 @@ R36 给了「该发哪条指令」的数据层答案，R37 补齐了删改时的
   —— **R40 已落地 ✅（§8.72）**：页底通栏 `试解析 (DRY RUN)` 面板 + 四行结果表；
   「**为什么没命中**」到回执级为止（扫了几条 / 哪几条是结构性缺陷），**逐条规则的判定轨迹
   另议**（要给 `POST /dispatch/routed` 加 `trace` 字段）；
-- **`byte_order` trim 归一**（§8.66 留白）不涉；规则表未进数据中心 8 域清单
+- **`byte_order` trim 归一**（§8.66 留白）不涉 —— **→ R42 已落地 ✅（2026-10-07，§8.74）**；
+  规则表未进数据中心 8 域清单
   （`BUNDLE_DOMAIN_VERSIONS` 无 `routing_rules`），要随数据包迁移另议，不擅自扩域。
 
 **R38 ✅ —— 规则第一次能在页面上被建出来、排序出来、停掉、删掉。**
@@ -6094,7 +6099,7 @@ warning）** → 移除该失效指令，lint 回到 **0 问题**；指令上方
 - **规则页「试解析」入口**（§8.70 六 挂的那条）→ **R40 已落地 ✅（§8.72）**。本批的留白只是
   「定位与文案各自独立」那半句：规则页走的是**页底通栏面板 + 四行结果表**，与加工页的
   「命中即切指令」两套动作语境分开写；
-- **`byte_order` trim 归一**（§8.66）不涉；
+- **`byte_order` trim 归一**（§8.66）不涉 —— **→ R42 已落地 ✅（2026-10-07，§8.74）**；
 - **规则表仍不在数据中心 8 域清单**（`BUNDLE_DOMAIN_VERSIONS` 无 `routing_rules`），
   要随数据包迁移另议，不擅自扩域；
 - **输入表不做持久化**：本仓前端**零 `localStorage` 先例**，本批不为此新引一种落盘样式；
@@ -6223,8 +6228,8 @@ G4）+ 62（R28 解包「待排」→ §8.60 已落地）+ 73（解码回程 ⏸
   给不出「**每条规则为什么没成立**」—— 比较不成立 / 变量不在输入 / 类型不可比，三者在回执里同为
   不命中。要做须给 `POST /dispatch/routed` 回执加 `trace` 字段，属 **BE 契约改动**（现有逐键断言
   测试要随新事实改写），**另议排批**；
-- **输入表不做持久化**（§8.71 七 同款留白）、**规则表仍不在数据中心 8 域清单**、
-  **`byte_order` trim 归一**（§8.66）—— 均不涉。
+- **输入表不做持久化**（§8.71 七 同款留白）、**规则表仍不在数据中心 8 域清单** —— 均不涉；
+  **`byte_order` trim 归一**（§8.66）→ **R42 已落地 ✅（2026-10-07，§8.74）**。
 
 **R40 ✅ —— 规则作者第一次能在页面上验自己写的规则，而不必等一次真发送。**
 
@@ -6285,14 +6290,101 @@ md 表列数 mismatches = 0 · `ev33` STAGED=0 BAD=0 · **零 DDL → 无 Migrat
 - **校验器 md 口径**：那 34 条历史 CSS 字样（`rounded-sm` / `shadow-md` …，全是当年「改掉它」
   的史实记述）要让 md 过检须二选一 —— 改写史实措辞，或给校验器 md 规则加白名单；后者改的是
   **仓外** `~/.agents/skills/yorha-ui`，**另议**；
-- **规则 trace**（BE 契约改动）、**输入表持久化**、**规则表进 8 域清单**、
-  **`byte_order` trim 归一**（§8.66）—— 均不涉。
+- **规则 trace**（BE 契约改动）、**输入表持久化**、**规则表进 8 域清单** —— 均不涉
+  （**`byte_order` trim 归一**已由 **R42 ✅ §8.74** 收掉，不再是留白）。
 
 **文档同步（同批）**：§1 新增 `R41` 行 + §8.73 本节；`PROJECT_HANDOVER.md` 条目 90 +
 其内两处状态句改写；`pageStatus.json` 两处 `nextSteps` 文案 + `npm run sync:page-status`
 重生成 `PAGE_STATUS.md`。
 
 **R41 ✅ —— 登记面不再有指向未来批次的过期断言，历史排期快照原样留档。**
+
+## 8.74 R42 `byte_order` trim 归一（FE 单点判据 · 2026-10-07）
+
+**批次**：2026-10-07 · **纯 FE**，零 DDL、**零 BE 改动** —— `handlers/base.py::byte_order_of`、
+`core/frame_builder._with_byte_order`、`core/response_generate` 本就 `.strip()`，本批一个字节
+没动它们。`models.py` 无改列改表、**无 Migration、无 `chore(db)`**、不引 pytest、无新 pip 依赖，
+`processor.py` / `graph.py` / `Blueprint.jsx` 未碰，**`/dispatch` 缺省口径一字未动**。
+
+### 一 · 来源（§8.66 七 的留白，7 处同挂）
+
+R34（§8.66 七）把「**不引入 trim 归一**」写进留白，理由是「UI 下拉产不出带空白的值，两端在
+可达输入上本就同判」。这个理由**只覆盖下拉这一个入口**：值照样能由**导入 / API 直写**进来
+（冒烟就是 `POST /protocols/` 直写），而 BE `byte_order_of` 从 R21 起就是
+`str(order).strip().lower()` —— 它的 docstring 还写着「与 FE
+`String(pc.byte_order).trim().toLowerCase()` 同口径」，**那句在 FE 侧从来不成立**：FE 三处
+谓词只有 W5 一路带 `.trim()`。
+
+于是同一个 `' LITTLE '` 会**卡面判大端（FE 不 trim）、后端判小端（BE trim）** —— 设计期
+卡面、出线翻译、后端 handler 三方可能判成两种字节序。本批把 FE 三处谓词收敛到单点。
+
+**7 处留白同挂**：§8.67 七 / §8.68 七 / §8.69 八 / §8.70 六 / §8.71 七 / §8.72 八 /
+§8.73 三 均登记过「`byte_order` trim 归一 —— 不涉」，本批一并改指。
+
+### 二 · 改动（1 新增 + 3 接线）
+
+| # | 文件 | 职责 |
+|---|---|---|
+| ① | `frontend/src/utils/byteOrder.js`（**新增**） | **FE 侧唯一的字节序取值判据**：`normalizeByteOrder(raw)` = `String(raw ?? '').trim().toLowerCase()`（`''` = 未配置）、`isLittleByteOrder(raw)` = 归一后只认 `little`，其余（含枚举外）一律大端 fail-open —— 与 `byte_order_of` 的 `str(order).strip().lower()` 逐字对齐；**本模块只归一不判枚举**，故 W5「在枚举内才不报」的语义原样不变 |
+| ② | `frontend/src/utils/protocolTree.js` | 两处谓词接线：checksum 的 `isLittleOrder`（`collectDeterministicBytes` 容器内容 + `injectRefsSigma` 卡中央值**两个计算点共用**）+ length 分支的就地写法 → `isLittleByteOrder` |
+| ③ | `frontend/src/utils/toFrameBlocks.js` | 出口翻译闸门 `withLogicParams` 的就地谓词 → `isLittleByteOrder`；**params 形状与缺省口径不变**（归一后是 `little` 才写键，`big` / 缺省 / 枚举外不写） |
+| ④ | `frontend/src/utils/validateProtocol.js` | W5 的 `String(...).trim().toLowerCase()` → `normalizeByteOrder` —— **三处谓词里唯一原本带 trim 的一路**，行为逐字不变，只是不再自带第二套归一 |
+
+**范围钉死（按 §8.66 留白原文）**：只管 **FE 谓词 + 卡面 / 出口翻译 / W5 四处接线**；
+**收侧 `response_match` / `sequence_plan` 零改动**（fail-closed 不动，本就支持）；
+指令域字段 `endianness`（E1-2 B6）是**另一个域**，不并入；`pc.encoding` 不 trim
+（未登记在册，超范围）。
+
+**为什么新增单点文件、而不是就地加 3 个 `.trim()`**：对齐 BE `byte_order_of` 的「单点判据」
+纪律（R34 把字节序门面上移 base 就是同一个理由），并**坐实**它 docstring 里那句
+「与 FE `.trim().toLowerCase()` 同口径」—— R42 之前不实，R42 起才成立。
+
+### 三 · 红测先行有据
+
+- **新建 `utils/__tests__/byteOrder.test.js` 3 条**：实现前**整文件加载即红**（被测模块
+  尚不存在）；
+- **3 条行为锚同步红**：`protocolTree.test.js` length（`' LITTLE '` → 期望 `06 00`、
+  实得 `00 06`）+ checksum（`' little '` → 期望 `37 4B`、实得 `4B 37`）、
+  `toFrameBlocks.test.js`（params 未写键）—— **红因 3 条全为缺特性本身**，
+  无一条属「测试自身 bug」；
+- `validateProtocol.test.js` 的 2 条（`' LITTLE '` 不报 W5）**实现前就绿** —— W5 原先
+  自带 `.trim()`，属**已有特性**，按三档记账归「测试随新事实改写」侧的**行为锚**，
+  不冒充红测。
+
+**改写 1 条既有测试注释**：`protocolTree.test.js` 原「不额外引入 trim —— 沿用既有谓词形态」
+已随本批失效，就地改成指向 R42（原断言一字未动，仍绿）。
+
+### 四 · 实机冒烟（后端 8055 + dev 5174 · 回收站清零）
+
+| 步 | 操作 | 观察到 | 判据 |
+|---|---|---|---|
+| 1 | `POST /protocols/` 直写协议 `R42 冒烟 trim 归一`，length 卡与 checksum 卡 `parameter_config.byte_order` 均写 ` LITTLE `，另建净值对照卡写 `little` | 后端**原样保留**脏值（回读仍是 ` LITTLE `，两处） | 保存侧不替用户改写输入（BE 零改动） |
+| 2 | 进 `/protocol` 读卡面出线 | `G(脏)` = `06 00`、`G2(净)` = `06 00`、`G3(脏校验)` = `FF 2E` | 脏值按**小端**出线（修复前 FE 不 trim 判 big → `00 06`）；脏净同判 |
+| 3 | 属性面板 `⚠ 3 提醒` 展开 | 三条全是 `「L」/「L2」/「C」HEX 与字节长度不一致（2/4 字符，运行期按算法重算/填槽）` —— **无一条 W5** | `BYTE_ORDER_UNKNOWN` 未报（归一后在枚举内），提醒是既有的 HEX 长度提示，与本批无关 |
+| 4 | 控制台核对 | **0 error 0 warning**（仅 1 条 React DevTools info） | 无运行期异常 |
+| 5 | 清场 | `DELETE /protocols/{id}` 200 → `DELETE /trash/protocol/{id}` 200 → 回收站 **0 条**、协议列表回到冒烟前 3 条 | 冒烟数据不留痕 |
+
+### 五 · 验收与留白
+
+**验收**：4 文件 **105/105（+6）** · FE 全量 **1464/1464（95 文件，+1/+6）** ·
+BE **1002/1002 持平**（零改动）· `npx vite build` EXIT=0 · `npm run lint` EXIT=0
+（0 问题 0 警告）· yorha-ui 校验器改动 **9 个 js / json 文件 0 违规**（8 js + 1 json） · md 表列数
+mismatches = 0 · `ev33` STAGED=0 BAD=0 · **零 DDL → 无 Migration、无 `chore(db)`**、
+不引 pytest、无新 pip 依赖。
+
+**明确留白（本批不做）**：
+
+- **收侧 `response_match` / `sequence_plan` 不碰** —— 两边对 `byte_order` 本就 fail-closed
+  支持，改它要另开契约批；
+- **指令域 `endianness`（E1-2 B6）不并入** —— 另一个域、另一套值域；
+- **`pc.encoding` 不做 trim 归一** —— 未登记在册，超出 §8.66 留白原文范围。
+
+**文档同步（同批）**：§1 新增 `R42` 行 + §8.74 本节 + §8.66 七 销项注 + 7 处留白改指
+（§8.67 / §8.68 / §8.69 / §8.70 / §8.71 / §8.72 / §8.73）；`PROJECT_HANDOVER.md` 条目 91 +
+目录地图补 `byteOrder.js` 行；`pageStatus.json` 相关页补记 + `npm run sync:page-status`
+重生成 `PAGE_STATUS.md`。
+
+**R42 ✅ —— 同一个 `byte_order` 值，卡面、出线、W5、后端四方判成同一个字节序。**
 
 ## 9. 保留勿动（非任务，勿清理）
 
