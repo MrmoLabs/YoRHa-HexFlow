@@ -18,7 +18,7 @@ import {
 import { getOperatorTemplates } from './operators';
 import { exportHexFile, exportBinaryFromBlocks } from './export';
 import { compileWrapped } from './compile';
-import { dispatchPayload, dispatchWrappedGroup, getDispatchHistory, clearDispatchHistory } from './dispatch';
+import { dispatchPayload, dispatchWrappedGroup, getDispatchHistory, clearDispatchHistory, resolveRoute } from './dispatch';
 import { getTransportConfig, setTransportConfig, getTransportStatus, revertTransportConfig, getTransportPorts } from './transport';
 import { getBindings, createBinding, updateBinding, deleteBinding } from './bindings';
 import { getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './recipes';
@@ -73,6 +73,8 @@ export const api = {
     dispatchWrappedGroup,
     getDispatchHistory,
     clearDispatchHistory,
+    // R39（PLAN §8.71）：发前路由解析 —— 只解析不发送，无命中后端 matched=false 不猜
+    resolveRoute,
     getTransportConfig,
     setTransportConfig,
     getTransportStatus,

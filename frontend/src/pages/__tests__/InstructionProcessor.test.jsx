@@ -16,6 +16,7 @@ vi.mock('../../api', () => ({
         getRecipes: vi.fn(),
         getOperatorTemplates: vi.fn(),
         dispatchPayload: vi.fn(),
+        resolveRoute: vi.fn(),   // R39：发前路由解析（命中即选指令）
         compileWrapped: vi.fn(),
         getResponseSpec: vi.fn(),
         saveResponseSpec: vi.fn(),
@@ -614,5 +615,152 @@ describe('CP3 3a 加工页降级链与分层预览', () => {
         fireEvent.click(await sidebar().findByText('关门指令'));
         await screen.findByText(/NO DEFAULT BINDING/);
         expect(screen.getByRole('button', { name: /WRAP ○/ }).disabled).toBe(true);
+    });
+});
+
+// R39（PLAN §8.71）：发前路由接线 —— 加工页「按输入自动选指令」。
+// 这里只钉**页面可观测**的事实（调了什么、切没切、写了什么话）；
+// first-match-wins / 停用行不参与 / 无命中不猜 全在后端 resolve_route，FE 不重算。
+describe('R39 发前路由：加工页按输入自动选指令（§8.71）', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        api.getResponseSpec.mockRejectedValue(
+            Object.assign(new Error('nf'), { response: { status: 404 } })
+        );
+        api.getOperatorTemplates.mockResolvedValue([]);
+        api.getRecipes.mockResolvedValue([]);
+        api.getBindings.mockResolvedValue([]);
+    });
+
+    const fill = (index, key, value) => {
+        fireEvent.change(screen.getByLabelText(`路由键 ${index + 1}`), { target: { value: key } });
+        fireEvent.change(screen.getByLabelText(`路由值 ${index + 1}`), { target: { value: value } });
+    };
+
+    const resolveBtn = () => screen.getByRole('button', { name: '解析 RESOLVE' });
+
+    it('面板常驻执行区上方：标题 / 端点 / 展开的空输入行 / 解析按钮', async () => {
+        renderPage();
+        await selectInstruction();
+
+        expect(screen.getByText('路由输入 (ROUTE INPUTS)')).toBeTruthy();
+        expect(screen.getByText(/POST \/dispatch\/routed/)).toBeTruthy();
+        expect(screen.getByLabelText('路由键 1')).not.toBeNull();
+        expect(screen.getByLabelText('路由值 1')).not.toBeNull();
+        expect(resolveBtn()).toBeTruthy();
+        expect(screen.queryByRole('button', { name: /回到上一条/ })).toBeNull();
+    });
+
+    it('命中：键值去两端空白 → 回执目标指令即选中 + 写事实文案 + 一键回退', async () => {
+        api.resolveRoute.mockResolvedValue({
+            matched: true,
+            rule: {
+                id: 'r-1', name: 'meter 0001', condition: 'meter_id == 0001',
+                instruction_id: 'inst-2', sort_order: 0, enabled: 1,
+            },
+            instruction_id: 'inst-2',
+            instruction: INSTRUCTIONS[1],
+            invalid: [],
+            considered: 1,
+        });
+        renderPage();
+        await selectInstruction();
+        await screen.findByText(/ID: inst-1/);
+
+        fill(0, '  meter_id ', ' 0001 ');
+        fireEvent.click(resolveBtn());
+
+        await waitFor(() => expect(api.resolveRoute).toHaveBeenCalledTimes(1));
+        // 值按 JSON 标量解析：' 0001 ' → 数字 1（与条件里的数字字面量同型）
+        expect(api.resolveRoute).toHaveBeenCalledWith({ meter_id: 1 });
+        // 类型徽标当场写明会按什么发出去
+        expect(screen.getByTestId('route-type-0').textContent).toBe('数字');
+
+        // 命中即切（inst-2 关门指令），文案回执原文
+        await screen.findByText(/ID: inst-2/);
+        await screen.findByText(/命中规则「meter 0001」→ 已切到指令「关门指令」/);
+
+        // 切前留痕 → 一键回退
+        fireEvent.click(screen.getByRole('button', { name: /回到上一条/ }));
+        await screen.findByText(/ID: inst-1/);
+        await screen.findByText(/已回到指令「开门指令」/);
+    });
+
+    it('无命中（扫过规则）：维持当前指令不切，文案写清扫了几条、明确不猜', async () => {
+        api.resolveRoute.mockResolvedValue({
+            matched: false, rule: null, instruction_id: null, instruction: null,
+            invalid: [], considered: 2,
+        });
+        renderPage();
+        await selectInstruction();
+        await screen.findByText(/ID: inst-1/);
+
+        fill(0, 'meter_id', '9999');
+        fireEvent.click(resolveBtn());
+
+        await screen.findByText(/无命中 —— 扫过 2 条规则都不成立，维持当前指令「开门指令」不猜。/);
+        expect(screen.getByText(/ID: inst-1/)).not.toBeNull();
+        expect(screen.queryByRole('button', { name: /回到上一条/ })).toBeNull();
+        expect(api.resolveRoute).toHaveBeenCalledWith({ meter_id: 9999 });
+    });
+
+    it('一条规则都没参与（无规则或全停用）→ 不写「都判完了」的假事实', async () => {
+        api.resolveRoute.mockResolvedValue({
+            matched: false, rule: null, instruction_id: null, instruction: null,
+            invalid: [], considered: 0,
+        });
+        renderPage();
+        await selectInstruction();
+
+        fireEvent.click(resolveBtn());
+        await screen.findByText(/没有任何规则参与（无规则或全部停用）/);
+        expect(api.resolveRoute).toHaveBeenCalledWith({});
+    });
+
+    it('结构性缺陷有几条写几条（坏条件 / 目标指令不在册，解析时跳过）', async () => {
+        api.resolveRoute.mockResolvedValue({
+            matched: true,
+            rule: { id: 'r-1', name: 'meter 0001' },
+            instruction_id: 'inst-2',
+            instruction: INSTRUCTIONS[1],
+            invalid: [{ reason: 'syntax' }],
+            considered: 4,
+        });
+        renderPage();
+        await selectInstruction();
+
+        fireEvent.click(resolveBtn());
+        await screen.findByText(/另有 1 条结构性缺陷已跳过/);
+        await screen.findByText(/ID: inst-2/);
+    });
+
+    it('解析失败 → ERR 事实文案，不切指令、不出回退按钮', async () => {
+        api.resolveRoute.mockRejectedValue(new Error('backend down'));
+        renderPage();
+        await selectInstruction();
+        await screen.findByText(/ID: inst-1/);
+
+        fireEvent.click(resolveBtn());
+        await screen.findByText(/解析失败 —— backend down/);
+        expect(screen.getByText(/ID: inst-1/)).not.toBeNull();
+        expect(screen.queryByRole('button', { name: /回到上一条/ })).toBeNull();
+    });
+
+    it('加行 / 删行 / 收起展开（不解析时也可增减输入，且可让出执行区高度）', async () => {
+        renderPage();
+        await selectInstruction();
+
+        fireEvent.click(screen.getByRole('button', { name: '+ 添加 ADD' }));
+        expect(screen.getByLabelText('路由键 2')).not.toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: '删除输入 2' }));
+        expect(screen.queryByLabelText('路由键 2')).toBeNull();
+
+        fireEvent.click(screen.getByRole('button', { name: '收起 COLLAPSE' }));
+        expect(screen.queryByLabelText('路由键 1')).toBeNull();
+        expect(screen.getByRole('button', { name: '展开 EXPAND' })).toBeTruthy();
+
+        fireEvent.click(screen.getByRole('button', { name: '展开 EXPAND' }));
+        expect(screen.getByLabelText('路由键 1')).not.toBeNull();
     });
 });

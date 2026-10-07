@@ -4,6 +4,19 @@ import InstructionRunner from '../components/InstructionForm/InstructionRunner';
 import { useInstructionData } from '../hooks/useInstructionData';
 import NieRDatePicker from '../components/ui/NieRDatePicker';
 import { api } from '../api';
+import {
+    addRouteInput,
+    describeInputType,
+    describeResolve,
+    describeResolveError,
+    emptyRouteInputs,
+    filledInputCount,
+    mergeResolvedInstruction,
+    patchRouteInput,
+    removeRouteInput,
+    resolveInstructionId,
+    toInputsMap,
+} from '../utils/routeResolve';
 
 // wrap 状态机（批次一 D4-A + CP3 3a 降级链三级）—— 换指令按第一个命中的级解析：
 //   第 1 级  配方    GET /recipes?instruction_id= 有行且 stages 非空 → mode:'recipe'
@@ -18,6 +31,18 @@ import { api } from '../api';
 // 三级互斥（DESIGN_CorePipeline §9.3）：配方与默认协议是**或**关系，不叠加。
 const EMPTY_PROTOCOLS = [];
 
+// R39 路由输入条上的小按钮（与规则页同视觉语言：1px 硬边、无圆角、无阴影）。
+const RouteButton = ({ onClick, disabled = false, busy = false, children }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled || busy}
+        className="border border-nier-light/60 px-2.5 py-1 text-[10px] font-mono font-bold tracking-[0.2em] text-nier-light transition-colors duration-150 enabled:hover:bg-nier-light enabled:hover:text-nier-dark disabled:opacity-40"
+    >
+        {busy ? '…' : children}
+    </button>
+);
+
 export default function InstructionProcessor({
     instructions: initialInstructions,
     setInstructions: setSharedInstructions,
@@ -29,7 +54,8 @@ export default function InstructionProcessor({
         activeInstructionId,
         setActiveInstructionId,
         currentInstruction,
-        loadInstructions
+        loadInstructions,
+        setInstructions: setInstructionsState
     } = useInstructionData({
         instructions: initialInstructions,
         setInstructions: setSharedInstructions,
@@ -58,7 +84,6 @@ export default function InstructionProcessor({
         let alive = true;
         // 拉取前把 wrap 区置回 loading（旧值残留会误导）——「异步结果驱动本地状态」
         // 的标准写法；改派生 state 要动 loading/success/error 三态的整套时序。
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setWrapInfo({ status: 'loading', wrap: null });
         if (!activeInstructionId) return () => { alive = false; };
         (async () => {
@@ -125,6 +150,50 @@ export default function InstructionProcessor({
         return record;
     };
 
+    // ── R39（PLAN §8.71）发前路由：按输入自动选指令 ───────────────────────
+    // 输入表是扁平键值（与 evaluate_condition 的变量表同形）；命中 / 无命中 /
+    // 结构性缺陷全由后端 resolve_route 说了算，FE 只把回执翻译成人话、不改判。
+    const [routeRows, setRouteRows] = useState(emptyRouteInputs);
+    const [routeExpanded, setRouteExpanded] = useState(true);
+    const [routeBusy, setRouteBusy] = useState(false);
+    const [routeMsg, setRouteMsg] = useState(null);   // { kind: 'ok'|'miss'|'sys'|'err', text }
+    const [routeUndo, setRouteUndo] = useState(null); // 切换前那条 { id, name }
+
+    const instructionLabel = (inst) => inst?.name || inst?.code || inst?.id || null;
+
+    const runResolve = async () => {
+        setRouteBusy(true);
+        setRouteMsg(null);
+        try {
+            const res = await api.resolveRoute(toInputsMap(routeRows));
+            const targetId = resolveInstructionId(res);
+            if (targetId) {
+                // 切之前留痕 —— 只在真的会切时记，「回到上一条」才有意义
+                setRouteUndo(currentInstruction
+                    ? { id: currentInstruction.id, name: instructionLabel(currentInstruction) }
+                    : null);
+                setInstructionsState((prev) => mergeResolvedInstruction(prev, res));
+                setActiveInstructionId(targetId);
+            }
+            setRouteMsg({
+                kind: res?.matched ? 'ok' : 'miss',
+                text: describeResolve(res, { previousName: instructionLabel(currentInstruction) }).text,
+            });
+        } catch (err) {
+            setRouteUndo(null);
+            setRouteMsg({ kind: 'err', text: describeResolveError(err) });
+        } finally {
+            setRouteBusy(false);
+        }
+    };
+
+    const runUndo = () => {
+        if (!routeUndo) return;
+        setActiveInstructionId(routeUndo.id);
+        setRouteMsg({ kind: 'sys', text: `已回到指令「${routeUndo.name}」。` });
+        setRouteUndo(null);
+    };
+
     return (
         <div className="flex-1 flex overflow-hidden relative">
             <InstructionListSidebar
@@ -141,18 +210,107 @@ export default function InstructionProcessor({
             />
 
             <section className="flex-1 relative bg-nier-bg flex flex-col overflow-hidden">
-                {activeInstructionId ? (
-                    <InstructionRunner
-                        instruction={currentInstruction}
-                        wrapInfo={wrapInfo}
-                        onSend={handleSend}
-                        onOpenDatePicker={(val, cb) => setDatePickerState({ isOpen: true, value: val, onConfirmCallback: cb })}
-                    />
-                ) : (
-                    <div className="flex-1 flex items-center justify-center text-nier-dark/30 font-mono tracking-widest animate-pulse">
-                        SELECT A PROTOCOL FROM KNOWLEDGE BASE
+                {/* R39 发前路由：路由输入 + 解析（常驻，可收起让出执行区高度） */}
+                <div className="shrink-0 border-b border-nier-light/30 bg-nier-dark/70">
+                    <div className="flex flex-wrap items-center gap-3 px-4 py-2">
+                        <span className="text-[11px] font-bold tracking-[0.3em] text-nier-light">
+                            路由输入 (ROUTE INPUTS)
+                        </span>
+                        <span className="text-[10px] font-mono opacity-50">
+                            {`POST /dispatch/routed · ${filledInputCount(routeRows)} 项有效 · 值按 JSON 标量解析（0001 → 数字，"0001" → 字符串），空键不发`}
+                        </span>
+                        <div className="ml-auto flex flex-wrap items-center gap-2">
+                            <RouteButton onClick={runResolve} busy={routeBusy}>解析 RESOLVE</RouteButton>
+                            {routeUndo && <RouteButton onClick={runUndo}>回到上一条 (UNDO)</RouteButton>}
+                            <RouteButton onClick={() => setRouteExpanded((prev) => !prev)}>
+                                {routeExpanded ? '收起 COLLAPSE' : '展开 EXPAND'}
+                            </RouteButton>
+                        </div>
                     </div>
-                )}
+
+                    {routeMsg && (
+                        <div className={[
+                            'border-t border-nier-light/20 px-4 py-1.5 text-[11px] font-mono whitespace-pre-line',
+                            routeMsg.kind === 'err' ? 'text-red-400'
+                                : routeMsg.kind === 'miss' ? 'text-yellow-300'
+                                    : routeMsg.kind === 'sys' ? 'text-nier-light/70'
+                                        : 'text-nier-light',
+                        ].join(' ')}>
+                            {routeMsg.kind === 'err' ? 'ERR: ' : 'SYS: '}
+                            {routeMsg.text}
+                        </div>
+                    )}
+
+                    {routeExpanded && (
+                        <div className="border-t border-nier-light/20 px-4 py-2 flex flex-col gap-1.5">
+                            {routeRows.length === 0 && (
+                                <div className="text-[10px] font-mono opacity-50">
+                                    无输入行 —— 点「+ 添加 ADD」加一行。
+                                </div>
+                            )}
+                            {routeRows.map((row, index) => (
+                                <div key={`route-input-${index}`} className="flex items-center gap-2">
+                                    <input
+                                        id={`route-key-${index}`}
+                                        aria-label={`路由键 ${index + 1}`}
+                                        type="text"
+                                        value={row.key}
+                                        placeholder="meter_id"
+                                        onChange={(e) => setRouteRows((prev) => patchRouteInput(prev, index, { key: e.target.value }))}
+                                        className="w-40 shrink-0 border border-nier-light/40 bg-nier-dark px-2 py-1 text-[11px] font-mono text-nier-light focus:border-nier-light"
+                                    />
+                                    <input
+                                        id={`route-value-${index}`}
+                                        aria-label={`路由值 ${index + 1}`}
+                                        type="text"
+                                        value={row.value}
+                                        placeholder="0001"
+                                        onChange={(e) => setRouteRows((prev) => patchRouteInput(prev, index, { value: e.target.value }))}
+                                        className="min-w-0 flex-1 border border-nier-light/40 bg-nier-dark px-2 py-1 text-[11px] font-mono text-nier-light focus:border-nier-light"
+                                    />
+                                    {/* 当场显示这行会按什么类型发出去（值按 JSON 标量解析） */}
+                                    <span
+                                        data-testid={`route-type-${index}`}
+                                        title={`按${describeInputType(row.value)}发送`}
+                                        className="shrink-0 border border-nier-light/30 px-1.5 py-1 text-[9px] font-mono tracking-[0.15em] text-nier-light/60"
+                                    >
+                                        {describeInputType(row.value)}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        aria-label={`删除输入 ${index + 1}`}
+                                        title={`删除输入 ${index + 1}`}
+                                        onClick={() => setRouteRows((prev) => removeRouteInput(prev, index))}
+                                        disabled={routeRows.length <= 1}
+                                        className="border border-nier-light/40 px-2 py-1 text-[10px] font-mono text-nier-light/80 transition-colors duration-150 enabled:hover:border-nier-light enabled:hover:bg-nier-light enabled:hover:text-nier-dark disabled:opacity-30"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                            ))}
+                            <div className="pt-1">
+                                <RouteButton onClick={() => setRouteRows((prev) => addRouteInput(prev))}>
+                                    + 添加 ADD
+                                </RouteButton>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                    {currentInstruction ? (
+                        <InstructionRunner
+                            instruction={currentInstruction}
+                            wrapInfo={wrapInfo}
+                            onSend={handleSend}
+                            onOpenDatePicker={(val, cb) => setDatePickerState({ isOpen: true, value: val, onConfirmCallback: cb })}
+                        />
+                    ) : (
+                        <div className="flex-1 flex items-center justify-center text-nier-dark/30 font-mono tracking-widest animate-pulse">
+                            SELECT A PROTOCOL FROM KNOWLEDGE BASE
+                        </div>
+                    )}
+                </div>
             </section>
 
             <NieRDatePicker

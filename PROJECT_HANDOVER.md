@@ -3117,7 +3117,7 @@
       改 `instruction.py` / `trash.py` / `useInstructionData.js` / `Trash.jsx` 四行。
     - **状态**：**R37 ✅ —— 删指令不再留下没人知道的悬空规则，恢复也一并回来。**
       **明确留白（→ R38 / R39）**：规则编辑 UI（**R38 已落地 ✅ §8.70**）、
-      加工页自动选指令接线（R39 待排）；`byte_order` trim 归一（§8.66 留白）不涉。
+      加工页自动选指令接线（**R39 已落地 ✅ §8.71**）；`byte_order` trim 归一（§8.66 留白）不涉。
       提交 = `feat(R37)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
 
 87. **R38 · 发前路由 · 管理面（独立「发前路由规则」页 · CRUD + 排序草稿 + 启停；PLAN §8.70 · 2026-10-06）**
@@ -3163,9 +3163,62 @@
       本条 + 目录地图改 `api/` / `App.jsx` / `routeChunks.js`（8 页 → 9 页）/
       `pageStatus.json` 四行并补 `RoutingRules.jsx` / `routingView.js` 两行。
     - **状态**：**R38 ✅ —— 规则第一次能在页面上被建出来、排序出来、停掉、删掉。**
-      **明确留白（→ R39）**：加工页自动选指令接线 + 规则页「试解析」入口；
-      `byte_order` trim 归一（§8.66 留白）不涉。
+      **明确留白**：加工页自动选指令接线（**R39 已落地 ✅ §8.71**）；规则页「试解析」入口
+      **仍留白、未排批**；`byte_order` trim 归一（§8.66 留白）不涉。
       提交 = `feat(R38)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
+
+88. **R39 · 发前路由 · 加工页接线（路由输入 → 命中即选指令 + 一键回退；PLAN §8.71 · 2026-10-06）**
+    - **为什么**：R36 给了数据层答案、R37 补了删改的数据完整性、R38 把规则摆上页面 —— 但
+      **「换指令」这个动作一直没落地**，规则建得出来却没人用它。R39 是四批里唯一**改变执行
+      行为**的一批，因此按 §8.69 / §8.70 的拆批理由，**验收面 = 实机冒烟**（红测只能证明
+      「调了什么、显示了什么」，证不了「真把指令切过去了」）。**纯 FE、零 DDL、零 BE 改动**
+      （`POST /dispatch/routed` R36 就绪）。
+    - **接线三块**：① `api/dispatch.js::resolveRoute(inputs)` → `POST /dispatch/routed`
+      （体恒 `{ inputs }`；回执六键与 `/dispatch` 缺省三键**不重叠**，重叠即串端点）+
+      barrel；② 新纯逻辑层 **`utils/routeResolve.js`**（行增删改 · 值类型解析 ·
+      回执 → 中文事实文案四档 · 目标指令不在册时补进列表**已在册返回原引用**），零依赖
+      无环、逐个有专测；③ `InstructionProcessor.jsx` 加**「路由输入 (ROUTE INPUTS)」条**
+      （扁平键值行 + 类型徽标 + `解析 RESOLVE` + 状态条 + 收起/展开让位），**命中即
+      `setActiveInstructionId` 选中 + `回到上一条 (UNDO)` 一键回退**，无命中按回执
+      `matched=false` **不猜、维持现状**，失败出 `ERR:` 事实文案。
+    - **冒烟抓到的类型缺口（本批最重要的一条）**：R36 的后端测试写的是
+      `resolve_route({"meter_id": 1}, …)` **整数**，而加工页输入框只可能给**字符串**；
+      条件里的 `0001` 是**数字字面量**，`core/condition._equal` 对**数字 vs 字符串抛错**
+      → `resolve_route` 当普通不命中吞掉 —— **数字条件与全部数值比较符 `> < >= <=`
+      从页面侧静默失效**。定的口径 = **值按 JSON 标量解析**（`0001` → 数字 1、
+      `"0001"` → 字符串 0001、其余按原文串），键去空白、空键行整行不发；顶栏提示语写明
+      这条规则、**每行出类型徽标**（`空` / `数字` / `字符串`）当场写明会按什么发。
+      不做类型下拉 —— 多一列控件换不来更多信息。
+    - **渲染条件改判**：`activeInstructionId` → **`currentInstruction`**（回执给了 id 却
+      查不到指令时落空态，而非拿 `null` 渲染 `InstructionRunner` 崩掉）；正常路径分支
+      不可达，行为逐字不变。顺手**移除一条随组件变大而失效的 `eslint-disable`**
+      （v7 编译器分析不再报该点 → 判 unused 新引入 1 条 warning），lint 回 **0 问题**，
+      解释注释原样保留。
+    - **新增 1 个文件**：`frontend/src/utils/routeResolve.js`；改 3 个
+      （`api/dispatch.js`、`api/index.js`、`pages/InstructionProcessor.jsx`）。
+    - **测试（红测先行有据，两档记账）**：实现前 3 个文件全红 —— `../routeResolve`
+      **未解析** / `resolveRoute` **不是函数** / 面板元素**不存在**，**红因全部 = 缺特性
+      本身**（同一轮 23 条既有用例全绿）；落实现后翻 **2 条断言随类型语义改写**
+      → **测试随新事实改写**；本批**无**「测试自身 bug」这一档。
+    - **实机冒烟 8 组**：面板常驻 → 键值去空白**命中切指令**（`ID` 由 `SAMPLE-INST-HEARTBEAT`
+      → `SAMPLE-INST-STATUS`）+ 事实文案 + UNDO 回退 → 无命中**不切不出回退** →
+      `0001` 按数字中、按字符串不中、`"0001"` 按字符串中（**类型语义双向验证**）→
+      加行 / 删行 / 收起 / 展开；控制台 0 error，冒烟规则软删 + 彻底清除（规则 0 条）。
+    - **验收**：**FE 1405 → 1445/1445（+40 = 27 纯逻辑 + 6 api + 7 页面）**、
+      **BE 1002/1002**（零改动复跑）、`npx vite build` EXIT=0、`npm run lint` EXIT=0
+      **且 0 warning**、yorha-ui 校验器 **7 个改动文件 0 违规**、md 表列数 mismatches = 0；
+      **零 DDL → 无 Migration、无 `chore(db)`**、不引 pytest、无新 pip 依赖、
+      `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、**`/dispatch` 缺省口径未动**。
+    - **文档同步（同批）**：PLAN **§8.71 新节** + §1 新增 `R39` 行 + §8.68 一 批次切分与
+      八 留白改指 + §8.69 八 留白与拆批表改指 + §8.70 六 留白改指（**规则页「试解析」
+      明写仍留白**）+ 两处拍板表改「R39 ✅」；`BUSINESS_SCENARIOS` 72 / 91 两行改指；
+      本条 + 目录地图改 `InstructionProcessor.jsx` / `api/dispatch.js` / `api/index.js`
+      三行并补 `utils/routeResolve.js` 一行。
+    - **状态**：**R39 ✅ —— 「按输入挑指令」第一次在页面上被真正执行，并且能一键退回。**
+      **明确留白**：规则页「试解析」入口（§8.70 六）**仍留白、未排批**；输入表不做持久化
+      （本仓前端零 `localStorage` 先例，不为此新引落盘样式）；`byte_order` trim 归一
+      （§8.66 留白）不涉；规则表仍不在数据中心 8 域清单。
+      提交 = `feat(R39)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
@@ -3217,7 +3270,7 @@
 ### frontend/src/
 | 文件 | 职责 | 状态 |
 |---|---|---|
-| `src/api/` | 全部 HTTP 调用，按域拆分：`client.js`（fetch 助手）/ `protocols.js` / `instructions.js` / `operators.js` / `export.js` / `bindings.js` / `compile.js` / `dispatch.js` / `responseSpecs.js` / `sequences.js` / **`routing.js`（R38：`/routing-rules` 五方法）** 等 + `index.js` 桶导出 `api` 对象；**导入路径 `./api` 不变** | ✅ 原 `src/api.js` 已拆 |
+| `src/api/` | 全部 HTTP 调用，按域拆分：`client.js`（fetch 助手）/ `protocols.js` / `instructions.js` / `operators.js` / `export.js` / `bindings.js` / `compile.js` / `dispatch.js`（**R39 增 `resolveRoute` → `POST /dispatch/routed`**）/ `responseSpecs.js` / `sequences.js` / **`routing.js`（R38：`/routing-rules` 五方法）** 等 + `index.js` 桶导出 `api` 对象；**导入路径 `./api` 不变** | ✅ 原 `src/api.js` 已拆 |
 | `src/constants.js` | `OP_CODES` / `CATEGORIES` / `OP_PRIORITY` / `CATEGORY_ORDER`（BITFIELD 已含） | ✅ |
 | `src/utils/InstructionEncoder.js` | **编码核心**（hex 生成、依赖解析、BITFIELD 打包） | ✅ 权威编码逻辑，勿随意改 |
 | `src/utils/formula.js` | 公式求值 / 校验和算法 | ✅ |
@@ -3227,6 +3280,7 @@
 | `src/utils/toFrameBlocks.js` | 导出映射 `byte_len→byte_length`、`op_code→type`（供 `/export/binary`） | ✅ 新增（自 Orchestration.jsx 抽出） |
 | `src/utils/download.js` | `triggerBlobDownload`（.hex / .bin 下载共用） | ✅ 新增 |
 | `src/utils/routingView.js` | **R38 规则页纯逻辑**：`emptyRuleDraft` / `defaultSortOrder`（新建落末位）/ `validateRuleDraft`（名称+条件+目标指令，条件**委托 `condition.checkCondition` 同一 SSOT**）/ `moveRule`（上移下移，只改草稿）/ `renumber`（稠密重编 0..N-1）/ `changedSortOrder`（**只回写真变化的行**）/ `describeRoutingSaveError`（后端 detail → 中文事实文案） | ✅ 新增（R38 · §8.70） |
+| `src/utils/routeResolve.js` | **R39 加工页接线纯逻辑**：行增删改（`addRouteInput` / `removeRouteInput` / `patchRouteInput`）· **`parseInputValue` 值按 JSON 标量解析**（`0001` → 数字 1、`"0001"` → 字符串 0001、其余按原文串 —— 后端 `_equal` 数字/字符串不同型即不中）· `describeInputType` 类型徽标 · `toInputsMap`（键去空白、空键行不发、后写赢）· `resolveInstructionId` / `mergeResolvedInstruction`（不在册补列表，**已在册返回原引用**）· `describeResolve` **回执 → 中文事实文案四档**（命中 / 命中没目标 / 扫过无命中 / 零参与）+ `describeResolveError` | ✅ 新增（R39 · §8.71） |
 | `src/App.jsx` | 路由壳：`PAGE_REGISTRY` 驱动侧栏与 `Routes`，`renderRouteElement` 按 `pageKey` 取组件后注入各页 props（**R38 加 `case 'routing'`，只注入 `instructions`**）；R35 起页面改动态 import + `<Suspense>`（首屏拆包），`NavItem` 悬停/聚焦预取 | ✅ |
 | `src/utils/routeChunks.js` | **页面模块单一登记表** `ROUTE_LOADERS`（**9 页动态 import**，R38 加第 9 页）+ 缓存的 `React.lazy` + 幂等 `prefetchRoute` + `__resetRouteCaches`（仅测试） | ✅ 新增（R35） |
 | `src/components/RouteLoading.jsx` | 路由级拆包的 Suspense fallback：`[ MODULE LOAD ]` + 按路由出中文页名，未知路由回落站点名，不画假百分比 | ✅ 新增（R35） |
@@ -3235,7 +3289,7 @@
 | `src/components/ui/` | `NieRModal` / `NieRDatePicker` 通用 UI（FeaturePlaceholder 已随第 13 单死代码清理批删除） | ✅ |
 | `src/components/editor/` | 编辑器域组件：`Canvas` / `Block` / `BlockPropertiesPanel` / `ComponentPalette` / `BitFieldEditor` / `ParamConfigForm`（参数编辑器拆至 `editor/paramConfig/`）/ `InstructionListSidebar` / `ProtocolListSidebar` / `ProtocolPropertiesPanel` | ✅ |
 | `src/components/InstructionForm/InstructionRunner.jsx` | 动态表单 + 发送/导出按钮（已拆：`normalizeRunnerInstruction.js` 归一化、`RunnerFieldTree.jsx` 字段树、`TransmissionLog.jsx` 日志） | ✅ |
-| `src/pages/InstructionProcessor.jsx` | 指令加工页，`handleSend` 走 `/dispatch` | ✅ |
+| `src/pages/InstructionProcessor.jsx` | 指令加工页，`handleSend` 走 `/dispatch`；**R39 起顶部常驻「路由输入 (ROUTE INPUTS)」条** —— 键值行 + 类型徽标 + `解析 RESOLVE`（`POST /dispatch/routed`）+ 状态条 + `回到上一条 (UNDO)`，**命中即 `setActiveInstructionId` 选中、无命中不猜**；渲染条件为 `currentInstruction`（目标不在册落空态不崩） | ✅（§8.71） |
 | `src/pages/Orchestration.jsx` | 编排绑定页，EXPORT .BIN 走 `/export/binary` | ✅ |
 | `src/pages/Instruction.jsx` | 指令管理页（含 `handleAddBlock` 默认 bits 初始化） | ✅ |
 | `src/pages/Blueprint.jsx` | 旧蓝图页 | ⚠️ **未接线**（保留勿删，不进路由） |

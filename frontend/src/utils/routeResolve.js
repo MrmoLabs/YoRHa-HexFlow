@@ -1,0 +1,122 @@
+// R39（PLAN §8.71）：发前路由接线的纯逻辑层 —— 加工页「按输入自动选指令」。
+//
+// 三条口径（与后端 resolve_route 逐字对齐，FE 只呈现不改判）：
+//  ① **输入表是扁平键值**（与 evaluate_condition 的变量表同形）：键去两端空白、
+//     空键行整行不发 —— 手抖多敲一个空格，不该让整条规则静默不命中；值**按 JSON
+//     标量解析**（见 parseInputValue）—— 后端数字/字符串类型不同即不中，FE 只送
+//     字符串会让数字条件与全部数值比较符静默失效；
+//  ② **回执怎么说就怎么显示**：matched 由后端给，无命中 = 不猜、维持现状，FE 不许
+//     自己挑一条「看起来差不多」的指令顶上；结构性缺陷有几条写几条；
+//  ③ **命中才切、切前留痕**：目标指令回执里没带回就不切、文案也不谎称切了；
+//     切之前记下上一条，供「回到上一条」一键回退。
+//
+// 本仓未装 @testing-library/jest-dom → 组件里不依赖 matchers 扩展。
+export const emptyRouteInput = () => ({ key: '', value: '' });
+
+export const emptyRouteInputs = () => [emptyRouteInput()];
+
+export const addRouteInput = (rows) => [...rows, emptyRouteInput()];
+
+export const removeRouteInput = (rows, index) => rows.filter((_, i) => i !== index);
+
+export const patchRouteInput = (rows, index, patch) => rows.map((row, i) => (
+    i === index ? { ...row, ...patch } : row
+));
+
+// 行表 → 后端 inputs：**值按 JSON 标量解析**（`0001` → 数字 1，`"0001"` → 字符串
+// 0001，其余按字符串原文发）。这条不是 FE 自作聪明：后端 `_equal` 数字/字符串
+// **类型不同就抛错（= 不命中）**，而条件里的 `0001` 是数字字面量、`>` `<` `>=`
+// `<=` 也只在两端同为数字时才有意义 —— FE 的输入框只有文本，不解析类型，数字条件
+// 与全部数值比较符都会静默永不命中（R39 实机冒烟抓到）。键去两端空白、空键行不发；
+// 键重复时后写的赢（面板按行编辑，后一行才是用户最后确认的值）。
+export const parseInputValue = (raw) => {
+    const text = String(raw ?? '').trim();
+    if (!text) return '';
+    // 纯数字（含 0001 / 1.5 / 1e3）按数字发
+    if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(text)) return Number(text);
+    // 显式加引号 = 按字符串（「0001」这种前导零串唯一出口）
+    if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
+        try {
+            const inner = JSON.parse(text);
+            if (typeof inner === 'string') return inner;
+        } catch { /* 引号内不是合法 JSON → 退回去引号原文 */ }
+        return text.slice(1, -1);
+    }
+    return text;
+};
+
+// 输入行右侧的类型徽标：让用户当场看见「这行会按什么类型发出去」。
+export const describeInputType = (raw) => {
+    const value = parseInputValue(raw);
+    if (value === '') return '空';
+    return typeof value === 'number' ? '数字' : '字符串';
+};
+
+export const toInputsMap = (rows) => (rows || []).reduce((acc, row) => {
+    const key = String(row?.key ?? '').trim();
+    if (!key) return acc;
+    acc[key] = parseInputValue(row?.value);
+    return acc;
+}, {});
+
+export const filledInputCount = (rows) => (rows || []).filter(
+    (row) => String(row?.key ?? '').trim() !== ''
+).length;
+
+// 切不切只看回执给没给 id —— 两处都缺就是「没给」，不硬凑。
+export const resolveInstructionId = (res) => {
+    if (res?.instruction_id) return res.instruction_id;
+    if (res?.instruction?.id) return res.instruction.id;
+    return null;
+};
+
+// 目标指令不在册 → 补进列表尾部（R36 给全量指令全文正是为此，省一次 /instructions）。
+// 已在册 / 没带全文时**返回原引用**，不制造无意义的重渲染。
+export const mergeResolvedInstruction = (instructions, res) => {
+    const list = instructions || [];
+    const incoming = res?.instruction;
+    if (!incoming || !incoming.id) return list;
+    if (list.some((item) => item.id === incoming.id)) return list;
+    return [...list, incoming];
+};
+
+const invalidNote = (res) => {
+    const count = Array.isArray(res?.invalid) ? res.invalid.length : 0;
+    if (!count) return '';
+    return `另有 ${count} 条结构性缺陷已跳过（条件语法坏掉 / 目标指令不在册）。`;
+};
+
+// 回执 → { matched, text }。matched 是**后端给的**，这里原样带出去供上层选样式；
+// text 只陈述已发生的事实（扫了几条、切没切、维持的是谁），不断言用户意图。
+export const describeResolve = (res, { previousName = null } = {}) => {
+    const note = invalidNote(res);
+
+    if (res?.matched) {
+        const ruleName = res.rule?.name || '（规则未回带名称）';
+        const targetId = resolveInstructionId(res);
+        if (!targetId) {
+            return {
+                matched: true,
+                text: `命中规则「${ruleName}」→ 但回执未带回目标指令，未切换。${note}`,
+            };
+        }
+        const instName = res.instruction?.name || res.instruction?.code || targetId;
+        return {
+            matched: true,
+            text: `命中规则「${ruleName}」→ 已切到指令「${instName}」。${note}`,
+        };
+    }
+
+    const considered = Number(res?.considered) || 0;
+    const why = considered === 0
+        ? '没有任何规则参与（无规则或全部停用）'
+        : `扫过 ${considered} 条规则都不成立`;
+    const kept = previousName
+        ? `当前指令「${previousName}」`
+        : '当前未选中状态';
+    return { matched: false, text: `无命中 —— ${why}，维持${kept}不猜。${note}` };
+};
+
+export const describeResolveError = (err) => (
+    `解析失败 —— ${err?.message || '无法连接后端服务'}`
+);
