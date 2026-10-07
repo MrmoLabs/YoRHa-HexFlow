@@ -10,10 +10,12 @@ import { triggerBlobDownload } from '../utils/download';
 // profiles / templates），manifest 加 domainVersion 域清单。
 // R8（PLAN §8.46）：按域导入 —— R7 出线的 5 个新域补回灌（本批把 R7 的「不碰导入」
 // 收口），入参是 ZIP 里解出来的任一域文件，形态自动识别域名。
-// R17（PLAN §8.49）：按域**导出** —— 8 域芯片只勾想下盘的域（?domains=…），缺省不带参数
-// = 全 8 域逐字不变；协议数据仍走协议页既有导出，不重开「第 9 域」拍板项。
+// R17（PLAN §8.49）：按域**导出** —— 9 域芯片只勾想下盘的域（?domains=…），缺省不带参数
+// = 全 9 域；协议数据仍走协议页既有导出，不重开「第 9 域」拍板项。
 // R19（PLAN §8.50 · 用户拍板 ②-2）：数据包**示例下载**走「动态导出」口径 —— 复用 R17 的
-// ?domains= 子集出按域导入那 5 域（当前库现做，不塞仓内静态样例），零后端改动。
+// ?domains= 子集出按域导入那些域（当前库现做，不塞仓内静态样例），零后端改动。
+// R44（PLAN §8.76）：**规则表进数据包** —— `routing_rules` 成为第 9 域（导出芯片 +
+// 按域回灌 + 示例包都带上它），导出 8 域 → 9 域。
 // 端点见 backend/routers/datahub.py；恢复前会自动留 pre-restore 安全快照，按域导入前留 pre-import。
 
 const formatBytes = (bytes) => {
@@ -34,14 +36,16 @@ const COUNT_LABELS = [
     ['responseSpecs', '应答规格 SPECS']
 ];
 
-// R8（PLAN §8.46）：按域导入 —— 一个选择器吃 5 个域文件，**按顶层数组键识别域名**
+// R8（PLAN §8.46）：按域导入 —— 一个选择器吃 6 个域文件，**按顶层数组键识别域名**
 // （键名与后端 `/datahub/import/<domain>` 的 path 一一对应，transport 用 settings 键）。
+// R44（§8.76）：`routing_rules` 入列（第 6 个可回灌域）。
 const DOMAIN_KEYS = [
     ['recipes', 'recipes'],
     ['sequences', 'sequences'],
     ['settings', 'transport'],
     ['profiles', 'profiles'],
-    ['templates', 'templates']
+    ['templates', 'templates'],
+    ['routing_rules', 'routing_rules']
 ];
 
 const DOMAIN_LABELS = {
@@ -49,12 +53,14 @@ const DOMAIN_LABELS = {
     sequences: '序列',
     transport: '传输配置',
     profiles: '设备档案',
-    templates: '算子模板'
+    templates: '算子模板',
+    routing_rules: '发前路由规则'
 };
 
-// R17（PLAN §8.49）：按域独立导出 —— 8 域芯片，**顺序 = 后端 BUNDLE_DOMAIN_VERSIONS
+// R17（PLAN §8.49）：按域独立导出 —— 9 域芯片，**顺序 = 后端 BUNDLE_DOMAIN_VERSIONS
 // 键序 = 导出序**（送后端前按这张表排序，不按点击顺序）。`frames` 是独立域（内容派生
-// 自指令，但 manifest 八键之一），`relations` 可单选（协议页既有导出照旧不动）。
+// 自指令，但 manifest 域之一），`relations` 可单选（协议页既有导出照旧不动）。
+// R44（§8.76）：追加 `routing_rules`（排末尾，前面 8 域的相对导出序不动）。
 const BUNDLE_DOMAINS = [
     ['instructions', '指令'],
     ['relations', '关系绑定与应答规格'],
@@ -63,15 +69,16 @@ const BUNDLE_DOMAINS = [
     ['sequences', '序列'],
     ['transport', '传输配置'],
     ['profiles', '设备档案'],
-    ['templates', '算子模板']
+    ['templates', '算子模板'],
+    ['routing_rules', '发前路由规则']
 ];
 
-// R19（PLAN §8.50 · 2026-10-03 用户拍板 ②-2「动态导出」）：示例包 = **按域导入的 5 域**
-// （recipes / sequences / transport / profiles / templates）—— 与 R8
-// `POST /datahub/import/{domain}` 能吃的范围逐字对齐：下下来就能直接试回灌。
+// R19（PLAN §8.50 · 2026-10-03 用户拍板 ②-2「动态导出」）：示例包 = **按域导入的那些域**
+// —— 与 `POST /datahub/import/{domain}` 能吃的范围逐字对齐：下下来就能直接试回灌。
 // 内容用**当前库现做**（不是仓里塞的静态样例，避免与 schema 漂移）；顺序 = `BUNDLE_DOMAIN_VERSIONS`
 // 键序（即 R17 的导出序），走 `exportDataBundle(数组)` 的 `?domains=` 子集口径，**零后端改动**。
-const SAMPLE_DOMAINS = ['recipes', 'sequences', 'transport', 'profiles', 'templates'];
+// R44 起是 6 个（原 5 域 + routing_rules）。
+const SAMPLE_DOMAINS = ['recipes', 'sequences', 'transport', 'profiles', 'templates', 'routing_rules'];
 
 const PanelTitle = ({ children, hint }) => (
     <div className="flex items-baseline justify-between border-b border-nier-light/30 px-4 py-2 bg-nier-light/5">
@@ -103,7 +110,7 @@ export default function DataHub() {
     // 批次四 4a: 已解析待确认的关系数据包（{name, payload}）；确认才 POST。
     const [importTarget, setImportTarget] = useState(null);
     const importInputRef = React.useRef(null);
-    // R8（PLAN §8.46）：按域导入 —— 5 个新域文件共用一个选择器，形态自动识别域名
+    // R8（PLAN §8.46）：按域导入 —— 6 个域文件共用一个选择器，形态自动识别域名
     const [domainTarget, setDomainTarget] = useState(null);
     const domainInputRef = React.useRef(null);
     // 批次四 4b：绑定矩阵（指令 → 默认协议 → 槽位），utils/bindingMatrix 纯函数产出
@@ -144,7 +151,7 @@ export default function DataHub() {
             const blob = await api.exportDataBundle();
             const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
             triggerBlobDownload(blob, `yorha-datahub-${stamp}.zip`);
-            setSysMsg(`导出完成：${formatBytes(blob.size)}（8 域：instructions.json + relations.json + recipes.json + sequences.json + transport.json + profiles.json + templates.json + frames/*.bin|hex，清单见 manifest.json）`);
+            setSysMsg(`导出完成：${formatBytes(blob.size)}（9 域：instructions.json + relations.json + recipes.json + sequences.json + transport.json + profiles.json + templates.json + routing_rules.json + frames/*.bin|hex，清单见 manifest.json）`);
         } catch (err) {
             setSysMsg(`导出失败：${err?.message || '未知错误'}`);
         } finally {
@@ -152,7 +159,7 @@ export default function DataHub() {
         }
     };
 
-    // R17（PLAN §8.49）：按域独立导出 —— 选中的域名**按 8 域表顺序**送后端
+    // R17（PLAN §8.49）：按域独立导出 —— 选中的域名**按 9 域表顺序**送后端
     // （`?domains=a,b`，顺序由服务端导出序决定，不看点击顺序）；全不选 = 不发请求
     // （全量口径只走上面的「下载 ZIP」按钮，存量请求一个字节都不变）。
     const toggleExportDomain = (key) => {
@@ -422,21 +429,23 @@ export default function DataHub() {
                                     （Orchestrator 编译，未实现编码语义以 0x00 占位），
                                     以及 R7 补进来的 5 个域
                                     <span className="font-mono"> recipes / sequences / transport / profiles / templates </span>
-                                    （配方、序列含步骤、传输配置、设备档案、算子模板）。
+                                    （配方、序列含步骤、传输配置、设备档案、算子模板）与 R44 补进来的
+                                    <span className="font-mono"> routing_rules </span>
+                                    （发前路由规则）。
                                     <span className="font-mono"> manifest.json </span>
-                                    给出 8 域清单（<span className="font-mono">domainVersion</span>
+                                    给出 9 域清单（<span className="font-mono">domainVersion</span>
                                     与逐域行数），回收站里的行不进包。
                                 </p>
                                 <div className="flex flex-wrap items-center gap-3">
                                     <ActionButton onClick={handleExport} busy={busy === 'export'}>
                                         下载 ZIP (EXPORT)
                                     </ActionButton>
-                                    {/* R19（PLAN §8.50）：示例包 —— 动态取当前库、只出按域导入的 5 域 */}
+                                    {/* R19（PLAN §8.50）：示例包 —— 动态取当前库、只出按域导入的 6 域 */}
                                     <ActionButton onClick={handleExportSample} busy={busy === 'sample'}>
                                         下载示例包 (SAMPLE)
                                     </ActionButton>
                                     <span className="text-[10px] opacity-50">
-                                        示例包 = 按域导入那 5 个域，取自当前库（动态，非仓内静态样例）
+                                        示例包 = 按域导入那 6 个域，取自当前库（动态，非仓内静态样例）
                                     </span>
                                 </div>
                                 {/* R17（PLAN §8.49）：按域独立导出 —— 只勾想下盘的域；
@@ -499,13 +508,13 @@ export default function DataHub() {
                             </div>
                         </section>
 
-                        {/* R8（PLAN §8.46）：按域导入 —— R7 出线的 5 个新域回灌 */}
+                        {/* R8（PLAN §8.46）：按域导入 —— R7 出线的 5 个新域回灌；R44 补 routing_rules */}
                         <section className="border border-nier-light/30 bg-nier-dark/60">
-                            <PanelTitle hint="POST /datahub/import/{recipes|sequences|transport|profiles|templates}">按域导入 (DOMAIN IMPORT)</PanelTitle>
+                            <PanelTitle hint="POST /datahub/import/{recipes|sequences|transport|profiles|templates|routing_rules}">按域导入 (DOMAIN IMPORT)</PanelTitle>
                             <div className="p-4 flex flex-col gap-3">
                                 <p className="text-xs leading-6 opacity-80">
-                                    从 ZIP 里解出 R7 导出的任一域文件
-                                    <span className="font-mono"> recipes / sequences / transport / profiles / templates </span>
+                                    从 ZIP 里解出 R7 / R44 导出的任一域文件
+                                    <span className="font-mono"> recipes / sequences / transport / profiles / templates / routing_rules </span>
                                     选入：按顶层数组键自动识别域名，按
                                     <span className="font-mono"> id </span>
                                     upsert、逐行报告；父宿主缺失（协议 / 指令不在）或该行正在回收站里的，

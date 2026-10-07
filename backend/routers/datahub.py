@@ -29,6 +29,11 @@
   ① 纯函数顶层校验（400 **不落快照**）→ ② `pre-import` 快照（复用 R1）→ ③ 逐行
   upsert、部分成功即部分落库。校验复用各域 SSOT（`recipe.resolve_stages` /
   `sequence.normalize_sequence` / `transport.validate_config`），不写第二套口径。
+- PLAN §8.76 R44（规则表进数据包）：**8 域 → 9 域** —— `routing_rules.json` +
+  `POST /datahub/import/routing_rules`。行序 = 匹配顺序 `(sort_order, name, id)`、
+  `deleted_at` / `created_at` / `updated_at` 三个记账列不进包；条件语法交
+  `core/condition.parse_condition`（保存侧同一入口）、目标指令必须是**活行**
+  （缺失 → 单行跳过，不写出已悬空的规则）、名称唯一**含回收站占名**。
 
 纯函数（fields_to_blocks / compile_blocks / frame_bytes / format_hex_text /
 build_bundle / sanitize_filename / validate_backup_name / create_backup /
@@ -56,6 +61,8 @@ from sqlalchemy.orm import Session
 
 from backend.core import diagnostics as diag
 from backend.core import sequence_runner, transport
+# R44（§8.76）：路由规则的条件语法 —— **保存侧同一入口**，datahub 不写第二套判据
+from backend.core.condition import ConditionError, parse_condition
 from backend.core.field_blocks import _presence_hit, fields_to_blocks  # noqa: F401 —— 纯搬入 core 后原名再导出（行为逐字不变）
 from backend.core.orchestrator import Orchestrator
 from backend.core.response_match import normalize_spec
@@ -84,6 +91,7 @@ from backend.db.models import (
     ProtocolBinding,
     ProtocolTemplate,
     ResponseSpec,
+    RoutingRule,
     Sequence,
     SequenceStep,
     TransportSetting,
@@ -489,10 +497,11 @@ def import_relations(db: Session, payload) -> dict:
 # --------------------------------------------------------------------------
 # 本批**只做出线，不碰导入**（按域导入端点 = R8；pre-import 快照已在 R1 复用）。
 #
-# 域清单 = `BUNDLE_DOMAIN_VERSIONS` 的键（8 个，键序即导出序）：
+# 域清单 = `BUNDLE_DOMAIN_VERSIONS` 的键（键序即导出序）：
 #   instructions / relations / frames 是改前就有的 3 域；
 #   recipes / sequences / transport / profiles / templates 是本批新增的 5 域
 #   （拍板「bundle 增 5 域」的那 5 张缺表 → 5 个新 JSON 文件）。
+#   **R44（§8.76）再加第 9 域 `routing_rules`**（规则表进数据包），排末尾。
 #
 # 纪律一：**读端点只出活行**（R6 §8.43）—— 回收站行不进包，`sequence_steps`
 #   随宿主同进同出（宿主已删则其步骤一步都不出）。
@@ -505,10 +514,14 @@ SEQUENCES_SCHEMA_VERSION = 1
 TRANSPORT_SCHEMA_VERSION = 1
 PROFILES_SCHEMA_VERSION = 1
 TEMPLATES_SCHEMA_VERSION = 1
+ROUTING_RULES_SCHEMA_VERSION = 1
 
-# 8 域清单（键序 = 导出序 = manifest.domainVersion 的键序）。值 = 该域自己的
-# schemaVersion：instructions/relations 直接取各自文件内的 `schemaVersion`，
-# 三个既有域本批不改版（仍是 1），新域从 1 起。
+# 域清单 = `BUNDLE_DOMAIN_VERSIONS` 的键（键序即导出序 = manifest.domainVersion 的键序）。
+# 值 = 该域自己的 schemaVersion：instructions/relations 直接取各自文件内的
+# `schemaVersion`，既有域本批不改版（仍是 1），新域从 1 起。
+#
+# R7（§8.45）落 3 → 8；**R44（§8.76）落 8 → 9** —— 追加 `routing_rules`（发前路由规则），
+# 排**末尾**：前面 8 域的相对导出序一个字节都没动，只在尾部多一域。
 BUNDLE_DOMAIN_VERSIONS = {
     "instructions": 1,
     "relations": 1,
@@ -518,6 +531,7 @@ BUNDLE_DOMAIN_VERSIONS = {
     "transport": TRANSPORT_SCHEMA_VERSION,
     "profiles": PROFILES_SCHEMA_VERSION,
     "templates": TEMPLATES_SCHEMA_VERSION,
+    "routing_rules": ROUTING_RULES_SCHEMA_VERSION,
 }
 
 
@@ -645,18 +659,52 @@ def templates_export_payload(templates) -> dict:
     }
 
 
-def bundle_manifest(instruction_payload, relations, extra_payloads, frames, domains=None) -> dict:
-    """manifest.json 载荷（**纯函数**，便于单测钉「8 域清单」）。
+def routing_rule_export_row(row) -> dict:
+    """RoutingRule → routing_rules.json 条目（列序 = models.py 减三个记账列）。
 
-    - `domainVersion`：8 域清单（键序 = 导出序），值 = 该域 schemaVersion。
+    **不带 `created_at` / `updated_at` / `deleted_at`** —— 镜像 profiles /
+    templates / sequences 的先例（时间戳是机器本地记账，不是内容）：进包即
+    「导出可 diff」，回灌后用目标机时钟，也不会把源机的回收站状态搬过去。
+    """
+    return {
+        "id": row.id,
+        "name": row.name,
+        "condition": row.condition,
+        "instruction_id": row.instruction_id,
+        "sort_order": row.sort_order or 0,
+        "enabled": 1 if row.enabled else 0,
+        "description": row.description,
+    }
+
+
+def routing_rules_export_payload(rules) -> dict:
+    """routing_rules.json 载荷（**行序在此定死 = 匹配顺序**）。
+
+    `(sort_order, name, id)` 就是 `core/routing.py` 的匹配定序键 —— 行序即优先级，
+    回灌即还原。**排序收在这一处**（调用方传进来的顺序不作数），免得导出与匹配
+    两处各排一次序然后悄悄分叉。
+    """
+    rows = sorted(
+        rules, key=lambda r: (r.sort_order or 0, str(r.name or ""), str(r.id))
+    )
+    return {
+        "schemaVersion": ROUTING_RULES_SCHEMA_VERSION,
+        "routing_rules": [routing_rule_export_row(r) for r in rows],
+    }
+
+
+def bundle_manifest(instruction_payload, relations, extra_payloads, frames, domains=None) -> dict:
+    """manifest.json 载荷（**纯函数**，便于单测钉「9 域清单」）。
+
+    - `domainVersion`：9 域清单（键序 = 导出序），值 = 该域 schemaVersion。
       下游按它判断「这包能不能按域回灌」—— 版本不同即拒（R8 的按域导入用）。
     - `domainCounts`：**键集必须与 `domainVersion` 严格相等**（少一域、多一域
       都算 bug），值 = 该域行数；`sequences` 计的是序列数（步骤数看该文件本身）。
     - `instructionCount` / `relations` / `frames` 三键为存量键，**只做加法不变**。
 
     R17（§8.49）按域独立导出：`domains` 非 None 时 `domainVersion` · `domainCounts`
-    **只留包里真有的域**（键序仍按 8 域表，不是按用户给的顺序）—— manifest 描述的是
-    **这个包**而不是源库。`domains=None`（缺省）= 现行 8 域**逐字不变**；三个存量子键
+    **只留包里真有的域**（键序仍按 9 域表，不是按用户给的顺序）—— manifest 描述的是
+    **这个包**而不是源库。`domains=None`（缺省）= 全 9 域**逐字不变**；三个存量子键
     一律取**传进来的载荷**（未选中的域在 export_bundle 侧已清成 0 行形态）。
     """
     counts = {
@@ -668,14 +716,15 @@ def bundle_manifest(instruction_payload, relations, extra_payloads, frames, doma
         "transport": len(extra_payloads["transport"]["settings"]),
         "profiles": len(extra_payloads["profiles"]["profiles"]),
         "templates": len(extra_payloads["templates"]["templates"]),
+        "routing_rules": len(extra_payloads["routing_rules"]["routing_rules"]),
     }
     expected = list(BUNDLE_DOMAIN_VERSIONS)
     if list(counts) != expected:
         raise ValueError(
             f"域清单不一致：counts={list(counts)} vs domains={expected}"
         )
-    # R17：按域导出只留真在包里的域（键序仍按 8 域表，不是按用户给的顺序）；
-    # 缺省 domains=None = 全 8 域，逐字不变。
+    # R17：按域导出只留真在包里的域（键序仍按 9 域表，不是按用户给的顺序）；
+    # 缺省 domains=None = 全 9 域，逐字不变。
     keep = expected if domains is None else [
         name for name in expected if name in set(domains)
     ]
@@ -756,6 +805,12 @@ def profiles_rows(payload) -> list:
 
 def templates_rows(payload) -> list:
     return _domain_rows(payload, "templates", TEMPLATES_SCHEMA_VERSION, "templates.json")
+
+
+def routing_rules_rows(payload) -> list:
+    return _domain_rows(
+        payload, "routing_rules", ROUTING_RULES_SCHEMA_VERSION, "routing_rules.json"
+    )
 
 
 def import_recipes(db: Session, payload) -> dict:
@@ -1094,6 +1149,118 @@ def import_operator_templates(db: Session, payload) -> dict:
     return report
 
 
+def import_routing_rules(db: Session, payload) -> dict:
+    """回灌 `routing_rules.json`：按 id upsert，逐行独立提交、逐行报告。
+
+    四条口径全部与**规则页保存侧对齐**，datahub 不写第二套判据：
+
+    - **条件语法** → `core/condition.parse_condition`（SSOT，同 `routing._validate_condition`），
+      坏条件单行跳过，不落到运行期才被匹配器记成缺陷；
+    - **目标指令必须是活行**（同 `routing._require_instruction`）→ 缺失单行跳过 ——
+      镜像 `import_sequences` 的「宿主缺失整条跳过」，不写出一条一进包就悬空的规则
+      （悬空行在发前路由里会直接变成 `INSTRUCTION_MISSING` 缺陷行，且只能直改库造出来）；
+    - **名称唯一查全表**（含回收站占名，同 `routing._ensure_name_free`）→ 撞车跳过；
+    - **id 自己在站里** → 跳过并提示先恢复或彻底删除（软删行继续占唯一键，
+      直接 upsert 会写出一条看不见的活行）。
+
+    `sort_order` / `enabled` 是**可选**行字段：在场必须合法（`bool` 不算数），
+    缺席则「建行取缺省 0 / 1、改行保留目标库已有的值」—— 镜像 R20 `profiles.sort_order`。
+    `description` / `condition` / `instruction_id` 载荷即真值。
+    """
+    rows = routing_rules_rows(payload)
+    report = _domain_report("routing_rules")
+    sink = report["skipped"]
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            _skip(sink, index, row, "条目必须是对象")
+            continue
+        rule_id = row.get("id")
+        name = str(row.get("name") or "").strip()
+        if not rule_id or not name:
+            _skip(sink, index, row, "缺 id / name")
+            continue
+        condition = str(row.get("condition") or "").strip()
+        instruction_id = str(row.get("instruction_id") or "").strip()
+        if not condition:
+            _skip(sink, index, row, "缺 condition")
+            continue
+        if not instruction_id:
+            _skip(sink, index, row, "缺 instruction_id")
+            continue
+        try:
+            parse_condition(condition)
+        except ConditionError as exc:
+            _skip(sink, index, row, f"条件语法不成立：{exc}")
+            continue
+        raw_sort = row.get("sort_order")
+        sort_order = None
+        if raw_sort is not None:
+            if isinstance(raw_sort, bool) or not isinstance(raw_sort, int) or raw_sort < 0:
+                _skip(sink, index, row, "sort_order 必须是非负整数")
+                continue
+            sort_order = raw_sort
+        raw_enabled = row.get("enabled")
+        enabled = None
+        if raw_enabled is not None:
+            if (
+                isinstance(raw_enabled, bool)
+                or not isinstance(raw_enabled, int)
+                or raw_enabled not in (0, 1)
+            ):
+                _skip(sink, index, row, "enabled 必须是 0 或 1")
+                continue
+            enabled = raw_enabled
+        description = row.get("description")
+        if description is not None and not isinstance(description, str):
+            _skip(sink, index, row, "description 必须是字符串或空")
+            continue
+        # 名称唯一**查全表**（不排回收站）—— 软删行继续占唯一键
+        clash = db.query(RoutingRule).filter(
+            RoutingRule.name == name, RoutingRule.id != rule_id
+        ).first()
+        if clash is not None:
+            _skip(sink, index, row, f"规则名已存在（行 {clash.id}）")
+            continue
+        if alive(db.query(Instruction), Instruction).filter(
+            Instruction.id == instruction_id
+        ).first() is None:
+            _skip(sink, index, row, f"指令不存在：{instruction_id}")
+            continue
+        existing = db.query(RoutingRule).filter(RoutingRule.id == rule_id).first()
+        if existing is not None and existing.deleted_at:
+            _skip(sink, index, row, f"该规则在回收站中：{rule_id}（先恢复或彻底删除）")
+            continue
+        kind = "updated" if existing else "imported"
+        stamp = datetime.now().isoformat(timespec="seconds")
+        try:
+            if existing:
+                existing.name = name
+                existing.condition = condition
+                existing.instruction_id = instruction_id
+                if sort_order is not None:
+                    existing.sort_order = sort_order  # 缺席 → 保留目标库已有的序
+                if enabled is not None:
+                    existing.enabled = enabled  # 缺席 → 保留目标库已有的启停
+                existing.description = description
+                existing.updated_at = stamp
+            else:
+                db.add(RoutingRule(
+                    id=rule_id, name=name, condition=condition,
+                    instruction_id=instruction_id,
+                    sort_order=sort_order if sort_order is not None else 0,
+                    enabled=enabled if enabled is not None else 1,
+                    description=description,
+                    created_at=stamp, updated_at=stamp,
+                ))
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            _skip(sink, index, row, f"唯一约束冲突：{exc.orig}")
+            continue
+        report[kind] += 1
+    return report
+
+
 def run_domain_import(db: Session, payload, validator, importer) -> dict:
     """按域导入三段式（**所有 `/datahub/import/*` 域端点共用**）：
 
@@ -1150,7 +1317,7 @@ def datahub_status():
 
 
 def parse_bundle_domains(raw):
-    """`?domains=a,b` → 域名单；`None`（不带该参数）= 缺省全 8 域。
+    """`?domains=a,b` → 域名单；`None`（不带该参数）= 缺省全 9 域。
 
     R17（§8.49 按域独立导出）的**顶层校验纯函数**：400 口径明确、绝不静默忽略 ——
     空项（`?domains=`、`a,,b`）/ 未知域名 / 重复域名三类都报错，报错文案带**可选域全集**，
@@ -1177,23 +1344,24 @@ def parse_bundle_domains(raw):
 
 @router.get("/export/bundle")
 def export_bundle(domains: Optional[str] = None):
-    """D1 聚合导出 ZIP：**8 域** + manifest.json + frames/*（R7 · PLAN §8.45）。
+    """D1 聚合导出 ZIP：**9 域** + manifest.json + frames/*（R7 · §8.45 起 8 域，R44 · §8.76 起 9 域）。
 
-    域文件 = `instructions.json` + `relations.json` + 本批新增 5 域
+    域文件 = `instructions.json` + `relations.json` + R7 新增 5 域
     （`recipes.json` / `sequences.json` / `transport.json` / `profiles.json` /
-    `templates.json`）+ 派生物 `frames/*`；`manifest.json` 写 `domainVersion`
-    （8 域清单）与 `domainCounts`（逐域行数），既有三键只做加法。
+    `templates.json`）+ **R44 新增 `routing_rules.json`** + 派生物 `frames/*`；
+    `manifest.json` 写 `domainVersion`（9 域清单）与 `domainCounts`（逐域行数），
+    既有三键只做加法。
 
     R17（§8.49）**按域独立导出**：`?domains=recipes,sequences` 只出所选域 ——
-    ① **缺省不带参数 = 现行 8 域逐字不变**（文件集合、manifest 三键、下载文件名一个字节
-    都不动）；② manifest 的 `domainVersion` · `domainCounts` 只列包里真有的域（键序仍按
-    8 域表），`instructionCount` · `relations` · `frames` 三键描述的是**这个包**（没选中的
+    ① **缺省不带参数 = 全 9 域逐字不变**（R44 起的「现行」口径；文件名一个字节都不动）；
+    ② manifest 的 `domainVersion` · `domainCounts` 只列包里真有的域（键序仍按
+    9 域表），`instructionCount` · `relations` · `frames` 三键描述的是**这个包**（没选中的
     归 0 / 空）；③ 非法 `domains` 走 `parse_bundle_domains` 的 400，不静默忽略；
     ④ **协议数据仍走协议页既有导出**（relations 域可单选，但不因此重开「第 9 域」拍板项）。
 
     每条指令都产出帧文件；单条编译失败只在 manifest 标记 error，不阻断整包导出
     （JSON 始终完整）。**读端点只出活行**（R6 §8.43）：指令 / 绑定 / 应答规格 /
-    配方 / 序列 / 档案 / 传输配置 / 算子模板一律 `alive()`，回收站行不进包；
+    配方 / 序列 / 档案 / 传输配置 / 算子模板 / **路由规则**一律 `alive()`，回收站行不进包；
     序列步骤随宿主同进同出（宿主在站里则其步骤一步都不出）。
 
     本批**只做出线，不碰导入**：按域导入端点 = R8（导入侧**不读** domains 参数）。
@@ -1202,7 +1370,7 @@ def export_bundle(domains: Optional[str] = None):
     wanted_set = set(wanted) if wanted is not None else None
 
     def include(name):
-        """这个域进不进包。缺省（wanted is None）= 全 8 域。"""
+        """这个域进不进包。缺省（wanted is None）= 全 9 域。"""
         return wanted_set is None or name in wanted_set
 
     db = SessionLocal()
@@ -1247,11 +1415,16 @@ def export_bundle(domains: Optional[str] = None):
             .order_by(OperatorTemplate.op_code.asc())
             .all()
         )
+        # R44 补域：发前路由规则 —— 行序由 routing_rules_export_payload 定死
+        # （= 匹配定序键 (sort_order, name, id)），这里只管取活行
+        routing_rules = routing_rules_export_payload(
+            alive(db.query(RoutingRule), RoutingRule).all()
+        )
         frames = []
     finally:
         db.close()
 
-    # R17 按域导出：未选中的域**连文件都不写**（键序仍按 8 域表 = 导出序）
+    # R17 按域导出：未选中的域**连文件都不写**（键序仍按 9 域表 = 导出序）
     entries = []
     if include("instructions"):
         entries.append(("instructions.json", json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")))
@@ -1267,6 +1440,8 @@ def export_bundle(domains: Optional[str] = None):
         entries.append(("profiles.json", json.dumps(profiles, ensure_ascii=False, indent=2).encode("utf-8")))
     if include("templates"):
         entries.append(("templates.json", json.dumps(templates, ensure_ascii=False, indent=2).encode("utf-8")))
+    if include("routing_rules"):
+        entries.append(("routing_rules.json", json.dumps(routing_rules, ensure_ascii=False, indent=2).encode("utf-8")))
     # `frames` 是 manifest 八键之一（独立域），内容派生自指令 —— 不选它就不编译
     if include("frames"):
         for inst in payload["instructions"]:
@@ -1292,6 +1467,7 @@ def export_bundle(domains: Optional[str] = None):
             "transport": transport_payload,
             "profiles": profiles,
             "templates": templates,
+            "routing_rules": routing_rules,
         },
         frames,
         domains=wanted,
@@ -1371,6 +1547,13 @@ def import_profiles_endpoint(payload: dict = Body(...), db: Session = Depends(ge
 def import_templates_endpoint(payload: dict = Body(...), db: Session = Depends(get_db)):
     """回灌 `templates.json`（算子模板）：`op_code` 即主键 → 天然 upsert。"""
     return run_domain_import(db, payload, templates_rows, import_operator_templates)
+
+
+@router.post("/import/routing_rules")
+def import_routing_rules_endpoint(payload: dict = Body(...), db: Session = Depends(get_db)):
+    """回灌 `routing_rules.json`（发前路由规则）：条件语法 / 目标指令 / 名称唯一
+    三条任一不过 → 单行跳过并回报原因，部分成功即部分落库。"""
+    return run_domain_import(db, payload, routing_rules_rows, import_routing_rules)
 
 
 @router.post("/backup")

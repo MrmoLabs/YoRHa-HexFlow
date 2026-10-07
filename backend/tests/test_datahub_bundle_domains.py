@@ -2,11 +2,11 @@
 
 钉三条口径：
 
-① **缺省不带参数 = 现行 8 域逐字不变** —— 文件集合、manifest 三键、下载文件名
-   （`^yorha-datahub-\\d+\\.zip$`）一个字节都不动（本文件的回归断言与 test_datahub
-   的既有端到端互为镜像）；
+① **缺省不带参数 = 现行 9 域逐字不变**（R7 起 8 域，R44 §8.76 追加 `routing_rules`）
+   —— 文件集合、manifest 三键、下载文件名（`^yorha-datahub-\\d+\\.zip$`）一个字节都不动
+   （本文件的回归断言与 test_datahub 的既有端到端互为镜像）；
 ② 按域导出只出所选域，且 manifest 的 `domainVersion` · `domainCounts` **只列包里真
-   有的域**（键序仍按 8 域表，不是按用户给的顺序），`instructionCount` · `relations`
+   有的域**（键序仍按 9 域表，不是按用户给的顺序），`instructionCount` · `relations`
    · `frames` 三个存量子键描述的是**这个包**（没选中的归 0 / 置空）；
 ③ 非法 `domains` 走 `parse_bundle_domains` 的 400，**不静默忽略**。
 
@@ -41,7 +41,7 @@ class TestParseBundleDomains(unittest.TestCase):
     def test_default_none_and_valid_pass_through_in_user_order(self):
         self.assertIsNone(parse_bundle_domains(None))
         self.assertEqual(parse_bundle_domains("recipes,sequences"), ["recipes", "sequences"])
-        # 顺序原样保留（导出序由服务端按 8 域表定，见 export_bundle）
+        # 顺序原样保留（导出序由服务端按 9 域表定，见 export_bundle）
         self.assertEqual(parse_bundle_domains("sequences,recipes"), ["sequences", "recipes"])
         # 前后空白归一
         self.assertEqual(parse_bundle_domains(" recipes , templates "), ["recipes", "templates"])
@@ -63,10 +63,12 @@ class TestParseBundleDomains(unittest.TestCase):
             parse_bundle_domains("protocols")
         self.assertIn("instructions", str(ctx.exception.detail))
         self.assertIn("templates", str(ctx.exception.detail))
+        # R44：可选全集里也要有新增的第 9 域
+        self.assertIn("routing_rules", str(ctx.exception.detail))
 
 
 class TestExportBundleDomains(RelationsTestCase):
-    """端到端：缺省 8 域逐字不变 / 按域子集 / frames 与 instructions 的独立性。"""
+    """端到端：缺省 9 域逐字不变 / 按域子集 / frames 与 instructions 的独立性。"""
 
     def setUp(self):
         super().setUp()
@@ -98,14 +100,14 @@ class TestExportBundleDomains(RelationsTestCase):
         self.addCleanup(zf.close)
         return resp, zf
 
-    def test_default_is_still_the_full_eight_domain_package(self):
-        """回归：不带参数 = 现行 8 域逐字不变（含文件名口径）。"""
+    def test_default_is_still_the_full_nine_domain_package(self):
+        """回归：不带参数 = 现行 9 域逐字不变（含文件名口径）。"""
         resp, zf = self._export()
         names = zf.namelist()
         for domain in (
             "instructions.json", "relations.json", "recipes.json",
             "sequences.json", "transport.json", "profiles.json",
-            "templates.json",
+            "templates.json", "routing_rules.json",
         ):
             self.assertIn(domain, names)
         self.assertIn("manifest.json", names)
@@ -123,13 +125,13 @@ class TestExportBundleDomains(RelationsTestCase):
                          r'filename="yorha-datahub-\d{8}-\d{6}\.zip"')
 
     def test_subset_exports_only_selected_domains(self):
-        """按域子集：只出所选文件，manifest 只列真在包里的域（键序按 8 域表）。"""
+        """按域子集：只出所选文件，manifest 只列真在包里的域（键序按 9 域表）。"""
         resp, zf = self._export(domains="sequences,recipes")
         self.assertEqual(set(zf.namelist()),
                          {"recipes.json", "sequences.json", "manifest.json"})
 
         manifest = json.loads(zf.read("manifest.json"))
-        # 用户给的顺序是 sequences,recipes —— manifest 键序仍按 8 域表
+        # 用户给的顺序是 sequences,recipes —— manifest 键序仍按 9 域表
         self.assertEqual(list(manifest["domainVersion"]), ["recipes", "sequences"])
         self.assertEqual(list(manifest["domainCounts"]), ["recipes", "sequences"])
         self.assertEqual(manifest["domainCounts"], {"recipes": 1, "sequences": 1})
@@ -169,8 +171,8 @@ class TestExportBundleDomains(RelationsTestCase):
         self.assertEqual(manifest2["instructionCount"], 2)
         self.assertEqual(manifest2["frames"], [])
 
-    def test_explicit_all_eight_equals_default(self):
-        """显式传全 8 域 ≡ 缺省（只差 generatedAt 一个时间戳字段）。"""
+    def test_explicit_all_nine_equals_default(self):
+        """显式传全 9 域 ≡ 缺省（只差 generatedAt 一个时间戳字段）。"""
         _, zf_default = self._export()
         _, zf_all = self._export(domains=",".join(BUNDLE_DOMAIN_VERSIONS))
         self.assertEqual(sorted(zf_default.namelist()), sorted(zf_all.namelist()))

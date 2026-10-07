@@ -91,20 +91,20 @@ describe('DataHub Page', () => {
         expect(screen.getByText(/导出完成/)).toBeDefined();
     });
 
-    it('R17 按域导出：芯片按 8 域表顺序带域名下载，全不选即禁用不发请求', async () => {
+    it('R17 按域导出：芯片按 9 域表顺序带域名下载，全不选即禁用不发请求', async () => {
         api.getDatahubStatus.mockResolvedValue({ ...STATUS, backups: [] });
         api.exportDataBundle.mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }));
 
         render(<DataHub />);
         await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
 
-        // 8 域芯片齐（= 后端 BUNDLE_DOMAIN_VERSIONS 键序），全不选时按钮禁用
-        ['instructions', 'relations', 'frames', 'recipes', 'sequences', 'transport', 'profiles', 'templates']
+        // 9 域芯片齐（= 后端 BUNDLE_DOMAIN_VERSIONS 键序），全不选时按钮禁用
+        ['instructions', 'relations', 'frames', 'recipes', 'sequences', 'transport', 'profiles', 'templates', 'routing_rules']
             .forEach((key) => expect(screen.getByRole('button', { name: key })).toBeDefined());
         const exportBtn = screen.getByRole('button', { name: /导出所选域/ });
         expect(exportBtn.disabled).toBe(true);
 
-        // 先点 sequences 再点 recipes —— 送后端的仍是 8 域表顺序（不看点击顺序）
+        // 先点 sequences 再点 recipes —— 送后端的仍是 9 域表顺序（不看点击顺序）
         fireEvent.click(screen.getByRole('button', { name: 'sequences' }));
         fireEvent.click(screen.getByRole('button', { name: 'recipes' }));
         expect(screen.getByRole('button', { name: 'recipes' }).getAttribute('aria-pressed')).toBe('true');
@@ -125,7 +125,7 @@ describe('DataHub Page', () => {
         expect(api.exportDataBundle).toHaveBeenCalledTimes(1);
     });
 
-    it('R17 全量导出仍不带参数：缺省 = 后端全 8 域口径，文件名与文案不变', async () => {
+    it('R17 全量导出仍不带参数：缺省 = 后端全 9 域口径，文件名与文案不变', async () => {
         api.getDatahubStatus.mockResolvedValue({ ...STATUS, backups: [] });
         api.exportDataBundle.mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }));
 
@@ -137,10 +137,10 @@ describe('DataHub Page', () => {
         expect(api.exportDataBundle).toHaveBeenCalledWith(); // 无参 → 不带 ?domains
         const [, filename] = triggerBlobDownload.mock.calls[0];
         expect(filename).toMatch(/^yorha-datahub-\d+\.zip$/);
-        expect(screen.getByText(/8 域：instructions\.json/)).toBeDefined();
+        expect(screen.getByText(/9 域：instructions\.json/)).toBeDefined();
     });
 
-    it('R19 示例包：动态出「按域导入的 5 域」，文件名打 sample 标记', async () => {
+    it('R19 示例包：动态出「按域导入的 6 域」，文件名打 sample 标记', async () => {
         api.getDatahubStatus.mockResolvedValue({ ...STATUS, backups: [] });
         api.exportDataBundle.mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }));
 
@@ -150,10 +150,10 @@ describe('DataHub Page', () => {
         fireEvent.click(screen.getByRole('button', { name: /下载示例包/ }));
 
         await waitFor(() => expect(api.exportDataBundle).toHaveBeenCalledTimes(1));
-        // 5 域与 R8 `POST /datahub/import/{domain}` 的范围逐字对齐，
+        // 6 域与 `POST /datahub/import/{domain}` 的范围逐字对齐（R44 起含 routing_rules），
         // 顺序 = BUNDLE_DOMAIN_VERSIONS 键序（复用 R17 的 ?domains= 子集口径）
         expect(api.exportDataBundle).toHaveBeenCalledWith([
-            'recipes', 'sequences', 'transport', 'profiles', 'templates'
+            'recipes', 'sequences', 'transport', 'profiles', 'templates', 'routing_rules'
         ]);
         const [, filename] = triggerBlobDownload.mock.calls[0];
         expect(filename).toMatch(/^yorha-datahub-sample-\d+\.zip$/);
@@ -350,7 +350,7 @@ describe('DataHub Page', () => {
         await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledTimes(2)); // 初始 + 导入后刷新
     });
 
-    it('R8 五个域文件都能按顶层数组键识别（transport 认 settings 键），取消不发请求', async () => {
+    it('R8 六个域文件都能按顶层数组键识别（transport 认 settings 键），取消不发请求', async () => {
         api.getDatahubStatus.mockResolvedValue(STATUS);
         api.importDomain.mockResolvedValue({ domain: 'x', imported: 0, updated: 0, skipped: [], warnings: [] });
 
@@ -363,7 +363,8 @@ describe('DataHub Page', () => {
             [{ sequences: [] }, 'sequences', '序列'],
             [{ settings: [] }, 'transport', '传输配置'],
             [{ profiles: [] }, 'profiles', '设备档案'],
-            [{ templates: [] }, 'templates', '算子模板']
+            [{ templates: [] }, 'templates', '算子模板'],
+            [{ routing_rules: [] }, 'routing_rules', '发前路由规则']
         ];
         for (const [payload, domain, label] of cases) {
             const body = { schemaVersion: 1, ...payload };
@@ -391,6 +392,49 @@ describe('DataHub Page', () => {
         fireEvent.change(input, { target: { files: [makeJsonFile(JSON.stringify({ foo: 1 }))] } });
         await waitFor(() => expect(screen.getByText(/识别不出域/)).toBeDefined());
         expect(api.importDomain).not.toHaveBeenCalled();
+    });
+
+    // ─── R44（PLAN §8.76）: 规则表进 9 域 —— 导出芯片 / 按域导入 / 示例包 ────
+    it('R44 规则表进 9 域: 导出芯片、按域导入识别、示例包都带上 routing_rules', async () => {
+        api.getDatahubStatus.mockResolvedValue({ ...STATUS, backups: [] });
+        api.exportDataBundle.mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }));
+        api.importDomain.mockResolvedValue({
+            domain: 'routing_rules', imported: 1, updated: 0, skipped: [], warnings: [],
+            preImportSnapshot: { name: 'pre-import-10.db' }
+        });
+
+        render(<DataHub />);
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+
+        // ① 导出芯片多第 9 颗 —— 只勾它，送后端的就是它（顺序仍按 9 域表）
+        fireEvent.click(screen.getByRole('button', { name: 'routing_rules' }));
+        fireEvent.click(screen.getByRole('button', { name: /导出所选域/ }));
+        await waitFor(() => expect(api.exportDataBundle).toHaveBeenCalledWith(['routing_rules']));
+
+        // ② 按顶层数组键识别 routing_rules → 弹确认 → 确认才 POST
+        const body = {
+            schemaVersion: 1,
+            routing_rules: [{
+                id: 'rl1', name: '命中心跳', condition: 'meter_id == 1',
+                instruction_id: 'i1', sort_order: 0, enabled: 1, description: null
+            }]
+        };
+        fireEvent.change(screen.getByTestId('domain-import-input'), {
+            target: { files: [makeJsonFile(JSON.stringify(body), 'routing_rules.json')] }
+        });
+        await waitFor(() => expect(screen.getByText(/确认导入发前路由规则/)).toBeDefined());
+        expect(api.importDomain).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: /确认/ }));
+        await waitFor(() => expect(api.importDomain)
+            .toHaveBeenCalledWith('routing_rules', body));
+
+        // ③ 示例包 = 按域导入那 6 域（R44 起含 routing_rules），全量按钮仍走无参
+        api.exportDataBundle.mockClear();
+        fireEvent.click(screen.getByRole('button', { name: /下载示例包/ }));
+        await waitFor(() => expect(api.exportDataBundle).toHaveBeenCalledWith([
+            'recipes', 'sequences', 'transport', 'profiles', 'templates', 'routing_rules'
+        ]));
+        expect(api.exportDataBundle).not.toHaveBeenCalledWith();
     });
 
     // ─── 批次四 4b: 绑定矩阵（指令 → 默认协议 → 槽位） ─────────────────────

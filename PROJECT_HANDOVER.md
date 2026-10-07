@@ -3220,7 +3220,8 @@
     - **状态**：**R39 ✅ —— 「按输入挑指令」第一次在页面上被真正执行，并且能一键退回。**
       **明确留白**：规则页「试解析」入口（§8.70 六）→ **R40 已落地 ✅ §8.72，见第 89 条**；
       输入表不做持久化（本仓前端零 `localStorage` 先例，不为此新引落盘样式）；`byte_order`
-      trim 归一（§8.66 留白）不涉；规则表仍不在数据中心 8 域清单。
+      trim 归一（§8.66 留白）不涉 → **R42 已落地 ✅（§8.74）**；规则表仍不在数据中心 8 域清单
+      → **R44 已落地 ✅（§8.76，8 域 → 9 域）**。
       提交 = `feat(R39)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
 
 89. **R40 · 发前路由 · 规则页试解析（键值 → 看会命中哪条；PLAN §8.72 · 2026-10-07）**
@@ -3288,7 +3289,7 @@
       **明确留白**：**逐条规则的判定轨迹（trace）** 给不出「每条规则为什么没成立」—— 要给
       `POST /dispatch/routed` 回执加 `trace` 字段，属 **BE 契约改动**（现有逐键断言测试要随新
       事实改写），**另议排批** → **R43 已落地 ✅（§8.75）**；输入表不做持久化；`byte_order` trim 归一（§8.66） → **R42 已落地 ✅（§8.74）**；
-      规则表仍不在数据中心 8 域清单。
+      规则表仍不在数据中心 8 域清单 → **R44 已落地 ✅（§8.76）**。
       提交 = `feat(R40)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
 
 90. **R41 · 文档卫生（过期指路清零；PLAN §8.73 · 2026-10-07）**
@@ -3322,8 +3323,9 @@
     - **状态**：**R41 ✅ —— 登记面不再有指向未来批次的过期断言，历史排期快照原样留档。**
       **明确留白**：校验器 **md 口径**（34 条历史 CSS 字样要让 md 过检须二选一 —— 改写史实
       措辞，或给校验器 md 规则加白名单；后者改**仓外** `~/.agents/skills/yorha-ui`）**另议**；
-      输入表持久化、规则表进 8 域清单 —— 均不涉（**规则 trace** 已由 **R43 ✅ §8.75** 收掉、
-      **`byte_order` trim 归一**已由 **R42 ✅ §8.74** 收掉，两条都不再是留白）。
+      输入表持久化 —— 不涉（**规则 trace** 已由 **R43 ✅ §8.75** 收掉、**规则表进 8 域清单**
+      已由 **R44 ✅ §8.76** 收掉、**`byte_order` trim 归一**已由 **R42 ✅ §8.74** 收掉，
+      三条都不再是留白）。
       提交 = `feat(R41)` 单笔（**零代码 · 零 DDL** → 无 Migration、无 `chore(db)`）。
 
 91. **R42 · `byte_order` trim 归一（FE 单点判据；PLAN §8.74 · 2026-10-07）**
@@ -3440,8 +3442,74 @@
     - **状态**：**R43 ✅ —— 规则作者第一次能逐条读到「为什么不命中」，而不必逐条去猜。**
       **明确留白**：**加工页不加轨迹**（同一份回执，但那边是「命中即切」的动作语境，一行事实已够）；
       **不为「数值 / 字符串互换」单独开码**（`TYPE_INCOMPARABLE` 的 `detail` 已带出两个类型名，
-      再细分是文案不是判据）；输入表持久化、规则表进 8 域清单仍不涉。
+      再细分是文案不是判据）；输入表持久化仍不涉；规则表进 8 域清单 → **R44 已落地 ✅（§8.76）**。
       提交 = `feat(R43)` 单笔（**BE+FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
+
+93. **R44 · 规则表进数据包（`routing_rules` 第 9 域；PLAN §8.76 · 2026-10-07）**
+    - **为什么**：R7 拍板「原 3 域 → 8 域」时**刻意不含规则表**，留白原文「若要随数据包迁移
+      另议，不擅自扩域」在 §8.70 六 / §8.71 七 / §8.72 八 / §8.73 三 / §8.75 七 **五处同挂**。
+      R36–R43 四批把规则做成了可建、可排序、可试解析、可读轨迹的实体，却**换不了机** ——
+      别的域一个 ZIP 就走，唯独规则只能一条条手抄。**2026-10-07 question 工具回执拍板**选
+      此项（同批候选：输入表持久化 / 校验器 md 口径 / 暂不排批）。
+    - **它现在怎么解决**：**8 域 → 9 域** —— `ROUTING_RULES_SCHEMA_VERSION = 1` 入
+      `BUNDLE_DOMAIN_VERSIONS` **排末尾**（前面 8 域的相对导出序一个字节没动），
+      `GET /datahub/export/bundle` 多出 `routing_rules.json`，`manifest` 的 `domainVersion` /
+      `domainCounts` 各多一键（纯函数里的 `ValueError: 域清单不一致` 漂移守卫**顺带把 counts 表
+      也钉住**），新端点 `POST /datahub/import/routing_rules` 与既有五个按域导入端点同形
+      （顶层校验 400 不落快照 → `pre-import` 快照 → 逐行提交）。
+    - **四条口径全部镜像既有纪律、没有一条是新造的**：① 只出活行，`created_at` /
+      `updated_at` / `deleted_at` **三个记账列不进包**（时间戳是机器本地记账不是内容 ——
+      进包即导出可 diff，回灌用目标机时钟，也不搬源机回收站状态）；② **行序 = 匹配顺序**
+      `(sort_order, name, id)`，即 `core/routing.py` 定序键，**排序收在
+      `routing_rules_export_payload` 一处**、调用方传进来的顺序不作数（导出与匹配两处各排一次序
+      迟早分叉）；③ **条件语法交 SSOT** `core/condition.parse_condition`（规则页保存侧同一入口），
+      **目标指令必须是活行** → 缺失单行跳过（镜像 `import_sequences`「宿主缺失整条跳过」——
+      `routing_rules` 不加 FK，直接 upsert 等于亲手写出一条一进包就是 `INSTRUCTION_MISSING`
+      的缺陷行，而 R43 刚把那一档标成「只能直改库造出来」）；④ 名称唯一**查全表含回收站占名**
+      （同 `routing._ensure_name_free`）、`id` 自己在站 → 跳过并提示先恢复或彻底删除。
+      `sort_order` / `enabled` 为**可选行字段**（在场必须合法、`bool` 不算数；缺席则建行取
+      0 / 1、改行保留目标库已有的值，镜像 R20 `profiles.sort_order`）。
+    - **文件（6 个）**：**改 3 个 BE** —— `backend/routers/datahub.py`（`ROUTING_RULES_SCHEMA_VERSION`
+      / `routing_rule_export_row` / `routing_rules_export_payload` / `bundle_manifest` counts /
+      `routing_rules_rows` / `import_routing_rules` / `export_bundle` 接线 /
+      `/import/routing_rules` 端点）、`backend/tests/test_datahub.py`、
+      `backend/tests/test_datahub_bundle_domains.py`、**新增 1 个 BE**
+      `backend/tests/test_datahub_routing_rules.py`；**改 2 个 FE** —— `frontend/src/pages/DataHub.jsx`
+      + `frontend/src/pages/__tests__/DataHub.test.jsx`。**零 DDL** → 无 Migration、无 `chore(db)`、
+      不引 pytest、无新 pip 依赖、`processor.py` / `graph.py` / `Blueprint.jsx` 未碰、
+      **`/dispatch` 缺省口径未动**。
+    - **测试（红测先行有据）**：BE 新增 **18 条**，实现前 **18 红** ——
+      `AttributeError`（四个符号不存在）+ `AssertionError`（`routing_rules` 不在清单）+
+      `KeyError`（manifest counts 少一域）+ `400 未知域：routing_rules`（`domains=` 子集选不到）
+      + `routing_rules.json not found`（ZIP 里没有），**红因全为缺特性**。FE 用 **`git stash`
+      只暂存实现文件**取回实现前状态跑 `DataHub.test.jsx` → **5 failed / 14 passed**（1 条 R44 新测
+      = 缺特性，4 条 = 随新事实改写的断言对旧实现红），还原后两次全量全绿。
+    - **三档记账**：**缺特性 19 条**（BE 18 + FE 1）；**测试随新事实改写 9 条** —— BE 5
+      （`test_eight_domain_inventory` → `test_nine_domain_inventory` 的清单与 `len 8→9`、
+      `test_counts_and_legacy_keys` 的 counts 表补键、`test_zip_carries_eight_domains` →
+      `test_zip_carries_nine_domains` 补文件与计数、bundle_domains 的
+      `default_is_still_the_full_*` 与 `explicit_all_*` 两处更名）+ FE 4（芯片清单与顺序注释、
+      全量导出文案、示例包数组、域键识别用例）；**测试自身 bug 档 0 条**。
+    - **验收**：**BE 1015 → 1033/1033（+18）**、**FE 1472 → 1473/1473（95 文件，+1）**、
+      `npx vite build` EXIT=0、`npm run lint` EXIT=0 **且 0 warning**、yorha-ui 校验器改动
+      **3 个 js / jsx / json 文件 0 违规**（2 js/jsx + 1 json）、`ev40` TOTAL_PROBLEMS=0、
+      `ev33` STAGED=0 BAD=0；**零 DDL → 无 Migration、无 `chore(db)`**、不引 pytest、
+      无新 pip 依赖、`processor.py` / `graph.py` / `Blueprint.jsx` 未碰、
+      **`/dispatch` 缺省口径未动**。
+      > **FE 全量首跑出过 1 条 `Terminal.test.jsx` 历史预览红**（`Unable to find an element
+      > with the text: AA 55 ……`）—— 本批未触碰该页，单跑 29/29 绿，随后两次全量 95 文件
+      > 1473 条全绿。按**测试抖动**记账：不改测试、不改实现，如实登记。
+    - **文档同步（同批）**：PLAN **§8.76 新节** + §1 新增 `R44` 行 + §8.70 六 / §8.71 七 /
+      §8.72 八 / §8.73 三 / §8.75 七 五处留白改指；本条插入 + 条目 88 / 89 / 90 / 92
+      四处同款留白改指（顺带把条目 88 里 R42 那句「不涉」一并改指）+ 目录地图改
+      `datahub.py` / `DataHub.jsx` 两行；`pageStatus.json` `/datahub` 导出陈述改 9 域 +
+      留白销项 + `nextSteps` 改指，并 `npm run sync:page-status` 重生成 `PAGE_STATUS.md`。
+    - **状态**：**R44 ✅ —— 规则表终于随包走：换一台机，规则与指令、配方、序列一起进 ZIP，
+      而不是一条条手抄。**
+      **明确留白**：**协议数据仍不在 9 域内**（R7 那批就明确过「协议不进域」，本批不重开）；
+      **不做批量导入端点**（按域导入仍一次一个域，「先灌指令再灌规则」的顺序要求由回执的
+      「指令不存在」逐行告知，不新开编排）；输入表持久化、校验器 md 口径仍不涉。
+      提交 = `feat(R44)` 单笔（**BE+FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
@@ -3468,6 +3536,7 @@
 | `backend/routers/compile.py` | `POST /compile`（块森林 → Orchestrator → hex），原内联于 `main.py` | ✅ |
 | `backend/routers/export.py` | `/export/hex`、`/export/binary`、`hex_to_bytes` | ✅ 新增 |
 | `backend/routers/dispatch.py` | `/dispatch` 环回通道 + 有界历史；**R36 增 `POST /routed`（只解析不发送）**，`/dispatch/` 与 `/transaction` 一行未改 | ✅ 新增 |
+| `backend/routers/datahub.py` | 数据中心页后端：聚合导出 ZIP（**R44 起 9 域**，`BUNDLE_DOMAIN_VERSIONS` 键序 = 导出序 = `manifest.domainVersion` 键序）、`bundle_manifest` 纯函数 + `域清单不一致` 漂移守卫、**按域导入 6 域**（recipes / sequences / transport / profiles / templates + **R44 `routing_rules`**，三段式 = 顶层校验 400 不落快照 → `pre-import` 快照 → 逐行提交）、`GET /status`、备份与恢复；**读端点一律 `alive()`**（回收站行不进包） | ✅ 新增（§8.37 / §8.45 / §8.46），R44 补第 9 域（§8.76） |
 | `backend/routers/routing.py` | **R36 发前路由**：`/routing-rules` CRUD（语法 / 活指令 / 全表判重三道校验，先校验再落笔）+ `resolve_route` 只读解析（两层静态跳过记 `invalid`） | ✅ 新增（§8.68） |
 | `backend/core/routing.py` | 匹配器 `select_rule` —— **复用 `core/condition.py` 不造第二套判据**；`(sort_order, name, id)` 定序 · first-match-wins · 停用 / 回收站不参与 · 解析期坏条件记 `invalid` 并继续扫 · 求值期未定义变量 = 普通不命中 · **无命中不猜** | ✅ 新增（§8.68） |
 | `backend/schemas/routing_api.py` | 规则读写体 + `POST /dispatch/routed` 入参回执（**六键，无 `status`·`attempts`·`hex_string`** —— 有那三个即说明串进了 `/dispatch` 缺省口径） | ✅ 新增（§8.68） |
@@ -3517,6 +3586,7 @@
 | `src/pages/InstructionProcessor.jsx` | 指令加工页，`handleSend` 走 `/dispatch`；**R39 起顶部常驻「路由输入 (ROUTE INPUTS)」条** —— 键值行 + 类型徽标 + `解析 RESOLVE`（`POST /dispatch/routed`）+ 状态条 + `回到上一条 (UNDO)`，**命中即 `setActiveInstructionId` 选中、无命中不猜**；渲染条件为 `currentInstruction`（目标不在册落空态不崩）；行表本体自 **R40 起改用共用组件 `RouteInputTable`**（DOM 与 `aria-label` / `testid` 逐字节不变） | ✅（§8.71），R40 改用共用组件（§8.72） |
 | `src/pages/Orchestration.jsx` | 编排绑定页，EXPORT .BIN 走 `/export/binary` | ✅ |
 | `src/pages/Instruction.jsx` | 指令管理页（含 `handleAddBlock` 默认 bits 初始化） | ✅ |
+| `src/pages/DataHub.jsx` | 数据中心页：状态面板 + 聚合导出 + 备份与恢复 + 绑定矩阵；**R17 起「按域导出 DOMAINS」9 域芯片**（顺序 = `BUNDLE_DOMAIN_VERSIONS` 键序 = 导出序，送后端按表排序不看点击顺序）+ R19 示例包（**R44 起 6 域**，与按域导入能吃的范围逐字对齐）+ **按域导入选择器按顶层数组键识别域名**（含 `routing_rules`，FE 不兜白名单第二层） | ✅（§8.37），R17 起按域导出（§8.49），R44 补第 9 域（§8.76） |
 | `src/pages/Blueprint.jsx` | 旧蓝图页 | ⚠️ **未接线**（保留勿删，不进路由） |
 | `src/pages/Trash.jsx` | 回收站页：`KIND_LABELS`（**8 类**中文名，R37 补 `routing_rule`）+ `KIND_ORDER = Object.keys(KIND_LABELS)` 筛选 chip + 恢复 / 彻底删除 / 批量；`relatedText` **通用求和**（回执多一个键自动并入，无需改） | ✅（§8.44 / §8.69） |
 | `src/pages/RoutingRules.jsx` | **发前路由规则页**（第 9 页 · `/routing` · 快捷键 `H`）：列表顺序 = 匹配顺序、表单就地校验、启停 / 删除二次确认、**排序只改草稿、保存顺序只 PUT 真变化的行**；**R40 起页底常驻「试解析 (DRY RUN)」面板** —— 填键值调 `POST /dispatch/routed`，出一行事实 + 恒四行结果表（命中规则 / 目标指令 / 参与扫描 / 缺陷跳过），**按已保存的规则计算、只回显不改状态**，顺序有草稿时当场点破；**R43 起结果表下方出「逐条判定轨迹 (TRACE) · N 条」**（`data-testid="dry-trace-{n}"`，`MATCHED` 行黄字，回执没给 `trace` 就不出块）+ 口径列表补一条 + 未命中脚注改指轨迹 | ✅ 新增（R38 · §8.70），R40 增试解析（§8.72），R43 增轨迹（§8.75） |

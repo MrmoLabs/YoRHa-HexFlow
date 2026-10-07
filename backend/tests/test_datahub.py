@@ -29,6 +29,7 @@ from backend.db.models import (
     ProtocolBinding,
     ProtocolTemplate,
     ResponseSpec,
+    RoutingRule,
     Sequence,
     SequenceStep,
     TransportSetting,
@@ -748,7 +749,7 @@ class TestExportDomainPayloads(unittest.TestCase):
 
 
 class TestBundleManifest(unittest.TestCase):
-    """manifest.domainVersion = 8 域清单（R7 拍板的「原 3 域 → 8 域」）。"""
+    """manifest.domainVersion = 9 域清单（R7「原 3 域 → 8 域」+ R44「8 → 9」）。"""
 
     def _manifest(self, frames=("f1",)):
         return bundle_manifest(
@@ -760,18 +761,19 @@ class TestBundleManifest(unittest.TestCase):
                 "transport": {"settings": [1]},
                 "profiles": {"profiles": [1, 2]},
                 "templates": {"templates": [1]},
+                "routing_rules": {"routing_rules": [1]},
             },
             list(frames),
         )
 
-    def test_eight_domain_inventory(self):
+    def test_nine_domain_inventory(self):
         manifest = self._manifest()
         self.assertEqual(
             list(manifest["domainVersion"]),
             ["instructions", "relations", "frames", "recipes", "sequences",
-             "transport", "profiles", "templates"],
+             "transport", "profiles", "templates", "routing_rules"],
         )
-        self.assertEqual(len(manifest["domainVersion"]), 8)
+        self.assertEqual(len(manifest["domainVersion"]), 9)
         self.assertEqual(manifest["domainVersion"], BUNDLE_DOMAIN_VERSIONS)
         # 域清单与行数表**键集严格相等** —— 少一域、多一域都算 bug
         self.assertEqual(set(manifest["domainCounts"]), set(manifest["domainVersion"]))
@@ -787,6 +789,7 @@ class TestBundleManifest(unittest.TestCase):
             "transport": 1,
             "profiles": 2,
             "templates": 1,
+            "routing_rules": 1,
         })
         # 存量三键只做加法 —— 旧消费方读 manifest 一个字段都不用改
         self.assertEqual(manifest["instructionCount"], 1)
@@ -805,11 +808,11 @@ class TestBundleManifest(unittest.TestCase):
         self.assertIn("域清单不一致", str(ctx.exception))
 
 
-class TestExportBundleEightDomains(RelationsTestCase):
-    """端到端：GET /datahub/export/bundle → 8 个域文件 + manifest 8 域清单。
+class TestExportBundleNineDomains(RelationsTestCase):
+    """端到端：GET /datahub/export/bundle → 9 个域文件 + manifest 9 域清单。
 
     同时钉两条既有纪律：**回收站行不进包**（R6 §8.43，指令 / 绑定 / 应答规格 /
-    配方 / 序列 / 档案 六处）与 **序列步骤随宿主同进同出**。
+    配方 / 序列 / 档案 / **路由规则** 七处）与 **序列步骤随宿主同进同出**。
     """
 
     def setUp(self):
@@ -847,20 +850,28 @@ class TestExportBundleEightDomains(RelationsTestCase):
         self.db.add(ResponseSpec(id="rs-trash", instruction_id="i2",
                                  spec={"mode": "rules"},
                                  deleted_at="2026-10-02T00:00:00+00:00"))
+        # R44：路由规则 —— 活行进包、站内行不进（第七处回收站边界）
+        self.db.add(RoutingRule(id="rl1", name="命中心跳", condition="meter_id == 1",
+                                instruction_id="i1", sort_order=0, enabled=1,
+                                description="d"))
+        self.db.add(RoutingRule(id="rl-trash", name="回收站规则", condition="meter_id == 2",
+                                instruction_id="i1", sort_order=1, enabled=1,
+                                description=None,
+                                deleted_at="2026-10-02T00:00:00+00:00"))
         self.db.commit()
 
         patcher = mock.patch.object(datahub, "SessionLocal", return_value=self.db)
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_zip_carries_eight_domains(self):
+    def test_zip_carries_nine_domains(self):
         resp = datahub.export_bundle()
         with zipfile.ZipFile(BytesIO(resp.body)) as zf:
             names = zf.namelist()
             for domain in (
                 "instructions.json", "relations.json", "recipes.json",
                 "sequences.json", "transport.json", "profiles.json",
-                "templates.json",
+                "templates.json", "routing_rules.json",
             ):
                 self.assertIn(domain, names)
             self.assertIn("manifest.json", names)
@@ -868,11 +879,11 @@ class TestExportBundleEightDomains(RelationsTestCase):
             manifest = json.loads(zf.read("manifest.json"))
             self.assertEqual(list(manifest["domainVersion"]),
                              list(BUNDLE_DOMAIN_VERSIONS))
-            self.assertEqual(len(manifest["domainVersion"]), 8)
+            self.assertEqual(len(manifest["domainVersion"]), 9)
             self.assertEqual(set(manifest["domainCounts"]),
                              set(manifest["domainVersion"]))
 
-            # 回收站行不进包 —— 六处逐一钉
+            # 回收站行不进包 —— 七处逐一钉
             instructions = json.loads(zf.read("instructions.json"))
             self.assertEqual([i["id"] for i in instructions["instructions"]],
                              ["i1", "i2"])
@@ -892,6 +903,10 @@ class TestExportBundleEightDomains(RelationsTestCase):
             templates = json.loads(zf.read("templates.json"))
             self.assertEqual([t["op_code"] for t in templates["templates"]],
                              ["HEX_RAW"])
+            routing_rules = json.loads(zf.read("routing_rules.json"))
+            self.assertEqual([r["id"] for r in routing_rules["routing_rules"]],
+                             ["rl1"])
+            self.assertNotIn("deleted_at", routing_rules["routing_rules"][0])
 
             self.assertEqual(manifest["domainCounts"], {
                 "instructions": 2,
@@ -902,6 +917,7 @@ class TestExportBundleEightDomains(RelationsTestCase):
                 "transport": 1,
                 "profiles": 1,
                 "templates": 1,
+                "routing_rules": 1,
             })
             # 存量三键仍在
             self.assertEqual(manifest["instructionCount"], 2)
@@ -944,6 +960,7 @@ class TestDomainPayloadValidation(unittest.TestCase):
             (datahub.transport_rows, "settings"),
             (datahub.profiles_rows, "profiles"),
             (datahub.templates_rows, "templates"),
+            (datahub.routing_rules_rows, "routing_rules"),
         ):
             self.assertEqual(validator({key: []}), [])
 
