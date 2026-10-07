@@ -11,8 +11,10 @@
 > - `PLAN_Backlog.md` §8.14 调研差距表：已做 1-4（BIN 三态 / 位段值表 /
 >   有符号位段 / 位号标尺）；**已立暂缓 → 已落地**：CRC 多算法（CCITT/CRC32/LRC）
 >   **R22 ✅ PLAN §8.54（2026-10-03）**、长度域 BE/LE **R21 ✅ §8.53（2026-10-03）**、
->   varint/COBS 组帧 **R27 出线 ✅ §8.59（2026-10-04）**；**仍暂缓**：varint/COBS **解包**
->   （→ R28）、解码回程（后端 encode-only 边界）。
+>   varint/COBS 组帧 **R27 出线 ✅ §8.59（2026-10-04）**、varint/COBS **解包**
+>   **R28 ✅ §8.60（2026-10-04）**、解码回程 bytes→fields **R9 + R10 ✅ §8.47 / §8.48
+>   （2026-10-03）** —— **§8.14 四项暂缓至此清零**（CRC R22 / 长度域 R21 / varint·COBS R27+R28 /
+>   解码回程 R9+R10）。
 > - `PROJECT_HANDOVER.md` E1-4：float64 编码~~范围外保留现状（如需另立子项）~~
 >   **已立项并落地 —— R5 / PLAN §8.42（2026-10-02），不再是范围外**。
 > - 定级图例：✅ 覆盖 ｜ ⚠️ 半残（有功能但有坑）｜ 🔴 真缺口 ｜ ⏸ 已立暂缓
@@ -44,9 +46,9 @@
 | 顺序 / 定长 / 嵌套组 | ✅ | ARRAY_GROUP + parent_id 树 |
 | 固定次数重复 | ✅ | `repeat_type=FIXED` |
 | 动态次数重复（次数由字段值定） | ✅ | `repeat_type=DYNAMIC + repeat_ref_id`（同构重复） |
-| **值 → 不同嵌套（分支 / 变体）** | 🔴 | `cmd=A` 一种结构、`cmd=B` 另一种——数据模型零概念（全库无 branch/variant/union/presence）；**TLV（每单元 value 随 tag 变长）、按值路由指令同属此族** → 缺口 G1 |
-| 可选 / 存在性字段 | 🔴 | 无 presence 概念 → G1 方案 B 副产品 |
-| 填充 / 对齐（pad 到字节边界） | 🔴 | 只能 HEX_RAW 手工算长度 → 缺口 G4 |
+| **值 → 不同嵌套（分支 / 变体）** | ✅ | `cmd=A` 一种结构、`cmd=B` 另一种 → **N3 组级 presence**（2026-09-30 真机验证通过，第 9 单 `8e9612f`，PLAN §8.16）：静态三态 + fail-open + IF 角标 + 面板往返 + JSON 零 DDL，编码期命中才编、未命中归零长（BE `to_block` 同款过滤保 byte-equal），**三验收场景含「TLV count + 分支」与「按值路由设计期表达」**；**运行期按值挑指令**当时明列范围外 → 后由**发前路由**接上（R36–R40，`POST /dispatch/routed` 进入序列之前按输入选指令，PLAN §8.68–§8.72）；**仍范围外** = `?:` 条件表达式、union 同字节重解释 → 缺口 G1（已解） |
+| 可选 / 存在性字段 | ✅ | **N3 组级 presence**（2026-09-30 真机验证通过，第 9 单 `8e9612f`，PLAN §8.16）—— `presence` **静态三态** + fail-open + IF 角标 + 面板往返 + JSON 零 DDL；编码期按 `String(refVal) === String(expect)` 归一判命中，未命中字段归零长；校验三码 `PRESENCE_REF_MISSING` / `PRESENCE_OVERLAP` / `PRESENCE_SELF` → 缺口 G1 的方案 B 副产品（已落地） |
+| 填充 / 对齐（pad 到字节边界） | ✅ | **N5**（2026-09-30 真机验证通过，第 11 单 `d8f0d65`，PLAN §8.16）：字段级 `align`（内容起点补到 N 边界）/ `pad_to`（内容末尾补到 N 边界）/ `pad_byte` 骑 `parameter_config` 零 DDL；归一 1..4096、非法 → 0 fail-open（`ALIGN_INVALID` / `PAD_TO_INVALID` 提醒）；pad 进发射流 / 偏移尺 / LEN / 卡宽，不进长度公式 / checksum / 页脚 LEN；presence 未命中与 repeat=0 不补、LITTLE 反转不涉 pad；FE = BE byte-equal + `/dispatch` 裸发 echo 实测 → 缺口 G4（已解） |
 | 保留 / 占位字段 | ✅ | HEX_RAW 填 00 |
 | 校验排除字段 | ✅ | refs 正向选择即可绕开 |
 | 长度含头 / 含自身 | ✅ | 公式常量偏移（`[len]+2`） |
@@ -59,7 +61,7 @@
 | 长度域 BE/LE | ✅ | ~~§8.14 已立暂缓~~ → 已立项 **R21**（2026-10-03 复议，§8.52）→ **已落地（2026-10-03，§8.53）**：length 卡 `parameter_config.byte_order` 下拉 + 出线 `LengthHandler` 反转 + 出口翻译（`frame_builder` ↔ `toFrameBlocks`）+ 应答规格声明 + 设计期卡面同口径；收侧 `response_match` 本就支持，**能判也能发**；零 DDL、缺省大端逐字节不变 |
 | 位序 LSb0 | ✅ | §8.14 调研确认与 DBC 口径吻合，不推翻 |
 | **帧字节转义（0x7D 类框架字节）** | ✅ | §8.16 **N4**（真机验证通过 2026-09-30，第 10 单已提交 `b7f9fa7`）：传输层·内核转义后套壳 —— 传输配置 `escape {enabled, pairs}` 零 DDL、单趟映射覆盖 0x7D 字头 / 0x10 前缀 / 非前缀多字节替换、出线三路（dispatch 裸发·套壳 / 事务 / 序列）接线、replay 不二次转义、外壳 `FA FA…ED` 字面不转、关闭态逐字节不变 → 缺口 G3 已解（`orchestrator.py` 占位注释保留，编码链不在此转义） |
-| varint / COBS 组帧 | ✅ | ~~§8.14 已立暂缓~~ → 已立项 **R27 出线 + R28 解包**（2026-10-03 复议，§8.52）→ **出线已落地（2026-10-04，§8.59）**：length 卡 `pc.encoding` 下拉（`fixed` 缺省 = 缺失键逐字节不变 / `varint` = LEB128 最小无符号、字节序中立、出线后回写 `byte_length`）+ 调色板新组帧元素 **`cobs`**（可嵌套、`terminator` 00 / none 缺省 00，树级前置由内向外改写、正文无裸 `00`、**refs 跨界保存侧 400**）；**解包（`stages` 逆向 + 应答匹配）属 R28 待排**，解码不进生产代码 |
+| varint / COBS 组帧 | ✅ | ~~§8.14 已立暂缓~~ → 已立项 **R27 出线 + R28 解包**（2026-10-03 复议，§8.52）→ **出线已落地（2026-10-04，§8.59）**：length 卡 `pc.encoding` 下拉（`fixed` 缺省 = 缺失键逐字节不变 / `varint` = LEB128 最小无符号、字节序中立、出线后回写 `byte_length`）+ 调色板新组帧元素 **`cobs`**（可嵌套、`terminator` 00 / none 缺省 00，树级前置由内向外改写、正文无裸 `00`、**refs 跨界保存侧 400**）；**解包已落地 ✅（2026-10-04，PLAN §8.60）** —— 收侧新模块 `backend/core/unframe.py`（`decode_varint` / `cobs_decode`，`framing.py` 一行不改仍纯编码）+ 规格 `length.encoding`（fixed / varint）与 `unpack.mode=cobs` + `inner_head` / `inner_trailer`（slice 形态逐字节不变）+ 新 reason 码三条 → **R27 / R28 两批全数销项** |
 | 加扰 / 混淆 | ✅ | 无 → ~~挂账~~ **已立项 R25（2026-10-03 复议，§8.52）** → **已落地（2026-10-04，§8.57）**：新算子 `SCRAMBLE` 明文进·密文出（异或种子 / 位旋转），解码端反加扰还原 |
 
 ## 四、运行 / 加工期（下半程）
@@ -69,8 +71,8 @@
 | 三态录入（HEX/DEC/BIN）+ 钳制 + 前缀 | ✅ | §8.13 批 1 + §8.14 优化 1 |
 | 值表下拉与名称回显 | ✅ | §8.14 优化 2 |
 | 输入 → 派生字段联动 | ✅ | 公式引擎 / computedValue（仅四则，**无条件表达式**→ 条件长度归 G1 族） |
-| **按输入值选指令模板 / 报文** | ✅ | G1 的运行期形态。**R26 只解了「序列内」那一半**（PLAN §8.58：上一步状态 / 应答字段 → 本步跑不跑，`sequence_steps.condition` 受限表达式）；**发前路由那一半已翻案立项并落地 BE**（2026-10-06，PLAN §8.68）—— 新表 `routing_rules` + `backend/core/routing.py` 匹配器（**复用同一门 `condition.py` 受限表达式，不造第二套判据**；按 `sort_order` 取首个判真者、坏条件跳过、**无命中不猜**）+ 独立端点 **`POST /dispatch/routed` 只解析不发送**（`/dispatch` 缺省口径逐字节不变）。**R37 已补数据侧闭环 ✅（PLAN §8.69：删指令同戳级联规则 + 引用计数 + 回收站可找回）**；**R38 管理面已落地 ✅（PLAN §8.70：独立「发前路由规则」页 —— 增删改查 + 排序草稿 + 启停，纯 FE 零 DDL）**；**R39 加工页自动选指令接线已落地 ✅（PLAN §8.71：加工页「路由输入 (ROUTE INPUTS)」条 → `解析` → 命中即 `setActiveInstructionId` 选中 + `回到上一条` 一键回退；值按 JSON 标量解析，否则字符串 vs 数字字面量不同型会让数字条件与全部数值比较符静默不命中）**，本行至此「页面上真能用」 |
-| 解码回程 bytes→fields | ⏸ | §8.14 已立暂缓（encode-only 既有边界） |
+| **按输入值选指令模板 / 报文** | ✅ | G1 的运行期形态。**R26 只解了「序列内」那一半**（PLAN §8.58：上一步状态 / 应答字段 → 本步跑不跑，`sequence_steps.condition` 受限表达式）；**发前路由那一半已翻案立项并落地 BE**（2026-10-06，PLAN §8.68）—— 新表 `routing_rules` + `backend/core/routing.py` 匹配器（**复用同一门 `condition.py` 受限表达式，不造第二套判据**；按 `sort_order` 取首个判真者、坏条件跳过、**无命中不猜**）+ 独立端点 **`POST /dispatch/routed` 只解析不发送**（`/dispatch` 缺省口径逐字节不变）。**R37 已补数据侧闭环 ✅（PLAN §8.69：删指令同戳级联规则 + 引用计数 + 回收站可找回）**；**R38 管理面已落地 ✅（PLAN §8.70：独立「发前路由规则」页 —— 增删改查 + 排序草稿 + 启停，纯 FE 零 DDL）**；**R39 加工页自动选指令接线已落地 ✅（PLAN §8.71：加工页「路由输入 (ROUTE INPUTS)」条 → `解析` → 命中即 `setActiveInstructionId` 选中 + `回到上一条` 一键回退；值按 JSON 标量解析，否则字符串 vs 数字字面量不同型会让数字条件与全部数值比较符静默不命中）**；**R40 规则页试解析已落地 ✅（PLAN §8.72：规则页页底「试解析 (DRY RUN)」面板 —— 填键值就地看会命中哪条规则、扫了几条、哪几条有结构性缺陷，按已保存的规则计算且只回显不改状态，纯 FE 零 DDL；逐条规则的判定轨迹另议）**，本行至此「页面上真能用」 |
+| 解码回程 bytes→fields | ✅ | → **R9 + R10 已落地**（2026-10-03，PLAN §8.47 / §8.48）：R9 纯 FE 对偶解码器 `utils/InstructionDecoder.js` —— 布局与编码器共用 `InstructionEncoder.buildLayout()`（改一必改二），命中应答按 `stages` 逆向取值并拿 `vectors/*.json` 反向验证，发送历史出「字段 = 值」；R10 补入库回写 —— `dispatch_logs` 加 `fields_json`（仅新增列，全计划唯一 DDL 批）+ `/dispatch/history` 回填 `fields`，解码直接复用 `fields_to_blocks` / `flatten()` 同一份布局 → 原「encode-only」边界已破 |
 | 输入范围 / 格式校验 | ✅ | SmartInput maxLength + 数值域钳制 |
 | 校验清单 → 画布标色 | ✅ | §8.15（本批第 6 单） |
 
@@ -88,7 +90,7 @@
 
 | # | 缺口 | 定级 | 去向 |
 |---|---|---|---|
-| **G1** | 条件分支 / 变体族（分支、可选字段、TLV、按值路由） | ✅ 已解 | §8.16 **N3** 组级 presence（真机验证通过 2026-09-30，第 9 单已提交 `8e9612f`）：静态三态 + fail-open + IF 角标 + 面板往返 + JSON 零 DDL 落库实测；设计期双支并列建模 + 运行期 inputs 翻转（多指令自动路由为 N3 范围外）；存量零 `pc.value` → 静态 0B 门需 ref 带 value（见 §8.16 N3 状态行）；**R26 序列级分支补上「按结果跳步」半边（2026-10-04，PLAN §8.58）** —— `sequence_steps.condition` 受限表达式（`== != >= <= > < in`，**无 eval**）由 runner 判真执行、判假 `SKIPPED`（不延时 / 不发送 / 不落日志）、非法即 `COND:` 记步错误，变量 = `step.<n>.*` 与上一步应答解码字段；**发前路由 C 已翻案立项并落地 BE（2026-10-06，PLAN §8.68）** —— 新表 `routing_rules` + `core/routing.py` 匹配器（复用同一门受限表达式，按 `sort_order` first-match-wins、坏条件记 `invalid` 跳过、**全无命中 `matched=false` 不猜**）+ 独立端点 `POST /dispatch/routed`（**只解析不发送**，`/dispatch` 缺省口径逐字节不变）；**R37 数据侧闭环已补齐 ✅（PLAN §8.69：删指令同戳级联规则 + 引用计数 + 回收站可找回，不再留悬空规则）**；**R38 管理面已落地 ✅（PLAN §8.70：独立「发前路由规则」页 · 增删改查 + 排序 + 启停）**；**R39 加工页接线已落地 ✅（PLAN §8.71：加工页「路由输入 (ROUTE INPUTS)」条 → 解析 → 命中即选中指令 + 一键回退；值按 JSON 标量解析，数字条件与数值比较符不再静默不命中）**，本行至此「页面上真能用」 |
+| **G1** | 条件分支 / 变体族（分支、可选字段、TLV、按值路由） | ✅ 已解 | §8.16 **N3** 组级 presence（真机验证通过 2026-09-30，第 9 单已提交 `8e9612f`）：静态三态 + fail-open + IF 角标 + 面板往返 + JSON 零 DDL 落库实测；设计期双支并列建模 + 运行期 inputs 翻转（多指令自动路由为 N3 范围外）；存量零 `pc.value` → 静态 0B 门需 ref 带 value（见 §8.16 N3 状态行）；**R26 序列级分支补上「按结果跳步」半边（2026-10-04，PLAN §8.58）** —— `sequence_steps.condition` 受限表达式（`== != >= <= > < in`，**无 eval**）由 runner 判真执行、判假 `SKIPPED`（不延时 / 不发送 / 不落日志）、非法即 `COND:` 记步错误，变量 = `step.<n>.*` 与上一步应答解码字段；**发前路由 C 已翻案立项并落地 BE（2026-10-06，PLAN §8.68）** —— 新表 `routing_rules` + `core/routing.py` 匹配器（复用同一门受限表达式，按 `sort_order` first-match-wins、坏条件记 `invalid` 跳过、**全无命中 `matched=false` 不猜**）+ 独立端点 `POST /dispatch/routed`（**只解析不发送**，`/dispatch` 缺省口径逐字节不变）；**R37 数据侧闭环已补齐 ✅（PLAN §8.69：删指令同戳级联规则 + 引用计数 + 回收站可找回，不再留悬空规则）**；**R38 管理面已落地 ✅（PLAN §8.70：独立「发前路由规则」页 · 增删改查 + 排序 + 启停）**；**R39 加工页接线已落地 ✅（PLAN §8.71：加工页「路由输入 (ROUTE INPUTS)」条 → 解析 → 命中即选中指令 + 一键回退；值按 JSON 标量解析，数字条件与数值比较符不再静默不命中）**；**R40 规则页试解析已落地 ✅（PLAN §8.72：规则页页底「试解析 (DRY RUN)」面板 · 填键值看会命中哪条 / 扫了几条 / 哪几条是结构性缺陷，按已保存的规则计算、只回显不改状态）**，本行至此「页面上真能用」 |
 | **G2** | 字符串三连（无入口 / 不定长 / 非 ASCII 脏字节） | ✅ 已解 | §8.16 **N2**（真机验证通过 2026-09-30，第 8 单已提交 `848e248`） |
 | **G3** | 帧字节转义 escaping（后端空 placeholder） | ✅ 已解 | §8.16 **N4**（真机验证通过 2026-09-30，第 10 单已提交 `b7f9fa7`）：层位定案「传输层 · 内核转义后套壳」，配置骑 transport config JSON 零 DDL；**内核域按逻辑字节、壳域按线上字节**；画布与 `/compile/*` 预览仍为逻辑帧，线上字节见发送历史 raw 事件 |
 | **G4** | 填充 / 对齐 | ✅ 已解 | §8.16 **N5**（真机验证通过 2026-09-30，第 11 单已提交 `d8f0d65`）：字段级 `align`（内容起点补到 N 边界）/ `pad_to`（内容末尾补到 N 边界）/ `pad_byte` 骑 `parameter_config` 零 DDL；归一 1..4096 非法 → 0 fail-open（`ALIGN_INVALID`/`PAD_TO_INVALID` 提醒，pad_byte 非法静默 0x00，零 error 不锁保存）；pad 进发射流/偏移尺/LEN/卡宽（卡间空隙即填充字节）、不进长度公式/checksum/byteMap/页脚 LEN（内容口径）；presence 未命中与 repeat=0 不补、LITTLE 反转不涉 pad；FE=BE byte-equal + `/dispatch` 裸发 echo 实测 |
@@ -105,4 +107,4 @@
 - ~~绝对时间戳 epoch 模板（INT_UNSIGNED 手工顶）~~ → **R23 ✅ 已落地（2026-10-03，PLAN §8.55：新算子 `TIME_EPOCH`）**
 - ~~加扰 / 混淆字段~~ → **R25 ✅ 已落地（2026-10-04，PLAN §8.57：新算子 `SCRAMBLE`）**
 - ~~创建后切换 op（删建即可）~~ → **R24 ✅ 已落地（2026-10-03，PLAN §8.56：op 下拉 + 兼容校验 + 确认回执）**
-- ~~帧转义之外的组帧族（varint/COBS——已立 §8.14 暂缓，不重复排）~~ → **已立项 R27 + R28**；**R27 出线 ✅ 已落地（2026-10-04，PLAN §8.59）**，余 **R28 解包**
+- ~~帧转义之外的组帧族（varint/COBS——已立 §8.14 暂缓，不重复排）~~ → **已立项 R27 + R28**；**R27 出线 ✅ 已落地（2026-10-04，PLAN §8.59）**、**R28 解包 ✅ 已落地（同日，PLAN §8.60：收侧新模块 `backend/core/unframe.py` —— `decode_varint` / `cobs_decode`，`framing.py` 一行不改；规格 `length.encoding` 与 `unpack.mode=cobs` + `inner_head` / `inner_trailer`）** → **挂账清单四项全数销项**

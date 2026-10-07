@@ -3019,7 +3019,9 @@
     - **批次切分**：**R36 = 纯 BE**（表 + CRUD + 匹配器 + 解析端点）；
       **R37 = 集成收尾**（引用计数 / 同戳级联 / 回收站中文名，**✅ §8.69，见第 86 条**）
       —— 先补数据完整性洞；**R38 = 规则编辑 UI（独立「发前路由规则」页）**
-      （**✅ §8.70，见第 87 条**）；**R39 = 加工页自动选指令接线**（待排）。
+      （**✅ §8.70，见第 87 条**）；**R39 = 加工页自动选指令接线**（**✅ §8.71，见第 88 条**）；
+      **R40 = 规则页试解析入口**（**✅ §8.72，见第 89 条**，§8.70 六 与 §8.71 七
+      两处同挂的留白正主，2026-10-07 单独立项）。
       **后两批经 2026-10-06 用户拍板再拆一次**（question 工具回执）：先管理面、后接线 ——
       两件事验收面不同，CRUD 纯 FE 可全自动验收，接线须实机冒烟。
     - **新表 `routing_rules`（§0 合规）**：`id` / `name`（唯一）/ `condition` /
@@ -3164,7 +3166,7 @@
       `pageStatus.json` 四行并补 `RoutingRules.jsx` / `routingView.js` 两行。
     - **状态**：**R38 ✅ —— 规则第一次能在页面上被建出来、排序出来、停掉、删掉。**
       **明确留白**：加工页自动选指令接线（**R39 已落地 ✅ §8.71**）；规则页「试解析」入口
-      **仍留白、未排批**；`byte_order` trim 归一（§8.66 留白）不涉。
+      （**R40 已落地 ✅ §8.72，见第 89 条**）；`byte_order` trim 归一（§8.66 留白）不涉。
       提交 = `feat(R38)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
 
 88. **R39 · 发前路由 · 加工页接线（路由输入 → 命中即选指令 + 一键回退；PLAN §8.71 · 2026-10-06）**
@@ -3215,10 +3217,78 @@
       本条 + 目录地图改 `InstructionProcessor.jsx` / `api/dispatch.js` / `api/index.js`
       三行并补 `utils/routeResolve.js` 一行。
     - **状态**：**R39 ✅ —— 「按输入挑指令」第一次在页面上被真正执行，并且能一键退回。**
-      **明确留白**：规则页「试解析」入口（§8.70 六）**仍留白、未排批**；输入表不做持久化
-      （本仓前端零 `localStorage` 先例，不为此新引落盘样式）；`byte_order` trim 归一
-      （§8.66 留白）不涉；规则表仍不在数据中心 8 域清单。
+      **明确留白**：规则页「试解析」入口（§8.70 六）→ **R40 已落地 ✅ §8.72，见第 89 条**；
+      输入表不做持久化（本仓前端零 `localStorage` 先例，不为此新引落盘样式）；`byte_order`
+      trim 归一（§8.66 留白）不涉；规则表仍不在数据中心 8 域清单。
       提交 = `feat(R39)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
+
+89. **R40 · 发前路由 · 规则页试解析（键值 → 看会命中哪条；PLAN §8.72 · 2026-10-07）**
+    - **为什么**：§8.70 六 与 §8.71 七 **两处同挂**的那条留白正主 —— R38 建页时就登记了
+      「在规则表上就地输一条输入 → 看会命中哪条 / 为什么没命中」，R39 只把接线落在加工页。
+      四批闭环后规则作者仍处在「**写完规则没法验**」的状态，只能等真发送才知道挑中哪条。
+      **纯 FE、零 DDL、零 BE 改动**（`POST /dispatch/routed` 自 R36 起就是只解析不发送的
+      只读端点，命中 / 扫描数 / 结构性缺陷**后端全都给了**，本批只做入口与转写）。
+    - **改动四块**：① `utils/routeResolve.js` 新增 **`describeDryRun(res)`** →
+      `{ matched, headline, rows }`，`rows` **恒四行**（命中规则 / 目标指令 / 参与扫描 /
+      缺陷跳过）；② 新共用组件 **`components/RouteInputTable.jsx`**（两页扁平键值行表的
+      **唯一排版实现**：键值框 + 类型徽标 + 行删除，**边界划在排版** —— 不持状态、不发请求、
+      不渲染「+ 添加」按钮）；③ `RoutingRules.jsx` 页底 `试解析 (DRY RUN)` 面板（行表 +
+      按钮 + SYS/ERR 一行事实 + `<dl>` 四行结果表 + 未命中脚注）；④
+      `InstructionProcessor.jsx` 内联行表换成 `<RouteInputTable>`（DOM 与 `aria-label` /
+      `testid` **逐字节不变**，删掉随之多余的三个 import）。
+    - **文案断在「命中 / 无命中」**：同一份回执的**另一种动作语境** —— 加工页真会切指令
+      （`describeResolve` 写「已切到指令…」），规则页试解析**一行状态都不改**，绝不能复用那句，
+      否则就是谎称这页也切了。`considered` / `invalid` **由后端给，FE 不自己数**；`invalid`
+      非空挤进 `缺陷跳过` 一行、**不进 headline**（一句只说一件事）。
+    - **事实边界写死**：后端只看得见已落库的行 → 口径行**常驻**「按已保存的规则计算（表单与
+      顺序的未保存改动不参与）」（**不推断**用户此刻改没改东西，推断错就是撒谎），顺序有草稿时
+      当场亮 `N 条顺序待保存 —— 试解析按已落库顺序计算`（琥珀条，缺这句会对着旧顺序的答案推新
+      顺序），右栏固定「只回显结果 —— 不选中规则、不改表单与顺序」。
+    - **为什么抽组件**：第二张行表若抄一遍，类型徽标 / 空键不发 / 删到只剩一行禁删三条细口径就有
+      两个出处。三件事保零回归：`idPrefix` / `labels` **默认值即加工页原文**、`+ 添加` 按钮
+      **留页面**（两页按钮视觉语言不同）、**R39 那 13 条既有用例一次不改全绿 = 抽取没改行为**。
+    - **文件（12 个）**：**新增 3 个** —— `components/RouteInputTable.jsx` + 两个测试文件
+      （`utils/__tests__/routeResolve.dryrun.test.js`、`pages/__tests__/RoutingRules.dryrun.test.jsx`）；
+      **改 5 个代码 / 配置** —— `utils/routeResolve.js`、`pages/RoutingRules.jsx`、
+      `pages/InstructionProcessor.jsx`、`pages/__tests__/RoutingRules.test.jsx`、
+      `config/pageStatus.json`；**改 4 个 md** —— 本条、`docs/PLAN_Backlog.md`、
+      `docs/BUSINESS_SCENARIOS.md`、`docs/PAGE_STATUS.md`（重生成）。
+    - **测试（红测先行有据，两档记账）**：实现前 **2 个新文件 13 条全红** —— 7 条
+      `describeDryRun is not a function` + 6 条面板 / 按钮 / 结果表**不存在**，
+      **红因全部 = 缺特性本身**，**无一条**属「测试自身 bug」；落实现后翻 **1 条既有用例随
+      新事实改写**（`findByText(/2 条顺序待保存/)` 撞上新琥珀条**同子串** → 断言收窄到顺序条
+      原文 `^● 2 条顺序待保存$`，是**收窄不是放水**）。
+    - **实机冒烟 8 组**：面板常驻（未跑不出结果行）→ 键值去空白命中 + 徽标 `数字` + 四行表 →
+      无命中两行 `（无命中）` + 三类原因脚注 → 值 `"0001"` 字符串对数字条件**仍不中**（类型
+      语义从规则页同样可见）→ 加行 / 删行 / 只剩一行 × 禁用 → 顺序草稿琥珀条出与消 →
+      **回 `/processing` 解析命中切到「示例状态包」（抽取后 R39 回归）** → `/routing`
+      控制台 **0 error 0 warning**（`/processing` 仅 3 条既有 `response-specs/{id} 404 =
+      未配置常态`，与本批无关），清场后规则 0 条、回收站 `routing_rule` 0 条。
+    - **验收**：**FE 1445 → 1458/1458（+13 = 7 纯逻辑 + 6 页面）**、**BE 1002/1002 持平**
+      （零 BE 改动复跑）、`npx vite build` EXIT=0、`npm run lint` EXIT=0 **且 0 warning**、
+      yorha-ui 校验器 **8 个 js / jsx / json 文件 0 违规**（**md 不在校验器口径内** ——
+      `PLAN_Backlog.md` / `PROJECT_HANDOVER.md` 里 34 条历史 CSS 字样 **HEAD 版本同样 34 条、
+      逐条相同**，本批零新增；R38 的「11 文件」、R39 的「7 文件」同为 js / jsx / json 口径）、
+      md 表列数 mismatches = 0；
+      **零 DDL → 无 Migration、无 `chore(db)`**、不引 pytest、无新 pip 依赖、
+      `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、**`/dispatch` 缺省口径未动**。
+    - **文档同步（同批）**：PLAN **§8.72 新节** + §1 新增 `R40` 行 + §8.70 六 留白改指
+      （试解析 → R40 ✅，并记「逐条判定轨迹另议」）+ §8.71 七 留白改指 + 两处拍板表改
+      「R40 ✅」+ §8.68 前「立项前现状快照」补一条销项注 + §8.72 八 补「文档同步（同批）」段；`BUSINESS_SCENARIOS` **8 处过期说法就地纠正** —— 72 / 91 两行改指 R40 +
+      47 / 48（「全库无 presence」「无 presence 概念 🔴」→ N3 已落地）+ 49（pad 🔴 → N5 ✅
+      G4）+ 62（R28 解包「待排」→ §8.60 已落地）+ 73（解码回程 ⏸ → R9 + R10 ✅）+ 头注
+      「仍暂缓」块与挂账第 4 条尾巴 → **§8.14 四项暂缓 / 挂账四项均清零**；
+      `pageStatus.json` **两页**
+      （规则页补 `availableNow` 试解析条 + `nextSteps` 换成 trace 留白；加工页**补登记**
+      R39 漏登的「路由输入」条）+ `npm run sync:page-status` 重生成 `PAGE_STATUS.md`；
+      本条 + 目录地图改 `InstructionProcessor.jsx` / `RoutingRules.jsx` / `routeResolve.js`
+      三行并补 `RouteInputTable.jsx` 一行；顺手修第 85 条里残留的「R39（待排）」。
+    - **状态**：**R40 ✅ —— 规则作者第一次能在页面上验自己写的规则，而不必等一次真发送。**
+      **明确留白**：**逐条规则的判定轨迹（trace）** 给不出「每条规则为什么没成立」—— 要给
+      `POST /dispatch/routed` 回执加 `trace` 字段，属 **BE 契约改动**（现有逐键断言测试要随新
+      事实改写），**另议排批**；输入表不做持久化；`byte_order` trim 归一（§8.66）不涉；
+      规则表仍不在数据中心 8 域清单。
+      提交 = `feat(R40)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
@@ -3280,21 +3350,22 @@
 | `src/utils/toFrameBlocks.js` | 导出映射 `byte_len→byte_length`、`op_code→type`（供 `/export/binary`） | ✅ 新增（自 Orchestration.jsx 抽出） |
 | `src/utils/download.js` | `triggerBlobDownload`（.hex / .bin 下载共用） | ✅ 新增 |
 | `src/utils/routingView.js` | **R38 规则页纯逻辑**：`emptyRuleDraft` / `defaultSortOrder`（新建落末位）/ `validateRuleDraft`（名称+条件+目标指令，条件**委托 `condition.checkCondition` 同一 SSOT**）/ `moveRule`（上移下移，只改草稿）/ `renumber`（稠密重编 0..N-1）/ `changedSortOrder`（**只回写真变化的行**）/ `describeRoutingSaveError`（后端 detail → 中文事实文案） | ✅ 新增（R38 · §8.70） |
-| `src/utils/routeResolve.js` | **R39 加工页接线纯逻辑**：行增删改（`addRouteInput` / `removeRouteInput` / `patchRouteInput`）· **`parseInputValue` 值按 JSON 标量解析**（`0001` → 数字 1、`"0001"` → 字符串 0001、其余按原文串 —— 后端 `_equal` 数字/字符串不同型即不中）· `describeInputType` 类型徽标 · `toInputsMap`（键去空白、空键行不发、后写赢）· `resolveInstructionId` / `mergeResolvedInstruction`（不在册补列表，**已在册返回原引用**）· `describeResolve` **回执 → 中文事实文案四档**（命中 / 命中没目标 / 扫过无命中 / 零参与）+ `describeResolveError` | ✅ 新增（R39 · §8.71） |
+| `src/utils/routeResolve.js` | **R39 加工页接线纯逻辑**：行增删改（`addRouteInput` / `removeRouteInput` / `patchRouteInput`）· **`parseInputValue` 值按 JSON 标量解析**（`0001` → 数字 1、`"0001"` → 字符串 0001、其余按原文串 —— 后端 `_equal` 数字/字符串不同型即不中）· `describeInputType` 类型徽标 · `toInputsMap`（键去空白、空键行不发、后写赢）· `resolveInstructionId` / `mergeResolvedInstruction`（不在册补列表，**已在册返回原引用**）· `describeResolve` **回执 → 中文事实文案四档**（命中 / 命中没目标 / 扫过无命中 / 零参与）+ `describeResolveError` · **R40 增 `describeDryRun`**（试解析回执 → **恒四行结果表**：命中规则 / 目标指令 / 参与扫描 / 缺陷跳过，文案断在「命中 / 无命中」**不搬「已切到」**） | ✅ 新增（R39 · §8.71），R40 增（§8.72） |
 | `src/App.jsx` | 路由壳：`PAGE_REGISTRY` 驱动侧栏与 `Routes`，`renderRouteElement` 按 `pageKey` 取组件后注入各页 props（**R38 加 `case 'routing'`，只注入 `instructions`**）；R35 起页面改动态 import + `<Suspense>`（首屏拆包），`NavItem` 悬停/聚焦预取 | ✅ |
 | `src/utils/routeChunks.js` | **页面模块单一登记表** `ROUTE_LOADERS`（**9 页动态 import**，R38 加第 9 页）+ 缓存的 `React.lazy` + 幂等 `prefetchRoute` + `__resetRouteCaches`（仅测试） | ✅ 新增（R35） |
+| `src/components/RouteInputTable.jsx` | 发前路由的**扁平键值行表**（键值框 + 类型徽标 + 行删除）—— 加工页「路由输入」与规则页「试解析」**共用同一张表**（类型徽标 / 空键不发 / 删到只剩一行禁删三条细口径只此一处）；`idPrefix` / `labels` 默认值 = 加工页原文，调用方不传即逐字节等价。**边界划在排版**：不持状态、不发请求、不渲染「+ 添加」按钮（按钮视觉语言两页不同，归页面） | ✅ 新增（R40 · §8.72） |
 | `src/components/RouteLoading.jsx` | 路由级拆包的 Suspense fallback：`[ MODULE LOAD ]` + 按路由出中文页名，未知路由回落站点名，不画假百分比 | ✅ 新增（R35） |
 | `src/hooks/useInstructionData.js` | 指令数据加载/保存/CRUD（归一化逻辑在 `utils/normalizeInstruction.js`，此处 re-export）；导出 `describeReferences` / `describeDeletion` 删除文案纯函数（**R37 加发前路由规则行/段，沿用只报非零**，改文案必改测试） | ✅（§8.69） |
 | `src/hooks/useInstructionForm.js` | 表单输入 + 编码 memo | ✅ |
 | `src/components/ui/` | `NieRModal` / `NieRDatePicker` 通用 UI（FeaturePlaceholder 已随第 13 单死代码清理批删除） | ✅ |
 | `src/components/editor/` | 编辑器域组件：`Canvas` / `Block` / `BlockPropertiesPanel` / `ComponentPalette` / `BitFieldEditor` / `ParamConfigForm`（参数编辑器拆至 `editor/paramConfig/`）/ `InstructionListSidebar` / `ProtocolListSidebar` / `ProtocolPropertiesPanel` | ✅ |
 | `src/components/InstructionForm/InstructionRunner.jsx` | 动态表单 + 发送/导出按钮（已拆：`normalizeRunnerInstruction.js` 归一化、`RunnerFieldTree.jsx` 字段树、`TransmissionLog.jsx` 日志） | ✅ |
-| `src/pages/InstructionProcessor.jsx` | 指令加工页，`handleSend` 走 `/dispatch`；**R39 起顶部常驻「路由输入 (ROUTE INPUTS)」条** —— 键值行 + 类型徽标 + `解析 RESOLVE`（`POST /dispatch/routed`）+ 状态条 + `回到上一条 (UNDO)`，**命中即 `setActiveInstructionId` 选中、无命中不猜**；渲染条件为 `currentInstruction`（目标不在册落空态不崩） | ✅（§8.71） |
+| `src/pages/InstructionProcessor.jsx` | 指令加工页，`handleSend` 走 `/dispatch`；**R39 起顶部常驻「路由输入 (ROUTE INPUTS)」条** —— 键值行 + 类型徽标 + `解析 RESOLVE`（`POST /dispatch/routed`）+ 状态条 + `回到上一条 (UNDO)`，**命中即 `setActiveInstructionId` 选中、无命中不猜**；渲染条件为 `currentInstruction`（目标不在册落空态不崩）；行表本体自 **R40 起改用共用组件 `RouteInputTable`**（DOM 与 `aria-label` / `testid` 逐字节不变） | ✅（§8.71），R40 改用共用组件（§8.72） |
 | `src/pages/Orchestration.jsx` | 编排绑定页，EXPORT .BIN 走 `/export/binary` | ✅ |
 | `src/pages/Instruction.jsx` | 指令管理页（含 `handleAddBlock` 默认 bits 初始化） | ✅ |
 | `src/pages/Blueprint.jsx` | 旧蓝图页 | ⚠️ **未接线**（保留勿删，不进路由） |
 | `src/pages/Trash.jsx` | 回收站页：`KIND_LABELS`（**8 类**中文名，R37 补 `routing_rule`）+ `KIND_ORDER = Object.keys(KIND_LABELS)` 筛选 chip + 恢复 / 彻底删除 / 批量；`relatedText` **通用求和**（回执多一个键自动并入，无需改） | ✅（§8.44 / §8.69） |
-| `src/pages/RoutingRules.jsx` | **发前路由规则页**（第 9 页 · `/routing` · 快捷键 `H`）：列表顺序 = 匹配顺序、表单就地校验、启停 / 删除二次确认、**排序只改草稿、保存顺序只 PUT 真变化的行** | ✅ 新增（R38 · §8.70） |
+| `src/pages/RoutingRules.jsx` | **发前路由规则页**（第 9 页 · `/routing` · 快捷键 `H`）：列表顺序 = 匹配顺序、表单就地校验、启停 / 删除二次确认、**排序只改草稿、保存顺序只 PUT 真变化的行**；**R40 起页底常驻「试解析 (DRY RUN)」面板** —— 填键值调 `POST /dispatch/routed`，出一行事实 + 恒四行结果表（命中规则 / 目标指令 / 参与扫描 / 缺陷跳过），**按已保存的规则计算、只回显不改状态**，顺序有草稿时当场点破 | ✅ 新增（R38 · §8.70），R40 增试解析（§8.72） |
 | `src/config/pageStatus.json` | 页面状态唯一数据源（**9 页**，数组序 = 侧栏序） | ✅ 改后重跑脚本 |
 
 ### 文档

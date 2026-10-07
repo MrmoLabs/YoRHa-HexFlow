@@ -3,17 +3,15 @@ import InstructionListSidebar from '../components/editor/InstructionListSidebar'
 import InstructionRunner from '../components/InstructionForm/InstructionRunner';
 import { useInstructionData } from '../hooks/useInstructionData';
 import NieRDatePicker from '../components/ui/NieRDatePicker';
+import RouteInputTable from '../components/RouteInputTable';
 import { api } from '../api';
 import {
     addRouteInput,
-    describeInputType,
     describeResolve,
     describeResolveError,
     emptyRouteInputs,
     filledInputCount,
     mergeResolvedInstruction,
-    patchRouteInput,
-    removeRouteInput,
     resolveInstructionId,
     toInputsMap,
 } from '../utils/routeResolve';
@@ -243,51 +241,8 @@ export default function InstructionProcessor({
 
                     {routeExpanded && (
                         <div className="border-t border-nier-light/20 px-4 py-2 flex flex-col gap-1.5">
-                            {routeRows.length === 0 && (
-                                <div className="text-[10px] font-mono opacity-50">
-                                    无输入行 —— 点「+ 添加 ADD」加一行。
-                                </div>
-                            )}
-                            {routeRows.map((row, index) => (
-                                <div key={`route-input-${index}`} className="flex items-center gap-2">
-                                    <input
-                                        id={`route-key-${index}`}
-                                        aria-label={`路由键 ${index + 1}`}
-                                        type="text"
-                                        value={row.key}
-                                        placeholder="meter_id"
-                                        onChange={(e) => setRouteRows((prev) => patchRouteInput(prev, index, { key: e.target.value }))}
-                                        className="w-40 shrink-0 border border-nier-light/40 bg-nier-dark px-2 py-1 text-[11px] font-mono text-nier-light focus:border-nier-light"
-                                    />
-                                    <input
-                                        id={`route-value-${index}`}
-                                        aria-label={`路由值 ${index + 1}`}
-                                        type="text"
-                                        value={row.value}
-                                        placeholder="0001"
-                                        onChange={(e) => setRouteRows((prev) => patchRouteInput(prev, index, { value: e.target.value }))}
-                                        className="min-w-0 flex-1 border border-nier-light/40 bg-nier-dark px-2 py-1 text-[11px] font-mono text-nier-light focus:border-nier-light"
-                                    />
-                                    {/* 当场显示这行会按什么类型发出去（值按 JSON 标量解析） */}
-                                    <span
-                                        data-testid={`route-type-${index}`}
-                                        title={`按${describeInputType(row.value)}发送`}
-                                        className="shrink-0 border border-nier-light/30 px-1.5 py-1 text-[9px] font-mono tracking-[0.15em] text-nier-light/60"
-                                    >
-                                        {describeInputType(row.value)}
-                                    </span>
-                                    <button
-                                        type="button"
-                                        aria-label={`删除输入 ${index + 1}`}
-                                        title={`删除输入 ${index + 1}`}
-                                        onClick={() => setRouteRows((prev) => removeRouteInput(prev, index))}
-                                        disabled={routeRows.length <= 1}
-                                        className="border border-nier-light/40 px-2 py-1 text-[10px] font-mono text-nier-light/80 transition-colors duration-150 enabled:hover:border-nier-light enabled:hover:bg-nier-light enabled:hover:text-nier-dark disabled:opacity-30"
-                                    >
-                                        ×
-                                    </button>
-                                </div>
-                            ))}
+                            {/* 行表本体与规则页「试解析」共用（R40 抽出），按钮与回执仍归本页 */}
+                            <RouteInputTable rows={routeRows} onChange={setRouteRows} />
                             <div className="pt-1">
                                 <RouteButton onClick={() => setRouteRows((prev) => addRouteInput(prev))}>
                                     + 添加 ADD

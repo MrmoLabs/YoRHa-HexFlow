@@ -10,12 +10,16 @@
 //  ③ **判定口径不重算**。条件语法由 utils/condition.checkCondition 就地拦（与
 //     序列步骤、BE 同一份 SSOT），其余（停用行不参与 / 坏条件记 invalid /
 //     无命中不猜）全在后端 —— FE 只显示，不改判。
+//  ④ **试解析只回显**（R40 · §8.72）：给一组输入调 `POST /dispatch/routed` 看
+//     会命中哪条，**一行状态都不改**（不选中规则、不动表单与顺序）；后端只看得见
+//     已落库的行，故面板常驻写明「按已保存的规则计算」，顺序有草稿时当场点破。
 //
 // 本仓未装 @testing-library/jest-dom → 组件里不依赖 matchers 扩展。
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { PAGE_STATUS_BY_KEY } from '../config/pageRegistry';
 import NieRModal from '../components/ui/NieRModal';
+import RouteInputTable from '../components/RouteInputTable';
 import {
     MAX_RULE_NAME,
     changedSortOrder,
@@ -26,6 +30,14 @@ import {
     renumber,
     validateRuleDraft,
 } from '../utils/routingView';
+import {
+    addRouteInput,
+    describeDryRun,
+    describeResolveError,
+    emptyRouteInputs,
+    filledInputCount,
+    toInputsMap,
+} from '../utils/routeResolve';
 
 const PanelTitle = ({ children, hint }) => (
     <div className="flex items-baseline justify-between border-b border-nier-light/30 px-4 py-2 bg-nier-light/5">
@@ -106,6 +118,13 @@ export default function RoutingRules({ instructions = [] }) {
     const [errors, setErrors] = useState({});
     const [touched, setTouched] = useState(false);// 提交过一次才出字段红字
     const [deleteTarget, setDeleteTarget] = useState(null);
+
+    // ── R40（§8.72）试解析 ────────────────────────────────────────────────
+    // 输入表与加工页同一份实现（utils/routeResolve + 共用组件 RouteInputTable），
+    // 回执怎么翻译归 describeDryRun —— 这里只回显，不改本页任何状态。
+    const [dryRows, setDryRows] = useState(emptyRouteInputs);
+    const [dryBusy, setDryBusy] = useState(false);
+    const [dry, setDry] = useState(null);   // { kind: 'ok'|'miss'|'err', headline, rows }
 
     const instructionName = useCallback((id) => {
         const hit = (instructions || []).find((item) => item.id === id);
@@ -296,8 +315,22 @@ export default function RoutingRules({ instructions = [] }) {
         setSysMsg('已放弃顺序改动（未发任何请求）。');
     };
 
-    const dirtyErrors = touched ? errors : {};
+    // ── R40（§8.72）试解析：只读调用，回执原样转写 ──────────────────────────
+    const runDry = async () => {
+        setDryBusy(true);
+        setDry(null);
+        try {
+            const res = await api.resolveRoute(toInputsMap(dryRows));
+            const out = describeDryRun(res);
+            setDry({ kind: out.matched ? 'ok' : 'miss', headline: out.headline, rows: out.rows });
+        } catch (err) {
+            setDry({ kind: 'err', headline: describeResolveError(err), rows: [] });
+        } finally {
+            setDryBusy(false);
+        }
+    };
 
+    const dirtyErrors = touched ? errors : {};
     return (
         <div className="flex-1 overflow-auto bg-[radial-gradient(circle_at_top,_rgba(218,212,187,0.12),_transparent_45%),linear-gradient(180deg,_rgba(212,206,178,0.04),_rgba(10,10,10,0))] text-nier-light">
             <NieRModal
@@ -553,6 +586,87 @@ export default function RoutingRules({ instructions = [] }) {
                         )}
                     </section>
                 </div>
+
+                {/* ── R40（§8.72）试解析：给一组输入，看会命中哪条（只回显） ── */}
+                <section className="border border-nier-light/30 bg-nier-dark/60">
+                    <PanelTitle hint="POST /dispatch/routed · 只解析不发送">试解析 (DRY RUN)</PanelTitle>
+                    <div className="p-4 flex flex-col gap-3">
+                        <div className="text-[11px] font-mono leading-relaxed opacity-70">
+                            {`按已保存的规则计算（表单与顺序的未保存改动不参与）· ${filledInputCount(dryRows)} 项有效 · 值按 JSON 标量解析（0001 → 数字，"0001" → 字符串），空键不发`}
+                        </div>
+
+                        {/* 顺序草稿会让人对着旧顺序的结果推新顺序 —— 有草稿就当场点破 */}
+                        {orderDirty && (
+                            <div className="border border-yellow-500/40 bg-yellow-500/10 px-3 py-1.5 text-[11px] font-mono text-yellow-300">
+                                {`${orderPlan.length} 条顺序待保存 —— 试解析按已落库顺序计算。`}
+                            </div>
+                        )}
+
+                        <div className="flex flex-col gap-1.5">
+                            <RouteInputTable
+                                rows={dryRows}
+                                onChange={setDryRows}
+                                idPrefix="dry"
+                                labels={{ key: '试解析键', value: '试解析值', remove: '删除试解析输入' }}
+                            />
+                            <div className="pt-1">
+                                <ActionButton onClick={() => setDryRows((prev) => addRouteInput(prev))}>
+                                    + 添加 ADD
+                                </ActionButton>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3">
+                            <ActionButton onClick={runDry} busy={dryBusy}>试解析 DRY RUN</ActionButton>
+                            <span className="text-[10px] font-mono opacity-50">
+                                只回显结果 —— 不选中规则、不改表单与顺序
+                            </span>
+                        </div>
+
+                        {dry && (
+                            <div className="border-t border-nier-light/20 pt-3 flex flex-col gap-2">
+                                <div className={[
+                                    'text-[11px] font-mono whitespace-pre-line',
+                                    dry.kind === 'err' ? 'text-red-400'
+                                        : dry.kind === 'miss' ? 'text-yellow-300'
+                                            : 'text-nier-light',
+                                ].join(' ')}>
+                                    {dry.kind === 'err' ? 'ERR: ' : 'SYS: '}
+                                    {dry.headline}
+                                </div>
+
+                                {/* 四行结果表 = 回执原样转写；失败时回执就没有内容可转写 */}
+                                {dry.kind !== 'err' && (
+                                    <dl className="border border-nier-light/20">
+                                        {dry.rows.map((row, index) => (
+                                            <div
+                                                key={`dry-row-${index}`}
+                                                className="flex items-baseline gap-3 border-b border-nier-light/10 px-3 py-1.5 last:border-b-0"
+                                            >
+                                                <dt className="w-24 shrink-0 text-[10px] font-mono tracking-[0.15em] text-nier-light/60">
+                                                    {row.label}
+                                                </dt>
+                                                <dd
+                                                    data-testid={`dry-result-${index}`}
+                                                    className="min-w-0 flex-1 text-[11px] font-mono break-all"
+                                                >
+                                                    {row.value}
+                                                </dd>
+                                            </div>
+                                        ))}
+                                    </dl>
+                                )}
+
+                                {dry.kind === 'miss' && (
+                                    <div className="text-[10px] font-mono leading-relaxed opacity-50">
+                                        为什么没命中 —— 比较不成立 / 变量不在本次输入里 / 类型不可比，
+                                        三者都是普通不命中、不记缺陷；条件原文见左列表 COND 行。
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </section>
             </div>
         </div>
     );

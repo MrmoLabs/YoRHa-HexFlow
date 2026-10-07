@@ -1,4 +1,6 @@
-// R39（PLAN §8.71）：发前路由接线的纯逻辑层 —— 加工页「按输入自动选指令」。
+// R39（PLAN §8.71）：发前路由接线的纯逻辑层 —— 加工页「按输入自动选指令」；
+// R40（PLAN §8.72）第二个消费方 = 规则页「试解析」—— 同一份回执换一种动作语境
+// （见文件尾 describeDryRun），输入表与类型口径原样复用，不另起一套。
 //
 // 三条口径（与后端 resolve_route 逐字对齐，FE 只呈现不改判）：
 //  ① **输入表是扁平键值**（与 evaluate_condition 的变量表同形）：键去两端空白、
@@ -120,3 +122,55 @@ export const describeResolve = (res, { previousName = null } = {}) => {
 export const describeResolveError = (err) => (
     `解析失败 —— ${err?.message || '无法连接后端服务'}`
 );
+
+// ── R40（PLAN §8.72）试解析：同一份回执的**另一种动作语境** ─────────────────
+// 加工页真的会切指令（describeResolve 写「已切到指令…」）；规则页试解析**只回显**，
+// 一行状态都不改 —— 所以这里断在「命中 / 无命中」，绝不把「已切到」搬过来。
+// 结果表四行恒在，值 = 回执原样转写：`considered` / `invalid` 由后端给，FE 不自己数、
+// 更不自己扫第二遍条件（不造第二套判据）。
+const describeInvalid = (list) => {
+    if (!list.length) return '0 条';
+    const items = list.map((item) => {
+        const name = String(item?.name ?? '').trim() || '（未命名）';
+        const reason = String(item?.reason ?? '').trim() || '（未给原因）';
+        return `规则「${name}」：${reason}`;
+    });
+    return `${list.length} 条 —— ${items.join('；')}`;
+};
+
+export const describeDryRun = (res) => {
+    const invalid = Array.isArray(res?.invalid) ? res.invalid : [];
+    const considered = Number(res?.considered) || 0;
+    const matched = Boolean(res?.matched);
+
+    // 未命中时两行都写「（无命中）」—— 后端此时 rule/instruction 本就是 null，
+    // 不硬造一个「看起来最像」的规则名顶上。
+    const ruleName = matched ? (res?.rule?.name || '（规则未回带名称）') : '（无命中）';
+    const targetId = matched ? resolveInstructionId(res) : null;
+    const targetName = matched
+        ? (res?.instruction?.name || res?.instruction?.code || targetId || '（回执未带回目标指令）')
+        : '（无命中）';
+
+    const headline = matched
+        ? (targetId
+            ? `命中 —— 规则「${ruleName}」→ 指令「${targetName}」（只解析，不发送）。`
+            : `命中 —— 规则「${ruleName}」，但回执未带回目标指令。`)
+        : (considered === 0
+            ? '无命中 —— 没有任何规则参与（无规则或全部停用）。'
+            : `无命中 —— 扫过 ${considered} 条规则都不成立。`);
+
+    return {
+        matched,
+        headline,
+        rows: [
+            { label: '命中规则', value: ruleName },
+            { label: '目标指令', value: targetName },
+            {
+                label: '参与扫描',
+                value: considered === 0 ? '0 条 —— 无规则或全部停用' : `${considered} 条`,
+            },
+            { label: '缺陷跳过', value: describeInvalid(invalid) },
+        ],
+    };
+};
+

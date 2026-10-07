@@ -202,7 +202,9 @@ describe('发前路由规则页 RoutingRules', () => {
         fireEvent.click(screen.getByLabelText('下移 meter 0001'));
         expect(api.updateRoutingRule).not.toHaveBeenCalled();
         // 换位 = **两行**的 sort_order 都变（不是「挪了几行」而是「几行要写」）
-        expect(await screen.findByText(/2 条顺序待保存/)).toBeTruthy();
+        // R40 起「…条顺序待保存」这句在两处出现（顺序条 + 试解析按已落库顺序算的
+        // 黄条），故此处收窄到顺序条原文（`● N 条顺序待保存`），不再宽松匹配。
+        expect(await screen.findByText(/^● 2 条顺序待保存$/)).toBeTruthy();
         // 草稿序立刻跟上：meter 0002 已排到最前（展示序 = 匹配序，不等落库）
         expect(screen.getAllByText(/meter 000[12]$/).map((n) => n.textContent))
             .toEqual(['meter 0002', 'meter 0001']);
