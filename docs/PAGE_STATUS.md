@@ -60,7 +60,7 @@
 ### 后续建议
 - 无 —— 本页人工复测项已全数销（2026-10-02：跨泳道拖拽落点 + slot refs 新语义 4 子项，明细 PLAN §8.28 / HANDOVER 条目 42）；跨页残留项 §9.7 ④「应答是否带转义字节」亦已销（2026-10-02，PLAN §8.35）。
 - R21 长度字节序已落地（2026-10-03，PLAN §8.53 / HANDOVER 条目 70）。
-- R22 CRC 多算法已落地（2026-10-03，PLAN §8.54 / HANDOVER 条目 71）：本页校验算法下拉扩到六值（SUM8 / XOR8 / CRC16-MODBUS / CRC16-CCITT / CRC32 / LRC，缺省 CRC16-MODBUS 不变）；出线 ChecksumHandler（refs 模式与旧区间模式两个 return 同位扩）、出口翻译 toFrameBlocks ↔ frame_builder、收侧 response_match.VALID_ALGOS + ALGO_FIELD_WIDTH 宽度下限（crc16_modbus 遗留「恰好 2 字节」逐字不变）、序列计划冻结链 PLAN_ALGO_FIELD_WIDTH、指令页 CHECKSUM_CRC 算子模板 同批成对改；共享向量 vectors/checksum_algo.json 30 行双端同读。下一批 R23（epoch 绝对时间戳模板），排期见 PLAN §8.52。
+- R22 CRC 多算法已落地（2026-10-03，PLAN §8.54 / HANDOVER 条目 71）：本页校验算法下拉扩到六值（SUM8 / XOR8 / CRC16-MODBUS / CRC16-CCITT / CRC32 / LRC，缺省 CRC16-MODBUS 不变）；出线 ChecksumHandler（refs 模式与旧区间模式两个 return 同位扩）、出口翻译 toFrameBlocks ↔ frame_builder、收侧 response_match.VALID_ALGOS + ALGO_FIELD_WIDTH 宽度下限（crc16_modbus 遗留「恰好 2 字节」逐字不变）、序列计划冻结链 PLAN_ALGO_FIELD_WIDTH、指令页 CHECKSUM_CRC 算子模板 同批成对改；共享向量 vectors/checksum_algo.json 30 行双端同读。R23（epoch 绝对时间戳模板）亦已落地 ✅（2026-10-03，PLAN §8.55）。
 - R27 varint / COBS 出线已落地（2026-10-04，PLAN §8.59 / HANDOVER 条目 76）：length 卡「出线编码」下拉（fixed / varint，缺省 fixed 逐字节不变）+ 调色板新组帧元素 COBS（terminator 00 / none）+ 出线后回写 byte_length + refs 指 COBS 内部保存期 400 + 偏移尺两遍法对齐出线宽；共享向量 vectors/framing.json 3 表 35 行双端同读（BE 878 → 917、FE 1213 → 1247）。R28 解包亦已落地（2026-10-04，PLAN §8.60 / HANDOVER 条目 77）：收侧反向消费同一份 vectors/framing.json 解包应答、**不新增向量文件**（协议树侧本页零改动）。
 - R34 校验和字节序已落地（2026-10-05，PLAN §8.66 / HANDOVER 条目 83）：checksum 卡增列「校验字节序」下拉（复用 length 同一字段定义，缺省大端 = 逐字节不变）—— R21 §8.53 尾行登记的「checksum 的 byte_order 未立项，需另开」至此还清；BE 侧 ChecksumHandler 两个 return 同位套用字节序门面（门面上移 handlers/base，length + checksum 同用一份判据）、frame_builder 出口翻译放开、response_generate 比对规则声明从 pc 取；FE 侧卡字段 / 出口翻译闸门 / protocolTree 两处计算点 / validateProtocol W5 同码覆盖；共享向量 vectors/checksum_order.json（big 取自 R22 外部真值、little = 字节反转）。
 
@@ -240,7 +240,7 @@
 - 数据包示例下载（R19 · PLAN §8.50，2026-10-03 用户拍板 ②-2「动态导出」）：聚合导出区新增「下载示例包 (SAMPLE)」—— 复用 R17 的 `?domains=` 子集口径出**按域导入的 5 域**（recipes / sequences / transport / profiles / templates，顺序按 8 域表），与 `POST /datahub/import/{domain}` 能吃的范围逐字对齐，下下来就能直接试回灌；内容**取自当前库现做**（不是仓内静态样例，免维护、不会与 schema 漂移），文件名打 `sample` 标记（`yorha-datahub-sample-<时间戳>.zip`）与手工按域导出的包区分。**零后端改动、零 DDL**。
 
 ### 后续建议
-- 无 —— 数据包示例下载口径已由 R19 落地（2026-10-03 拍板：动态导出，取当前库的按域导入 5 域）。余下仅设备档案自定义排序（→ R20，`sort_order` DDL 已由用户拍板解禁）。
+- 无 —— 数据包示例下载口径已由 R19 落地（2026-10-03 拍板：动态导出，取当前库的按域导入 5 域）。设备档案自定义排序亦已落地 ✅（→ R20，2026-10-03，PLAN §8.50）；本页 nextSteps 无余项。
 
 ---
 
