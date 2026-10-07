@@ -1,0 +1,8 @@
+# 样式示例
+
+```css
+.bad {
+  box-shadow: 0 4px 12px;
+  border-radius: 8px;
+}
+```

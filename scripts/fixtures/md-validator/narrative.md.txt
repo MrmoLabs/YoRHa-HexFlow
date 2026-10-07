@@ -1,0 +1,19 @@
+# 史实记述
+（本文件是 R48 校验器 md 口径测试的 fixture：内容**故意**含样式术语与违规围栏块，
+ 用于证明「散文 / 行内代码 / 无标注围栏 / 非样式围栏一律不判」。测试运行时把它
+ 复制成临时目录里的 .md 再喂给校验器。）
+
+当年那批把 box-shadow 与 border-radius: 8px 全清掉了，padding `p-6` 也收紧。
+行内代码 `rounded-sm` 与 `shadow-md` 是引用，不是代码。
+
+```
+.x { box-shadow: 0 0 4px; border-radius: 6px; }
+```
+
+```bash
+echo "box-shadow: 0 0 4px"
+```
+
+```json
+{"border-radius": "8px"}
+```

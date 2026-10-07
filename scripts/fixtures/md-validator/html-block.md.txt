@@ -1,0 +1,5 @@
+# 标记示例
+
+```html
+<div class="p-6 rounded-lg">x</div>
+```
