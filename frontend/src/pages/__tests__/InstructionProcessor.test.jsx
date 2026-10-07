@@ -27,6 +27,13 @@ vi.mock('../../api', () => ({
 
 import { api } from '../../api';
 
+// R47（§8.79）输入表改成本机持久化后**键入即写**：先跑的用例会把行留在 localStorage，
+// 后跑的用例挂载时会读到那些行，「默认一行空行 / 0 项有效」这类断言就被上一条的残留
+// 带偏。故文件级先清库再跑每条用例 —— 只加隔离，不动任何既有断言。
+beforeEach(() => {
+    window.localStorage.clear();
+});
+
 // CP3 3a 共享向量：三层配方帧（改一必改三）
 const THREE = loadVectors(wrapVec.three);
 const RECIPE_ID = 'recipe-three';
@@ -959,5 +966,82 @@ describe('R46 TIME 字段点击范围收窄（§8.78 留白销项）', () => {
 
         fireEvent.click(screen.getByDisplayValue('2026-01-01 00:00:00'));
         expect(screen.getByText('时间配置 (TEMPORAL)')).not.toBeNull();
+    });
+});
+
+// R47（PLAN §8.79）输入表持久化 —— 2026-10-07 question 回执拍板三条口径：
+// ① **整表原样存（含空行）**；② **加工页与规则页共用一份**；③ **localStorage +
+// 显式「清空输入」入口**。本页锁前两条在加工页这一侧的落地 + 清空入口。
+//
+// key **写死同一个字面量**而不去 import 常量：两页各钉死同一个槽，才是「共用一份」的
+// 独立证据 —— 引同一处常量属于自我印证（常量本身另由 routeInputsPersist 单测钉死）。
+describe('R47 输入表持久化 · 加工页「路由输入」（§8.79）', () => {
+    const SHARED_INPUTS_KEY = 'yorha.routeInputs.v1';
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        api.getResponseSpec.mockRejectedValue(
+            Object.assign(new Error('nf'), { response: { status: 404 } })
+        );
+        api.getOperatorTemplates.mockResolvedValue([]);
+        api.getRecipes.mockResolvedValue([]);
+        api.getBindings.mockResolvedValue([]);
+    });
+
+    const row = (index) => ({
+        key: screen.getByLabelText(`路由键 ${index}`),
+        value: screen.getByLabelText(`路由值 ${index}`),
+    });
+
+    const stored = () => JSON.parse(window.localStorage.getItem(SHARED_INPUTS_KEY));
+
+    it('键入即写：本机那份就是屏上这张表（行原样，不额外加工）', () => {
+        renderPage();
+
+        fireEvent.change(row(1).key, { target: { value: 'meter_id' } });
+        fireEvent.change(row(1).value, { target: { value: '0001' } });
+
+        expect(window.localStorage.getItem(SHARED_INPUTS_KEY)).toBeTruthy();
+        expect(stored()).toEqual([{ key: 'meter_id', value: '0001' }]);
+        expect(screen.getByText(/1 项有效/)).toBeTruthy();
+    });
+
+    it('本机存的那份原样回显：行序、空行、半行都在，且不补第四行', async () => {
+        window.localStorage.setItem(SHARED_INPUTS_KEY, JSON.stringify([
+            { key: 'meter_id', value: '0001' },
+            { key: '', value: '' },
+            { key: 'sensor', value: '' },
+        ]));
+        renderPage();
+        await selectInstruction();
+
+        expect(row(1).key.value).toBe('meter_id');
+        expect(row(1).value.value).toBe('0001');
+        expect(row(2).key.value).toBe('');   // 空行原样在
+        expect(row(3).key.value).toBe('sensor');
+        expect(row(3).value.value).toBe(''); // 半行原样在（只填了键）
+        expect(screen.queryByLabelText('路由键 4')).toBeNull(); // 不补行
+        expect(screen.getByText(/2 项有效/)).toBeTruthy();
+    });
+
+    it('清空输入 → 本机那份没了 + 屏上回默认一行空行（不碰解析状态条与选中指令）', async () => {
+        window.localStorage.setItem(SHARED_INPUTS_KEY, JSON.stringify([
+            { key: 'meter_id', value: '0001' },
+            { key: 'site', value: 'A' },
+        ]));
+        renderPage();
+        await selectInstruction();
+
+        // 前提「本机那份上屏」由上一条回显用例覆盖 —— 这条直接锁清空入口本身
+        fireEvent.click(screen.getByRole('button', { name: '清空输入 (CLEAR)' }));
+
+        expect(window.localStorage.getItem(SHARED_INPUTS_KEY)).toBeNull();
+        expect(screen.getByText(/0 项有效/)).toBeTruthy();
+        expect(row(1).key.value).toBe('');
+        expect(row(1).value.value).toBe('');
+        expect(screen.queryByLabelText('路由键 2')).toBeNull();
+        // 清空只清输入行与本机那份 —— 解析状态条、轨迹、UNDO、指令选中都与输入无关
+        expect(screen.getByRole('button', { name: '解析 RESOLVE' })).toBeTruthy();
+        await screen.findByText(/ID: inst-1/);
     });
 });

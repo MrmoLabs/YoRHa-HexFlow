@@ -3624,6 +3624,70 @@
       **输入表持久化已顺延 R47**、校验器 md 口径仍不涉。
       提交 = `feat(R46)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
 
+96. **R47 · 输入表持久化（两页共用一份本机草稿；PLAN §8.79 · 2026-10-07）**
+    - **为什么**：R39 建「路由输入」时挂在 **§8.71 七 第 4 条**的留白原文 ——「输入表不做
+      持久化：本仓前端**零 `localStorage` 先例**，本批不为此新引一种落盘样式；刷新即回到一行
+      空输入。真要常驻站点参数（表号、线别），另开一批连『谁清、谁改』一起拍」。R46 批内由
+      question 工具回执把它排为 R47（原拍板给 R46 的正是这一条），本批**销的就是这一条**；
+      它在 §8.72 / §8.75 / §8.76 / §8.77 / §8.78 被以「§8.71 七 同款留白」反复引用，
+      那些是各批当时的口径记录，**只在正主处销一次**。
+    - **拍板（question 回执，一次问齐三问）**：① 存哪几列 → **整表原样存（含空行）**；
+      ② 加工页与规则页存一份还是两份 → **两页共用一份**；③ 存多久、谁清谁改 →
+      **localStorage + 显式「清空输入 (CLEAR)」按钮**（键入即写，按钮主动清）。
+    - **它现在怎么解决**：新建 `utils/routeInputsPersist.js` —— 单点槽
+      `ROUTE_INPUTS_KEY = 'yorha.routeInputs.v1'` + `loadRouteInputs` / `saveRouteInputs` /
+      `clearRouteInputs` 三个纯数据函数（不碰 React、不碰请求）。两页的 `useState` 改成
+      `loadRouteInputs() ?? emptyRouteInputs()` 惰性读槽（**切页即重读，共用的就是那个槽**），
+      行变更走**唯一的口** `handleRouteRows` / `handleDryRows`（改键值、加行、删行三条路同口，
+      否则「改的存了、加的没存」会读回一张对不上的表），清空按钮删槽 + 回默认一行空行。
+      `routeResolve.js` 的解析口径（键去空白、空键不发、值按 JSON 标量）**一行未动**。
+    - **三条边界**：① **「存什么读什么」与「默认一行」是两件事** —— 读回 `null`（没存过）才给
+      `emptyRouteInputs()`，形状合法的空数组原样给，不是 `{key, value}` 字符串的行一律当
+      「没存过」（宁回默认一行也不回半张表）；② **存储故障只降级不报错** —— 读 / 写 / 清全
+      try/catch：隐私模式读不到、配额满写不进、本机那份被改坏，都当「本机没存过」，输入表照常
+      打开（**表打不开比表是空的严重得多**）；③ **清空只清输入** —— 解析状态条、逐条判定轨迹、
+      UNDO、选中指令、规则表与表单顺序草稿都与输入无关，一并不动，且**不做二次确认**
+      （清的是本机草稿，不删任何后端数据，删完 ADD 还能加回来）。
+    - **文件（6 个）**：**新建 1 个 FE 实现** —— `frontend/src/utils/routeInputsPersist.js`；
+      **改 2 个 FE 页面** —— `frontend/src/pages/InstructionProcessor.jsx` +
+      `frontend/src/pages/RoutingRules.jsx`；**新建 1 个 + 改 2 个 FE 测试** ——
+      `frontend/src/utils/__tests__/routeInputsPersist.test.js`（新）+
+      `frontend/src/pages/__tests__/InstructionProcessor.test.jsx` +
+      `frontend/src/pages/__tests__/RoutingRules.dryrun.test.jsx`。**纯 FE · 零 DDL** →
+      无 Migration、无 `chore(db)`、零 BE 改动、不引 pytest、无新 pip 依赖、
+      `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、**`/dispatch` 缺省口径未动**。
+    - **测试（红测先行有据）**：新增 **15 条**（单元 9 + 加工页 3 + 规则页 3），实现前
+      **15 红 0 绿** —— 单元 9 条**整文件红**（`routeInputsPersist` 模块不存在）；页面 6 条 =
+      `expected null to be truthy` ×2（键入没落盘）、`expected '' to be 'meter_id'` ×2
+      （本机那份没回显）、`Unable to find … name "清空输入 (CLEAR)"` ×2（清空入口缺失）。
+      **护栏 0 条**。
+    - **三档记账**：**缺特性 15 条**；**测试随新事实改写 0 条**；**测试自身 bug 档 0 条**。
+      **单列说明（不冒充红测）**：两个页面测试文件各加一条文件级
+      `beforeEach(() => window.localStorage.clear())` —— 键入即写后，同文件先跑的用例会把行留给
+      后跑的用例，这是**隔离不是改断言**：加钩子前后两文件既有用例全绿、一条没改。
+    - **验收**：**BE 1033/1033 持平**（零改动）、**FE 1486 → 1501/1501（96 文件，+15，+1 文件）**、
+      `npx vite build` EXIT=0、`npm run lint` EXIT=0 **且 0 warning**、yorha-ui 校验器改动
+      **6 个 js / jsx + 1 json 文件 0 违规**、`ev40` TOTAL_PROBLEMS=0、`ev33` STAGED=0 BAD=0；
+      **零 DDL → 无 Migration、无 `chore(db)`**、不引 pytest、无新 pip 依赖、
+      `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、**`/dispatch` 缺省口径未动**。
+    - **实机冒烟**（后端 8055 + dev 5174，**后端与库零改动**）：加工页键入 `meter_id = 0001`
+      并点 `+ 添加 ADD` → 本机槽两行（含空行）、状态条 `1 项有效`；切规则页 `/routing` →
+      **原样回显同两行**；点 `清空输入 (CLEAR)` → 槽 `null`、回默认一行空行；再键入两行 →
+      **刷新页面仍在**；回加工页 `/processing` 同槽回显，再清空后解析按钮与选中指令
+      `ID: SAMPLE-INST-HEARTBEAT` 都不动。**控制台 0 条新增 error** —— 只有 2 条
+      `GET /response-specs/sample-inst-heartbeat 404`（R45 §8.77 已 A/B 定性的同类）。
+      冒烟没点任何解析 / 试解析 / 新建规则按钮，后端与库零改动，写进本机槽的两行已随最后一步
+      清空，无需清场。
+    - **文档同步（同批）**：PLAN **§8.79 新节** + §1 新增 `R47` 行；**销 §8.71 七 第 4 条**
+      （原文就地标注 → R47 已落地）与 §8.78 六 的顺延项就地标注已收口；本条插入；
+      `pageStatus.json` 的 `/processing` 与 `/routing` 各补记一条，并
+      `npm run sync:page-status` 重生成 `PAGE_STATUS.md`。
+    - **状态**：**R47 ✅ —— 表号不用再打第二遍：切页、刷新都还在，清空是一下子的事。**
+      **明确留白**：**不在状态条加「存本机」常驻提示**（显式清空入口已把这件事摆在屏上，
+      要加属文案扩面，另议排批）；**清空不做二次确认**（要改成先问一句另议）；
+      校验器 md 口径仍不涉。
+      提交 = `feat(R47)` 单笔（**纯 FE · 零 DDL** → 无 Migration、无 `chore(db)`）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

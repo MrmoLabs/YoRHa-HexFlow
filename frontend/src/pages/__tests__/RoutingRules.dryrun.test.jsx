@@ -16,6 +16,13 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import RoutingRules from '../RoutingRules';
 import { api } from '../../api';
 
+// R47（§8.79）输入表改成本机持久化后**键入即写**：先跑的用例会把行留在 localStorage，
+// 后跑的用例挂载时会读到那些行，「空输入表 / 0 项有效」这类断言就被上一条的残留带偏。
+// 故文件级先清库再跑每条用例 —— 只加隔离，不动任何既有断言。
+beforeEach(() => {
+    window.localStorage.clear();
+});
+
 vi.mock('../../api', () => ({
     api: {
         listRoutingRules: vi.fn(),
@@ -258,5 +265,78 @@ describe('R43 试解析 · 逐条判定轨迹（§8.75）', () => {
         expect(screen.queryByText(/逐条判定轨迹 \(TRACE\)/)).toBeNull();
         // 口径列表里也有「逐条判定轨迹」这个词 —— 断言锚到结果区标题，别误伤
         expect(screen.queryByTestId('dry-trace-0')).toBeNull();
+    });
+});
+
+// R47（PLAN §8.79）输入表持久化 —— 2026-10-07 question 回执拍板三条口径：
+// ① **整表原样存（含空行）**；② **加工页与规则页共用一份**；③ **localStorage +
+// 显式「清空输入」入口**。本页锁后两条在规则页这一侧的落地。
+//
+// key **写死同一个字面量**而不去 import 常量：两页各钉死同一个槽，才是「共用一份」的
+// 独立证据 —— 引同一处常量属于自我印证（常量本身另由 routeInputsPersist 单测钉死）。
+describe('R47 输入表持久化 · 规则页「试解析」（§8.79）', () => {
+    const SHARED_INPUTS_KEY = 'yorha.routeInputs.v1';
+
+    beforeEach(() => {
+        api.listRoutingRules.mockResolvedValue([RULE_A, RULE_B]);
+        api.createRoutingRule.mockResolvedValue(null);
+        api.updateRoutingRule.mockResolvedValue(RULE_A);
+        api.deleteRoutingRule.mockResolvedValue({ status: 'deleted', id: 'r-1' });
+        api.resolveRoute.mockResolvedValue(HIT);
+    });
+
+    const dryRow = (index) => ({
+        key: screen.getByLabelText(`试解析键 ${index}`),
+        value: screen.getByLabelText(`试解析值 ${index}`),
+    });
+
+    const stored = () => JSON.parse(window.localStorage.getItem(SHARED_INPUTS_KEY));
+
+    it('读同一份：本机那份原样回显（行序、空行、半行都在，不补行）', async () => {
+        window.localStorage.setItem(SHARED_INPUTS_KEY, JSON.stringify([
+            { key: 'meter_id', value: '0001' },
+            { key: '', value: '' },
+            { key: 'site', value: '' },
+        ]));
+        await renderPage();
+
+        expect(dryRow(1).key.value).toBe('meter_id');
+        expect(dryRow(1).value.value).toBe('0001');
+        expect(dryRow(2).key.value).toBe('');
+        expect(dryRow(3).key.value).toBe('site');
+        expect(dryRow(3).value.value).toBe('');
+        expect(screen.queryByLabelText('试解析键 4')).toBeNull();
+        expect(screen.getByText(/2 项有效/)).toBeTruthy();
+    });
+
+    it('写同一份：键入即写到同一个槽 —— 与加工页共用，本页改完切页接着用', async () => {
+        await renderPage();
+
+        fireEvent.change(dryRow(1).key, { target: { value: 'meter_id' } });
+        fireEvent.change(dryRow(1).value, { target: { value: '0001' } });
+
+        expect(window.localStorage.getItem(SHARED_INPUTS_KEY)).toBeTruthy();
+        expect(stored()).toEqual([{ key: 'meter_id', value: '0001' }]);
+        expect(screen.getByText(/1 项有效/)).toBeTruthy();
+    });
+
+    it('清空输入 → 本机那份没了 + 屏上回默认一行空行（不碰规则表与试解析结果区）', async () => {
+        window.localStorage.setItem(SHARED_INPUTS_KEY, JSON.stringify([
+            { key: 'meter_id', value: '0001' },
+            { key: 'site', value: 'A' },
+        ]));
+        await renderPage();
+
+        // 前提「本机那份上屏」由本页第一条回显用例覆盖 —— 这条直接锁清空入口本身
+        fireEvent.click(screen.getByRole('button', { name: '清空输入 (CLEAR)' }));
+
+        expect(window.localStorage.getItem(SHARED_INPUTS_KEY)).toBeNull();
+        expect(screen.getByText(/0 项有效/)).toBeTruthy();
+        expect(dryRow(1).key.value).toBe('');
+        expect(dryRow(1).value.value).toBe('');
+        expect(screen.queryByLabelText('试解析键 2')).toBeNull();
+        // 清空只清输入行与本机那份 —— 规则表、未保存草稿、已出的结果行都与输入无关
+        expect(screen.getByText('试解析 (DRY RUN)')).toBeTruthy();
+        expect(screen.getByRole('button', { name: '试解析 DRY RUN' })).toBeTruthy();
     });
 });

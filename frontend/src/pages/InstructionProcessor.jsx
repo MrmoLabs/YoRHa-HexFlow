@@ -16,6 +16,11 @@ import {
     resolveInstructionId,
     toInputsMap,
 } from '../utils/routeResolve';
+import {
+    clearRouteInputs,
+    loadRouteInputs,
+    saveRouteInputs,
+} from '../utils/routeInputsPersist';
 
 // wrap 状态机（批次一 D4-A + CP3 3a 降级链三级）—— 换指令按第一个命中的级解析：
 //   第 1 级  配方    GET /recipes?instruction_id= 有行且 stages 非空 → mode:'recipe'
@@ -152,7 +157,10 @@ export default function InstructionProcessor({
     // ── R39（PLAN §8.71）发前路由：按输入自动选指令 ───────────────────────
     // 输入表是扁平键值（与 evaluate_condition 的变量表同形）；命中 / 无命中 /
     // 结构性缺陷全由后端 resolve_route 说了算，FE 只把回执翻译成人话、不改判。
-    const [routeRows, setRouteRows] = useState(emptyRouteInputs);
+    // R47（PLAN §8.79 输入表持久化）：本机那份**原样读回** —— 存过就用存的那张表
+    // （行序、空行、只填了键没填值的半行一并不动），没存过才给默认一行空行；与规则页
+    // 「试解析」共用同一个槽，规则页写下的行切到本页接着用。
+    const [routeRows, setRouteRows] = useState(() => loadRouteInputs() ?? emptyRouteInputs());
     const [routeExpanded, setRouteExpanded] = useState(true);
     const [routeBusy, setRouteBusy] = useState(false);
     const [routeMsg, setRouteMsg] = useState(null);   // { kind: 'ok'|'miss'|'sys'|'err', text }
@@ -199,6 +207,21 @@ export default function InstructionProcessor({
         setActiveInstructionId(routeUndo.id);
         setRouteMsg({ kind: 'sys', text: `已回到指令「${routeUndo.name}」。` });
         setRouteUndo(null);
+    };
+
+    // R47（§8.79）：行一变就写回本机那份（键入即写）—— 改键值、加行、删行三条路都走
+    // 这一个口，否则「改的存了、加的没存」会读回一张对不上的表
+    const handleRouteRows = (next) => {
+        setRouteRows(next);
+        saveRouteInputs(next);
+    };
+
+    // R47（§8.79）：显式清空入口 —— 删本机那份 + 屏上回默认一行空行。清的只是输入行：
+    // 解析状态条、逐条判定轨迹、UNDO、选中指令都与输入无关，一并不动；也不做二次
+    // 确认（清的是本机草稿，不删任何后端数据，删完 ADD 还能再加回来）。
+    const handleClearRouteInputs = () => {
+        clearRouteInputs();
+        setRouteRows(emptyRouteInputs());
     };
 
     return (
@@ -288,11 +311,17 @@ export default function InstructionProcessor({
 
                     {routeExpanded && (
                         <div className="border-t border-nier-light/20 px-4 py-2 flex flex-col gap-1.5">
-                            {/* 行表本体与规则页「试解析」共用（R40 抽出），按钮与回执仍归本页 */}
-                            <RouteInputTable rows={routeRows} onChange={setRouteRows} />
-                            <div className="pt-1">
-                                <RouteButton onClick={() => setRouteRows((prev) => addRouteInput(prev))}>
+                            {/* 行表本体与规则页「试解析」共用（R40 抽出），按钮与回执仍归本页。
+                                R47（§8.79）：行变更即写回本机那份（两页共用一个槽），故「加行」
+                                与「清空」都走 handleRouteRows / handleClearRouteInputs ——
+                                共用组件不加按钮那条边界不变，两个按钮仍归本页。 */}
+                            <RouteInputTable rows={routeRows} onChange={handleRouteRows} />
+                            <div className="pt-1 flex flex-wrap items-center gap-2">
+                                <RouteButton onClick={() => handleRouteRows(addRouteInput(routeRows))}>
                                     + 添加 ADD
+                                </RouteButton>
+                                <RouteButton onClick={handleClearRouteInputs}>
+                                    清空输入 (CLEAR)
                                 </RouteButton>
                             </div>
                         </div>

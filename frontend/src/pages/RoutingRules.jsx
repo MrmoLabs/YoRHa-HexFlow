@@ -41,6 +41,11 @@ import {
     filledInputCount,
     toInputsMap,
 } from '../utils/routeResolve';
+import {
+    clearRouteInputs,
+    loadRouteInputs,
+    saveRouteInputs,
+} from '../utils/routeInputsPersist';
 
 const PanelTitle = ({ children, hint }) => (
     <div className="flex items-baseline justify-between border-b border-nier-light/30 px-4 py-2 bg-nier-light/5">
@@ -125,7 +130,10 @@ export default function RoutingRules({ instructions = [] }) {
     // ── R40（§8.72）试解析 ────────────────────────────────────────────────
     // 输入表与加工页同一份实现（utils/routeResolve + 共用组件 RouteInputTable），
     // 回执怎么翻译归 describeDryRun —— 这里只回显，不改本页任何状态。
-    const [dryRows, setDryRows] = useState(emptyRouteInputs);
+    // R47（PLAN §8.79 输入表持久化）：本机那份**原样读回** —— 存过就用存的那张表
+    // （行序、空行、只填了键没填值的半行一并不动），没存过才给默认一行空行；与加工页
+    // 「路由输入」共用同一个槽，本页写下的行切到加工页接着用。
+    const [dryRows, setDryRows] = useState(() => loadRouteInputs() ?? emptyRouteInputs());
     const [dryBusy, setDryBusy] = useState(false);
     const [dry, setDry] = useState(null);   // { kind: 'ok'|'miss'|'err', headline, rows, trace }
 
@@ -337,6 +345,21 @@ export default function RoutingRules({ instructions = [] }) {
         } finally {
             setDryBusy(false);
         }
+    };
+
+    // R47（§8.79）：行一变就写回本机那份（键入即写）—— 改键值、加行、删行三条路都走
+    // 这一个口，与加工页「路由输入」同一个槽
+    const handleDryRows = (next) => {
+        setDryRows(next);
+        saveRouteInputs(next);
+    };
+
+    // R47（§8.79）：显式清空入口 —— 删本机那份 + 屏上回默认一行空行。清的只是输入行：
+    // 规则表、表单草稿、顺序草稿、已出的试解析结果都与输入无关，一并不动；也不做
+    // 二次确认（清的是本机草稿，不删任何后端数据，删完 ADD 还能再加回来）。
+    const handleClearDryInputs = () => {
+        clearRouteInputs();
+        setDryRows(emptyRouteInputs());
     };
 
     const dirtyErrors = touched ? errors : {};
@@ -613,15 +636,21 @@ export default function RoutingRules({ instructions = [] }) {
                         )}
 
                         <div className="flex flex-col gap-1.5">
+                            {/* R47（§8.79）：行变更即写回本机那份（与加工页共用一个槽），故
+                                「加行」与「清空」都走 handleDryRows / handleClearDryInputs ——
+                                共用组件不加按钮那条边界不变，两个按钮仍归本页 */}
                             <RouteInputTable
                                 rows={dryRows}
-                                onChange={setDryRows}
+                                onChange={handleDryRows}
                                 idPrefix="dry"
                                 labels={{ key: '试解析键', value: '试解析值', remove: '删除试解析输入' }}
                             />
-                            <div className="pt-1">
-                                <ActionButton onClick={() => setDryRows((prev) => addRouteInput(prev))}>
+                            <div className="pt-1 flex flex-wrap items-center gap-2">
+                                <ActionButton onClick={() => handleDryRows(addRouteInput(dryRows))}>
                                     + 添加 ADD
+                                </ActionButton>
+                                <ActionButton onClick={handleClearDryInputs}>
+                                    清空输入 (CLEAR)
                                 </ActionButton>
                             </div>
                         </div>
