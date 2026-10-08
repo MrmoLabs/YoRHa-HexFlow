@@ -846,6 +846,80 @@ describe('Orchestration Page', () => {
         expect(cleanUnload.defaultPrevented).toBe(false);
     });
 
+    // ─── R53 (PLAN §8.85): 过期回包不得覆盖更新的本地状态 ────────────────
+    it('R53 回归：配方 SAVE 回包晚于新编辑 → 草稿与脏点不得被过期回包清掉', async () => {
+        let release;
+        api.updateRecipe.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+
+        renderRecipePage();
+        await awaitDefaultBinding();
+        await waitFor(() => expect(api.getRecipes).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(screen.getByTestId('recipe-new').disabled).toBe(false));
+
+        fireEvent.click(screen.getByTestId('recipe-new'));
+        await waitFor(() => expect(screen.getByTestId('recipe-stage-count').textContent).toContain('1 / 4'));
+        const createdId = api.createRecipe.mock.calls[0][0].id;
+
+        fireEvent.change(screen.getByTestId('recipe-name'), { target: { value: '存前名' } });
+        expect(screen.getByTestId('recipe-dirty').textContent).toBe('配方未保存');
+        fireEvent.click(screen.getByTestId('recipe-save'));
+        await waitFor(() => expect(api.updateRecipe).toHaveBeenCalledTimes(1));
+
+        // 回包未回 → 用户又改一刀
+        fireEvent.change(screen.getByTestId('recipe-name'), { target: { value: '存后名' } });
+
+        await act(async () => {
+            release({
+                id: createdId, version: 2, name: '存前名', description: null, instruction_id: null,
+                stages: [{ protocol_id: 'proto-1' }]
+            });
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        // 判据：回包对应上一次保存 → 新编辑不得被判成已保存（判成已保存 = SAVE 失去入口、离开不再拦）
+        expect(screen.getByTestId('recipe-name').value).toBe('存后名');
+        expect(screen.getByTestId('recipe-dirty').textContent).toBe('配方未保存');
+    });
+
+    it('R53 回归：配方新建回包晚于本地切换/编辑 → 正在编辑的草稿不得被新行覆盖', async () => {
+        // 存量 1 条但**未选中** → 页面处于无草稿态（新建入口与选择器同在，选择器未禁）
+        api.getRecipes.mockResolvedValue([{ ...RECIPE_ROW }]);
+        let release;
+        api.createRecipe.mockImplementation((payload) => new Promise((resolve) => {
+            release = { payload, resolve };
+        }));
+        renderRecipePage();
+        await awaitDefaultBinding();
+        await waitFor(() => expect(api.getRecipes).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(screen.getByTestId('recipe-new').disabled).toBe(false));
+        expect(screen.getByTestId('recipe-select').value).toBe('');
+
+        fireEvent.click(screen.getByTestId('recipe-new'));
+        await waitFor(() => expect(api.createRecipe).toHaveBeenCalledTimes(1));
+
+        // 新建还在路上：先选中存量配方，再给它改名（两次本地操作都发生在回包之前）
+        fireEvent.change(screen.getByTestId('recipe-select'), { target: { value: RECIPE_ROW.id } });
+        expect(screen.getByTestId('recipe-name').value).toBe(RECIPE_ROW.name);
+        fireEvent.change(screen.getByTestId('recipe-name'), { target: { value: '新建期间改' } });
+        expect(screen.getByTestId('recipe-dirty').textContent).toBe('配方未保存');
+
+        await act(async () => {
+            release.resolve({
+                ...release.payload, version: 1, description: null, instruction_id: null,
+                stages: [{ protocol_id: 'proto-1' }]
+            });
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        // 判据：新行照常入列（新建的语义没丢），但选中与草稿以本地为准，不被新行切走/冲掉
+        expect(screen.getByTestId('recipe-select').options.length).toBe(2);
+        expect(screen.getByTestId('recipe-select').value).toBe(RECIPE_ROW.id);
+        expect(screen.getByTestId('recipe-name').value).toBe('新建期间改');
+        expect(screen.getByTestId('recipe-dirty').textContent).toBe('配方未保存');
+    });
+
     it('CP3 3b stage 操作：加层封顶 4、上/下移换序、换协议清槽、选槽位次 badge、删层保底 1', async () => {
         api.getRecipes.mockResolvedValue([{ ...RECIPE_ROW }]);
         renderRecipePage();

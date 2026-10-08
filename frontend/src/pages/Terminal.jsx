@@ -322,7 +322,9 @@ export default function Terminal() {
         try {
             const effective = await api.setTransportConfig(toPatch(draft));
             setConfig(effective);
-            setDraft(toDraft(effective));
+            // R53 (PLAN §8.85)：回包对应的是**点应用那一刻**的表单 —— 期间又敲过的
+            // 字段以本地为准（生效配置照常更新，表单不被过期回包整份回填）。
+            setDraft(prev => (prev === draft ? toDraft(effective) : prev));
             setConfigError('');
             setSysMsg(`配置已生效：模式 ${String(effective.mode).toUpperCase()}`);
             await Promise.all([refreshStatus(), refreshProfiles()]); // 手工改配置会清激活指针

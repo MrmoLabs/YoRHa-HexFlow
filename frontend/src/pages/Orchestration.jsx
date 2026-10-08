@@ -161,6 +161,8 @@ export default function Orchestration({ protocols, instructions }) {
     const [recipes, setRecipes] = useState([]);
     const [activeRecipeId, setActiveRecipeId] = useState('');
     const [recipeDraft, setRecipeDraft] = useState(null);
+    const recipeDraftRef = useRef(null); // R53: 草稿身份镜像（回包落地时比对）
+    recipeDraftRef.current = recipeDraft;
     const [recipeDirty, setRecipeDirty] = useState(false);
     const [recipeSaving, setRecipeSaving] = useState(false);
     const [recipeLoaded, setRecipeLoaded] = useState(false);
@@ -445,6 +447,7 @@ export default function Orchestration({ protocols, instructions }) {
     // 之后编辑一律 PUT + version 乐观并发；id 前端 uuid（protocol.py 先例）。
     const handleCreateRecipe = async () => {
         if (!recipeLoaded || recipeDirty || recipeSaving || !protocols.length) return;
+        const savedDraft = recipeDraft; // R53: 点新建那一刻的草稿身份
         setRecipeSaving(true);
         setRecipeMsg(null);
         try {
@@ -453,10 +456,15 @@ export default function Orchestration({ protocols, instructions }) {
                 name: `新配方 (NEW) ${recipes.length + 1}`,
                 stages: [{ protocol_id: protocols[0].id }]
             });
-            setRecipes(prev => [...prev, row]);
-            setActiveRecipeId(row.id);
-            setRecipeDraft(cloneRecipe(row));
-            setRecipeDirty(false);
+            setRecipes(prev => [...prev, row]); // 新行照常入列（新建的语义没丢）
+            // R53 (PLAN §8.85)：回包落地时若本地这份已被换掉（新建期间选中了别的
+            // 配方 / 又动了草稿），**本地优先** —— 不切走、不覆盖；新行已在列表里，
+            // 切不切由用户自己点，否则那份未保存编辑会被新行静默冲掉。
+            if (recipeDraftRef.current === savedDraft) {
+                setActiveRecipeId(row.id);
+                setRecipeDraft(cloneRecipe(row));
+                setRecipeDirty(false);
+            }
             setRecipeMsg({ text: `已新建 (CREATED) v${row.version}`, ok: true });
         } catch (err) {
             setRecipeMsg({ text: syncErrorText('新建失败', err), ok: false });
@@ -487,6 +495,7 @@ export default function Orchestration({ protocols, instructions }) {
     // 旧指针，直接设新会让旧指令继续指向本配方（RecipeResponse「0 或 1 条」破）。
     const handleSaveRecipe = async () => {
         if (!recipeDraft || !recipeDirty || recipeSaving) return;
+        const savedDraft = recipeDraft; // R53: 点保存那一刻的草稿身份
         setRecipeSaving(true);
         const serverRow = recipes.find(r => r.id === recipeDraft.id);
         const base = {
@@ -512,8 +521,12 @@ export default function Orchestration({ protocols, instructions }) {
                 });
             }
             setRecipes(prev => prev.map(r => (r.id === row.id ? row : r)));
-            setRecipeDraft(cloneRecipe(row));
-            setRecipeDirty(false);
+            // R53 (PLAN §8.85)：列表照常写穿服务端行；草稿与脏点按「点保存那一刻的
+            // 草稿还在不在」判 —— 期间又改过就以本地为准（这份回包是上一次的）。
+            if (recipeDraftRef.current === savedDraft) {
+                setRecipeDraft(cloneRecipe(row));
+                setRecipeDirty(false);
+            }
             setRecipeMsg({ text: `已保存 (SAVED) v${row.version}`, ok: true });
         } catch (err) {
             setRecipeMsg({ text: syncErrorText('配方保存失败', err), ok: false });

@@ -209,6 +209,32 @@ describe('Terminal Page（E3 通讯调试）', () => {
         expect(screen.getByDisplayValue('10.0.0.5')).toBeDefined(); // 草稿回填生效配置
     });
 
+    // ─── R53 (PLAN §8.85): 过期回包不得覆盖更新的本地状态 ────────────────
+    it('R53 回归：应用配置回包晚于新编辑 → 表单不得被过期回包回填', async () => {
+        let release;
+        api.setTransportConfig.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+        await renderTerminal();
+        await waitFor(() => expect(api.getTransportConfig).toHaveBeenCalledTimes(1));
+
+        fireEvent.click(screen.getByRole('button', { name: /网络 TCP/ }));
+        fireEvent.change(screen.getByPlaceholderText('127.0.0.1'), { target: { value: '10.0.0.5' } });
+        fireEvent.click(screen.getByRole('button', { name: /应用配置/ }));
+        await waitFor(() => expect(api.setTransportConfig).toHaveBeenCalledTimes(1));
+
+        // 回包未回 → 继续改
+        fireEvent.change(screen.getByPlaceholderText('127.0.0.1'), { target: { value: '10.0.0.9' } });
+
+        await act(async () => {
+            release({ ...CONFIG, mode: 'tcp', tcp: { ...CONFIG.tcp, host: '10.0.0.5' } });
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+        await waitFor(() => expect(screen.getByText(/配置已生效：模式 TCP/)).toBeDefined());
+
+        // 判据：回包对应那次应用 → 应用之后敲的字段不得被回填掉
+        expect(screen.getByDisplayValue('10.0.0.9')).toBeDefined();
+    });
+
     it('串口模式暴露参数并按字符串→数字提交（stopbits 1.5）', async () => {
         ok(api.setTransportConfig, {
             ...CONFIG,

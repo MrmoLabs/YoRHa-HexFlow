@@ -199,6 +199,37 @@ describe('Sequences Page', () => {
         expect('step_order' in body.steps[0]).toBe(false);
     });
 
+    // ─── R53 (PLAN §8.85): 过期回包不得覆盖更新的本地状态 ────────────────
+    it('R53 回归：序列保存回包晚于新编辑 → 服务端行重建草稿不得冲掉存后编辑', async () => {
+        // 回包与随后的列表回读都由本测试掌闸：回读带回的是**服务端已存的**名字
+        let release;
+        let putName = null;
+        api.updateSequence.mockImplementation((id, body) => {
+            putName = body.name;
+            return new Promise((resolve) => { release = resolve; });
+        });
+        api.listSequences.mockImplementation(() => Promise.resolve([{ ...SEQ_ROW, name: putName || SEQ_ROW.name }]));
+
+        await renderPage();
+        const nameInput = await screen.findByDisplayValue('冒烟序列');
+        fireEvent.change(nameInput, { target: { value: '存前名' } });
+        const saveBtn = screen.getByRole('button', { name: /保存定义/ });
+        await waitFor(() => expect(saveBtn.disabled).toBe(false));
+        fireEvent.click(saveBtn);
+        await waitFor(() => expect(api.updateSequence).toHaveBeenCalledTimes(1));
+
+        // 回包未回 → 用户又改一刀
+        fireEvent.change(screen.getByDisplayValue('存前名'), { target: { value: '存后名' } });
+
+        release(SEQ_ROW);
+        // 保存成功 → refresh() 回读列表（第 2 次）→ effect 用服务端行重建草稿
+        await waitFor(() => expect(api.listSequences).toHaveBeenCalledTimes(2));
+        await act(async () => {});
+
+        // 判据：重建只认「服务端已存的那份」，存后那次编辑不得被冲掉
+        expect(screen.getByDisplayValue('存后名')).toBeDefined();
+    });
+
     it('save stays disabled while any step is uncompiled', async () => {
         api.listSequences.mockResolvedValue([{
             ...SEQ_ROW,

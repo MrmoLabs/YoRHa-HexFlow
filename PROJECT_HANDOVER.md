@@ -4000,6 +4000,77 @@
        （注入盲区 27 处、假定时器下排空跳过）沿旧；`~~~` 围栏与 `.txt` 纳入、行内抑制注释沿旧。
        提交 = `feat(R52)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
 
+102. **R53 · 过期回包同类扫（R52 判据推广全仓 · 99 处候选逐条判档；PLAN §8.85 · 2026-10-08）**
+      - **来源与拍板（两问，无既有登记项）**：R52 收口后问 R53 排批 —— 盘点剩余工作时摸底出
+        「同判据可推广」的新题（R52 只修了 `TransactionPanel`，**其它组件的回包落地会不会也在覆盖
+        更新的本地状态？**），**question 回执选推荐项「过期回包同类扫」**（余：测试质量线收尾 /
+        实机冒烟 + pageStatus 同步 / 暂不排批）；静态清单判档后第二问「修到哪一层」，
+        **回执选「实锤 6 处全修」**（余：只修清脏标的 3 处 / 连边界 3 处一起修）。
+      - **文件（4 个应用 + 4 个测试）**：改 `frontend/src/hooks/useInstructionData.js`、
+        `frontend/src/pages/Orchestration.jsx`、`frontend/src/pages/Sequences.jsx`、
+        `frontend/src/pages/Terminal.jsx`；同批新增回归测试于 `hooks/__tests__/useInstructionData.test.js`、
+        `pages/__tests__/Orchestration.test.jsx`（2 条）、`pages/__tests__/Sequences.test.jsx`、
+        `pages/__tests__/Terminal.test.jsx`。**零 DDL → 无 Migration、无 `chore(db)`**；不引 pytest、
+        无新 pip 依赖；`models.py` / `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、
+        **`/dispatch` 缺省口径未动**。
+      - **静态清单（99 处 / 12 文件）**：规则 = `await …(`（同行非 `expect`、非 `it/test/describe`）→
+        其后 7 行内出现 `setXxx(`，标注中间有无 `if (` / `alive` / `abort` / `prev =>` 守卫。
+        Terminal 26 · DataHub 15 · Protocol 11 · Sequences 10 · Trash 9 · RoutingRules 8 · Orchestration 7 ·
+        useInstructionData 4 · InstructionRunner 3 · App 2 · TransactionPanel 2 · InstructionProcessor 2；
+        初分 **L 22 / ? 5 / N 72**，逐处读回上下文定档后 **L 档实锤候选 6 处**、**边界 3 处不修**。
+      - **判档结论（N 档为什么不是）**：列表刷新 / 置消息 / **`prev =>` 函数式更新**（`InstructionRunner`
+        计数推进、`RoutingRules` 启停只改 `enabled` 字段）天然不覆盖别处改动；
+        `Protocol.handleConflictLoadLatest` 的按钮语义**本身就是「放弃本地草稿加载最新」**；
+        `RoutingRules` 编辑态在独立 `draft`，`rows` 只是展示序，`loadRules()` 只在 mount 与显式操作后跑。
+      - **红测先行有据（5 条，先跑红再动代码）**：回包由**本测试掌闸的 Promise** 模拟晚到 ——
+        注入只包 `mockResolvedValue` / `mockRejectedValue`、**不碰 `mockImplementation`**，
+        0ms / 15ms 档同形，**红与绿都不依赖延迟开关**。红因原文：
+        `expected false to be true`（脏标被清）· `expected '存前名' to be '存后名'` ·
+        `expected '<新行 id>' to be 'recipe-1'`（选中被切走）· `Unable to find … 存后名` ·
+        `Unable to find … 10.0.0.9`；修后该 4 文件 **129/129 绿**（原 124 条零改写、只新增）。
+      - **测试 bug 先修 4 笔（三档记账）**：① ③ 的**强形态不可达** —— `recipe-new` 只在
+        `RecipeEditor.jsx:93` 的 `!draft` 分支渲染，点新建时没有草稿可编辑 → 红测改走**可达路径**
+        （无草稿态先点新建，回包未回期间选中存量配方再改名）；② **⑥ 撤测** —— `config`/`draft` 初值
+        `null` 且面板 `{!draft ? (` 门控（`Terminal.jsx:177-178/629`）、`refreshConfig` 仅 mount 跑一次
+        （`:280-287` 稳定依赖）→ **首屏回包前表单不存在**，静态候选属误报，如实记账；
+        ③ ① 首插位落错 describe（文件末尾的 `describeReferences / describeDeletion` 域，`mockInstructions`
+        不在作用域 → `ReferenceError`），移到主 describe 的「草稿隔离（反馈 #2）」域；
+        ④ ① 断言属性名写错（hook 暴露 `currentInstruction` 而非 `draftInstruction`）。
+      - **修法（判据 = 本地草稿对象身份，4 文件 13 处）**：R52 用世代号，本批收敛成
+        **「点操作那一刻的草稿对象」vs「回包落地那一刻的 `prev` / 镜像 ref」** —— 期间编辑必换新对象，
+        身份不同即本地已前进。① `saveChanges` 列表照常写穿、身份已换则不清草稿不清脏标不重建 undo 基线；
+        ② 配方 SAVE 列表写穿服务端行、草稿与脏点留本地；③ 配方新建新行照常入列、不切选中不覆盖；
+        ④ 序列保存后的 effect 用 `saveStartRef` **一次性消费**，身份变过就不用服务端行重建 draft
+        （`setSelectedId` 回挂照常，PUT 失败清标记）；⑤ 应用配置 `setConfig(effective)` 照常更新（权威态），
+        表单按身份决定是否回填。**③ 强形态不可达仍接了守卫 —— 由可达路径的红测证明生效，不是注释护栏。**
+      - **三档记账**：缺特性（真红测）**5** / 测试自身 bug 先修 **4** / 测试随新事实改写 **0**；
+        **实现缺陷 5 处**（同根：过期回包覆盖更新的本地状态）；**静态误报 2 处**（③ 强形态、⑥ 首屏）
+        如实记账、不冒充实锤。**护栏不冒充红测**：阴性对照（未修必红，已见）+ 不设 env 全量 0 红 +
+        10 项验收两遍；**红测不借用护栏**（全是掌闸 Promise）。
+      - **取证工具自身的账（1 笔）**：`r53_fix.py` 的 ②b 锚点写成臆造的保存分支形状 → 自带断言
+        `anchor x0` 中止；**已落 5 处各自完整**（先断言唯一再替换），按 `read` 读回的真实文本重写
+        `r53_fix2.py` 补齐 8 处，终验全绿为证。属脚本自身，未触及被测语义。
+      - **验收（10 项 · 两遍全绿）**：**BE 1033/1033**、**FE 1508/1508（96 文件，比 R52 多 5 条新测）**、
+        `npx vite build` 0、`npm run lint` 0、yorha-ui 校验器（**8 个改动 js/jsx + 2 个 mjs +
+        全仓 14 份 md**）**0 违规**、md 口径 **8/8**、自检收口 **7/7**、**15ms 探测 1508/1508**、
+        `ev40` TOTAL_PROBLEMS=0、`ev33` STAGED=0 BAD=0。**第一遍 10 项全绿；第二遍 15ms 探测红过 1 条**
+        （`InstructionProcessor` 开关切裸发 / `Unable to find … /WRAP READY/`，本批未改该测试文件，但它 import 了本批改的 `useInstructionData`）→ **A/B 定责**：带改动全量 15ms × 3 = **3/3 全绿**、源码回退 HEAD × 3 = **每轮恰好 5 红 = 本批 5 条红测（0 附带损伤，兼三轮阴性对照）**，该条两段均绿、复现 0/6 → **一次性抖动、非本批引入**；第三遍 10 项全绿凑成两遍。取证脚本 `r53_ab.py`（含按 MD5 自证还原 4 个源文件）。
+      - **人工验证**：拍板**零能力变化 → 不启 8055 / 5174、不做浏览器冒烟** —— 改的是时序守卫，
+        不增不减接口/页面/能力/状态码，可观测差异只在「回包晚于本地操作」窗口内保留本地改动。
+        `pageStatus.json` 与 `PAGE_STATUS.md` **双双不动**。
+      - **文档同步（同批）**：PLAN **§8.85 新节** + §1 新增 `R53` 行（**无既有留白可销** —— 本批是新题）；
+        本条插入。**状态**：**R53 ✅ —— 同一个根换个扫法又挖出 5 处：判据一旦写成「对象身份比对」，
+        就能一路复用。**
+        **明确留白**：**边界 3 处**（`handleProfileActivate` 用档案配置替换表单、
+        `handleProfileCreate` 保存后清空新档名输入、Sequences 新建/手动刷新按钮即切走 —— 意图性替换，
+        非时序问题）；**⑥ `refreshConfig` 保持原样**（候选不可达 → 不接无红测的护栏；触发条件 = 将来给
+        `draft` 非空初值或新增非 mount 调用点，届时先出红测）；**Sequences 手动刷新即重建草稿**
+        （本批只守「保存回包」一个窗口）；R52 留白沿旧（**切指令期间正在编辑**要连「切指令即换文档」
+        一起设计、静态规则只覆盖断言不在场/不成立、IGNORE_RANGES 非法文本）；R51 留白沿旧
+        （**注入盲区 27 处**、**假定时器下排空与 settle 跳过**）；`~~~` 围栏与 `.txt` 纳入、行内抑制注释沿旧。
+        提交 = `feat(R53)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

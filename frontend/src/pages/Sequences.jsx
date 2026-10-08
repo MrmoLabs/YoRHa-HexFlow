@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DndContext, PointerSensor, useSensor, useSensors, useDraggable, useDroppable } from '@dnd-kit/core';
 import { api } from '../api';
 import { PAGE_STATUS_BY_KEY } from '../config/pageRegistry';
@@ -221,6 +221,11 @@ export default function Sequences() {
     const [sequences, setSequences] = useState([]);
     const [selectedId, setSelectedId] = useState(null);
     const [draft, setDraft] = useState(null);
+    // R53 (PLAN §8.85)：保存回包落地后的「服务端行重建草稿」只在本地没再改过时
+    // 生效 —— 期间又编辑就以本地为准（重建会把那次编辑整份冲掉）。
+    const draftRef = useRef(null);
+    draftRef.current = draft;
+    const saveStartRef = useRef(null); // 点保存那一刻的草稿身份，effect 一次性消费
     const [instructions, setInstructions] = useState([]);
     const [recipes, setRecipes] = useState([]); // CP3 3c (D6-B): 步骤 RECIPE 选择器选项
     const [status, setStatus] = useState(null);
@@ -299,10 +304,19 @@ export default function Sequences() {
         if (sequences.length === 0) {
             setSelectedId(null);
             setDraft(null);
+            saveStartRef.current = null;
             return;
         }
         const row = sequences.find((r) => r.id === selectedId) || sequences[0];
         setSelectedId(row.id);
+        // R53 (PLAN §8.85)：保存回包 → refresh() 之后的这次重建只认「点保存那一刻的
+        // 草稿」仍没被换过 —— 换过 = 保存期间用户又改了，本地优先不重建（重建会用
+        // 服务端行把那次编辑整份冲掉）。一次性消费：其它刷新照旧重建。
+        if (saveStartRef.current !== null) {
+            const unchanged = draftRef.current === saveStartRef.current;
+            saveStartRef.current = null;
+            if (!unchanged) return;
+        }
         setDraft(toDraft(row));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sequences]);
@@ -380,12 +394,14 @@ export default function Sequences() {
     const handleSave = async () => {
         if (!canSave || busy) return;
         setBusy('save');
+        saveStartRef.current = draft; // R53: 点保存那一刻的草稿身份（effect 消费）
         try {
             await api.updateSequence(selectedId, saveBody(draft));
             await refresh(); // effect 从服务端行重建 draft（含新步骤 id / step_order）
             ok('已保存（PUT 整体替换）');
         } catch (err) {
             fail(err); // 400 detail 含 steps[i] 定位，直接展示
+            saveStartRef.current = null; // R53: 失败路径没有 refresh → 不留一次性残留
         } finally {
             setBusy('');
         }

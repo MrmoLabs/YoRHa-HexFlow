@@ -574,6 +574,41 @@ describe('useInstructionData', () => {
         });
     });
 
+    // ─── R53 (PLAN §8.85): 过期回包不得覆盖更新的本地状态 ────────────────
+    it('R53 回归：保存回包晚于新编辑 → 草稿与脏标不得被过期回包清掉', async () => {
+        // 回包由本测试掌闸（mockImplementation 不进延迟注入 → 0ms / 15ms 档同形）
+        let release;
+        api.updateInstruction.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+
+        const { result } = renderHook(() => useInstructionData({
+            instructions: mockInstructions,
+            setInstructions: vi.fn(),
+            disableInitialLoad: true,
+        }));
+
+        act(() => { result.current.setActiveInstructionId('inst-1'); });
+        act(() => { result.current.updateLocalInstruction({ ...mockInstructions[0], name: '存前' }); });
+        expect(result.current.hasUnsavedChanges).toBe(true);
+
+        act(() => { result.current.saveChanges(); });
+        await waitFor(() => expect(api.updateInstruction).toHaveBeenCalledTimes(1));
+
+        // 回包未回 → 用户又改一刀（工作副本仍是 hook 内草稿）
+        act(() => { result.current.updateLocalInstruction({ ...mockInstructions[0], name: '存后' }); });
+
+        await act(async () => {
+            release({});
+            await Promise.resolve();
+            await Promise.resolve();
+        });
+
+        // 判据：这份回包对应的是**上一次**保存 —— 存后那次编辑不得被判成已保存
+        //（清草稿 + 清脏标 = 下一次保存的 payload 里不再有它，共享态被写回旧快照）
+        expect(result.current.hasUnsavedChanges).toBe(true);
+        expect(result.current.currentInstruction.name).toBe('存后');
+    });
+
+
     // ─── 优化批（调研后优化 2/3）：位段元数据零 DDL 存储 ─────────────────────
     // bit_fields 表无 JSON 列 → signed/value_table 骑 pc.bit_meta：
     // 读取合并回 bits（编辑视图单源），保存拆分回落 pc（normalizeInstructionPayload）。

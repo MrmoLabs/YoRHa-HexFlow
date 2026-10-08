@@ -101,6 +101,10 @@ export function useInstructionData(options = {}) {
     // 反馈 #2 草稿隔离：活动指令的未保存工作副本只存在于 hook 内 —— 不写
     // 共享 instructions（加工页/编排页读共享态，只见已保存数据）。
     const [draftInstruction, setDraftInstruction] = useState(null);
+    // R53 (PLAN §8.85)：保存回包落地时要比「点保存那一刻的草稿」与「当前草稿」
+    // 是不是同一份 —— 不同 = 保存期间用户又改了，回包只写穿服务端那份。
+    const draftRef = useRef(null);
+    draftRef.current = draftInstruction;
     const [operatorTemplates, setOperatorTemplates] = useState({});
     const [operatorTemplatesError, setOperatorTemplatesError] = useState('');
     // P4-1: undo/redo stacks for the working copy (cap 50) — destructured as
@@ -461,6 +465,7 @@ export function useInstructionData(options = {}) {
             return;
         }
 
+        const savedDraft = draftInstruction; // R53: 点保存那一刻的草稿身份
         try {
             showStatus('保存中...');
             await api.updateInstruction(currentInstruction.id, payload);
@@ -469,9 +474,14 @@ export function useInstructionData(options = {}) {
             // 版本），再清本地草稿与脏标。
             const saved = currentInstruction;
             setInstructionsState(prev => prev.map(i => i.id === saved.id ? saved : i));
-            setDraftInstruction(null);
-            setHasUnsavedChanges(false);
-            clearHistory(); // P4-1: save = new baseline
+            // R53 (PLAN §8.85)：这份回包对应的是**上一次**的保存 —— 期间若又编辑过
+            //（草稿对象已被换掉），本地以编辑为准：不清草稿、不清脏标、不重建 undo
+            // 基线；否则那次编辑会在下一次保存的 payload 里凭空消失。
+            if (draftRef.current === savedDraft) {
+                setDraftInstruction(null);
+                setHasUnsavedChanges(false);
+                clearHistory(); // P4-1: save = new baseline
+            }
             setSaveError(''); // P4-2: success clears any previous failure banner
             if (!setExternalInstructions && onWebUpdate) onWebUpdate(instructions);
         } catch (e) {
