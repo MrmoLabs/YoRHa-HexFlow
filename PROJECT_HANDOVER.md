@@ -4387,6 +4387,70 @@
        非产品代码）；`backend/db/yorha.db` 已修改与 `frontend/red-report.json` 未跟踪 = 既有状态、
        本批未碰，不入提交范围。提交 = `feat(R60)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
 
+110. **R61 · 假定时器在途链（两个盲跳点改有界排空）**（PLAN §8.93，2026-10-08；R51 §8.83 八
+     第 3 条留白「**假定时器下的排空与 `settle` 是跳过的**（等不到就硬跳，防冻死钩子）—— 若某文件
+     既用假定时器、又跨测试留在途链，排空不生效；本批已把 Protocol 那 2 条要等回包的测试切真定时器，
+     其余假定时器文件的在途链**未逐一验证**；」，口径原文 §8.83 行 7401-7402、留白行 7480-7482，
+     §8.92 七 第 3 条同族沿旧一次；R60 收口后本会话拍板下一批 = 本项）
+     - **范围**：**仅测试基建 + 测试文件 · 零 DDL** —— 零 BE、无 Migration、无 `chore(db)`、
+       不引 pytest、新 pip 依赖 = 0，`/dispatch` 缺省口径逐字节不变，`frontend/src` 产品代码
+       一行未改，**断言期望一字未改**；改 1 个基建文件、新增 1 个红测文件。
+     - **新口径 = 两个档一个口**（`frontend/test/setupDelay.js`，新逻辑全在 `DELAY_MS > 0` 门内）：
+       假定时器档 `drainFakeClock()` **推进假时钟** —— 每轮先排微任务（6 tick）、自己在账的在途链
+       清零或时钟无挂起计时器即早退、再 `advanceTimersByTimeAsync(DELAY_MS + 5)`，**轮数 ≤ 8 且
+       累计 ≤ 1000ms** 双上限防死循环；真定时器档 `waitReal()` **先等一轮 `DELAY_MS + 5`（与 R51
+       旧口径逐字一致）再按在途链账有界续等**（多跳链第二跳不再漏到下一个测试）。**在途链分账**
+       `pending = { real, fake }`（`delayTimer` 发起 +1、落地 -1，按发起那一刻是不是假时钟入账），
+       走真档即把随 `useRealTimers()` 卸载被丢弃的假陈账就地清零（`r61_drop_probe.txt` 实测：
+       裸假计时器与 `mockResolvedValue` 调用即起算的回包链在复位后**都不再落地**）。
+     - **与既有两口的关系**：与 R52 §8.84 的 `__YORHA_harnessSettle` **收编同源**（该口当时只是
+       临时复检脚手架、跑完 `git checkout` 还原、**从未入库**）—— 收进 `__YORHA_settle` 本体，
+       **不另起第二个等待口**，并补上有界、微任务随轮排空、双条件早退三件；与 R60 `delayAsync`
+       共存（其回包计时器同样进 `delayTimer` 记账），R60 的 `delayAsync.test.js` 2 条与
+       `Protocol.test.jsx` 两处修法**原样保留**（`:915` 那处 `act` 内手动推进理论上可由
+       `__YORHA_settle()` 取代，属改写既有修法，**本批不动、留待拍板**）。
+     - **红测先行**：新增 `frontend/test/settleFakeTimers.test.js` 3 条，实现落笔前 15ms 档
+       **2 红**（逐字红因 `r61_red1.txt`：`AssertionError: expected false to be true` @
+       `settleFakeTimers.test.js:23:28` 与 `:40:33` —— 假定时器下 `settle` 与收尾排空都盲跳、
+       链没落地），不设 env 同文件 **3 绿**（`r61_red1_off.txt`，等价性护栏单列）。
+       **三档记账：缺特性 2 / 测试自身 bug 先修 0 / 随新事实改写 0**，实现 bug 0。
+     - **逐一验证（grep `useFakeTimers` 全仓 4 文件 + 1 伪）**：`useCanvasConnections`（0 条延迟链 ·
+       推进 0 次）· `Protocol`（真账 6 条全排、假陈账 9 · 假档收尾 0 次）· `Sequences`（真账 12 条
+       全排、假陈账 1；**唯一实锤缺口**，见下）· `Terminal`（假档收尾 0、真账 0 —— R50 手动掌闸
+       有意不进记账）· `useInstructionLanes` **伪**（只 `vi.setSystemTime`，实测 `isFakeTimers()` 仍为
+       false，不装假时钟）。**现状打点**：既有 99 文件两个盲跳分支 **0 命中**（`r61_probe_skip.txt`，
+       跑完即撤）—— 留白是**潜伏**的，4 个文件的 `useRealTimers()` 都跑在全局钩子之前。
+     - **探测暴露与修法（只补等待 · 断言一字未改）**：在途链审计（`delayTimer` 埋发起落地 + 测试
+       序号）改前基线 = `Sequences.test.jsx` **6 至 7 条**在途响应落到下一个测试、其余 98 文件 0，
+       且泄漏链**全在真档发起**（`r61_seq_audit_raw.txt`）—— 根因 = 真档单次固定等待盖不住多跳链
+       （第一跳窗口内落地、`then` 又挂出第二跳超窗）→ 修法只补 `waitReal` 有界续等。改后终态
+       **100 文件 1533 条 0 红 · 跨测试落地 0**（`r61_chain_audit2_raw.txt`）：真档真账 **65 条 /
+       11 文件全排剩 0**、假档收尾仅新红测 1 条、假陈账 Protocol 9 · Sequences 1（永不落地）。
+       **15ms 探测 1533/1533 · 推进时钟翻红断言 0 条**（需要判档的红 0、触及产品的红 0）。
+     - **等价性与验收**：不设 env 全量 **100 文件 1533/1533 · 0 红**（`r61_off_1.txt`）。**10 项
+       两遍全绿** —— BE **1033/1033** 持平 · FE **1533/1533**（100 文件，1530 → 1533，+3 条
+       +1 文件）· `npx vite build` 0 · `npm run lint` 0 · yorha-ui 校验器（**4 个改动 js/jsx +
+       全仓 14 md**）**0 违规**（`applied` 新增 0 · invalid 1 · unused 0，均沿既有）· md 8/8 ·
+       口径扩展 13/13 · 自检 7/7 · 15ms 探测 **1533/1533** · `ev40` TOTAL_PROBLEMS=0 ·
+       `ev33` STAGED=0 DEL=0 BAD=0。跑法 `r61_verify.py`（复制 `r60_verify.py`，只改日志前缀与
+       说明），日志 `r61_*.txt`。
+     - **留白**：手动掌闸的等待（R50 `ok()` / `fail()`、`mockImplementation(() => new Promise(…))`）
+       仍不进记账（有意保留），真档靠首轮 `DELAY_MS + 5` 覆盖、多跳需另议；推进触顶（8 轮 / 1000ms）
+       即收手，现仓无触顶案例（峰值 1 轮 / 20ms）；陈账清零的前提是「走真档 ⇒ 假时钟已卸载」，
+       同测试内反复切档的写法现仓不存在；审计打点不入库，复现按 §8.93 五 重做（常驻护栏 =
+       `settleFakeTimers.test.js` 3 条 + 验收第 8 项 15ms 探测）。
+     - **工具账**：Temp 取证 = `r61_red1.py` / `r61_red1.txt` · `r61_red1_off.txt` ·
+       `r61_probe_skip.py` / `r61_probe_skip.txt` · `r61_probe_ctx.py` · `r61_drop_probe.py` /
+       `r61_drop_probe.txt` · `r61_chain_audit.py` / `r61_chain_audit_raw.txt` · `r61_seq_audit.py` /
+       `r61_seq_audit_raw.txt` · `r61_chain_audit2.py` / `r61_chain_audit2_raw.txt` ·
+       `r61_quick.py` / `r61_probe15_1.txt` / `r61_off_1.txt` · `r61_setupDelay_impl.js` /
+       `r61_setupDelay_final.js` · `r61_verify.py` · `r61_*.txt`（验收日志）。抑制注释 `applied`
+       新增 **0**（输出 = 0 applied · 1 invalid · 0 unused，invalid 沿 §8.91 既有、行号随 §1 插行
+       +1，`scripts/test-yorha-validator-scope.mjs:13` 那条既有 invalid 不在本批扫描面），`unused` 0。
+       本批 `frontend/src` **一行未改**；`backend/db/yorha.db` 已修改与 `frontend/red-report.json`
+       未跟踪 = 既有状态、本批未碰，不入提交范围。提交 = `feat(R61)` 单笔（**零 DDL** → 无 Migration、
+       无 `chore(db)`）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
