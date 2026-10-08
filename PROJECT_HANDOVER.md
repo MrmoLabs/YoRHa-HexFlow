@@ -4334,6 +4334,59 @@
        3 个文件（`validate-yorha-ui.mjs` / `references/rules.md` / `SKILL.md`）不进本仓提交**，
        详见 §8.91 七。提交 = `feat(R59)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
 
+109. **R60 · 补注入盲区 27 处（async 形态 mock 也进延迟）**（PLAN §8.92，2026-10-08；R51 §8.83 八
+     第 2 条留白「注入盲区 27 处（`vi.fn(async …)` / `mockImplementation(async …)`）不进延迟 ——
+     微任务即达，与从前逐字相同，要压这类得换注入点」，同批取数表同数同登、§8.84 与 §8.85 两处
+     「R51 留白沿旧」再各提一次；R51 收口问 R52 排批时本项曾列为候选，本会话拍板下一批 = 本项）
+     - **范围**：**仅测试基建 + 测试文件 · 零 DDL** —— 零 BE、无 Migration、无 `chore(db)`、
+       不引 pytest、新 pip 依赖 = 0，`/dispatch` 缺省口径逐字节不变，`frontend/src` 产品代码
+       零改动；改 1 个基建文件、新增 1 个护栏测试、1 个既有测试补 2 处等待。
+     - **实现路线 = 路线 1 中央解**（路线 2「改写 27 处调用点为 `mockResolvedValue` 声明式形态 +
+       静态护栏」落选：Protocol 那 13 处的回包由实参算出 `async (id, payload) => ({ id, ...payload })`，
+       声明式形态接不住、硬改会动到断言依赖的回包内容，且 6 个测试文件逐处动笔风险更高）：扩
+       `frontend/test/setupDelay.js` —— `vi.fn(async …)` 实参与 `mockImplementation` /
+       `mockImplementationOnce` 传入的 async 实参统一包一层（判据 = `AsyncFunction`）。**回调体照旧
+       调用时立即执行**（副作用与调用记账一字不差），被推迟的只有「响应何时到」；处理器在**调用
+       当下**就挂上原 Promise（在途拒绝不露 unhandled 窗口），计时器只把已落定的结果推迟
+       `DELAY_MS` 再放行；包装点幂等打标防双倍延迟；**非 async 形态一个不碰**（R50
+       `Terminal.test.jsx` 的 `ok()` / `fail()` 与手动掌闸 Promise 照旧不进这里）。**27 处调用点
+       一行未动**。可行性两点先验才动笔：`vi` 在 `setupFiles` 里可安全改写（R51 已证，299 处
+       off 档逐字等价）+ R60 新增逻辑全落在 `DELAY_MS > 0` 分支内，缺省一个钩子不装。
+     - **红测先行**：新增 `frontend/test/delayAsync.test.js` 2 条，**实现落笔前 15ms 档 2 红**
+       （逐字红因 `r60_red1.txt`：`AssertionError: expected true to be false` @ `:23:25` 与
+       `:35:25` —— 宏任务刻度后 `settled` 已为 true = 微任务即达、没进延迟）；不设 env 同文件
+       **2 绿**（`r60_red1_off.txt`，等价性护栏，单列不冒充红测）。**三档记账：缺特性 2 /
+       测试自身 bug 先修 2 / 随新事实改写 0**，实现 bug 0。
+     - **15ms 探测新暴露 2 红 / 1 文件**（首探 `r60_probe15_1.txt` = 2 failed、1528 passed），
+       两条都在 `Protocol.test.jsx`：① 假定时器冻住回包计时器、`__YORHA_settle()` 也直接跳过 →
+       SAVE 回包没落地，`expect(queryByRole('保存更改 (SAVE)')).toBeNull()` 收到按钮在场（`:916:71`）
+       → 断言前在 `act` 内推 `vi.advanceTimersByTime(__YORHA_DELAY_MS__ + 5)` 再排三次微任务；
+       ② options 未到齐就 `change` → 生成钮仍禁用（`:1208:71`）→ change 前补
+       `await waitFor(() => expect(select.options.length).toBeGreaterThan(1))`。**只补等待、断言期望
+       一字未改；触及产品的红 0 条**（两条根因都在测试，没有需要停下来等拍板的红）。
+     - **覆盖证明 27 → 29**：延迟路径临时打点（`YORHA_WRAP_DUMP_DIR`，按进程追加运行时栈首个非
+       `setupDelay.js` 帧）+ 15ms 全量去重 union = **29 点** —— api 5 文件 14 处（datahub 2 ·
+       dispatch 3 · profiles 3 · routing 3 · trash 3）、Protocol 13 处、护栏自测 2 处，
+       **登记 27 处 27/27 全进、漏点 0**；打点跑完即撤，`setupDelay.js` 还原后与打点前 sha256
+       逐字节一致。明细 `r60_cover.txt`，该轮全量同为 1530/1530。
+     - **等价性与验收**：不设 env 全量 **99 文件 1530/1530 · 0 红**（`r60_off.txt`，等价性铁律）。
+       **10 项两遍全绿** —— BE **1033/1033** 持平 · FE **1530/1530**（99 文件，1528 → 1530，
+       +2 条 +1 文件）· `npx vite build` 0 · `npm run lint` 0 · yorha-ui 校验器（**3 个改动
+       js/jsx + 3 个 mjs + 全仓 14 md**）**0 违规** · md 8/8 · 口径扩展 13/13 · 自检 7/7 ·
+       15ms 探测 **1530/1530** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0。
+       跑法 `r60_verify.py`（复制 `r59_verify.py`，只改日志前缀与说明），日志 `r60_*.txt`。
+     - **留白**：非 async 的手动掌闸 Promise 仍不进延迟（有意保留，测试自己掌闸）；覆盖打点不入库、
+       复现按 §8.92 五 重做（常驻护栏 = 验收第 8 项 15ms 探测 + `delayAsync.test.js` 2 条）；
+       假定时器下回包计时器被冻结（§8.83 八 第 3 条同族留白沿旧）。
+     - **工具账**：Temp 取证 = `r60_red1.py` / `r60_red1.txt`（红基线）· `r60_red1_off.txt` ·
+       `r60_probe_dump.py` / `r60_probe15_1.txt` · `r60_cover.txt` · `r60_cover2.py` /
+       `r60_probe15_cov.txt` · `r60_reds.py` · `r60_vitrunc.py` / `r60_probe15.txt` /
+       `r60_off.txt` · `r60_wrapdump/` · `r60_verify.py` · `r60_*.txt`（验收日志）。抑制注释
+       `applied` 新增 **0**（输出 = 0 applied · 2 invalid · 0 unused，两条 invalid 沿 §8.91 既有，
+       `unused` 0）。本批 `frontend/src` 只动 `pages/__tests__/Protocol.test.jsx`（测试文件，
+       非产品代码）；`backend/db/yorha.db` 已修改与 `frontend/red-report.json` 未跟踪 = 既有状态、
+       本批未碰，不入提交范围。提交 = `feat(R60)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

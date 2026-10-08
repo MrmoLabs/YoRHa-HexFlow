@@ -92,6 +92,7 @@
 | R57 | **Blueprint 低对比字色收尾 + 全仓色彩对比复审（27 行按实际底色实算）** —— R56 §8.88 八 登记的硬约束留白「`Blueprint.jsx` 硬约束：本批清单不含该文件、一行未碰」与 R55 §8.86 深底浅红留白（`InstructionRunner:398`）、R56 §8.88 八 `InstructionRunner:411` exact-count ALLOW；R56 收口问 R57 排批时拍板**解锁 Blueprint 字色改动（仅文本色 className，结构与逻辑一行不动）**，同时把 R55 残余 14 行 + R56 残余 12 token 对**实际底色**逐行实算、不达 4.5:1 的本批全修（§8.89） | ✅ **已完成（2026-10-08，§8.89，5 个源文件改动 · 纯 FE · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`/dispatch` 缺省口径一行未动）**：**复审 27 行（R55 残余 14 + R56 残余 12 + 新发现 1）→ 18 保留 / 9 不达标全修**（9 处违规 / 8 行 / 5 文件；`r57_apply.py` 9 op + `r57_apply2.py` 2 op，逐条「行号 + 唯一锚点」、不恰好命中整批中止零写入）。修法全为字色 token：静态压沙底 `text-red-400` 1.94 → `text-warn` 6.38（Blueprint:229）；hover 压 red-500 底 `hover:text-white` 3.81 → `hover:text-black` 5.52（Blueprint:229 + BPP:469/791 + PPP:317，先例 BPP:781）；深底 `#4a4a4a` 的 warn/error 档 → `text-red-200` 6.10（IR:398 3.07 · IR:411 3.45 · IR:442 1.07，末者为 R56 落笔回归）；半透明混底 3.87 → `text-white` 5.75（SmartInput:246）。**同触同清**：Blueprint 首次入改动清单 → 清 2 处 HEAD 存量校验器违规（`:176 backdrop-blur-sm` 删、`:226 pt-8` 改 `pt-4`，先例 R3「改到该文件就必须过校验器」，只清欠账不改行为）。**死码事实钉死**：无路由无 import、Canvas 形参不匹配 → 画布恒空 → 删除按钮真实渲染不可达 → 字色断言走**源码静态断言**（先例 `semanticTokens.test.js`）+ 1 条渲染冒烟（新增 `Blueprint.test.jsx`）。**红测先行有据**：基线 **10 红 / 110 绿 / 5 文件** → **三档记账：缺特性 9 / 测试自身 bug 先修 0 / 随新事实改写 1**（wrap-stale 旧断言 `text-warn` 随新事实改写为 `text-red-200`），护栏单列不冒充红测。**复审后残余（源码）**：`text-white` 7 · `text-yellow-*` 2（5.63 达标）· `text-red-300/400` **0** · `text-[#` 10 · `hover:text-white` 2（6.69 达标）。**pageStatus 0 句色词失效 → 未改未重生成**。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1528/1528**（98 文件，+8 条用例）· build 0 · lint 0 · 校验器（**10 个改动 js/jsx + 2 个 mjs + 全仓 14 份 md**）**0 违规**（首遍 Blueprint 2 处存量违规同触同清后过）· md 8/8 · 自检 7/7 · **15ms 探测 1528/1528** · ev40 0 · ev33 0 |
 | R58 | **删除 Blueprint.jsx 死码（用户拍板 A）** —— R57 §8.89 三 钉死的死码事实（无路由、全仓无 import、给 `Canvas` 传 `items` / `setItems` 而形参是 `lanes` / `onSelect` / `selectedId` → 画布恒空 → 删除按钮真实渲染不可达）的收口批；R57 收口问 R58 排批时**拍板 A = 删除死码**，R57 新建的 `Blueprint.test.jsx`（3 条源码静态断言 + 1 条渲染冒烟）随被测物一并处置（§8.90） | ✅ **已完成（2026-10-08，§8.90，2 删 1 增 · 纯 FE · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`/dispatch` 缺省口径逐字节不变）**：**先取证后动手** —— 全仓大小写不敏感 grep `Blueprint`（排除 `.git` / `node_modules` / `dist` / `coverage` / `venv` / `__pycache__`，以及 `frontend/red-report.json` 与 `backend/db/yorha.db`）删前 **10 文件 166 行** → 逐条判档：源码 2 文件 11 行 = 两个删除目标自身（**barrel 导出 / `ROUTE_LOADERS` / `PAGE_REGISTRY` / 构建配置全 0 命中**）· `backend/core/graph.py:97` 注释 1 行（BE 硬约束不碰）· 文档 7 份 154 行（历史叙述一律不动）。**删除** `frontend/src/pages/Blueprint.jsx`（245 行 11665 B）与 `frontend/src/pages/__tests__/Blueprint.test.jsx`（46 行 2531 B，4 例）；**护栏单列不冒充红测** —— 新增 `src/__tests__/noDeadBlueprint.test.js` 4 条静态扫描（扫描面非空 · `src` 内无 Blueprint 命名文件 · 无 `pages/Blueprint` 路径字面 · 无 `from` `import` `import()` 三形引用，自身按路径豁免），**实现前即绿 = 0 红 4 绿**。**红测记账：缺特性红 0（删除批无此档）**，原 4 例随被测物删除不留孤儿（删后 `__tests__` 对 Blueprint 的引用仅剩护栏自身）。`pageStatus.json` / `PAGE_STATUS.md` 实测 0 命中 → 未改未重生成。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1528/1528**（98 文件，删 4 例 + 护栏 4 例、用例与文件数均持平）· build 0 · lint 0 · 校验器（**9 个现存改动 js/jsx + 2 mjs + 全仓 14 md**，删除项只记路径不读文件）**0 违规** · md 8/8 · 自检 7/7 · **15ms 探测 1528/1528** · ev40 0 · ev33 0。**另经 question 拍板「随 R58 一并改」：失效现势句 5 处同步改写**（README ×2、HANDOVER 目录地图行与 §7 指引条、§0 硬约束行，见 §8.90 六） |
 | R59 | **校验器口径扩展三项 + 行级抑制（`~~~` 围栏 · `.txt` 纳入 · 豁免口开在「行 + 规则号 + 理由」）** —— R48 §8.80 七 第 2、3 条与 R49 §8.81 八 第 1 条两处留白同挂的收口批（本会话拍板**三项全做**、抑制口径 = **行级 + 规则号 + 理由**；四空格缩进代码块不在拍板范围、沿旧不判）（§8.91） | ✅ **已完成（2026-10-08，§8.91，仓外 skill 改动 + 仓内新增可复跑测试 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 与零 FE 业务代码改动、`frontend/src` 一行未改）**：**扩面探测先取数** —— 仓内 14 份 md 在新口径下 `~~~` 新增 **0 条**（全仓本就没有 `~~~` 围栏）；`.txt` 纳入后 7 份 `.txt` 中 6 份 fixture 共 **13 条**、`backend/requirements.txt` **0 条** → fixture 改名 `.fixture` 后**净新增 0 条**，且未落在 PLAN / HANDOVER 历史叙述的示例里 → **未触发**「新增量 >10 或落在历史示例即停手」条件。**三项实现**（仓外 `validate-yorha-ui.mjs`）：① `extractMarkdownFences` 换 `FENCE_LINE` —— 反引号围栏与 `~~~` 等价（同字符闭合、语言归一与别名表复用、行号 = 围栏起始行 + 块内偏移）；② `SCANNED_EXTENSIONS` 加 `.txt`（整份判，不走 md 口径），R48 那 6 份 fixture 随之 `.txt` → `.fixture`（**放置口径未变、扩展名换到扫描面外**）；③ **行级抑制** —— 代码行 `// yorha-ui: allow <规则号> <中文理由>`、md 行用 HTML 注释同款，**规则号与非空理由缺一不算数**、只抑制所在行（md = 报告所指行），报告与 `--json` 全量列点 文件 / 行 / 规则号 / 理由 + `totals.suppressions`。**8 条规则与 `RULES` 表一行未改**（`validateYoRHaCode` 只多第二个可选参数）。**红测先行**：新增 `scripts/test-yorha-validator-scope.mjs` **13 条**，实现落笔前 **6 红 / 7 护栏**（逐字红因存 `r59_red1.txt`）；三档记账 **缺特性 6 / 测试自身 bug 先修 0 / 随新事实改写 0**；既有 R48 **8/8** 与 R49 **7/7** 断言零改写（仅 3 处 fixture 路径随改名更新）。**验收 = 10 项两遍全绿**：BE **1033/1033** 持平 · FE **1528/1528** 持平（98 文件，用例数零变化）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**4 个现存改动 js/jsx/mjs + 全仓 14 md**）**0 违规** · md 8/8 · **口径扩展 13/13** · 自检 7/7 · **15ms 探测 1528/1528** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
+| R60 | **补注入盲区 27 处（async 形态 mock 也进延迟）** —— R51 §8.83 八 第 2 条登记的留白「注入盲区 27 处（`vi.fn(async …)` / `mockImplementation(async …)`）不进延迟 —— 微任务即达，与从前逐字相同，要压这类得换注入点，本批不做」（同批 §8.83 二 取数表同数同登，§8.84 与 §8.85 两处「R51 留白沿旧」各再提一次）；R51 收口问 R52 排批时本项曾列为候选（用户当时选了假通过全仓排查），**本会话拍板下一批 = 本项**（§8.92） | ✅ **已完成（2026-10-08，§8.92，仅测试基建 + 测试文件 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`frontend/src` 产品代码零改动）**：**走路线 1 中央解** —— 扩 `frontend/test/setupDelay.js`：`vi.fn(async …)` 实参与 `mockImplementation` / `mockImplementationOnce` 传入的 async 函数统一包一层（判据 = `AsyncFunction`），**回调体照旧调用时立即执行**（副作用与调用记账一字不差），被推迟的只有「响应何时到」；处理器在调用当下挂上原 Promise（在途拒绝不露 unhandled 窗口）、包装点幂等打标防双倍延迟；**非 async 形态一个不碰**（R50 `Terminal.test.jsx` 自己的 `ok()` / `fail()` 与手动掌闸 Promise 照旧）。**27 处调用点一行未动**（路线 2「改写调用点为声明式形态」落选：Protocol 那 13 处回包由实参算出，`mockResolvedValue` 接不住）。**红测先行**：新增 `frontend/test/delayAsync.test.js` 2 条，实现前 15ms 档 **2 红**（逐字红因 `r60_red1.txt`：`AssertionError: expected true to be false` —— 宏任务刻度后 resolve 已落定 = 微任务即达），不设 env 同文件 **2 绿**（等价性护栏，单列不冒充红测）。**三档记账**：缺特性（真红测）2 / 测试自身 bug 先修 2 / 随新事实改写 0。**15ms 探测新暴露 2 红 / 1 文件**（Protocol：假定时器冻住回包计时器 → SAVE 未消失；options 未到齐就 change → 生成钮仍禁用），**只补等待**（`act` 内推 `DELAY+5`、`waitFor` options 真在场），断言期望一字未改，**触及产品的红 0 条**。**覆盖证明 27 → 29**（延迟路径打点去重 union：api 5 文件 14 处 + Protocol 13 处全进 + 护栏自测 2 处，`r60_cover.txt`）。**等价性**：不设 env 全量 **1530/1530 · 0 红**。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1530/1530**（99 文件，+2 条 +1 文件）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**3 个改动 js/jsx + 3 个 mjs + 全仓 14 md**）**0 违规**（`applied` 新增 0）· md 8/8 · 口径扩展 13/13 · 自检 7/7 · **15ms 探测 1530/1530** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -8488,6 +8489,169 @@ PS 5.1 口径照旧：`npx` 走 `shell=True`，unittest / vitest 输出走 stder
 
 **R59 ✅ —— 三项留白一次收口：`~~~` 与 ``` 同判、`.txt` 进扫描面（fixture 随之换扩展名）、
 豁免口开在「行 + 规则号 + 理由」且全量列点。判据与 8 条规则一个字没改。**
+
+## 8.92 R60 补注入盲区 27 处（async 形态 mock 也进延迟 · 2026-10-08）
+
+**批次**：2026-10-08 · **仅测试基建 + 测试文件 · 零 DDL、零 BE 改动、`frontend/src` 产品代码
+零改动** —— 扩 1 个测试基建文件、新增 1 个护栏测试、1 个既有测试补 2 处等待；`models.py`
+无改列改表、**无 Migration、无 `chore(db)`**、不引 pytest、无新 pip 依赖，`processor.py` /
+`graph.py` 未碰，**`/dispatch` 缺省口径逐字节不变**，`backend/` 一行未动。
+
+### 一 · 来源与拍板（R51 §8.83 八 第 2 条留白）
+
+留白原文**原样留档，本节不改写**（历史条目一律不动），四处提及：
+
+- §8.83 八 第 2 条（行 7478）：「**注入盲区 27 处**（`vi.fn(async …)` /
+  `mockImplementation(async …)`）不进延迟 —— 微任务即达，与从前逐字相同，
+  要压这类得换注入点，本批不做」；
+- 同批 §8.83 二 取数表（行 7390）：「注入盲区（不进延迟）**27 处** = `vi.fn(async …)` 14 处
+  （5 个 api 测试）+ `mockImplementation(async …)` 13 处（Protocol）」；
+- §8.84（行 7616）与 §8.85（行 7734）两处「R51 其余留白沿旧」各再带一次。
+
+R51 收口问 R52 排批时本项曾列为候选，用户当时选了「假通过全仓排查」；
+2026-10-08 本会话用户拍板：**下一批 = 本项**。
+
+**已落地 ✅ → 本节 §8.92**。§8.83 / §8.84 / §8.85 的原文一字未改，历史条目一律留档，
+只在此指认收口位置（四行均属「登记不进延迟」的陈述，本批之后成为历史事实，照原文留档）。
+
+### 二 · 实现路线与取舍（按序试两条，**选路线 1 中央解**）
+
+| 路线 | 内容 | 判定 |
+|---|---|---|
+| 1 · 中央解（**选定**） | 扩 `frontend/test/setupDelay.js`，让 async 形态 mock 的返回 Promise 也进延迟；**27 处调用点一行不动** | 可行性两点先验后才动笔：① `vi` 能否在 `setupFiles` 里安全改写 —— R51 已改写 `vi.fn` 覆盖 299 处且 off 档逐字等价，本批只是把改写面扩到「实参包装」与 `mockImplementation` 两口；② 0ms 缺省是否仍逐字等价 —— R60 新增逻辑**全部落在 `if (DELAY_MS > 0)` 分支内**，缺省一个钩子都不装。两条实测通过 |
+| 2 · 改写调用点（未选） | 把 27 处改写成 `mockResolvedValue` 类声明式形态 + 静态护栏（断言期望一字不动） | 落选：Protocol 那 13 处的回包**由实参算出**（`async (id, payload) => ({ id, ...payload })`），声明式形态接不住「按参数回包」，硬改会动到断言依赖的回包内容；且 6 个测试文件逐处动笔 = 改测试写法而非改基建口径，收益与路线 1 相同、风险更高 |
+
+**中央解的三条语义边界**（与 `setupDelay.js` 头注释同一口径）：
+
+1. **只包 async 函数形态** —— 判据 = 构造器名 `AsyncFunction`（async 箭头与 async function
+   同判），与登记的 27 处逐一对应；**非 async 形态一个不碰** —— R50 `Terminal.test.jsx` 自己的
+   `ok()` / `fail()` 与手动掌闸 `mockImplementation(() => new Promise(…))` 照旧不进这里；
+2. **回调体照旧调用时立即执行** —— 副作用、调用次数与参数记账一字不差，
+   被推迟的只有「响应何时到」；
+3. **处理器在调用当下就挂上原 Promise** —— 在途中的拒绝不会因包装而露出 unhandled 窗口，
+   计时器只把**已落定**的结果推迟 `DELAY_MS` 再放行；包装点带幂等打标
+   （`Symbol.for('yorha.delayWrapped')`），重复包装一律跳过，防「延迟套延迟」。
+
+改写面四个口齐下：`vi.fn(…)` 的 async 实参、`mockImplementation`、`mockImplementationOnce`；
+值设定器（`mockResolvedValue` / `mockRejectedValue` 及 Once 变体）**直连原始口**绕开新包装
+（防双倍延迟），R51「调用时才起算延迟」那句原口径语义一字未动。
+
+### 三 · 红测先行有据（三档记账）
+
+**新增 `frontend/test/delayAsync.test.js`（2 条）**，断言即「设了
+`YORHA_API_DELAY_MS=15` 后 async 形态 mock 的 resolve 必须被推迟」：调用 mock → 等一个
+宏任务刻度（微任务排干后才触发的回调）→ 断言此刻**尚未落定** → 等回包 → 断言已落定。
+**实现落笔前先跑红**，逐字红因存
+`C:\Users\Administrator\AppData\Local\Temp\opencode\r60_red1.txt`：
+
+| 档 | 条数 | 明细 |
+|---|---|---|
+| 缺特性（真红测） | **2** | ① `vi.fn(async …)`：`AssertionError: expected true to be false`（`delayAsync.test.js:23:25`）；② `mockImplementation(async …)`：同一句（`:35:25`）—— 宏任务刻度后 `settled` 已为 `true`，即**微任务即达、没进延迟** |
+| 护栏（单列，不冒充红测） | **2 次绿** | 不设 env 跑同文件 **2 绿**（`r60_red1_off.txt`）—— 缺省直接 `return`，等价性铁律；实现后 15ms 档该文件 2 绿 |
+| 测试自身 bug 先修 | **2** | 15ms 探测新暴露的 2 条（见「四」） |
+| 测试随新事实改写 | **0** | 既有断言零改写 |
+| 实现 bug | **0** | 组件与后端一行未动，如实记 0 |
+
+三档记账：**缺特性 2 / 测试自身 bug 先修 2 / 随新事实改写 0**。
+
+### 四 · 15ms 探测暴露与修法（只补等待 · 断言期望一字未改）
+
+首轮 15ms 全仓（`r60_probe15_1.txt`）：**2 红 / 1 文件 / 1528 绿**（汇总行 = `Test Files 1 failed`
+与 `98 passed (99)`，`Tests 2 failed` 与 `1528 passed (1530)`），两条都在 `Protocol.test.jsx`：
+
+| # | 测试与红因（逐字） | 修法 |
+|---|---|---|
+| 1 | 撤销/重做（反馈 #3）：`expect(screen.queryByRole('button', { name: '保存更改 (SAVE)' })).toBeNull()` 实为按钮在场（`Protocol.test.jsx:916:71`，`AssertionError: expected <button …(1)></button> to be null`）—— 假定时器下回包的 `setTimeout(DELAY)` 被冻结、`__YORHA_settle()` 按口径也直接跳过 → SAVE 回包没落地、脏标没清 | 断言前在 `act` 内推 `vi.advanceTimersByTime(__YORHA_DELAY_MS__ + 5)` 再排三次微任务让回包落地（`DELAY=0` 时推 5ms，off 档实测不受影响）；`.toBeNull()` 与调用次数期望**一字未改** |
+| 2 | CP3 3d 切协议重拉候选：`expect(screen.getByTestId('response-spec-generate').disabled).toBe(false)` 收到 `true`（`:1208:71`）—— `findByTestId` 拿到的是 **options 未到齐**的骨架，紧接着的 `fireEvent.change` 落空 → 生成钮仍禁用（§8.83 三 第 2 类同款） | change 前补 `await waitFor(() => expect(select.options.length).toBeGreaterThan(1))`；期望值与后续断言**一字未改** |
+
+修后 15ms 全仓 **1530/1530**（`r60_probe15.txt`）。**触及产品的红 0 条** —— 两条根因都是
+「测试没等真结果」，产品代码一行未改；R52 §8.84 那类「红因在组件」的情况本批未出现，
+**没有需要停下来等拍板的红**。
+
+### 五 · 覆盖证明取数（27 → 29）
+
+手段 = **延迟路径打点**：临时在 `delayAsync` 里按 `YORHA_WRAP_DUMP_DIR` 把包装点的运行时栈
+（首个非 `setupDelay.js` 帧的 `文件:行:列`）按进程追加成日志，跑 15ms 全量后**去重 union**。
+打点代码**跑完即撤** —— 还原后的 `setupDelay.js` 与打点前 **sha256 逐字节一致**
+（`270a13d396a23f17d725220374ca511c3e491939827407e09cf3dff28a7fb7f8`，5595 字节）。
+
+| 面 | 登记处数 | 打点 union |
+|---|---|---|
+| `vi.fn(async …)` · 5 个 api 测试 | 14 | **14**（datahub 2 · dispatch 3 · profiles 3 · routing 3 · trash 3） |
+| `mockImplementation(async …)` · Protocol | 13 | **13** |
+| 护栏自测（`delayAsync.test.js`） | — | 2 |
+| 合计 | **27** | **29**（27 全进 + 护栏 2，**漏点 0**） |
+
+**结论：登记的 27 处 27/27 全进延迟（27 → 29）**。该轮全量同为 **1530/1530**
+（`r60_probe15_cov.txt`），明细 `r60_cover.txt`（逐点 `文件:行:列`）。
+
+### 六 · 等价性与验收（10 项 × 两遍）
+
+**等价性铁律取证**：不设 `YORHA_API_DELAY_MS` 的全量 vitest = **99 文件 1530/1530 · 0 红**
+（`r60_off.txt`）—— 缺省 0ms 仍与没有它逐字等价；护栏测试缺省直接 `return`，
+不设 env 时同样 0 断言可红。
+
+跑法 `r60_verify.py`（复制 `r59_verify.py`，**只改日志前缀 `r59_` → `r60_` 与说明**，
+DEAD 断言、第 6 项双脚本口径、改动清单双口径 union 一字未动），日志 `r60_*.txt`。
+两遍（改完后一遍 + 文档落完后一遍）逐项一致：
+
+| 项 | 结果（两遍一致） |
+|---|---|
+| BE 全量 | **BE_OK · 1033/1033 持平**（`BE_FAIL_N 0`，零改动） |
+| FE 全量 | **1530/1530 · 99 文件**（1528 → 1530，+2 条 +1 文件） |
+| `npx vite build` | 0 |
+| `npm run lint` | 0 |
+| yorha-ui 校验器 | **0 违规**（3 个改动 js/jsx + 3 个 mjs + 全仓 14 md；抑制列点 0 applied · 2 invalid · 0 unused，两条 invalid 沿 §8.91 既有） |
+| md 口径测试 | **8/8** |
+| R59 口径扩展测试 | **13/13** |
+| 自检收口测试 | **7/7** |
+| 15ms 抖动探测 | **1530/1530** |
+| `ev40` / `ev33` | `TOTAL_PROBLEMS=0` / `STAGED=0 DEL=0 BAD=0` |
+
+（第 6 项仍是两个脚本同列，十项不变、断言面不变。）
+
+### 七 · 明确留白（本批不做）
+
+- **非 async 的手动掌闸 Promise 仍不进延迟** —— `mockImplementation(() => new Promise(…))`
+  与 R50 `Terminal.test.jsx` 的 `ok()` / `fail()` **有意保留**：测试自己掌闸，
+  套上延迟反而变双闸；
+- **覆盖打点不入库** —— 「27 → N」的取数靠一次性临时打点，复现须按「五」的步骤重做；
+  常驻护栏是固定验收第 8 项 15ms 探测 + `delayAsync.test.js` 2 条；
+- **假定时器下回包计时器被冻结**（§8.83 八 第 3 条同族留白沿旧）—— 本批第 1 条红用
+  「推 `DELAY+5`」自解，其余假定时器文件将来若接 async 形态 mock，需同样处理；
+- §8.83 八 第 3、4 条（假定时器排空跳过；行内抑制 / `~~~` 与 `.txt` 两条）原样不动。
+
+### 八 · 工具账
+
+**仓内 3 个文件**：`frontend/test/setupDelay.js`（扩展 · 中央解）、
+`frontend/test/delayAsync.test.js`（新增 · 护栏 2 条）、
+`frontend/src/pages/__tests__/Protocol.test.jsx`（2 处只补等待）。
+`frontend/red-report.json` 未跟踪与 `backend/db/yorha.db` 已修改 = 既有状态、
+本批未碰，不入提交范围。
+
+**Temp 取证**：`r60_red1.py` / `r60_red1.txt`（红基线逐字红因）· `r60_red1_off.txt`
+（off 档护栏，单列）· `r60_probe_dump.py` / `r60_probe15_1.txt`（首轮 15ms 探测 2 红）·
+`r60_cover.txt`（覆盖 union 29 点）· `r60_cover2.py` / `r60_probe15_cov.txt`
+（终态复测取数）· `r60_reds.py`（红因抠块）· `r60_vitrunc.py` / `r60_probe15.txt` /
+`r60_off.txt`（探测与等价性）· `r60_wrapdump/`（打点原始日志）· `r60_verify.py`
+（10 项验收）· `r60_*.txt`（验收日志）。
+
+**抑制注释**：本批 **applied 新增 0**（验收输出 `Suppression markers (2 total: 0 applied,
+2 invalid, 0 unused)`）—— 两条 invalid = `scripts/test-yorha-validator-scope.mjs:13` 与
+`PLAN_Backlog.md` §8.91 三 那段语法示例（本批 §1 插一行后为行 8375，R59 当时记 8374），
+沿 §8.91 六 登记、本批未新增；`unused` 0。
+
+PS 5.1 口径照旧：`npx` 走 `shell=True`，unittest / vitest 输出走 stderr 以 `BE_OK` /
+`Tests N passed` 为准，中文脚本先写成文件再跑，字节一律 python subprocess
+（不用 `>` 重定向写文件）。
+
+**文档同步（同批）**：§1 新增 `R60` 行 + §8.92 本节；**销 §8.83 八 第 2 条**
+（注入盲区 27 处 → R60 已闭）与 §8.84 / §8.85 两处「沿旧」提及；
+`PROJECT_HANDOVER.md` 新增条目 109。历史条目一律不改写。
+
+**R60 ✅ —— 盲区不是「测不到」，是「没把秒表交给它」：27 处现在同样吃延迟，
+15ms 探测对它们不再是盲区。**
+
 
 ## 9. 保留勿动（非任务，勿清理）
 

@@ -909,6 +909,14 @@ describe('Protocol Page', () => {
         // 重做回编辑态 → SAVE 落库 = PUT #1（甲改），成功即清史（新基线）
         fireEvent.click(screen.getByRole('button', { name: '重做' }));
         await saveViaButton();
+        // R60（PLAN §8.92）：async 形态 mock 的回包也进延迟 —— 假定时器下回包计时器
+        // 被冻结（settle 也直接跳过），推进 DELAY+5 让回包落地再断言（期望值一字未改）。
+        await act(async () => {
+            vi.advanceTimersByTime((globalThis.__YORHA_DELAY_MS__ || 0) + 5);
+            await Promise.resolve();
+            await Promise.resolve();
+            await Promise.resolve();
+        });
         expect(api.updateProtocol).toHaveBeenCalledTimes(1);
         expect(api.updateProtocol).toHaveBeenLastCalledWith('proto-1', expect.objectContaining({
             children: [expect.objectContaining({ id: 'block-a', label: '甲改' })]
@@ -1204,6 +1212,9 @@ describe('Protocol Page', () => {
         ]} setProtocols={vi.fn()} />);
 
         const select = await screen.findByTestId('response-spec-targets');
+        // R60（PLAN §8.92）：async 形态 mock 也进延迟 → options 到齐才 change
+        // （R51 L1233 同款：options 未到就 change 会落空、generate 仍 disabled）。
+        await waitFor(() => expect(select.options.length).toBeGreaterThan(1));
         fireEvent.change(select, { target: { value: 'i-proto-1' } });
         expect(screen.getByTestId('response-spec-generate').disabled).toBe(false);
 
