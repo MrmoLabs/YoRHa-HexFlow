@@ -51,7 +51,7 @@ const ActionButton = ({ onClick, disabled = false, busy = false, children }) => 
     </button>
 );
 
-const inputClass = 'bg-nier-light/5 border border-nier-light/30 text-[10px] p-1 text-nier-light outline-none focus:border-nier-light font-mono placeholder:text-nier-light/30';
+const inputClass = 'bg-nier-light/5 border border-nier-light/30 text-[10px] p-1 text-nier-light outline-none focus:border-nier-light font-mono placeholder:text-muted';
 const labelClass = 'flex flex-col gap-1 text-[10px] tracking-[0.15em] opacity-60';
 
 const MODES = [
@@ -608,7 +608,7 @@ export default function Terminal() {
                     <div className="text-[11px] font-mono tracking-[0.35em] opacity-50">{`PAGE ${page.shortcut} // TERMINAL`}</div>
                     <h1 className="mt-2 text-4xl font-black tracking-tight leading-none">{page.titleZh}</h1>
                     <p className="mt-2 text-sm uppercase tracking-[0.25em] opacity-60">{page.titleEn}</p>
-                    <div className="mt-3 inline-flex items-center gap-2 border border-yellow-500/40 bg-yellow-500/10 px-3 py-1 text-[11px] font-mono tracking-[0.2em] text-yellow-300">
+                    <div className="mt-3 inline-flex items-center gap-2 border border-yellow-500/40 bg-yellow-500/10 px-3 py-1 text-[11px] font-mono tracking-[0.2em] text-hl">
                         <span className="h-2 w-2 bg-yellow-300 animate-pulse" />
                         {page.status}
                     </div>
@@ -618,7 +618,7 @@ export default function Terminal() {
                 {sysMsg && (
                     <div className="border border-nier-light/40 bg-nier-dark/70 px-4 py-2 text-xs font-mono">
                         {sysMsg.startsWith('发送失败') || sysMsg.startsWith('清空失败')
-                            ? <span className="text-red-300">ERR: {sysMsg}</span>
+                            ? <span className="text-warn">ERR: {sysMsg}</span>
                             : <span>SYS: {sysMsg}</span>}
                     </div>
                 )}
@@ -640,7 +640,7 @@ export default function Terminal() {
                                                 onClick={() => setDraft({ ...draft, mode: mode.value })}
                                                 className={`px-3 py-1 border text-[10px] font-bold tracking-[0.2em] transition-colors duration-150 ${draft.mode === mode.value
                                                     ? 'border-nier-light bg-nier-light text-nier-dark'
-                                                    : 'border-nier-light/40 text-nier-light/70 hover:border-nier-light'}`}
+                                                    : 'border-nier-light/40 text-muted hover:border-nier-light'}`}
                                             >
                                                 {mode.label}
                                             </button>
@@ -735,7 +735,7 @@ export default function Terminal() {
                                                                 onClick={() => setDraft({ ...draft, serial: { ...draft.serial, baudrate: String(baud) } })}
                                                                 className={`border px-1.5 py-0.5 text-[10px] font-mono transition-colors duration-150 ${on
                                                                     ? 'border-nier-light bg-nier-light text-nier-dark'
-                                                                    : 'border-nier-light/40 text-nier-light/70 hover:border-nier-light'}`}
+                                                                    : 'border-nier-light/40 text-muted hover:border-nier-light'}`}
                                                             >
                                                                 {baud}
                                                             </button>
@@ -745,7 +745,7 @@ export default function Terminal() {
                                                 <div className="flex flex-wrap items-center gap-1.5" data-testid="serial-port-enum">
                                                     <span className="text-[10px] tracking-[0.15em] opacity-60">端口枚举</span>
                                                     {portsError ? (
-                                                        <span className="text-[10px] font-mono text-red-400">{`枚举降级：${portsError}`}</span>
+                                                        <span className="text-[10px] font-mono text-warn">{`枚举降级：${portsError}`}</span>
                                                     ) : ports === null ? (
                                                         <span className="text-[10px] font-mono opacity-50">拉取中…</span>
                                                     ) : ports.length === 0 ? (
@@ -761,7 +761,7 @@ export default function Terminal() {
                                                                 onClick={() => setDraft({ ...draft, serial: { ...draft.serial, port: port.device } })}
                                                                 className={`border px-1.5 py-0.5 text-[10px] font-mono transition-colors duration-150 ${on
                                                                     ? 'border-nier-light bg-nier-light text-nier-dark'
-                                                                    : 'border-nier-light/40 text-nier-light/70 hover:border-nier-light'}`}
+                                                                    : 'border-nier-light/40 text-muted hover:border-nier-light'}`}
                                                             >
                                                                 {port.device}
                                                             </button>
@@ -803,7 +803,7 @@ export default function Terminal() {
                                                     onClick={() => setEscape({ ...draft.escape, enabled: on })}
                                                     className={`px-3 py-1 border text-[10px] font-bold tracking-[0.2em] transition-colors duration-150 ${draft.escape.enabled === on
                                                         ? 'border-nier-light bg-nier-light text-nier-dark'
-                                                        : 'border-nier-light/40 text-nier-light/70 hover:border-nier-light'}`}
+                                                        : 'border-nier-light/40 text-muted hover:border-nier-light'}`}
                                                 >
                                                     {label}
                                                 </button>
@@ -828,7 +828,7 @@ export default function Terminal() {
                                                 <button
                                                     type="button"
                                                     onClick={() => removePair(index)}
-                                                    className="px-2 py-1 border border-nier-light/40 text-[10px] text-nier-light/70 hover:border-nier-light transition-colors duration-150"
+                                                    className="px-2 py-1 border border-nier-light/40 text-[10px] text-muted hover:border-nier-light transition-colors duration-150"
                                                 >
                                                     删除
                                                 </button>
@@ -838,7 +838,7 @@ export default function Terminal() {
                                         <button
                                             type="button"
                                             onClick={addPair}
-                                            className="px-3 py-1 border border-nier-light/40 text-[10px] font-bold tracking-[0.2em] text-nier-light/70 hover:border-nier-light transition-colors duration-150"
+                                            className="px-3 py-1 border border-nier-light/40 text-[10px] font-bold tracking-[0.2em] text-muted hover:border-nier-light transition-colors duration-150"
                                         >
                                             + 添加规则
                                         </button>
@@ -859,7 +859,7 @@ export default function Terminal() {
                                         </p>
                                     </div>
 
-                                    {configError && <div className="text-red-300 text-[11px]">ERR: {configError}</div>}
+                                    {configError && <div className="text-warn text-[11px]">ERR: {configError}</div>}
 
                                     <div className="flex items-center gap-3">
                                         <ActionButton onClick={handleApplyConfig} busy={busy === 'config'}>
@@ -898,14 +898,14 @@ export default function Terminal() {
                                     <div className="flex justify-between gap-4">
                                         <span className="opacity-60">连接 LINK</span>
                                         {connected ? (
-                                            <span className="border border-yellow-500/40 bg-yellow-500/10 px-2 text-yellow-300 text-[10px] tracking-[0.2em]">已连接 CONNECTED</span>
+                                            <span className="border border-yellow-500/40 bg-yellow-500/10 px-2 text-hl text-[10px] tracking-[0.2em]">已连接 CONNECTED</span>
                                         ) : (
                                             <span className="border border-nier-light/40 px-2 opacity-60 text-[10px] tracking-[0.2em]">未连接 DISCONNECTED</span>
                                         )}
                                     </div>
                                     <div className="flex justify-between gap-4">
                                         <span className="opacity-60">最后错误 LAST ERR</span>
-                                        <span className={status.last_error ? 'text-red-300 truncate max-w-[60%]' : 'opacity-60'}
+                                        <span className={status.last_error ? 'text-warn truncate max-w-[60%]' : 'opacity-60'}
                                             title={status.last_error || ''}>
                                             {status.last_error || '—'}
                                         </span>
@@ -919,7 +919,7 @@ export default function Terminal() {
                                                 {(status.events || []).slice(-8).reverse().map((event, index) => (
                                                     <div key={`${event.ts}-${index}`} className="flex gap-2 border-b border-nier-light/10 pb-1">
                                                         <span className="opacity-50 shrink-0">{String(event.ts || '').replace('T', ' ').slice(11, 19)}</span>
-                                                        <span className={event.event === 'error' ? 'text-red-300 shrink-0' : 'text-yellow-300 shrink-0'}>
+                                                        <span className={event.event === 'error' ? 'text-warn shrink-0' : 'text-hl shrink-0'}>
                                                             {String(event.event || '').toUpperCase()}
                                                         </span>
                                                         <span className="truncate opacity-70" title={event.detail || ''}>{event.detail || ''}</span>
@@ -928,7 +928,7 @@ export default function Terminal() {
                                             </div>
                                         )}
                                     </div>
-                                    {statusError && <div className="text-red-300 text-[11px]">ERR: {statusError}</div>}
+                                    {statusError && <div className="text-warn text-[11px]">ERR: {statusError}</div>}
                                     <div className="pt-1 flex flex-wrap items-center gap-2">
                                         <ActionButton onClick={refreshStatus}>刷新 (REFRESH)</ActionButton>
                                         {/* R15（PLAN §8.49）：自动轮询开关 —— 状态 + 发送历史
@@ -939,7 +939,7 @@ export default function Terminal() {
                                             onClick={() => setAutoRefresh((value) => !value)}
                                             className={`border px-3 py-1.5 text-[11px] font-bold tracking-[0.2em] transition-colors duration-150 ${autoRefresh
                                                 ? 'border-nier-light bg-nier-light text-nier-dark'
-                                                : 'border-nier-light/50 text-nier-light/70 hover:border-nier-light'}`}
+                                                : 'border-nier-light/50 text-muted hover:border-nier-light'}`}
                                         >
                                             {autoRefresh ? `自动刷新 AUTO · ${POLL_MS / 1000}s` : '自动刷新停 AUTO OFF'}
                                         </button>
@@ -1102,7 +1102,7 @@ export default function Terminal() {
                             <span className="text-[10px] opacity-50">存为当前生效配置的快照（服务端落库）</span>
                         </div>
 
-                        {profileError && <div className="text-red-300 text-[11px]">ERR: {profileError}</div>}
+                        {profileError && <div className="text-warn text-[11px]">ERR: {profileError}</div>}
                     </div>
                 </section>
 
@@ -1121,7 +1121,7 @@ export default function Terminal() {
                                 onClick={() => setFrameFormat(item.key)}
                                 className={`border px-2 py-1 text-[10px] font-bold tracking-[0.15em] transition-colors duration-150 ${on
                                     ? 'border-nier-light bg-nier-light text-nier-dark'
-                                    : 'border-nier-light/40 text-nier-light/70 hover:border-nier-light/70'}`}
+                                    : 'border-nier-light/40 text-muted hover:border-nier-light/70'}`}
                             >
                                 {item.label}
                             </button>
@@ -1153,7 +1153,7 @@ export default function Terminal() {
                                 <span className="text-[10px] opacity-50 shrink-0">{sendInfo.valid ? `${sendInfo.byteCount} B` : '—'}</span>
                             </div>
 
-                            {historyError && <div className="text-red-300 text-[11px]">ERR: {historyError}</div>}
+                            {historyError && <div className="text-warn text-[11px]">ERR: {historyError}</div>}
 
                             {rows.length === 0 ? (
                                 <div className="opacity-50">暂无发送记录 — 在上方输入十六进制帧发送，或到「指令加工」页试发。</div>
@@ -1178,12 +1178,12 @@ export default function Terminal() {
                                             >
                                                 <td className="py-1 whitespace-nowrap opacity-70">{row.time}</td>
                                                 <td className="py-1">{row.channel}</td>
-                                                <td className={`py-1 ${row.isError ? 'text-red-300' : 'text-yellow-300'}`}>{row.status}</td>
+                                                <td className={`py-1 ${row.isError ? 'text-warn' : 'text-hl'}`}>{row.status}</td>
                                                 <td className="py-1 text-right">{row.byteCount}</td>
                                                 <td className="py-1 truncate max-w-[10rem]" title={row.hexPreview}>{row.hexPreview}</td>
                                                 {/* R9: 命中应答解出来的「字段 = 值」；无指令名/无响应 → — */}
                                                 <td
-                                                    className="py-1 truncate max-w-[14rem] text-nier-light/70"
+                                                    className="py-1 truncate max-w-[14rem] text-muted"
                                                     title={row.fieldsText || ''}
                                                 >
                                                     {row.fieldsText || '—'}
@@ -1217,7 +1217,7 @@ export default function Terminal() {
                                             <span>ID {selected.id}</span>
                                             <span>{selected.channel} · {selected.byte_count} BYTES · {String(selected.status)}</span>
                                         </div>
-                                        <pre className="border border-nier-light/20 bg-nier-dark/80 p-3 leading-6 whitespace-pre-wrap break-all text-yellow-100">
+                                        <pre className="border border-nier-light/20 bg-nier-dark/80 p-3 leading-6 whitespace-pre-wrap break-all text-nier-light">
                                             {rawLines.length ? rawLines.join('\n') : '（空帧）'}
                                         </pre>
                                     </>
@@ -1237,16 +1237,16 @@ export default function Terminal() {
                                     <>
                                         <div className="text-[10px] tracking-[0.15em] opacity-60">响应 RESPONSE</div>
                                         {selected.status === 'ERROR' ? (
-                                            <div className="text-red-300 text-[11px]">无响应（发送失败，见下方错误日志）</div>
+                                            <div className="text-warn text-[11px]">无响应（发送失败，见下方错误日志）</div>
                                         ) : responseLines.length ? (
-                                            <pre className="border border-nier-light/20 bg-nier-dark/80 p-3 leading-6 whitespace-pre-wrap break-all text-yellow-100">
+                                            <pre className="border border-nier-light/20 bg-nier-dark/80 p-3 leading-6 whitespace-pre-wrap break-all text-nier-light">
                                                 {responseLines.join('\n')}
                                             </pre>
                                         ) : (
                                             <div className="text-[11px] opacity-60">空响应（超时内未收到数据）</div>
                                         )}
                                         {selectedError && (
-                                            <div className="border border-red-400/40 bg-red-400/5 px-3 py-2 text-[11px] text-red-300 break-all">
+                                            <div className="border border-red-400/40 bg-red-400/5 px-3 py-2 text-[11px] text-warn break-all">
                                                 {selectedError}
                                             </div>
                                         )}
@@ -1266,7 +1266,7 @@ export default function Terminal() {
                                             {errorRecords.map((record) => (
                                                 <div key={record.id} className="flex gap-2 border-b border-nier-light/10 pb-1">
                                                     <span className="opacity-50 shrink-0">{historyRows([record])[0].time}</span>
-                                                    <span className="text-red-300 shrink-0">{record.channel}</span>
+                                                    <span className="text-warn shrink-0">{record.channel}</span>
                                                     <span className="truncate opacity-70" title={errorMessageOf(record) || ''}>
                                                         {errorMessageOf(record) || '（无错误详情）'}
                                                     </span>

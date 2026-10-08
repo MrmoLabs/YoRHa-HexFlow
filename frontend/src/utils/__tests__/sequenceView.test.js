@@ -301,6 +301,8 @@ describe('sequenceView status helpers', () => {
         expect(resultLabel(null)).toBe('—');
     });
 
+    // R55（PLAN §8.86）随新事实改写：字色由固定色阶改语义 token（描边/徽标底仍是
+    // 原色阶 → 含 red/yellow/green 的断言照旧成立，字色另立断言）。
     it('tones are non-empty tokens per status', () => {
         expect(resultTone('completed')).toContain('green');
         expect(resultTone('failed')).toContain('red');
@@ -308,9 +310,20 @@ describe('sequenceView status helpers', () => {
         expect(resultTone('stopped')).toContain('orange');
         expect(resultTone(undefined)).toContain('nier');
         expect(stepTone('OK')).toContain('green');
-        expect(stepTone('ERROR')).toContain('red');
+        expect(stepTone('ERROR')).toContain('warn');
         expect(stepTone('SKIPPED')).toContain('orange');
-        expect(stepTone(undefined)).toContain('nier');
+        expect(stepTone(undefined)).toContain('muted');
+    });
+
+    // R55（PLAN §8.86）：失败=深红、运行中=深琥珀、未知态=次级灰（浅底 ≥4.5:1）
+    it('R55 字色语义类：failed=text-warn、running=text-hl、默认=text-muted', () => {
+        expect(resultTone('failed')).toContain('text-warn');
+        expect(resultTone('failed')).not.toContain('text-red-300');
+        expect(resultTone('running')).toContain('text-hl');
+        expect(resultTone('running')).not.toContain('text-yellow-300');
+        expect(resultTone(undefined)).toContain('text-muted');
+        expect(stepTone('ERROR')).toContain('text-warn');
+        expect(stepTone(undefined)).toContain('text-muted');
     });
 
     it('progressText: idle/empty dash, running current/total, terminal total/total', () => {

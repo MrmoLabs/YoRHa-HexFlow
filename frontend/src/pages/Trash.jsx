@@ -72,7 +72,7 @@ const ActionButton = ({ onClick, disabled = false, busy = false, danger = false,
         className={[
             'px-3 py-1.5 border text-[11px] font-bold tracking-[0.2em] transition-colors duration-150 disabled:opacity-40',
             danger
-                ? 'border-red-500/60 text-red-400 enabled:hover:bg-red-500 enabled:hover:text-nier-dark'
+                ? 'border-red-500/60 text-warn enabled:hover:bg-red-500 enabled:hover:text-nier-dark'
                 : 'border-nier-light/70 text-nier-light enabled:hover:bg-nier-light enabled:hover:text-nier-dark'
         ].join(' ')}
     >
@@ -226,7 +226,7 @@ export default function Trash() {
                     <div className="text-[11px] font-mono tracking-[0.35em] opacity-50">{`PAGE ${page.shortcut} // TRASH`}</div>
                     <h1 className="mt-2 text-4xl font-black tracking-tight leading-none">{page.titleZh}</h1>
                     <p className="mt-2 text-sm uppercase tracking-[0.25em] opacity-60">{page.titleEn}</p>
-                    <div className="mt-3 inline-flex items-center gap-2 border border-yellow-500/40 bg-yellow-500/10 px-3 py-1 text-[11px] font-mono tracking-[0.2em] text-yellow-300">
+                    <div className="mt-3 inline-flex items-center gap-2 border border-yellow-500/40 bg-yellow-500/10 px-3 py-1 text-[11px] font-mono tracking-[0.2em] text-hl">
                         <span className="h-2 w-2 bg-yellow-300 animate-pulse" />
                         {page.status}
                     </div>
@@ -235,7 +235,7 @@ export default function Trash() {
                 {/* Sys line */}
                 {(sysMsg || loadError) && (
                     <div className="border border-nier-light/40 bg-nier-dark/70 px-4 py-2 text-xs font-mono whitespace-pre-line">
-                        {loadError ? <span className="text-red-400">ERR: {loadError}</span> : <span>SYS: {sysMsg}</span>}
+                        {loadError ? <span className="text-warn">ERR: {loadError}</span> : <span>SYS: {sysMsg}</span>}
                     </div>
                 )}
 
@@ -271,7 +271,7 @@ export default function Trash() {
                                         onClick={() => setFilter(chip.key)}
                                         className={`border px-2 py-1 text-[10px] font-mono tracking-[0.15em] transition-colors duration-150 ${on
                                             ? 'border-nier-light bg-nier-light text-nier-dark'
-                                            : 'border-nier-light/40 text-nier-light/70 hover:border-nier-light/70'}`}
+                                            : 'border-nier-light/40 text-muted hover:border-nier-light/70'}`}
                                     >
                                         {`${chip.label} ${chip.n}`}
                                     </button>
@@ -307,7 +307,7 @@ export default function Trash() {
                     )}
 
                     {loadError ? (
-                        <div className="p-5 text-center text-xs font-mono text-red-400">
+                        <div className="p-5 text-center text-xs font-mono text-warn">
                             读取失败：{loadError}
                             <div className="mt-3">
                                 <ActionButton onClick={refresh}>重试 (RETRY)</ActionButton>

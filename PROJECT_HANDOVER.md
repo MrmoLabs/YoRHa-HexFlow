@@ -4071,6 +4071,81 @@
         提交 = `feat(R53)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
 
 
+103. **R55 · 全站低对比文字治理（浅字压浅底 → 按语义换档；PLAN §8.86 · 2026-10-08）**
+      - **来源与拍板（无既有登记项 —— 新题，不销旧留白）**：R53 收口后盘点剩余工作，摸出一类
+        **从没被任何批次登记过、却肉眼读不清**的问题 —— 站内大量文字是浅字直接压沙色底 `#DAD4BB`
+        （浅黄 `text-yellow-*`、纯白 `text-white`、半透明 `text-nier-light/xx`、浅红 `text-red-300/400`），
+        实测对比度**全部 < 1.5:1**，WCAG 正文线是 **4.5:1**；它不报错、不缺功能、全量测试照常全绿，
+        所以一直照不出来。按指定批次号立项，纯 FE、零 DDL。
+      - **文件（31 个源文件 + 3 个测试 / 配置）**：改 `frontend/src/components/**`、
+        `frontend/src/pages/**`、`frontend/src/utils/{profileView,sequenceView}.js` 等 31 个源文件；
+        同批 `frontend/src/index.css`（`@theme` 三个语义 token）、`frontend/src/__tests__/semanticTokens.test.js`
+        （新增）与 9 个既有测试文件（钉新语义类）。**`Blueprint.jsx` 一行未碰**（硬约束）；
+        **零 DDL → 无 Migration、无 `chore(db)`**；不引 pytest、无新 pip 依赖；`processor.py` / `graph.py`
+        未碰、**`/dispatch` 缺省口径未动**。
+      - **普查与判档（243 处 / 33 文件 → 落笔 230 条操作 / 31 文件）**：`r55_scope.py` 只扫源码 ——
+        四类样式 **240 行 × 样式**（`text-yellow-*` 56 · `text-white` 27 · `text-nier-light/xx` 99 ·
+        `text-red-300/400` 58）+ 超口径静态 `text-red-500` 5 处 = **判档 243 处**；逐处读上下文定档
+        （证据 `r55_ctx.txt` / `r55_sem.txt` / `r55_nl.txt`）。**判档两条轴** —— 语义
+        （警告 / 失效 / 未保存 / 错误 / 停用 / 超时 / 失败 → 深红 `text-warn`；高亮 / 注入 payload /
+        `REF` / `MATCHED` / 快照 / 徽标 / 选中 / 计数 → 深琥珀 `text-hl`；中性说明与降级正文 →
+        次级灰 `text-muted`）× 底色（压浅底换 token；**实心深底原色保留**；同色深底上的半透明深字换
+        **浅色档** `text-nier-dark/90`）。`Blueprint.jsx` 与 `NieRDatePicker.jsx`（唯一一处
+        `hover:text-white` 压 `hover:bg-nier-highlight` 深底）**不进脚本**，故 33 → 31。
+      - **修法（token + 批量脚本，230 条操作 = `muted` 108 / `warn` 87 / `hl` 32 / 深底换浅 3）**：
+        三个 token 入 `@theme` —— `--color-warn: #861e18`（沙底 **6.38**）、`--color-hl: #7a3800`
+        （**5.90**）、`--color-muted: #55514a`（**5.30**），**透明度只放行 `/90`**（`/80` = 4.49 压线以下
+        禁用）。`r55_apply.py` 逐条**行号 + 唯一锚点**、命中不恰好 1 次整批中止零写入、同文件自底向上应用、
+        **内存改 → 普查通过才写字节**（字节写回、行尾原样）。白字 27 处**改 17 留 10**；
+        `TransactionPanel:315-316` 三个失败分支收成一支 `: 'text-warn'`。
+      - **深底三处特例（`InstructionRunner.jsx` 的 `wrap-preview` = `bg-[#4a4a4a]`）**：
+        `:408 / :411 / :419` 的 `text-nier-light/70·45·45` 压**同色底** 1.00 完全不可见 → `text-nier-dark/90`；
+        `:424 / :447` 深底 `text-yellow-400` **5.63 达标保留**；`:398` 深底 `text-red-400` **3.21 留白**。
+      - **红测先行有据（基线 16 红 / 10 文件，先跑红再动源码）**：逐字红因如
+        `expected 'text-yellow-500 animate-pulse' to contain 'text-warn'` ·
+        `expected 'text-[10px] font-mono text-yellow-400…' to contain 'text-hl'` ·
+        `expected 'text-red-400' to contain 'warn'` · `expected null not to be null`。
+      - **三档记账**：**缺特性 10**（DataHub 1 / Instruction 1 / Orchestration 2 / Protocol 1 /
+        RoutingRules.dryrun 2 / Terminal 1 / profileView 1 / sequenceView 新用例 1）/
+        **测试自身 bug 先修 4 + 1 笔 lint**（`semanticTokens.test.js` 的 `index.css?raw` 在本仓 vitest 下
+        拿到**空串**、红在读取而非色值 → 改 `node:fs` 直读；落盘后 lint 又翻同文件 `__dirname no-undef`，
+        备选 `fileURLToPath(new URL(...))` 报 `The URL must be of scheme file` → 保留 `__dirname` +
+        显式豁免并写明豁免的是「环境没声明」，**色值断言一条不减**）/ **随新事实改写 2**
+        （`InstructionProcessor.test.jsx` R45 轨迹、`sequenceView.test.js` 的 `tones` 用例）。
+        **护栏单列不冒充红测**：旧浅字 `< 4.5` 的换色证据断言实现前即绿。
+      - **残余（源码 14 行）**：`text-white` 10 · `text-yellow-*` 2 · `text-red-300/400` 2 ·
+        **`text-nier-light/xx` 归零**；残余清单被钉成 `r55_apply.py` 的 `EXPECT`，多一处少一处都
+        `MISMATCH` 并中止。
+      - **取证工具自身的账（2 笔，如实记）**：① `r55_apply.py` 第一版普查放在**落盘之后**、且 `EXPECT`
+        没登记测试里的**负向断言**（`not.toContain('text-yellow-300')`）与注释 → 首跑 `CENSUS_BAD=3`，
+        **但因已改成「内存改 → 普查 → 才写字节」，实际零写入**；登记 18 条后 `CENSUS_BAD=0` 才落盘。
+        ② 第一遍 10 项验收 **lint 红 1**（同上 `__dirname`）→ 按测试自身 bug 先修后复跑。
+        **两笔只触及取证脚本与测试自身，未触及被测语义。**
+      - **验收（10 项 · 两遍全绿）**：**BE 1033/1033**、**FE 1517/1517（97 文件，+7 条用例声明、
+        实跑 +9，+1 文件）**、`npx vite build` 0、`npm run lint` 0、yorha-ui 校验器（**42 个改动
+        js/jsx/css + 2 个 mjs + 全仓 14 份 md**）**0 违规**、md 口径 **8/8**、自检收口 **7/7**、
+        **15ms 探测 1517/1517**、`ev40` TOTAL_PROBLEMS=0、`ev33` STAGED=0 BAD=0。
+      - **人工验证**：拍板**零能力变化 → 不启 8055 / 5174、不做浏览器冒烟** —— 只换 `class` 文本，
+        不增不减接口 / 页面 / 能力 / 状态码 / 数据；`pageStatus.json` 与 `PAGE_STATUS.md` **双双不动**。
+      - **文档同步（同批）**：PLAN **§8.86 新节** + §1 新增 `R55` 行（**无既有留白可销** —— 新题）；
+        本条插入。**状态**：**R55 ✅ —— 浅字压浅底不会报错，只会让人读不清：把颜色从「样式偏好」升格成
+        「有对比度断言的语义 token」，才第一次照得出来。**
+        **明确留白**：**`Blueprint.jsx` 全页**（硬约束）；**`InstructionRunner:398`** 深底浅红 3.21；
+        **`text-white` 保留 10 行**（实心深底按钮 4、压 `hover:bg-red-500` 3、压
+        `hover:bg-nier-highlight` 2、Blueprint 1）；**`text-green-*` 与 `text-orange-300` 共 13 行**
+        （既有测试断言 `toContain('green' / 'orange')`，改了就红）；**`Orchestration:842` 图例仍写
+        `* Yellow indicates injected Payload`**（字色已换 `text-hl`，**文案未动**，改产品措辞另议）；
+        **字面色值档** `text-[#E58D28]` / `text-[#FFB74D]` / `text-[#4a4a4a]/35·40·45`；
+        **`opacity-*` 衰减**（降的是整块元素不是字色档）；**`hover:bg-red-400/500` 上的沙字 / 白字**
+        （hover 态，沿「深底原色保留」口径）；**文档里历史「黄字」11 处**（PLAN 6 处：§1 `R43` / `R45` 两行、
+        §8.75 三 与 五、§8.77 四 与 五；HANDOVER 5 处：条目 92、条目 94 两处、§6 目录地图的
+        `InstructionProcessor.jsx` 与 `RoutingRules.jsx` 两行）是 R43 / R45 当批验收原文，
+        R55 起该行已换深琥珀 —— **改写即改史实，故只登记不改写**（带行号的逐行清单见交付报告）。
+        R53 留白沿旧（边界 3 处、⑥ `refreshConfig`、Sequences 手动刷新）；R51 留白沿旧
+        （**注入盲区 27 处**、**假定时器下排空与 `settle` 跳过**）。提交 = `feat(R55)` 单笔
+        （**零 DDL** → 无 Migration、无 `chore(db)`）。
+
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

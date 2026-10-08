@@ -25,7 +25,7 @@ const collectSlots = (children = [], out = []) => {
 };
 
 const btnClass = 'text-[9px] font-mono uppercase tracking-widest border px-1.5 py-1 transition-colors duration-100';
-const btnIdle = 'border-nier-light/30 text-nier-light/50 hover:border-nier-light/70 hover:text-nier-light';
+const btnIdle = 'border-nier-light/30 text-muted hover:border-nier-light/70 hover:text-nier-light';
 const btnOn = 'border-nier-light bg-nier-light text-nier-dark';
 
 export default function RecipeEditor({
@@ -105,9 +105,9 @@ export default function RecipeEditor({
                                 onChange={(e) => { if (e.target.value) onSelect(e.target.value); }}
                                 className="bg-transparent border-b border-nier-light/50 text-sm focus:outline-none focus:border-nier-light py-1 font-mono"
                             >
-                                <option value="" className="bg-nier-dark text-white">— 选择配方 (SELECT) —</option>
+                                <option value="" className="bg-nier-dark text-nier-light">— 选择配方 (SELECT) —</option>
                                 {recipes.map(r => (
-                                    <option key={r.id} value={r.id} className="bg-nier-dark text-white">{r.name}</option>
+                                    <option key={r.id} value={r.id} className="bg-nier-dark text-nier-light">{r.name}</option>
                                 ))}
                             </select>
                         </div>
@@ -123,7 +123,7 @@ export default function RecipeEditor({
                         + 新建配方 (NEW)
                     </button>
                     {message && (
-                        <div data-testid="recipe-msg" className={`text-[10px] font-mono break-all ${message.ok ? 'text-green-400' : 'text-red-400'}`}>
+                        <div data-testid="recipe-msg" className={`text-[10px] font-mono break-all ${message.ok ? 'text-green-400' : 'text-warn'}`}>
                             {message.text}
                         </div>
                     )}
@@ -142,7 +142,7 @@ export default function RecipeEditor({
                             className="bg-transparent border-b border-nier-light/50 text-sm focus:outline-none focus:border-nier-light py-1 font-mono disabled:opacity-50"
                         >
                             {recipes.map(r => (
-                                <option key={r.id} value={r.id} className="bg-nier-dark text-white">{r.name}</option>
+                                <option key={r.id} value={r.id} className="bg-nier-dark text-nier-light">{r.name}</option>
                             ))}
                         </select>
                     </div>
@@ -171,9 +171,9 @@ export default function RecipeEditor({
                             title="加工页封装将按此指令取本配方（降级链第 1 级）；换绑在保存时先清旧指针再设新指针"
                             className="bg-transparent border-b border-nier-light/50 text-sm focus:outline-none focus:border-nier-light py-1 font-mono disabled:opacity-50"
                         >
-                            <option value="" className="bg-nier-dark text-white">— 不关联（加工页走默认协议）—</option>
+                            <option value="" className="bg-nier-dark text-nier-light">— 不关联（加工页走默认协议）—</option>
                             {instructions.map(ins => (
-                                <option key={ins.id} value={ins.id} className="bg-nier-dark text-white">
+                                <option key={ins.id} value={ins.id} className="bg-nier-dark text-nier-light">
                                     {ins.label || ins.name}
                                 </option>
                             ))}
@@ -207,7 +207,7 @@ export default function RecipeEditor({
                             return (
                                 <div key={`stage-${index}`} data-testid={`recipe-stage-${index}`} className="border border-nier-light/20 p-2">
                                     <div className="flex items-center justify-between gap-2 mb-2">
-                                        <span className={`text-[10px] font-mono tracking-widest ${missing ? 'text-[#E58D28]' : 'text-nier-light/70'}`}>
+                                        <span className={`text-[10px] font-mono tracking-widest ${missing ? 'text-[#E58D28]' : 'text-muted'}`}>
                                             L{index + 1}{missing ? ' · 协议缺失' : ''}
                                         </span>
                                         <div className="flex gap-1">
@@ -233,7 +233,7 @@ export default function RecipeEditor({
                                                 disabled={stages.length <= 1 || saving}
                                                 title="删层 (REMOVE LAYER)"
                                                 aria-label={`删除第 ${index + 1} 层`}
-                                                className={`${btnClass} ${btnIdle} disabled:opacity-30 disabled:cursor-not-allowed px-1.5 hover:!border-red-400 hover:!text-red-400`}
+                                                className={`${btnClass} ${btnIdle} disabled:opacity-30 disabled:cursor-not-allowed px-1.5 hover:!border-red-400 hover:!text-warn`}
                                             >×</button>
                                         </div>
                                     </div>
@@ -248,12 +248,12 @@ export default function RecipeEditor({
                                             className="bg-transparent border-b border-nier-light/50 text-sm focus:outline-none focus:border-nier-light py-1 font-mono disabled:opacity-50"
                                         >
                                             {missing && (
-                                                <option value={stage.protocol_id} className="bg-nier-dark text-red-400">
+                                                <option value={stage.protocol_id} className="bg-nier-dark text-warn">
                                                     {stage.protocol_id}（已删除）
                                                 </option>
                                             )}
                                             {protocols.map(p => (
-                                                <option key={p.id} value={p.id} className="bg-nier-dark text-white">{p.label}</option>
+                                                <option key={p.id} value={p.id} className="bg-nier-dark text-nier-light">{p.label}</option>
                                             ))}
                                         </select>
                                     </div>
@@ -313,12 +313,12 @@ export default function RecipeEditor({
                         disabled={saving}
                         data-testid="recipe-delete"
                         title="删除配方（服务端同事务解除关联该配方的指令）"
-                        className={`${btnClass} w-full border-red-400/50 text-red-300 hover:bg-red-400 hover:text-nier-dark disabled:opacity-40`}
+                        className={`${btnClass} w-full border-red-400/50 text-warn hover:bg-red-400 hover:text-nier-dark disabled:opacity-40`}
                     >
                         删除配方 (DELETE)
                     </button>
                     {message && (
-                        <div data-testid="recipe-msg" className={`text-[10px] font-mono break-all ${message.ok ? 'text-green-400' : 'text-red-400'}`}>
+                        <div data-testid="recipe-msg" className={`text-[10px] font-mono break-all ${message.ok ? 'text-green-400' : 'text-warn'}`}>
                             {message.text}
                         </div>
                     )}

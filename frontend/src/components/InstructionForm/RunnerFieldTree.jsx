@@ -56,7 +56,7 @@ export default function RunnerFieldTree({
             <div
                 key="__tree_empty"
                 data-runner-tree-empty="miss"
-                className="border border-nier-light/20 px-3 py-3 text-[10px] font-mono uppercase tracking-tighter text-nier-light/50 select-none"
+                className="border border-nier-light/20 px-3 py-3 text-[10px] font-mono uppercase tracking-tighter text-muted select-none"
             >
                 [HIDDEN] 无可填字段 · 字段的 presence 条件在当前输入下均未命中（本帧不发射）
             </div>
@@ -107,7 +107,7 @@ export default function RunnerFieldTree({
                             <div className="w-2 h-2 bg-nier-light/30"></div>
                             <span
                                 title={groupKind.title}
-                                className="text-[8px] font-black font-mono leading-none border border-nier-light/30 px-1 py-[2px] uppercase tracking-tighter text-nier-light/70 select-none cursor-help"
+                                className="text-[8px] font-black font-mono leading-none border border-nier-light/30 px-1 py-[2px] uppercase tracking-tighter text-muted select-none cursor-help"
                             >
                                 {groupKind.label}
                             </span>
@@ -119,7 +119,7 @@ export default function RunnerFieldTree({
                                     title={presence.title}
                                     className={`text-[8px] font-black font-mono leading-none border px-1 py-[2px] uppercase tracking-tighter shrink-0 select-none cursor-help ${presence.hit
                                         ? 'text-[#E58D28] border-[#E58D28]/60'
-                                        : 'text-nier-light/50 border-nier-light/30'}`}
+                                        : 'text-muted border-nier-light/30'}`}
                                 >
                                     IF
                                 </span>
@@ -264,7 +264,7 @@ export default function RunnerFieldTree({
                         />
                     )}
                     {semanticItems.length > 0 && (
-                        <div className="text-[9px] font-mono text-nier-light/60 ml-40 -mt-0.5 mb-1 uppercase tracking-tighter">
+                        <div className="text-[9px] font-mono text-muted ml-40 -mt-0.5 mb-1 uppercase tracking-tighter">
                             {semanticItems.map((it, i) => (
                                 <React.Fragment key={`${it.text}-${i}`}>
                                     {i > 0 && ' · '}
@@ -279,7 +279,7 @@ export default function RunnerFieldTree({
                         </div>
                     )}
                     {params.description && (
-                        <div className="text-[9px] font-bold text-nier-light/30 ml-40 -mt-1 mb-2 opacity-0 group-hover/field:opacity-100 transition-opacity uppercase tracking-tighter">
+                        <div className="text-[9px] font-bold text-muted ml-40 -mt-1 mb-2 opacity-0 group-hover/field:opacity-100 transition-opacity uppercase tracking-tighter">
                             {params.description}
                         </div>
                     )}

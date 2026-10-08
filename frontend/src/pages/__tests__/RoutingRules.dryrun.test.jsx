@@ -142,6 +142,10 @@ describe('R40 规则页试解析（§8.72）', () => {
         runDry();
 
         expect(await screen.findByText(/^SYS: 无命中 —— 扫过 2 条规则都不成立。$/)).toBeTruthy();
+        // R55（PLAN §8.86）：不命中是路由结果态（回执前缀 SYS、不记缺陷）→ 深琥珀，
+        // 与命中轨迹同一档；错误态才走深红。
+        expect(screen.getByText(/^SYS: 无命中/).className).toContain('text-hl');
+        expect(screen.getByText(/^SYS: 无命中/).className).not.toContain('text-yellow-300');
         expect(screen.getAllByText('（无命中）')).toHaveLength(2);
         expect(screen.getByTestId('dry-result-2').textContent).toBe('2 条');
         expect(api.updateRoutingRule).not.toHaveBeenCalled();
@@ -240,6 +244,10 @@ describe('R43 试解析 · 逐条判定轨迹（§8.75）', () => {
         expect(await screen.findByText(/^SYS: 命中 —— 规则「meter 0001」→ 指令「执行 X」（只解析，不发送）。$/)).toBeTruthy();
         expect(screen.getByTestId('dry-trace-0').textContent).toContain('判真命中');
         expect(screen.getByTestId('dry-trace-1').textContent).toContain('未轮到');
+        // R55（PLAN §8.86）：命中行字色 = 深琥珀语义类，非命中行不刷
+        expect(screen.getByTestId('dry-trace-0').innerHTML).toContain('text-hl');
+        expect(screen.getByTestId('dry-trace-0').innerHTML).not.toContain('text-yellow-300');
+        expect(screen.getByTestId('dry-trace-1').innerHTML).not.toContain('text-hl');
     });
 
     it('回执没有 trace（旧后端）→ 不出轨迹块，结果表照常', async () => {

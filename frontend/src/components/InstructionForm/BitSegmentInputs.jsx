@@ -22,7 +22,7 @@ export default function BitSegmentInputs({ bits, value, onChange, onSelectField 
 
     return (
         <div className="ml-40 mt-0.5 mb-1 flex flex-col gap-0.5" data-bit-segments="true">
-            <div className="text-[8px] font-black text-nier-light/40 uppercase tracking-tighter">
+            <div className="text-[8px] font-black text-muted uppercase tracking-tighter">
                 子位 (SUB-BITS) · 十进制
             </div>
             {rows.map(seg => (
@@ -32,10 +32,10 @@ export default function BitSegmentInputs({ bits, value, onChange, onSelectField 
                     onClick={onSelectField ? (e) => { e.stopPropagation(); onSelectField(); } : undefined}
                     className={`flex items-center gap-1 ${onSelectField ? 'cursor-pointer hover:bg-nier-light/5' : ''}`}
                 >
-                    <span className="text-[9px] font-mono text-nier-light/80 w-16 truncate uppercase" title={seg.name}>
+                    <span className="text-[9px] font-mono text-muted w-16 truncate uppercase" title={seg.name}>
                         {seg.name}
                     </span>
-                    <span className="text-[8px] font-mono text-nier-light/40 w-14">
+                    <span className="text-[8px] font-mono text-muted w-14">
                         [b{seg.start + seg.len - 1}..b{seg.start}]
                     </span>
                     {/* 优化批 2（DBC VAL_）：值表位段 → 下拉选名称；无值表 → 数字输入 */}

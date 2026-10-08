@@ -824,9 +824,11 @@ describe('R45 加工页逐条判定轨迹（§8.75 留白销项）', () => {
         expect(row1.textContent).toContain('#2');
         expect(row1.textContent).toContain('没轮到');
 
-        // MATCHED 行黄字（与规则页同款），其余行不刷黄
-        expect(row0.innerHTML).toContain('text-yellow-300');
-        expect(row1.innerHTML).not.toContain('text-yellow-300');
+        // MATCHED 行深琥珀语义类（与规则页同款，R55 §8.86），其余行不刷 ——
+        // 原断言 text-yellow-300 随新事实改写：浅黄压沙底 1.16，已换 text-hl
+        expect(row0.innerHTML).toContain('text-hl');
+        expect(row0.innerHTML).not.toContain('text-yellow-300');
+        expect(row1.innerHTML).not.toContain('text-hl');
 
         // 轨迹只回显 —— 命中仍真切了指令（R39 口径没被轨迹改掉）
         expect(screen.getByText(/ID: inst-2/)).not.toBeNull();

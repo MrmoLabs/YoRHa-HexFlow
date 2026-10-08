@@ -59,7 +59,7 @@ export default function ComponentPalette({
     if (isLoading) {
         return (
             <aside className="w-24 border-r border-nier-light flex flex-col items-center justify-center py-4 px-2 gap-2 z-10 bg-nier-dark select-none">
-                <div className="text-[9px] text-center text-nier-light/60 leading-4">
+                <div className="text-[9px] text-center text-muted leading-4">
                     模块模板
                     <br />
                     LOADING...
@@ -71,7 +71,7 @@ export default function ComponentPalette({
     if (error) {
         return (
             <aside className="w-24 border-r border-nier-light flex flex-col items-center justify-center py-4 px-2 gap-3 z-10 bg-nier-dark select-none">
-                <div className="text-[9px] text-center text-red-400 leading-4">{error}</div>
+                <div className="text-[9px] text-center text-warn leading-4">{error}</div>
                 <button
                     onClick={onRetry}
                     className="border border-nier-light/30 px-2 py-1 text-[9px] text-nier-light hover:bg-nier-light hover:text-nier-dark transition-colors"
@@ -85,7 +85,7 @@ export default function ComponentPalette({
     if (!hasInstruction) {
         return (
             <aside className="w-24 border-r border-nier-light flex flex-col items-center justify-center py-4 px-2 gap-2 z-10 bg-nier-dark select-none">
-                <div className="text-[9px] text-center text-nier-light/50 leading-4">
+                <div className="text-[9px] text-center text-muted leading-4">
                     先选择
                     <br />
                     指令
@@ -97,7 +97,7 @@ export default function ComponentPalette({
     if (operatorCount === 0) {
         return (
             <aside className="w-24 border-r border-nier-light flex flex-col items-center justify-center py-4 px-2 gap-2 z-10 bg-nier-dark select-none">
-                <div className="text-[9px] text-center text-nier-light/50 leading-4">
+                <div className="text-[9px] text-center text-muted leading-4">
                     暂无模块
                     <br />
                     模板数据
@@ -116,7 +116,7 @@ export default function ComponentPalette({
                             <button
                                 key={op.op_code}
                                 onClick={() => onAddBlock(op.op_code)}
-                                className="w-full border border-nier-light/30 hover:border-nier-light bg-nier-dark hover:bg-nier-light hover:text-nier-dark py-2 px-1 text-[9px] leading-tight transition-all text-center flex flex-col items-center gap-1 text-nier-light/80"
+                                className="w-full border border-nier-light/30 hover:border-nier-light bg-nier-dark hover:bg-nier-light hover:text-nier-dark py-2 px-1 text-[9px] leading-tight transition-all text-center flex flex-col items-center gap-1 text-muted"
                                 title={op.description}
                             >
                                 <span className="font-bold">{op.name}</span>

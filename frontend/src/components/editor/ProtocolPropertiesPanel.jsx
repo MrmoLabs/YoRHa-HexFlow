@@ -46,7 +46,7 @@ export default function ProtocolPropertiesPanel({
                             ⚠ {validationIssues.warnings.length} 提醒
                         </span>
                         {validationIssues.errors.length === 0 && (
-                            <span className="text-[10px] text-nier-light/70">（不阻断保存）</span>
+                            <span className="text-[10px] text-muted">（不阻断保存）</span>
                         )}
                     </div>
                     {validationIssues.errors.slice(0, 8).map((err, i) => (
@@ -54,7 +54,7 @@ export default function ProtocolPropertiesPanel({
                             key={`err-${i}`}
                             type="button"
                             onClick={() => err.blockId && onLocateBlock?.(err.blockId)}
-                            className="block w-full text-left text-[11px] font-bold text-nier-light hover:text-white hover:underline truncate"
+                            className="block w-full text-left text-[11px] font-bold text-nier-light hover:text-warn hover:underline truncate"
                         >
                             ⛔ {err.message}
                         </button>
@@ -73,7 +73,7 @@ export default function ProtocolPropertiesPanel({
                             key={`warn-${i}`}
                             type="button"
                             onClick={() => warn.blockId && onLocateBlock?.(warn.blockId)}
-                            className="block w-full text-left text-[10px] text-nier-light hover:text-white truncate"
+                            className="block w-full text-left text-[10px] text-nier-light hover:text-warn truncate"
                         >
                             ⚠ {warn.message}
                         </button>
@@ -157,7 +157,7 @@ export default function ProtocolPropertiesPanel({
                                 <div key={field.id} className="flex flex-col gap-1 border border-dashed border-nier-light/30 p-2 bg-nier-light/5">
                                     <div className="flex justify-between items-center">
                                         <label className="text-xs opacity-70 uppercase tracking-widest">{field.label}</label>
-                                        <span className="text-[9px] font-bold text-yellow-500">{refs.length} REF(S)</span>
+                                        <span className="text-[9px] font-bold text-hl">{refs.length} REF(S)</span>
                                     </div>
                                     <button
                                         type="button"
@@ -182,7 +182,7 @@ export default function ProtocolPropertiesPanel({
                                                             type="button"
                                                             aria-label={`remove ref ${refLabel}`}
                                                             onClick={() => setRefs(refs.filter(x => x !== refId))}
-                                                            className="text-red-400 hover:text-red-300"
+                                                            className="text-warn hover:text-warn"
                                                         >
                                                             ×
                                                         </button>
@@ -249,7 +249,7 @@ export default function ProtocolPropertiesPanel({
                                 <div key={field.id} className="flex flex-col gap-2 border border-dashed border-nier-light/30 p-2 bg-nier-light/5">
                                     <div className="flex justify-between items-center">
                                         <label className="text-xs opacity-70 uppercase tracking-widest">{field.label}</label>
-                                        <span className={`text-[9px] font-bold ${isStrict ? 'text-yellow-500' : 'opacity-60'}`}>
+                                        <span className={`text-[9px] font-bold ${isStrict ? 'text-hl' : 'opacity-60'}`}>
                                             {isStrict ? 'STRICT' : 'LEGACY'}
                                         </span>
                                     </div>
@@ -314,7 +314,7 @@ export default function ProtocolPropertiesPanel({
                     <div className="pt-4 border-t border-nier-light/20 space-y-2">
                         <button
                             onClick={() => onDeleteBlock(selectedBlock.id)}
-                            className="w-full border border-red-500/50 text-red-400 hover:bg-red-500 hover:text-white py-2 px-4 uppercase text-xs tracking-widest transition-colors"
+                            className="w-full border border-red-500/50 text-warn hover:bg-red-500 hover:text-white py-2 px-4 uppercase text-xs tracking-widest transition-colors"
                         >
                             删除 (DELETE)
                         </button>

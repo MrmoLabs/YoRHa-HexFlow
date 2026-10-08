@@ -62,7 +62,7 @@ const ActionButton = ({ onClick, disabled = false, busy = false, danger = false,
         className={[
             'px-3 py-1.5 border text-[11px] font-bold tracking-[0.2em] transition-colors duration-150 disabled:opacity-40',
             danger
-                ? 'border-red-500/60 text-red-400 enabled:hover:bg-red-500 enabled:hover:text-nier-dark'
+                ? 'border-red-500/60 text-warn enabled:hover:bg-red-500 enabled:hover:text-nier-dark'
                 : 'border-nier-light/70 text-nier-light enabled:hover:bg-nier-light enabled:hover:text-nier-dark'
         ].join(' ')}
     >
@@ -80,8 +80,8 @@ const RowButton = ({ label, onClick, disabled = false, danger = false, children 
         className={[
             'border px-2 py-1 text-[10px] font-mono tracking-[0.15em] transition-colors duration-150 disabled:opacity-30',
             danger
-                ? 'border-red-500/50 text-red-400 enabled:hover:bg-red-500 enabled:hover:text-nier-dark'
-                : 'border-nier-light/40 text-nier-light/80 enabled:hover:border-nier-light enabled:hover:bg-nier-light enabled:hover:text-nier-dark'
+                ? 'border-red-500/50 text-warn enabled:hover:bg-red-500 enabled:hover:text-nier-dark'
+                : 'border-nier-light/40 text-muted enabled:hover:border-nier-light enabled:hover:bg-nier-light enabled:hover:text-nier-dark'
         ].join(' ')}
     >
         {children}
@@ -386,7 +386,7 @@ export default function RoutingRules({ instructions = [] }) {
                         </span>
                         <ActionButton onClick={startCreate} busy={busy === 'save'}>新建 NEW</ActionButton>
                     </div>
-                    <div className="mt-3 inline-flex items-center gap-2 border border-yellow-500/40 bg-yellow-500/10 px-3 py-1 text-[11px] font-mono tracking-[0.2em] text-yellow-300">
+                    <div className="mt-3 inline-flex items-center gap-2 border border-yellow-500/40 bg-yellow-500/10 px-3 py-1 text-[11px] font-mono tracking-[0.2em] text-hl">
                         <span className="h-2 w-2 bg-yellow-300 animate-pulse" />
                         {page?.status}
                     </div>
@@ -396,7 +396,7 @@ export default function RoutingRules({ instructions = [] }) {
                 {(errMsg || sysMsg) && (
                     <div className="border border-nier-light/40 bg-nier-dark/70 px-4 py-2 text-xs font-mono whitespace-pre-line">
                         {errMsg
-                            ? <span className="text-red-400">ERR: {errMsg}</span>
+                            ? <span className="text-warn">ERR: {errMsg}</span>
                             : <span>SYS: {sysMsg}</span>}
                     </div>
                 )}
@@ -421,7 +421,7 @@ export default function RoutingRules({ instructions = [] }) {
 
                         {orderDirty && (
                             <div className="flex flex-wrap items-center gap-2 border-b border-nier-light/20 px-4 py-2">
-                                <span className="text-[11px] font-mono text-yellow-300">
+                                <span className="text-[11px] font-mono text-warn">
                                     {`● ${orderPlan.length} 条顺序待保存`}
                                 </span>
                                 <ActionButton onClick={saveOrder} busy={busy === 'order'}>保存顺序 SAVE ORDER</ActionButton>
@@ -430,7 +430,7 @@ export default function RoutingRules({ instructions = [] }) {
                         )}
 
                         {loadError ? (
-                            <div className="p-5 text-center text-xs font-mono text-red-400">
+                            <div className="p-5 text-center text-xs font-mono text-warn">
                                 {`ERR: 读取规则列表失败 —— ${loadError}`}
                                 <div className="mt-3">
                                     <ActionButton onClick={loadRules} busy={busy === 'load'}>重试 RETRY</ActionButton>
@@ -448,7 +448,7 @@ export default function RoutingRules({ instructions = [] }) {
                                 {rows.map((rule, index) => (
                                     <li key={rule.id} className="border-b border-nier-light/15 last:border-b-0">
                                         <div className="flex items-start gap-3 px-4 py-2.5">
-                                            <span className="mt-0.5 font-mono text-[11px] text-nier-light/60 shrink-0">
+                                            <span className="mt-0.5 font-mono text-[11px] text-muted shrink-0">
                                                 {`#${index + 1}`}
                                             </span>
                                             <div className="min-w-0 flex-1">
@@ -458,7 +458,7 @@ export default function RoutingRules({ instructions = [] }) {
                                                         {`sort ${Number(rule.sort_order) || 0}`}
                                                     </span>
                                                     {planById.has(rule.id) && (
-                                                        <span className="text-[10px] font-mono tracking-[0.15em] text-yellow-300">
+                                                        <span className="text-[10px] font-mono tracking-[0.15em] text-hl">
                                                             {`→ ${planById.get(rule.id)}`}
                                                         </span>
                                                     )}
@@ -542,7 +542,7 @@ export default function RoutingRules({ instructions = [] }) {
                                         className="mt-1 w-full border border-nier-light/40 bg-nier-dark px-2 py-1.5 text-sm font-mono text-nier-light focus:border-nier-light"
                                     />
                                     {dirtyErrors.name && (
-                                        <div className="mt-1 text-[11px] font-mono text-red-400">{dirtyErrors.name}</div>
+                                        <div className="mt-1 text-[11px] font-mono text-warn">{dirtyErrors.name}</div>
                                     )}
                                 </div>
 
@@ -570,7 +570,7 @@ export default function RoutingRules({ instructions = [] }) {
                                         )}
                                     </select>
                                     {dirtyErrors.instruction_id && (
-                                        <div className="mt-1 text-[11px] font-mono text-red-400">{dirtyErrors.instruction_id}</div>
+                                        <div className="mt-1 text-[11px] font-mono text-warn">{dirtyErrors.instruction_id}</div>
                                     )}
                                 </div>
 
@@ -591,7 +591,7 @@ export default function RoutingRules({ instructions = [] }) {
                                         受限表达式一次比较：== != &gt;= &lt;= &gt; &lt; 与 in；无算术、无括号、无布尔连接。
                                     </div>
                                     {dirtyErrors.condition && (
-                                        <div className="mt-1 text-[11px] font-mono text-red-400">{dirtyErrors.condition}</div>
+                                        <div className="mt-1 text-[11px] font-mono text-warn">{dirtyErrors.condition}</div>
                                     )}
                                 </div>
 
@@ -630,7 +630,7 @@ export default function RoutingRules({ instructions = [] }) {
 
                         {/* 顺序草稿会让人对着旧顺序的结果推新顺序 —— 有草稿就当场点破 */}
                         {orderDirty && (
-                            <div className="border border-yellow-500/40 bg-yellow-500/10 px-3 py-1.5 text-[11px] font-mono text-yellow-300">
+                            <div className="border border-yellow-500/40 bg-yellow-500/10 px-3 py-1.5 text-[11px] font-mono text-warn">
                                 {`${orderPlan.length} 条顺序待保存 —— 试解析按已落库顺序计算。`}
                             </div>
                         )}
@@ -666,8 +666,8 @@ export default function RoutingRules({ instructions = [] }) {
                             <div className="border-t border-nier-light/20 pt-3 flex flex-col gap-2">
                                 <div className={[
                                     'text-[11px] font-mono whitespace-pre-line',
-                                    dry.kind === 'err' ? 'text-red-400'
-                                        : dry.kind === 'miss' ? 'text-yellow-300'
+                                    dry.kind === 'err' ? 'text-warn'
+                                        : dry.kind === 'miss' ? 'text-hl'
                                             : 'text-nier-light',
                                 ].join(' ')}>
                                     {dry.kind === 'err' ? 'ERR: ' : 'SYS: '}
@@ -682,7 +682,7 @@ export default function RoutingRules({ instructions = [] }) {
                                                 key={`dry-row-${index}`}
                                                 className="flex items-baseline gap-3 border-b border-nier-light/10 px-3 py-1.5 last:border-b-0"
                                             >
-                                                <dt className="w-24 shrink-0 text-[10px] font-mono tracking-[0.15em] text-nier-light/60">
+                                                <dt className="w-24 shrink-0 text-[10px] font-mono tracking-[0.15em] text-muted">
                                                     {row.label}
                                                 </dt>
                                                 <dd
@@ -711,11 +711,11 @@ export default function RoutingRules({ instructions = [] }) {
                                                     data-testid={`dry-trace-${row.index - 1}`}
                                                     className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-nier-light/10 px-3 py-1.5 last:border-b-0 text-[11px] font-mono"
                                                 >
-                                                    <span className="shrink-0 text-nier-light/50">
+                                                    <span className="shrink-0 text-muted">
                                                         {`#${row.index}`}
                                                     </span>
                                                     <span className={row.code === 'MATCHED'
-                                                        ? 'shrink-0 text-yellow-300'
+                                                        ? 'shrink-0 text-hl'
                                                         : 'shrink-0'}>
                                                         {row.name}
                                                     </span>
@@ -723,7 +723,7 @@ export default function RoutingRules({ instructions = [] }) {
                                                         {row.condition}
                                                     </span>
                                                     <span className={row.code === 'MATCHED'
-                                                        ? 'min-w-0 text-yellow-300'
+                                                        ? 'min-w-0 text-hl'
                                                         : 'min-w-0'}>
                                                         {row.text}
                                                     </span>

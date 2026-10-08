@@ -6,7 +6,7 @@ import React from 'react';
 export default function TransmissionLog({ logs }) {
     return (
         <div className="flex-1 overflow-hidden flex flex-col mt-4">
-            <div className="text-xs font-black text-nier-light/40 mb-3 uppercase tracking-[0.2em] border-b-2 border-nier-light/10 pb-2">
+            <div className="text-xs font-black text-muted mb-3 uppercase tracking-[0.2em] border-b-2 border-nier-light/10 pb-2">
                 :: Transmission_Log ::
             </div>
             <div className="flex-1 overflow-y-auto font-mono text-xs space-y-3">
@@ -15,8 +15,8 @@ export default function TransmissionLog({ logs }) {
                         <div className="flex justify-between opacity-40 font-bold text-[9px]">
                             <span>[{log.time}]</span>
                             <span className={
-                                log.status === 'FAILED' ? 'text-red-400' :
-                                    log.status === 'SENDING' ? 'text-yellow-400' :
+                                log.status === 'FAILED' ? 'text-warn' :
+                                    log.status === 'SENDING' ? 'text-hl' :
                                         'text-green-400'
                             }>
                                 {log.status === 'FAILED' ? `TX_FAILED: ${log.error || ''}` :
@@ -29,7 +29,7 @@ export default function TransmissionLog({ logs }) {
                     </div>
                 ))}
                 {logs.length === 0 && (
-                    <div className="italic text-nier-light/30 text-[10px]">// BUFFER_EMPTY</div>
+                    <div className="italic text-muted text-[10px]">// BUFFER_EMPTY</div>
                 )}
             </div>
         </div>

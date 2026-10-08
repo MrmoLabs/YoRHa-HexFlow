@@ -20,11 +20,11 @@ import { advanceAutoCounter, resolvePresenceStates } from '../../config/runnerRe
 // WRAP / TRANSMIT 各自的数据用途一眼可读。
 const SectionTitle = ({ en, zh, hint }) => (
     <div>
-        <div className="text-[10px] font-black font-mono text-nier-light/60 uppercase tracking-[0.3em]">
-            :: {en} :: <span className="text-nier-light/90">{zh}</span>
+        <div className="text-[10px] font-black font-mono text-muted uppercase tracking-[0.3em]">
+            :: {en} :: <span className="text-muted">{zh}</span>
         </div>
         {hint && (
-            <div className="text-[9px] font-mono text-nier-light/40 mt-1.5 leading-relaxed">
+            <div className="text-[9px] font-mono text-muted mt-1.5 leading-relaxed">
                 {hint}
             </div>
         )}
@@ -237,7 +237,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
 
     if (!normalizedInstruction) {
         return (
-            <div className="flex-1 items-center justify-center text-nier-light/50 font-mono animate-pulse">
+            <div className="flex-1 items-center justify-center text-muted font-mono animate-pulse">
                 // WAITING FOR SELECTION...
             </div>
         );
@@ -269,16 +269,16 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
             {/* Header */}
             <div className="border-b-4 border-nier-light/20 pb-5 flex justify-between items-end">
                 <div>
-                    <div className="text-[10px] font-black font-mono text-nier-light/40 mb-2 tracking-[0.3em] uppercase">:: Operational Protocol ::</div>
+                    <div className="text-[10px] font-black font-mono text-muted mb-2 tracking-[0.3em] uppercase">:: Operational Protocol ::</div>
                     <h2 className="text-4xl font-black text-nier-light tracking-tighter leading-none mb-2">
                         {deviceCode} <span className="opacity-20">/</span> {instructionCode}
                     </h2>
-                    <div className="text-base font-bold text-nier-light/80 font-mono flex items-center gap-3">
+                    <div className="text-base font-bold text-muted font-mono flex items-center gap-3">
                         <span className="w-4 h-[2px] bg-nier-light/40"></span>
                         {instructionName}
                     </div>
                 </div>
-                <div className="text-right font-mono text-nier-light/50 font-bold leading-tight">
+                <div className="text-right font-mono text-muted font-bold leading-tight">
                     <div className="text-[10px] opacity-40 uppercase tracking-widest mb-1">Status: Ready</div>
                     <div className="text-xs uppercase">LEN: {hexPreview.replace(/\s/g, '').length / 2} BYTES</div>
                     <div className="text-[9px] opacity-30 mt-1 uppercase">ID: {normalizedInstruction.id}</div>
@@ -290,7 +290,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                 <div className="flex-[2] overflow-y-auto pr-5 custom-scrollbar">
                     <div className="mb-8 flex items-center gap-4">
                         <div className="h-[1px] flex-1 bg-nier-light/10"></div>
-                        <span className="text-xs font-black font-mono text-nier-light/60 uppercase tracking-[0.4em] whitespace-nowrap">
+                        <span className="text-xs font-black font-mono text-muted uppercase tracking-[0.4em] whitespace-nowrap">
                             Configuration / 系统配置
                         </span>
                         <div className="h-[1px] flex-1 bg-nier-light/10"></div>
@@ -351,7 +351,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                                     {' · '}{matchedRanges.reduce((sum, e) => sum + (e.end - e.start), 0)}B
                                 </span>
                             ) : (
-                                <span className="text-nier-light/35">点击字段 → 在字节流中定位对应字节</span>
+                                <span className="text-muted">点击字段 → 在字节流中定位对应字节</span>
                             )}
                         </div>
                     </div>
@@ -367,7 +367,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                         />
                         {/* 批次一 (D4-A): 封装开关 —— 状态机 ok 才可开；开 → 预览/TRANSMIT/事务同轨 */}
                         <div className="border border-nier-light/20 p-2 flex items-center justify-between gap-2">
-                            <span className="text-[9px] font-mono text-nier-light/40 uppercase tracking-[0.2em] whitespace-nowrap">:: Wrap ::</span>
+                            <span className="text-[9px] font-mono text-muted uppercase tracking-[0.2em] whitespace-nowrap">:: Wrap ::</span>
                             <button
                                 type="button"
                                 onClick={() => setWrapOn(on => !on)}
@@ -376,12 +376,12 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                                 title={wrap ? (isRecipeWrap ? '封装配方开关 (WRAP)' : '协议封装开关 (WRAP)') : '无可用默认绑定 — 仅裸发'}
                                 className={`text-[9px] font-mono uppercase tracking-widest border px-2 py-1 transition-colors duration-100 ${activeWrap
                                     ? 'border-nier-light bg-nier-light text-nier-dark'
-                                    : 'border-nier-light/20 text-nier-light/50 hover:border-nier-light/60 hover:text-nier-light'} disabled:opacity-40 disabled:cursor-not-allowed`}
+                                    : 'border-nier-light/20 text-muted hover:border-nier-light/60 hover:text-nier-light'} disabled:opacity-40 disabled:cursor-not-allowed`}
                             >
                                 {activeWrap ? 'WRAP ●' : 'WRAP ○'}
                             </button>
                         </div>
-                        <div data-testid="wrap-status" className="text-[9px] font-mono text-nier-light/40 uppercase tracking-widest break-all">
+                        <div data-testid="wrap-status" className="text-[9px] font-mono text-muted uppercase tracking-widest break-all">
                             {wrapStatusText}
                         </div>
 
@@ -405,10 +405,10 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                                                     className="border border-nier-light/20 p-2"
                                                 >
                                                     <div className="flex items-center justify-between gap-2">
-                                                        <span className="text-[9px] font-mono tracking-widest text-nier-light/70">
+                                                        <span className="text-[9px] font-mono tracking-widest text-nier-dark/90">
                                                             L{stage.index + 1} :: {stage.protocol_label || stage.protocol_id}
                                                         </span>
-                                                        <span className={`text-[9px] font-mono tracking-widest whitespace-nowrap ${stage.stale ? 'text-[#E58D28]' : 'text-nier-light/45'}`}>
+                                                        <span className={`text-[9px] font-mono tracking-widest whitespace-nowrap ${stage.stale ? 'text-[#E58D28]' : 'text-nier-dark/90'}`}>
                                                             {stage.stale ? 'DEF STALE' : `Δ+${stage.delta_bytes}B`} · {stage.total_length}B
                                                         </span>
                                                     </div>
@@ -416,7 +416,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                                                         {stage.hex}
                                                     </div>
                                                     {(stage.logic || []).length > 0 && (
-                                                        <div className="text-[9px] font-mono text-nier-light/45 mt-1 tracking-widest break-all">
+                                                        <div className="text-[9px] font-mono text-nier-dark/90 mt-1 tracking-widest break-all">
                                                             {stage.logic.map(item => `${item.type === 'length' ? 'LEN' : 'CRC'} ${item.label}=${item.value}`).join(' · ')}
                                                         </div>
                                                     )}
@@ -480,7 +480,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                             <span className="text-[10px] font-mono opacity-50">.HEX</span>
                         </button>
                         {exportMsg && (
-                            <div className={`text-[10px] font-mono tracking-widest text-center ${exportMsg === 'EXPORT OK' ? 'text-green-400' : 'text-red-400'}`}>
+                            <div className={`text-[10px] font-mono tracking-widest text-center ${exportMsg === 'EXPORT OK' ? 'text-green-400' : 'text-warn'}`}>
                                 {exportMsg}
                             </div>
                         )}

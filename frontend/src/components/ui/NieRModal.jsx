@@ -32,7 +32,7 @@ export default function NieRModal({ isOpen, message, onConfirm, onCancel }) {
                     {onCancel && (
                         <button
                             onClick={onCancel}
-                            className="px-4 py-2 border border-nier-light/50 text-nier-light/70 hover:bg-nier-light/10 hover:text-nier-light text-xs tracking-widest transition-all"
+                            className="px-4 py-2 border border-nier-light/50 text-muted hover:bg-nier-light/10 hover:text-nier-light text-xs tracking-widest transition-all"
                         >
                             取消 (CANCEL)
                         </button>

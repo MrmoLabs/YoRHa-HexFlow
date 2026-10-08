@@ -158,6 +158,17 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
         // 连接状态 + 默认选中首条：raw dump 尾字节（预览格截断不含 '09 0A'）与 response 各自可见
         expect(screen.getByText('已连接 CONNECTED')).toBeDefined();
+
+        // R55（PLAN §8.86）：状态徽标 / 事件行非错误态 = 深琥珀，错误态 = 深红
+        // （原 text-yellow-300 / text-red-300 压沙底实测 1.16 / 1.28）
+        expect(screen.getByText('已连接 CONNECTED').className).toContain('text-hl');
+        expect(screen.getByText('CONNECTED').className).toContain('text-hl');
+        const statusCell = (text) => [...document.querySelectorAll('td')]
+            .find((td) => td.textContent.trim() === text);
+        expect(statusCell('SENT').className).toContain('text-hl');
+        expect(statusCell('SENT').className).not.toContain('text-yellow-300');
+        expect(statusCell('ERROR').className).toContain('text-warn');
+        expect(statusCell('ERROR').className).not.toContain('text-red-300');
         await waitFor(() => {
             expect(screen.getByText(/09 0A/)).toBeDefined();
         });

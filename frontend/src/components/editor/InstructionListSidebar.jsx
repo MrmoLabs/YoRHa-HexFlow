@@ -24,13 +24,13 @@ export default function InstructionListSidebar({
                             <button
                                 onClick={onToggleView}
                                 title={viewMode === 'table' ? '切换到列表视图 (LIST)' : '切换到表格视图 (TABLE)'}
-                                className="border border-nier-light/40 text-[9px] px-1 py-0.5 leading-none tracking-widest text-nier-light/70 hover:bg-nier-light hover:text-black transition-colors"
+                                className="border border-nier-light/40 text-[9px] px-1 py-0.5 leading-none tracking-widest text-muted hover:bg-nier-light hover:text-black transition-colors"
                             >
                                 {viewMode === 'table' ? '列表' : '表格'}
                             </button>
                         )}
                         {onAdd && (
-                            <button onClick={onAdd} className="hover:text-nier-highlight text-lg leading-none transition-colors text-nier-light/70">+</button>
+                            <button onClick={onAdd} className="hover:text-nier-highlight text-lg leading-none transition-colors text-muted">+</button>
                         )}
                     </div>
                 </div>
@@ -41,18 +41,18 @@ export default function InstructionListSidebar({
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && onSearch && onSearch(searchTerm)}
-                    className="bg-nier-light/5 border border-nier-light/30 text-[10px] p-1 text-nier-light outline-none focus:border-nier-light font-mono placeholder:text-nier-light/30"
+                    className="bg-nier-light/5 border border-nier-light/30 text-[10px] p-1 text-nier-light outline-none focus:border-nier-light font-mono placeholder:text-muted"
                 />
             </div>
             <div className="flex-1 overflow-y-auto">
                 {instructions.map(inst => (
                     <div key={inst.id}
                         onClick={() => onSelect(inst.id)}
-                        className={`p-3 border-b border-nier-light/10 cursor-pointer flex justify-between items-center group ${inst.id === activeInstructionId ? 'bg-nier-light text-nier-dark' : 'text-nier-light/70 hover:bg-nier-light/5'}`}
+                        className={`p-3 border-b border-nier-light/10 cursor-pointer flex justify-between items-center group ${inst.id === activeInstructionId ? 'bg-nier-light text-nier-dark' : 'text-muted hover:bg-nier-light/5'}`}
                     >
                         <div className="truncate text-xs flex-1">{inst.name || inst.label}</div>
                         <div className="flex items-center gap-2 shrink-0">
-                            {inst.id === activeInstructionId && hasUnsavedChanges && <span className="text-[9px] text-yellow-500">*</span>}
+                            {inst.id === activeInstructionId && hasUnsavedChanges && <span className="text-[9px] text-warn">*</span>}
                             {onDuplicate && (
                                 <button
                                     onClick={(e) => {
@@ -60,7 +60,7 @@ export default function InstructionListSidebar({
                                         onDuplicate(inst.id);
                                     }}
                                     title="复制指令 (DUPLICATE)"
-                                    className={`hidden group-hover:block text-[9px] font-bold tracking-widest leading-none px-1 transition-colors ${inst.id === activeInstructionId ? 'text-nier-dark/70 hover:text-nier-dark' : 'text-nier-light/70 hover:text-nier-light'}`}
+                                    className={`hidden group-hover:block text-[9px] font-bold tracking-widest leading-none px-1 transition-colors ${inst.id === activeInstructionId ? 'text-nier-dark/70 hover:text-nier-dark' : 'text-muted hover:text-nier-light'}`}
                                 >
                                     副本
                                 </button>
@@ -72,7 +72,7 @@ export default function InstructionListSidebar({
                                         onDelete(e, inst.id);
                                     }}
                                     title="删除指令 (DELETE)"
-                                    className={`hidden group-hover:block text-[11px] leading-none px-1 transition-colors ${inst.id === activeInstructionId ? 'text-nier-dark/60 hover:text-red-600' : 'text-red-400/70 hover:text-red-400'}`}
+                                    className={`hidden group-hover:block text-[11px] leading-none px-1 transition-colors ${inst.id === activeInstructionId ? 'text-nier-dark/60 hover:text-red-600' : 'text-warn/90 hover:text-warn'}`}
                                 >
                                     ×
                                 </button>

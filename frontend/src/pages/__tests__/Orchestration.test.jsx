@@ -575,9 +575,10 @@ describe('Orchestration Page', () => {
         expect(await screen.findByText(/SEND FAILED: 409/)).toBeDefined();
     });
 
-    // 批次二 (D3): 封装期溢出/欠载告警不得静默 —— record.warnings 走独立琥珀
-    // 徽标（不再拼进 SENT 文本），且不阻断发送（append/zero_fill 路径）。
-    it('C1 封装试发 warnings：独立琥珀徽标渲染，SENT 文本不拼接', async () => {
+    // 批次二 (D3): 封装期溢出/欠载告警不得静默 —— record.warnings 走独立徽标
+    // （不再拼进 SENT 文本），且不阻断发送（append/zero_fill 路径）。
+    // R55（PLAN §8.86）：帧级 ⚠ 告警按语义归深红（原浅黄字压沙底 1.02）。
+    it('C1 封装试发 warnings：独立告警徽标渲染（深红 text-warn），SENT 文本不拼接', async () => {
         render(
             <Orchestration
                 protocols={[{
@@ -606,8 +607,28 @@ describe('Orchestration Page', () => {
 
         const chips = await screen.findByTestId('trial-send-warnings');
         expect(chips.textContent).toContain('空洞：1 个洞未被载荷填充');
+        // R55（PLAN §8.86）：帧级告警字色 = 深红语义类，不再压浅底用浅黄
+        expect(chips.firstElementChild.className).toContain('text-warn');
+        expect(chips.firstElementChild.className).not.toContain('text-yellow-400');
         const sent = screen.getByText(/^SENT:/);
         expect(sent.textContent).not.toContain('空洞');
+    });
+
+    // R55（PLAN §8.86）：洞位对账（无 SLOT / 洞位不足 / 空洞未绑）是编辑期结构性
+    // 状态提示，非阻断 → 深琥珀 text-hl；原 text-yellow-400 压沙底实测 1.06。
+    it('R55 语义色：hole-warning（洞位对账）用 text-hl 而非浅黄字', async () => {
+        render(
+            <Orchestration
+                protocols={[{ id: 'proto-1', label: '协议A', children: [] }]}
+                instructions={[{ id: 'inst-1', name: '指令A', fields: [] }]}
+            />
+        );
+        await awaitDefaultBinding();
+
+        const hole = screen.getByTestId('hole-warning');
+        expect(hole.textContent).toContain('无 SLOT：指令将追加末尾');
+        expect(hole.className).toContain('text-hl');
+        expect(hole.className).not.toContain('text-yellow-400');
     });
 
     // 批次一 (D1 一行两用): 星标 = 指令默认封装绑定 —— 设默认须点击确认（人工

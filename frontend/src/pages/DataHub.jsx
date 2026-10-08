@@ -362,7 +362,7 @@ export default function DataHub() {
                     <div className="text-[11px] font-mono tracking-[0.35em] opacity-50">{`PAGE ${page.shortcut} // DATA HUB`}</div>
                     <h1 className="mt-2 text-4xl font-black tracking-tight leading-none">{page.titleZh}</h1>
                     <p className="mt-2 text-sm uppercase tracking-[0.25em] opacity-60">{page.titleEn}</p>
-                    <div className="mt-3 inline-flex items-center gap-2 border border-yellow-500/40 bg-yellow-500/10 px-3 py-1 text-[11px] font-mono tracking-[0.2em] text-yellow-300">
+                    <div className="mt-3 inline-flex items-center gap-2 border border-yellow-500/40 bg-yellow-500/10 px-3 py-1 text-[11px] font-mono tracking-[0.2em] text-hl">
                         <span className="h-2 w-2 bg-yellow-300 animate-pulse" />
                         {page.status}
                     </div>
@@ -371,7 +371,7 @@ export default function DataHub() {
                 {/* Sys line */}
                 {(sysMsg || loadError) && (
                     <div className="border border-nier-light/40 bg-nier-dark/70 px-4 py-2 text-xs font-mono">
-                        {loadError ? <span className="text-red-400">ERR: {loadError}</span> : <span>SYS: {sysMsg}</span>}
+                        {loadError ? <span className="text-warn">ERR: {loadError}</span> : <span>SYS: {sysMsg}</span>}
                     </div>
                 )}
 
@@ -398,7 +398,7 @@ export default function DataHub() {
                                         {COUNT_LABELS.map(([key, label]) => (
                                             <div key={key} className="flex justify-between gap-4">
                                                 <span className="opacity-60">{label}</span>
-                                                <span className="text-yellow-300">{status.counts?.[key] ?? '—'}</span>
+                                                <span className="text-hl">{status.counts?.[key] ?? '—'}</span>
                                             </div>
                                         ))}
                                     </div>
@@ -463,7 +463,7 @@ export default function DataHub() {
                                                 onClick={() => toggleExportDomain(key)}
                                                 className={`border px-2 py-1 text-[10px] font-mono tracking-[0.1em] transition-colors duration-150 ${on
                                                     ? 'border-nier-light bg-nier-light text-nier-dark'
-                                                    : 'border-nier-light/40 text-nier-light/70 hover:border-nier-light/70'}`}
+                                                    : 'border-nier-light/40 text-muted hover:border-nier-light/70'}`}
                                             >
                                                 {key}
                                             </button>
@@ -567,7 +567,7 @@ export default function DataHub() {
                                                         <td className="py-1 truncate max-w-[14rem]" title={backup.name}>
                                                             {backup.name}
                                                             {backup.isSafetySnapshot && (
-                                                                <span className="ml-2 text-yellow-300">[快照]</span>
+                                                                <span className="ml-2 text-hl">[快照]</span>
                                                             )}
                                                         </td>
                                                         <td className="text-right py-1">{formatBytes(backup.sizeBytes)}</td>
@@ -577,7 +577,7 @@ export default function DataHub() {
                                                                 type="button"
                                                                 disabled={busy === 'restore'}
                                                                 onClick={() => setRestoreTarget(backup)}
-                                                                className="px-2 py-1 border border-red-400/60 text-red-300 text-[10px] tracking-[0.15em] enabled:hover:bg-red-400/10 transition-colors duration-150 disabled:opacity-40"
+                                                                className="px-2 py-1 border border-red-400/60 text-warn text-[10px] tracking-[0.15em] enabled:hover:bg-red-400/10 transition-colors duration-150 disabled:opacity-40"
                                                             >
                                                                 恢复 (RESTORE)
                                                             </button>
@@ -617,17 +617,17 @@ export default function DataHub() {
                                 <span>有默认协议 {matrix.summary.withDefault}</span>
                                 <span>无绑定 {matrix.summary.unbound}</span>
                                 <span>绑定 {matrix.summary.bindings}</span>
-                                <span className={matrix.summary.danglingSlots ? 'text-yellow-300' : ''}>
+                                <span className={matrix.summary.danglingSlots ? 'text-warn' : ''}>
                                     悬空槽 {matrix.summary.danglingSlots}
                                 </span>
-                                <span className={matrix.summary.missingProtocols ? 'text-yellow-300' : ''}>
+                                <span className={matrix.summary.missingProtocols ? 'text-warn' : ''}>
                                     协议已删 {matrix.summary.missingProtocols}
                                 </span>
-                                <span className={matrix.summary.staleBindings ? 'text-yellow-300' : ''}>
+                                <span className={matrix.summary.staleBindings ? 'text-warn' : ''}>
                                     失效绑定 {matrix.summary.staleBindings}
                                 </span>
                                 {matrix.summary.extraDefaults > 0 && (
-                                    <span className="text-yellow-300">重复默认 {matrix.summary.extraDefaults}</span>
+                                    <span className="text-warn">重复默认 {matrix.summary.extraDefaults}</span>
                                 )}
                             </div>
                         )}
@@ -635,7 +635,7 @@ export default function DataHub() {
                         {matrix.loading ? (
                             <div className="text-xs opacity-60">加载中…</div>
                         ) : matrix.error ? (
-                            <div className="text-xs text-yellow-300">矩阵不可用：{matrix.error}</div>
+                            <div className="text-xs text-warn">矩阵不可用：{matrix.error}</div>
                         ) : matrix.rows.length === 0 ? (
                             <div className="text-xs opacity-50">暂无指令。</div>
                         ) : (
@@ -661,16 +661,16 @@ export default function DataHub() {
                                                     {row.defaultBinding ? (
                                                         <>
                                                             <span
-                                                                className={row.defaultBinding.protocolMissing ? 'text-yellow-300' : ''}
+                                                                className={row.defaultBinding.protocolMissing ? 'text-warn' : ''}
                                                                 title={row.defaultBinding.id}
                                                             >
                                                                 {protocolCellText(row.defaultBinding)}
                                                             </span>
                                                             {row.defaultBinding.stale && (
-                                                                <span className="ml-2 text-yellow-300">[失效]</span>
+                                                                <span className="ml-2 text-warn">[失效]</span>
                                                             )}
                                                             {row.extraDefaults > 0 && (
-                                                                <span className="ml-2 text-yellow-300">[默认×{row.extraDefaults + 1}]</span>
+                                                                <span className="ml-2 text-warn">[默认×{row.extraDefaults + 1}]</span>
                                                             )}
                                                         </>
                                                     ) : (
@@ -680,7 +680,7 @@ export default function DataHub() {
                                                 <td className="py-1 pr-3">
                                                     {row.defaultBinding ? (
                                                         <span
-                                                            className={row.defaultBinding.slotMissing ? 'text-yellow-300' : ''}
+                                                            className={row.defaultBinding.slotMissing ? 'text-warn' : ''}
                                                             title={row.defaultBinding.slotId || ''}
                                                         >
                                                             {slotCellText(row.defaultBinding)}
@@ -698,7 +698,7 @@ export default function DataHub() {
                                                                 <span
                                                                     key={cell.id}
                                                                     title={cell.id}
-                                                                    className={cell.protocolMissing || cell.slotMissing ? 'text-yellow-300' : ''}
+                                                                    className={cell.protocolMissing || cell.slotMissing ? 'text-warn' : ''}
                                                                 >
                                                                     {protocolCellText(cell)} · {slotCellText(cell)}
                                                                     {cell.stale && '[失效]'}

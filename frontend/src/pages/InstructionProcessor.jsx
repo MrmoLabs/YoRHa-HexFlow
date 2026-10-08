@@ -261,9 +261,9 @@ export default function InstructionProcessor({
                     {routeMsg && (
                         <div className={[
                             'border-t border-nier-light/20 px-4 py-1.5 text-[11px] font-mono whitespace-pre-line',
-                            routeMsg.kind === 'err' ? 'text-red-400'
-                                : routeMsg.kind === 'miss' ? 'text-yellow-300'
-                                    : routeMsg.kind === 'sys' ? 'text-nier-light/70'
+                            routeMsg.kind === 'err' ? 'text-warn'
+                                : routeMsg.kind === 'miss' ? 'text-hl'
+                                    : routeMsg.kind === 'sys' ? 'text-muted'
                                         : 'text-nier-light',
                         ].join(' ')}>
                             {routeMsg.kind === 'err' ? 'ERR: ' : 'SYS: '}
@@ -287,11 +287,11 @@ export default function InstructionProcessor({
                                         data-testid={`route-trace-${row.index - 1}`}
                                         className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-nier-light/10 px-3 py-1.5 last:border-b-0 text-[11px] font-mono"
                                     >
-                                        <span className="shrink-0 text-nier-light/50">
+                                        <span className="shrink-0 text-muted">
                                             {`#${row.index}`}
                                         </span>
                                         <span className={row.code === 'MATCHED'
-                                            ? 'shrink-0 text-yellow-300'
+                                            ? 'shrink-0 text-hl'
                                             : 'shrink-0'}>
                                             {row.name}
                                         </span>
@@ -299,7 +299,7 @@ export default function InstructionProcessor({
                                             {row.condition}
                                         </span>
                                         <span className={row.code === 'MATCHED'
-                                            ? 'min-w-0 text-yellow-300'
+                                            ? 'min-w-0 text-hl'
                                             : 'min-w-0'}>
                                             {row.text}
                                         </span>

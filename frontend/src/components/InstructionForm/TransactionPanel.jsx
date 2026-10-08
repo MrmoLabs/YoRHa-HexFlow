@@ -23,7 +23,7 @@ const DEFAULT_SETTINGS = { timeoutMs: '500', retries: '2', intervalMs: '50', bro
 const inputClass =
     'bg-nier-dark/40 border border-nier-light/20 px-2 py-1 font-mono text-[10px] text-nier-light '
     + 'focus:outline-none focus:border-nier-light/60 transition-colors duration-100 disabled:opacity-40';
-const labelClass = 'block text-[9px] font-mono text-nier-light/40 uppercase tracking-[0.2em] mb-1';
+const labelClass = 'block text-[9px] font-mono text-muted uppercase tracking-[0.2em] mb-1';
 
 // 数字输入回填：非法/清空 → 下限（UI 不拦输入过程，落库与发送由后端 400 兜底 SSOT）
 const clampInt = (raw, lo, hi) => {
@@ -40,7 +40,7 @@ const toIntOr = (raw, fallback) => {
 const toggleButtonClass = (on) => (
     on
         ? 'border-nier-light bg-nier-light text-nier-dark'
-        : 'border-nier-light/20 text-nier-light/50 hover:border-nier-light/60 hover:text-nier-light'
+        : 'border-nier-light/20 text-muted hover:border-nier-light/60 hover:text-nier-light'
 );
 
 export default function TransactionPanel({ instruction, payload, wrap = null }) {
@@ -219,14 +219,14 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
     return (
         <div className="border-t-2 border-nier-light/10 pt-4 space-y-3">
             <div className="flex items-center justify-between">
-                <span className="text-xs font-black text-nier-light/40 uppercase tracking-[0.2em]">
+                <span className="text-xs font-black text-muted uppercase tracking-[0.2em]">
                     :: Transaction ::
                 </span>
                 <button
                     type="button"
                     onClick={() => setSpecOpen(open => !open)}
                     aria-expanded={specOpen}
-                    className="text-[9px] font-mono text-nier-light/50 border border-nier-light/20 px-2 py-1 uppercase tracking-widest hover:border-nier-light/60 hover:text-nier-light transition-colors duration-100"
+                    className="text-[9px] font-mono text-muted border border-nier-light/20 px-2 py-1 uppercase tracking-widest hover:border-nier-light/60 hover:text-nier-light transition-colors duration-100"
                 >
                     {specOpen ? 'SPEC ▾' : 'SPEC ▸'}{specDirty ? ' *' : ''}
                 </button>
@@ -235,7 +235,7 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
             {/* 批次一 (D4-A): 封装联动指示 —— wrap 开时事务发送同带协议外壳。
                 CP3 3a: 配方态（降级链第 1 级）指示配方名与层数；单协议态形态不变。 */}
             {wrap && (
-                <div className="text-[9px] font-mono text-nier-light/40 uppercase tracking-widest">
+                <div className="text-[9px] font-mono text-muted uppercase tracking-widest">
                     {wrap.mode === 'recipe'
                         ? <>WRAP ● RECIPE {wrap.name || wrap.recipe_id} · {(wrap.stages || []).length} 层</>
                         : <>WRAP ● {wrap.protocol_id} · {wrap.slot_id || `SLOT ORDER ${wrap.slot_order ?? 0}`}</>}
@@ -279,7 +279,7 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
                 >
                     {settings.broadcast ? 'BROADCAST 无应答 ●' : 'BROADCAST 无应答 ○'}
                 </button>
-                <span className="text-[9px] font-mono text-nier-light/30">
+                <span className="text-[9px] font-mono text-muted">
                     ATTEMPTS ×{toIntOr(settings.retries, 2) + 1}
                 </span>
             </div>
@@ -295,7 +295,7 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
             </button>
 
             {message && (
-                <div className={`text-[10px] font-mono tracking-wide ${message.kind === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+                <div className={`text-[10px] font-mono tracking-wide ${message.kind === 'ok' ? 'text-green-400' : 'text-warn'}`}>
                     {message.text}
                 </div>
             )}
@@ -303,23 +303,22 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
             {/* 事务结果：汇总 + 逐次 attempt（状态 / RTT / 失配原因） */}
             {result && (
                 <div className="border border-nier-light/20 p-3 font-mono text-[10px] space-y-1">
-                    <div className={`flex justify-between font-bold ${result.status === 'OK' ? 'text-green-400' : 'text-red-400'}`}>
+                    <div className={`flex justify-between font-bold ${result.status === 'OK' ? 'text-green-400' : 'text-warn'}`}>
                         <span>{summaryLine(result)}</span>
-                        <span className="text-nier-light/40">{specSourceLabel(result.spec_source)}</span>
+                        <span className="text-muted">{specSourceLabel(result.spec_source)}</span>
                     </div>
                     {result.attempts.map(attempt => (
                         <div key={attempt.n} className="flex items-baseline gap-2 border-b border-nier-light/5 pb-1 last:border-b-0">
-                            <span className="text-nier-light/40">#{attempt.n}</span>
+                            <span className="text-muted">#{attempt.n}</span>
                             <span className={
                                 attempt.status === 'OK' ? 'text-green-400'
-                                    : attempt.status === 'TRANSPORT_ERROR' ? 'text-red-400'
-                                        : 'text-yellow-400'
+                                    : 'text-warn'
                             }>
                                 {attemptLabel(attempt.status)}
                             </span>
-                            <span className="text-nier-light/50">{rttText(attempt.rtt_ms)}</span>
+                            <span className="text-muted">{rttText(attempt.rtt_ms)}</span>
                             <span
-                                className="flex-1 truncate text-right text-nier-light/60"
+                                className="flex-1 truncate text-right text-muted"
                                 title={attempt.error || attempt.reasons?.join(', ') || attempt.received}
                             >
                                 {attempt.error || (attempt.reasons?.length ? attempt.reasons.join(', ') : attempt.received)}
@@ -336,7 +335,7 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
             {specOpen && (
                 <div className="border border-nier-light/20 p-3 space-y-3">
                     <div className="flex items-center justify-between gap-2">
-                        <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-nier-light/40">
+                        <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted">
                             RESPONSE_SPEC
                         </span>
                         <div className="flex items-center gap-2">
@@ -354,7 +353,7 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
                                 type="button"
                                 onClick={handleSaveSpec}
                                 disabled={!instructionId || rangesInvalid}
-                                className="text-[9px] font-mono uppercase tracking-widest border border-nier-light/20 px-2 py-1 text-nier-light/70 hover:border-nier-light hover:text-nier-light transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                className="text-[9px] font-mono uppercase tracking-widest border border-nier-light/20 px-2 py-1 text-muted hover:border-nier-light hover:text-nier-light transition-colors duration-100 disabled:opacity-40 disabled:cursor-not-allowed"
                             >
                                 {specDirty ? 'SAVE *' : 'SAVE'}
                             </button>
@@ -362,7 +361,7 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
                     </div>
 
                     {!instructionId && (
-                        <div className="text-[9px] font-mono text-nier-light/40">// NO INSTRUCTION — 仅可内联发送</div>
+                        <div className="text-[9px] font-mono text-muted">// NO INSTRUCTION — 仅可内联发送</div>
                     )}
 
                     <div className="grid grid-cols-2 gap-2">
@@ -420,7 +419,7 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
                             </button>
                             {spec.length && (
                                 <label className="flex items-center gap-1">
-                                    <span className="text-[9px] font-mono text-nier-light/40 uppercase tracking-[0.2em]">ENCODING</span>
+                                    <span className="text-[9px] font-mono text-muted uppercase tracking-[0.2em]">ENCODING</span>
                                     <select
                                         value={spec.length.encoding || 'fixed'}
                                         onChange={e => patchLengthEncoding(e.target.value)}
@@ -434,7 +433,7 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
                             )}
                         </div>
                         {spec.length && spec.length.encoding === 'varint' && (
-                            <p className="text-[9px] font-mono text-nier-light/40">
+                            <p className="text-[9px] font-mono text-muted">
                                 varint 按 LEB128 判读（字节序无关，ORDER 不参与）；BYTE_LEN = 设计期宽度，收侧按实际出线宽回算 offset_val。
                             </p>
                         )}
@@ -579,7 +578,7 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
                         />
                     </label>
                     {rangesInvalid && (
-                        <div className="text-[9px] font-mono text-red-400">
+                        <div className="text-[9px] font-mono text-warn">
                             格式非法：半开区间「起-止」逗号分隔、不重叠、≤8192
                         </div>
                     )}

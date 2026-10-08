@@ -60,7 +60,7 @@ export default function RouteInputTable({
                     <span
                         data-testid={`${idPrefix}-type-${index}`}
                         title={`按${describeInputType(row.value)}发送`}
-                        className="shrink-0 border border-nier-light/30 px-1.5 py-1 text-[9px] font-mono tracking-[0.15em] text-nier-light/60"
+                        className="shrink-0 border border-nier-light/30 px-1.5 py-1 text-[9px] font-mono tracking-[0.15em] text-muted"
                     >
                         {describeInputType(row.value)}
                     </span>
@@ -70,7 +70,7 @@ export default function RouteInputTable({
                         title={`${label.remove} ${index + 1}`}
                         onClick={() => onChange(removeRouteInput(list, index))}
                         disabled={list.length <= 1}
-                        className="border border-nier-light/40 px-2 py-1 text-[10px] font-mono text-nier-light/80 transition-colors duration-150 enabled:hover:border-nier-light enabled:hover:bg-nier-light enabled:hover:text-nier-dark disabled:opacity-30"
+                        className="border border-nier-light/40 px-2 py-1 text-[10px] font-mono text-muted transition-colors duration-150 enabled:hover:border-nier-light enabled:hover:bg-nier-light enabled:hover:text-nier-dark disabled:opacity-30"
                     >
                         ×
                     </button>

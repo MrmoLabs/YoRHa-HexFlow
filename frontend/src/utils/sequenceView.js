@@ -261,19 +261,19 @@ export function resultLabel(result) {
 export function resultTone(result) {
     switch (result) {
         case 'completed': return 'border-green-500/40 bg-green-500/10 text-green-300';
-        case 'failed': return 'border-red-500/40 bg-red-500/10 text-red-300';
-        case 'running': return 'border-yellow-500/40 bg-yellow-500/10 text-yellow-300';
+        case 'failed': return 'border-red-500/40 bg-red-500/10 text-warn';
+        case 'running': return 'border-yellow-500/40 bg-yellow-500/10 text-hl';
         case 'stopped': return 'border-orange-500/40 bg-orange-500/10 text-orange-300';
-        default: return 'border-nier-light/30 bg-nier-dark/60 text-nier-light/70';
+        default: return 'border-nier-light/30 bg-nier-dark/60 text-muted';
     }
 }
 
 export function stepTone(status) {
     switch (status) {
         case 'OK': return 'text-green-400';
-        case 'ERROR': return 'text-red-400';
+        case 'ERROR': return 'text-warn';
         case 'SKIPPED': return 'text-orange-300';
-        default: return 'text-nier-light/50';
+        default: return 'text-muted';
     }
 }
 

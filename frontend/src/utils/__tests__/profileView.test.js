@@ -46,4 +46,14 @@ describe('profileView（P1 档案视图模型）', () => {
         expect(profileBadges({ is_active: false, modified: true }).map((b) => b.text))
             .toEqual([]);
     });
+
+    // R55（PLAN §8.86）：徽标字色走语义 token —— 状态徽标=深琥珀，中性=次级灰。
+    // 原 text-yellow-300 / text-nier-light/70 压浅徽标底实测 1.16 / 3.19。
+    it('profileBadges：徽标字色用语义类（已激活=text-hl，已修改=text-muted）', () => {
+        const [active, modified] = profileBadges({ is_active: true, modified: true });
+        expect(active.className).toContain('text-hl');
+        expect(active.className).not.toContain('text-yellow-300');
+        expect(modified.className).toContain('text-muted');
+        expect(modified.className).not.toContain('text-nier-light/');
+    });
 });

@@ -157,7 +157,7 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
             if (isPickRef) {
                 base += "bg-orange-300 border-nier-light text-nier-light shadow-[0_0_10px_rgba(253,224,71,0.5)] z-40 cursor-pointer ";
             } else {
-                base += "border-dashed border-nier-light/50 text-nier-light/70 hover:bg-orange-200 hover:border-nier-light cursor-alias ";
+                base += "border-dashed border-nier-light/50 text-muted hover:bg-orange-200 hover:border-nier-light cursor-alias ";
             }
             if (isSelected) base += "border-2 border-nier-light opacity-50 cursor-default ";
         } else {

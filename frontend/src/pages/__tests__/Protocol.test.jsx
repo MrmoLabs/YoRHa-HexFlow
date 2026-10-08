@@ -145,6 +145,9 @@ describe('Protocol Page', () => {
         // 草稿态：共享态零写入 + SAVE 按钮出现
         expect(setProtocols).not.toHaveBeenCalled();
         expect(screen.getByRole('button', { name: '保存更改 (SAVE)' })).toBeTruthy();
+        // R55（PLAN §8.86）：未保存徽标 = 深红语义类 text-warn（原 text-yellow-500 压沙底 1.28）
+        expect(screen.getByText('UNSAVED').className).toContain('text-warn');
+        expect(screen.getByText('UNSAVED').className).not.toContain('text-yellow-500');
         expect(api.updateProtocol).not.toHaveBeenCalled();
 
         // 超过原 350ms 防抖窗口 → 依然零自动 PUT

@@ -696,7 +696,7 @@ export default function Protocol({ protocols, setProtocols }) {
 
     if (!currentProtocol) {
         return (
-            <div className="flex-1 flex items-center justify-center text-nier-light/40 font-mono tracking-widest">
+            <div className="flex-1 flex items-center justify-center text-muted font-mono tracking-widest">
                 LOADING PROTOCOLS...
             </div>
         );
@@ -799,7 +799,7 @@ export default function Protocol({ protocols, setProtocols }) {
                     <div className="h-10 border-b border-nier-light bg-nier-dark/90 flex items-center justify-between px-4 gap-2 text-xs font-mono opacity-50">
                         <div className="flex items-center gap-2 cursor-pointer hover:text-nier-light" onClick={() => setSelectedId(null)}>
                             <span>PROTOCOL EDITOR // {currentProtocol?.label}</span>
-                            {hasUnsavedChanges && <span className="text-yellow-500 animate-pulse">UNSAVED</span>}
+                            {hasUnsavedChanges && <span className="text-warn animate-pulse">UNSAVED</span>}
                         </div>
                         <div className="flex gap-2 items-center">
                             <button
@@ -885,7 +885,7 @@ export default function Protocol({ protocols, setProtocols }) {
                 空候选 = 本协议无可生成指令（下拉禁用 + 提示）；失败只出短错误行。 */}
             <div className="border-t border-[#E58D28]/60 bg-nier-dark/95 px-4 py-2 flex flex-col gap-1.5 shrink-0">
                 <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-[10px] font-mono uppercase tracking-widest text-nier-light/50 whitespace-nowrap">
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-muted whitespace-nowrap">
                         据此生成 GENERATE
                     </span>
                     <select
@@ -929,7 +929,7 @@ export default function Protocol({ protocols, setProtocols }) {
                 {specMessage && specMessage.kind === 'ok' && (
                     <div
                         data-testid="response-spec-status"
-                        className="flex items-center gap-2 min-w-0 text-[10px] font-mono text-nier-light/70"
+                        className="flex items-center gap-2 min-w-0 text-[10px] font-mono text-muted"
                     >
                         <span className="whitespace-nowrap text-green-400">生成完成 {specMessage.text}</span>
                         {specMessage.warnings.length > 0 && (

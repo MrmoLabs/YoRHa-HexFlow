@@ -7,6 +7,8 @@ import Instruction from '../Instruction';
 const deps = vi.hoisted(() => ({
     updateLocalInstruction: vi.fn(),
     onAddBlock: null,
+    // R55（PLAN §8.86）：脏态开关由用例就地改写 —— UNSAVED 徽标只在真脏时渲染
+    hasUnsavedChanges: false,
 }));
 
 // Mock Child Components
@@ -40,7 +42,7 @@ vi.mock('../../hooks/useInstructionData', () => ({
         saveChanges: vi.fn(),
         revertChanges: vi.fn(),
         statusMsg: '',
-        hasUnsavedChanges: false,
+        hasUnsavedChanges: deps.hasUnsavedChanges,
         currentInstruction: { id: 'mock', fields: [] },
         // N2：STRING 模板形状与 backend SEED_TEMPLATES 同步（创建特判断言用）。
         operatorTemplates: {
@@ -83,6 +85,25 @@ describe('Instruction Page (Smoke Test)', () => {
         expect(screen.getByTestId('mock-sidebar')).toBeDefined();
         expect(screen.getByTestId('mock-canvas')).toBeDefined();
         expect(screen.getByTestId('mock-palette')).toBeDefined();
+    });
+
+    // R55（PLAN §8.86）：未保存徽标 = 深红语义类 text-warn（原 text-yellow-500 压沙底 1.28）；
+    // 干净态不渲染（不假装有未保存）。用例收尾把开关拨回，别污染后一条用例。
+    it('R55 语义色：脏态 UNSAVED 徽标用 text-warn，干净态不渲染', () => {
+        deps.hasUnsavedChanges = false;
+        const { unmount } = render(<Instruction />);
+        expect(screen.queryByText('UNSAVED')).toBeNull();
+        unmount();
+
+        deps.hasUnsavedChanges = true;
+        try {
+            render(<Instruction />);
+            const badge = screen.getByText('UNSAVED');
+            expect(badge.className).toContain('text-warn');
+            expect(badge.className).not.toContain('text-yellow-500');
+        } finally {
+            deps.hasUnsavedChanges = false;
+        }
     });
 });
 

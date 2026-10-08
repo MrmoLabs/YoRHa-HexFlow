@@ -390,7 +390,7 @@ export default function BlockPropertiesPanel({
                                     ⚠ {validationIssues.warnings.length} 提醒
                                 </span>
                                 {validationIssues.errors.length === 0 && (
-                                    <span className="text-[10px] text-nier-light/70">（不阻断保存）</span>
+                                    <span className="text-[10px] text-muted">（不阻断保存）</span>
                                 )}
                             </div>
                             {validationIssues.errors.slice(0, 8).map((err, i) => (
@@ -398,7 +398,7 @@ export default function BlockPropertiesPanel({
                                     key={`err-${i}`}
                                     type="button"
                                     onClick={() => err.blockId && onLocateBlock?.(err.blockId)}
-                                    className="block w-full text-left text-[11px] font-bold text-nier-light hover:text-white hover:underline truncate"
+                                    className="block w-full text-left text-[11px] font-bold text-nier-light hover:text-warn hover:underline truncate"
                                 >
                                     ⛔ {err.message}
                                 </button>
@@ -417,7 +417,7 @@ export default function BlockPropertiesPanel({
                                     key={`warn-${i}`}
                                     type="button"
                                     onClick={() => warn.blockId && onLocateBlock?.(warn.blockId)}
-                                    className="block w-full text-left text-[10px] text-nier-light hover:text-white truncate"
+                                    className="block w-full text-left text-[10px] text-nier-light hover:text-warn truncate"
                                 >
                                     ⚠ {warn.message}
                                 </button>
@@ -466,7 +466,7 @@ export default function BlockPropertiesPanel({
                                 保存更改 (SAVE)
                             </button>
                         )}
-                        <button onClick={(e) => onDeleteInstruction(e, currentInstruction.id)} className="w-full border border-red-500/50 text-red-500 hover:bg-red-500 hover:text-white py-2 px-4 uppercase text-xs tracking-widest transition-colors">
+                        <button onClick={(e) => onDeleteInstruction(e, currentInstruction.id)} className="w-full border border-red-500/50 text-warn hover:bg-red-500 hover:text-white py-2 px-4 uppercase text-xs tracking-widest transition-colors">
                             删除指令 (DELETE)
                         </button>
                     </div>
@@ -778,7 +778,7 @@ export default function BlockPropertiesPanel({
                             type="button"
                             data-testid="presence-clear"
                             onClick={handleClearPresence}
-                            className="w-full border border-red-500/40 text-red-500/90 hover:bg-red-500 hover:text-black py-1 text-[9px] uppercase tracking-widest transition-colors"
+                            className="w-full border border-red-500/40 text-warn/90 hover:bg-red-500 hover:text-black py-1 text-[9px] uppercase tracking-widest transition-colors"
                         >
                             清除条件 (CLEAR)
                         </button>
@@ -788,7 +788,7 @@ export default function BlockPropertiesPanel({
                         <button onClick={handleApply} className="w-full bg-nier-light/20 border border-nier-light text-nier-light hover:bg-nier-light hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors font-bold">
                             应用配置 (APPLY)
                         </button>
-                        <button onClick={() => onDeleteBlock(selectedBlock.id)} className="w-full border border-red-500/50 text-red-500 hover:bg-red-500 hover:text-white py-2 px-4 uppercase text-xs tracking-widest transition-colors">
+                        <button onClick={() => onDeleteBlock(selectedBlock.id)} className="w-full border border-red-500/50 text-warn hover:bg-red-500 hover:text-white py-2 px-4 uppercase text-xs tracking-widest transition-colors">
                             删除 (DELETE)
                         </button>
                     </div>

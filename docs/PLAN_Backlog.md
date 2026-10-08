@@ -85,6 +85,8 @@
 | R52 | **假通过全仓排查（124 处候选全量复检 + 组件过期回包守卫）** —— R51 §8.83 八 第 1 条登记的留白「**假通过只清了被查的 4 个文件，其余 92 个未排查**」（探测只报红、不报绿里的错）；R51 收口问 R52 排批时用户选中**推荐项「假通过全仓排查」**（余候选：补注入盲区 27 处 / 行内抑制注释机制 / 暂不排批），复检拿到实锤后再问「修到哪一层」，**回执选「PUT+GET 同根一起修」**（§8.84） | ✅ **已完成（2026-10-08，§8.84，含 1 处应用代码改动 · 零 DDL → 无 Migration、无 `chore(db)`）**：**静态规则**扫全仓 96 文件 → **124 处候选**（动作 → 无等待口 → 断言「不在场/不成立」）；**两轮动态复检**（临时插「等回包落定」，非 async 的 `it` 连带临时转 async）凑满 **124/124 全覆盖 / 20 文件**，复检跑完 `git checkout` 全量还原。结果：off 档 **0 红**（复检不破坏等价性）、15ms 档 **1 红实锤** —— 根因**不在测试、在组件**：`TransactionPanel` 的**过期回包覆盖更新的本地状态**（PUT 回包无条件 `setSpecDirty(false)` 把新编辑判成已保存 → `handleRun` 的 `response_spec: specDirty ? spec : null` 把编辑**静默丢弃**；GET 成功/降级路径整份冲掉本地改动，R51 那条 404 冲掉 LENGTH 正是它，当时只按「测试先等落定」绕过、根没治）。**红测先行有据**：2 条确定性回归测试（本测试掌闸 Promise，**不依赖延迟开关**）先红后绿；组件 **10 处** = 世代号 `specRevRef` + 4 个本地改动入口记世代 + GET 成功/降级「本地优先」+ PUT 「回包落地时号已前进则不判已保存」。**三档记账**：缺特性（真红测）**2** / 测试自身 bug 先修 **0**（其余 123 处候选经得起复检 = 无假通过）/ 随新事实改写 **0**；**实现缺陷 1 类 2 处（同根，拍板同批修）**。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1503/1503**（96 文件，含新增 2 条）· build 0 · lint 0 · 校验器（**2 个改动 js/jsx + 2 个 mjs + 全仓 14 份 md**）0 违规 · md 测试 8/8 · 自检 7/7 · **15ms 探测 1503/1503** · ev40 0 · ev33 0 |
 | R53 | **过期回包同类扫（R52 判据推广全仓 · 99 处候选逐条判档）** —— **无既有登记项**（新题）：R52 §8.84 收口后盘点剩余工作时顺手摸底出「同判据可推广」的题 —— `await 回包 → 中间无守卫 → 直接 setState` 全仓有多少处；问 R53 排批时用户选中**推荐项「过期回包同类扫」**（余候选：测试质量线收尾 / 实机冒烟 + pageStatus 同步 / 暂不排批），清单判档后第二问「修到哪一层」，**回执选「实锤 6 处全修」**（§8.85） | ✅ **已完成（2026-10-08，§8.85，含 4 个文件的应用代码改动 · 零 DDL → 无 Migration、无 `chore(db)`）**：静态规则扫 **99 处 / 12 文件**（动作 → 7 行内 `setXxx(`，标注中间有无 `if` / `alive` / `prev =>` 守卫），启发式初分 **L 22 / ? 5 / N 72**，再逐处读回上下文定档 —— N 档是刷新列表、置消息与 `prev =>` 函数式更新（天然不覆盖别处改动），`Protocol.handleConflictLoadLatest` 按钮语义本身就是「放弃本地草稿加载最新」，`RoutingRules` 编辑态在独立 `draft` 与 `rows` 无关；L 档 **6 处进红测实锤**：**⑥ 首屏拉取经渲染门控判定不可达**（`config`/`draft` 初值 null、面板 `{!draft ? (` 门控、`refreshConfig` 仅 mount 跑一次）→ 撤测记账；**③ 的强形态不可达**（`recipe-new` 只在 `!draft` 分支）→ 红测改走可达路径；**实锤 5 处**。**红测先行有据**：5 条确定性回归测试（本测试掌闸 Promise，**不依赖延迟开关**）先红后绿；修法 = **本地草稿对象身份判据**（点保存/新建/应用那一刻 vs 回包落地那一刻，期间编辑必换新对象），4 文件 13 处补丁：`useInstructionData.saveChanges`（不清草稿·不清脏标·不重建 undo 基线）、`Orchestration.handleSaveRecipe`（列表写穿服务端行，草稿与脏点留本地）、`handleCreateRecipe`（新行照常入列、本地已前进则不切选中不覆盖）、`Sequences` 保存后「服务端行重建草稿」一次性消费守卫、`Terminal.handleApplyConfig`（生效配置照常更新，表单不被回填）。**三档记账**：缺特性（真红测）**5** / 测试自身 bug 先修 **4**（③ 不可达改可达路径、⑥ 撤测、① 插错 describe 作用域、① 断言属性名写错）/ 随新事实改写 **0**；**实现缺陷 5 处（同根：过期回包覆盖更新的本地状态）**；静态误报 2 处如实记账。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1508/1508**（96 文件，含新增 5 条）· build 0 · lint 0 · 校验器（**8 个改动 js/jsx + 2 个 mjs + 全仓 14 份 md**）0 违规 · md 测试 8/8 · 自检 7/7 · **15ms 探测 1508/1508** · ev40 0 · ev33 0；**第二遍 15ms 探测红过 1 条一次性抖动**（`InstructionProcessor` 开关切裸发），A/B 定责非本批引入（带改动 3/3 绿 · HEAD 源码 3/3 同条绿 · 复现 0/6），第三遍全绿凑成两遍 —— 详见 §8.85 |
 
+| R55 | **全站低对比文字治理（浅字压浅底 → 按语义换 `text-warn` / `text-hl` / `text-muted`）** —— **无既有登记项**（新题，不销旧留白）：R53 §8.85 收口后盘点，摸出一类**从没被任何批次登记过、却肉眼读不清**的问题 —— 站内大量文字是浅字直接压沙色底 `#DAD4BB`（浅黄 `text-yellow-*`、纯白 `text-white`、半透明 `text-nier-light/xx`、浅红 `text-red-300/400`），实测对比度**全部 < 1.5:1**，而 WCAG 正文线是 4.5:1；它不报错、不缺功能、全量测试照常全绿，所以一直照不出来（§8.86） | ✅ **已完成（2026-10-08，§8.86，31 个源文件的应用代码改动 · 纯 FE · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`/dispatch` 缺省口径一行未动）**：**先普查再判档** —— 四类目标样式 HEAD 共 **240 行 × 样式 / 33 文件**（`text-yellow-*` 56 · `text-white` 27 · `text-nier-light/xx` 99 · `text-red-300/400` 58）+ 超口径静态 `text-red-500` 5 处 → **判档口径 243 处**，逐处读上下文定档（证据 `r55_ctx.txt` / `r55_sem.txt` / `r55_nl.txt`）。**判档两条轴**：语义（警告·失效·未保存·错误·停用·超时·失败 → 深红 `text-warn`；高亮·注入 payload·`REF`·`MATCHED`·快照·徽标·选中·计数 → 深琥珀 `text-hl`；中性说明与降级正文 → 次级灰 `text-muted`）× 底色（压浅底换语义 token；**实心深底原色保留**；同色深底上的半透明深字换**浅色档** `text-nier-dark/90`）。**落笔 230 条操作 / 31 文件**（`muted` 108 · `warn` 87 · `hl` 32 · 深底换浅 3），脚本 `r55_apply.py` 逐条「行号 + 唯一锚点」、命中不恰好 1 次整批中止零写入、自底向上应用、**内存改 → 普查过才写字节**。**三个语义 token 入 `@theme`**：`--color-warn #861e18`（沙底 6.38）· `--color-hl #7a3800`（5.90）· `--color-muted #55514a`（5.30），透明度只放行 `/90`（`/80` = 4.49 压线以下禁用）；对比度硬指标由 `semanticTokens.test.js` 在站内 **7 种浅底**上逐个断言 `>= 4.5`，旧浅字 `< 4.5` 的换色理由同文件钉死。**红测先行有据**：基线 **16 红 / 10 文件**（`expected 'text-yellow-500 animate-pulse' to contain 'text-warn'` 等逐字红因）→ **三档记账 缺特性 10 / 测试自身 bug 先修 4（+1 笔 lint `__dirname` no-undef）/ 随新事实改写 2**，护栏（旧色 `< 4.5` 证据断言）单列不冒充红测。**白字 27 处改 17 留 10**；深底三处特例（`text-nier-dark/90` 换 3 · 深底浅黄 5.63 保留 2 · 深底浅红 3.21 留白 1）。**残余源码 14 行**：`text-white` 10 · `text-yellow-*` 2 · `text-red-300/400` 2 · **`text-nier-light/xx` 归零**。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1517/1517**（97 文件，+7 条用例声明、实跑 +9，+1 文件）· build 0 · lint 0（第一遍 lint 红 1 属测试自身 bug，先修后过）· 校验器（**42 个改动 js/jsx/css + 2 个 mjs + 全仓 14 份 md**）**0 违规** · md 测试 8/8 · 自检 7/7 · **15ms 探测 1517/1517** · ev40 0 · ev33 0 |
+
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
 ## 2. M1 明细（实现完成，待人工验证）
@@ -7749,6 +7751,148 @@ recipeSaving) return;` + 双 PUT 重绑）→ 自带断言 `anchor x0` 中止。
 `pageStatus.json` 不动（理由见「七」）。**无既有留白可销** —— R53 是新题，不是 §8.8x 登记项。
 
 **R53 ✅ —— 同一个根换个扫法又挖出 5 处：判据一旦写成「对象身份比对」，就能一路复用。**
+
+## 8.86 R55 全站低对比文字治理（浅字压浅底 → 按语义换 `text-warn` / `text-hl` / `text-muted` · 2026-10-08）
+
+### 一 · 来源与拍板（**无既有登记项** —— 新题，不销旧留白）
+
+R53 §8.85 收口后盘点剩余工作，摸出一类**从没被任何批次登记过、却肉眼读不清**的问题：站内大量文字是
+「浅字压浅底」—— 浅黄 `text-yellow-*`、纯白 `text-white`、半透明 `text-nier-light/xx`、浅红
+`text-red-300/400` 直接压在站内主底色沙色 `#DAD4BB` 上，实测对比度**全部 < 1.5:1**，而 WCAG 正文线是
+**4.5:1**。它不报错、不缺功能、全量测试照常全绿 —— 这正是它一直没被任何批次登记的原因。
+本批按指定批次号 **R55** 立项，纯 FE、零 DDL；**无既有留白可销**。
+
+### 二 · 普查与判档（先出清单，再逐处读上下文）
+
+普查（`r55_scope.py`，只扫 `frontend/src` 源码、**不含测试**）四类目标样式 HEAD 共 **240 行 × 样式 / 33 文件**：
+`text-yellow-*` 56 · `text-white` 27 · `text-nier-light/xx` 99 · `text-red-300/400` 58；再加**超口径**纳入的
+静态 `text-red-500` 5 处（其中 2 行同时含 `hover:text-white` 已计入）→ **判档口径 243 处**。
+逐处上下文证据三份：`r55_ctx.txt`（黄 / 白）· `r55_sem.txt`（语义色）· `r55_nl.txt`（半透明深字）。
+
+**判档两条轴（先语义、后底色）**：
+
+- **语义二分**：警告 / 失效 / 未保存 / 错误 / 停用 / 超时 / 失败 / 删除 → **深红 `text-warn`**；
+  高亮 / 注入 payload / `REF` / `MATCHED` / 快照 / 状态徽标 / 选中 / 序号计数 → **深琥珀 `text-hl`**；
+  中性说明、降级正文、占位提示 → **次级灰 `text-muted`**。
+- **底色二分**：压沙底 / 白底 / 浅徽标底（含 `bg-nier-light/10` 选中、`bg-yellow-500/10`、`bg-red-500/10`
+  这类叠加底）→ 换语义 token；**实心深底**（`bg-nier-light` `#4A4A4A`、`hover:bg-nier-highlight`）→
+  **原色白字保留**（白压深灰 6.6:1 本就达标）；`InstructionRunner` 的 `bg-[#4a4a4a]` 预览面板同属深底，
+  `text-nier-light/xx` 在**同色底**上 1.00 完全不可见 → 换**浅色档** `text-nier-dark/90`。
+
+**落笔（`r55_apply.py`）**：**230 条操作 / 31 文件** —— `text-muted` 108 · `text-warn` 87 · `text-hl` 32 ·
+深底换浅色档 3。脚本纪律：每条操作带**行号 + 唯一锚点**，锚点必须在 `read` 读到的真实行里**恰好命中 1 次**，
+任何一条不中整批中止、零写入；同文件自底向上应用（行号不失效）；字节写回（行尾原样保留）。
+
+**33 → 31，两个不进脚本的文件**：`Blueprint.jsx`（硬约束，一行未碰）· `NieRDatePicker.jsx`
+（唯一一处 `hover:text-white` 压 `hover:bg-nier-highlight` 深底，按「深底原色保留」处理，不产生操作）。
+
+### 三 · 红测先行（16 红 / 10 文件 · 三档记账）
+
+前序先把断言钉到新语义类上、再动源码，基线（`r55_fe_red.txt`）= **16 failed / 1501 passed（1517）·
+10 个测试文件红**，逐字红因示例：`expected 'text-yellow-500 animate-pulse' to contain 'text-warn'` ·
+`expected 'text-[10px] font-mono text-yellow-400…' to contain 'text-hl'` · `expected 'text-red-400' to contain 'warn'` ·
+`expected null not to be null`。
+
+- **缺特性红 10 条**（实现未落必红）：DataHub 1 · Instruction 1 · Orchestration 2 · Protocol 1 ·
+  RoutingRules.dryrun 2 · Terminal 1 · profileView 1 · sequenceView 新用例 1。
+- **测试自身 bug 先修 4 条 + 1 笔 lint**：`semanticTokens.test.js` 的 `import css from '../index.css?raw'`
+  在本仓 vitest（`css` 缺省 false）下拿到**空串**（`?raw` / `?inline` 实测 LEN=0，而 `package.json?raw` 正常）
+  → 4 条红在**读取**而不是色值；改 `node:fs` 直读同一份文件。落盘后第 4 项 lint 又翻**同一文件 1 笔**：
+  `__dirname` 在 `globals.browser` 下判 `no-undef`（备选 `fileURLToPath(new URL(...))` 在 vitest 环境报
+  `The URL must be of scheme file`）→ 保留 `__dirname` + 显式 `eslint-disable-next-line no-undef` 并写明
+  **豁免的是「环境没声明」，色值断言一条不减**。
+- **随新事实改写 2 条**：`InstructionProcessor.test.jsx` 的 R45 轨迹用例（`toContain('text-yellow-300')`
+  → `toContain('text-hl')`、否定断言同改）· `sequenceView.test.js` 的 `tones are non-empty tokens per status`
+  （`toContain('red')` → `warn`、`toContain('nier')` → `muted`）。
+- **护栏单列、不冒充红测**：`semanticTokens.test.js` 里「旧浅字 < 4.5」的换色证据断言实现前即绿；
+  token 修好 import 后也在实现前已绿（token 由同批前序落进 `@theme`）。
+
+### 四 · 修法（3 个语义 token 入 `@theme` + 230 处批量换档）
+
+- **token（`frontend/src/index.css` 的 `@theme`）**：`--color-warn: #861e18`（沙底 **6.38**）·
+  `--color-hl: #7a3800`（**5.90**）· `--color-muted: #55514a`（**5.30**）。**透明度只放行 `/90`**
+  （`warn/90` = 5.42、`hl/90` = 4.87），`/80` = 4.49 **压线以下、禁用**。
+- **对比度硬指标**：`semanticTokens.test.js` 在**站内全部 7 种浅底**（沙底 / 白底 / 沙+`bg-yellow-500/10` /
+  沙+`bg-nier-light/10` 选中 / 沙+`bg-nier-light/5` 输入 / 沙+`bg-red-500/10` / 沙+`bg-white/5`）上逐个断言
+  `>= 4.5`，值先算后写、写死在 `@theme` 里。
+- **深底三处特例**（`InstructionRunner.jsx` 的 `wrap-preview` = `bg-[#4a4a4a]`）：`:408` / `:411` / `:419` 的
+  `text-nier-light/70·45·45` 压同色底 1.00 → `text-nier-dark/90`；`:424` / `:447` 的 `text-yellow-400` 深底
+  **5.63 达标保留**；`:398` 的 `text-red-400` 深底 **3.21 留白**（见「九」）。
+- **白字 27 处 → 改 17、留 10**：`<option>` 的 `bg-nier-dark text-white` → `text-nier-light`（浅底深字）·
+  侧栏选中 `bg-nier-light/10 text-white` → `text-hl` · 错误 / 警告按钮 `hover:text-white` → `hover:text-warn` ·
+  `+` 按钮 → `hover:text-nier-light`；**保留 10 行**见「九」。
+- **超口径纳入 5 处**（静态 `text-red-500` / `/90` / `/50` 压浅底）：`BitFieldEditor:245` ·
+  `KvPairListParam:103` · `BlockPropertiesPanel:469 / 781 / 791` → 一律 `text-warn`（含 `/90`）。
+  单列是因为它们**不在四类普查口径内**，不列就成漏网。
+- **一处合并**：`TransactionPanel:315-316` 的 `NO_RESPONSE` / `MATCH_FAILED` / `TRANSPORT_ERROR` 三分支
+  本就是同一种失败 → 收成一支 `: 'text-warn'`（RANGE 两行并一行，缩进与行尾原样）。
+
+### 五 · 复验（落笔后逐项回读）
+
+1. `r55_apply.py` 的**写盘前内存普查**（先在内存改、普查通过才写字节）→ `CENSUS_BAD=0` 才落盘；
+2. `read` 回读 31 个文件的关键行逐处核对（深底三处、RANGE 合并、侧栏选中、`<option>` 反色、图例行）；
+3. 残余普查（源码）= **14 行**：`text-white` 10 · `text-yellow-*` 2 · `text-red-300/400` 2 ·
+   **`text-nier-light/xx` 归零**；
+4. FE 全量 **1517/1517**（基线 16 红全转绿）。
+
+### 六 · 护栏（不冒充红测）
+
+① **换色理由永久钉住**：`semanticTokens.test.js` 双向断言（旧浅字 `< 4.5` + 新 token 在 7 种浅底 `>= 4.5`）；
+② **残余清单钉成 `EXPECT`**：`r55_apply.py` 事后普查多一处少一处都 `MISMATCH` 并中止；
+③ **10 项验收两遍**。**红测不借用护栏**：16 条红全是断言源码 `class` 的用例，与探针、延迟、守护脚本无关。
+
+### 七 · 人工验证（零能力变化 → 不启 8055 / 5174）
+
+本批只换 `class` 文本：**不增不减接口 / 页面 / 能力 / 状态码 / 数据**，渲染文案一字未改（唯一沾边的是
+`Orchestration:842` 图例的**英文措辞**，见「九」）→ 按既有口径**不做浏览器冒烟**；
+`pageStatus.json` 与 `docs/PAGE_STATUS.md` **双双不动**（本批硬约束亦如此要求）。
+
+### 八 · 固定验收清单（10 项）
+
+BE 全量 + FE 全量 + `npx vite build` + `npm run lint` + **yorha-ui 校验器（本批改动 js/jsx/css + 2 个 mjs +
+全仓 md）** + **md 口径测试** + **自检收口测试** + **`YORHA_API_DELAY_MS=15 npx vitest run`** +
+`ev40` mismatches = 0 + `ev33` BAD = 0。本批数字：BE **1033/1033** · FE **1517/1517**（97 文件，
++7 条用例声明 —— 新文件 3 条含 1 个 `it.each` 展开 3 用例 + 既有 4 文件各 1 条 —— 实跑 **+9**，+1 文件）·
+build 0 · lint 0（第一遍 lint 红 1 属测试自身 bug，先修后过）· 校验器（**42 个改动 js/jsx/css + 2 个 mjs +
+全仓 14 份 md**）**0 违规** · md **8/8** · 自检 **7/7** · 15ms 探测 **1517/1517** · ev40 **0** · ev33 **0**。
+
+### 九 · 明确留白（本批不做）
+
+- **`Blueprint.jsx` 全页**（硬约束，一行未碰）：`:229` 的 `text-red-400 hover:bg-red-500 hover:text-white`
+  与该页其它浅字；
+- **`InstructionRunner.jsx:398`** `text-red-400` 压 `bg-[#4a4a4a]` 实测 **3.21**（「深底原色保留」口径里的
+  **不达标例外**，登记不改）；同面板 `:424` / `:447` 深底 `text-yellow-400` **5.63 达标保留**；
+- **`text-white` 保留 10 行**：实心深底按钮 `bg-nier-light text-white` 4 行（`InstructionRunner:465`、
+  `Sequences:953/967/993`）· `hover:text-white` 压 `hover:bg-red-500` 3 行（`BlockPropertiesPanel:469/791`、
+  `ProtocolPropertiesPanel:317`）· `hover:text-white` 压 `hover:bg-nier-highlight` 深底 2 行
+  （`NieRModal:42`、`NieRDatePicker:148`）· `Blueprint:229` 1 行；
+- **`text-green-300/400` 与 `text-orange-300` 共 13 行**：既有测试断言 `toContain('green' / 'orange')`，
+  改了就红 → 必须保留；
+- **`Orchestration.jsx:842` 图例仍写 `* Yellow indicates injected Payload`**：字色已换 `text-hl`，
+  **文案未动**（改产品措辞另议）；
+- **字面色值档**：`text-[#E58D28]`（压沙底约 1.7）、`text-[#FFB74D]`、`text-[#4a4a4a]/35·40·45` 一类
+  低透明度深字 —— 与语义 token 不同源，未纳入；
+- **`opacity-*` 衰减**（`TransmissionLog` / `Canvas` / 脏点计数 `opacity-40` 等）：降的是整块元素、
+  不是字色档，未纳入；
+- **`hover:bg-red-400/500` 上的沙字 / 白字**：只在 hover 态出现，沿「深底原色保留」口径未改；
+- **文档措辞（历史「黄字」11 处，逐处登记不改写）**：`docs/PLAN_Backlog.md` **6 处** —— §1 `R43` 行、
+  §1 `R45` 行、§8.75 三 改动表、§8.75 五 实机冒烟、§8.77 四 红测、§8.77 五 实机冒烟；
+  `PROJECT_HANDOVER.md` **5 处** —— 条目 92、条目 94（2 处）、§6 目录地图的 `InstructionProcessor.jsx`
+  与 `RoutingRules.jsx` 两行。这些是 R43 / R45 的**当批验收原文**（当时确实是浅黄字），R55 起该行已换
+  `text-hl` 深琥珀 —— 改写即改史实，故**不改、只登记**，待文档口径批统一处理；md 里字面 `yellow`
+  **一处历史遗留都没有**（全部是本批文档引用的类名 / 红因原文 / 图例文案），「琥珀」约 60 行属设计语言
+  （深琥珀 `text-hl` 正是琥珀系）亦不动。**带行号的逐行清单见交付报告。**
+
+**取证工具自身的账（2 笔，如实记）**：① `r55_apply.py` 第一版把普查放在**落盘之后**、且 `EXPECT` 没登记
+测试里的**负向断言**（`not.toContain('text-yellow-300')`）与注释 → 首跑报 `CENSUS_BAD=3`「多出来的残留」，
+**但因流程已改成「内存改 → 普查 → 才写字节」，实际零写入**；把 18 条测试负向断言 / 注释登记进 `EXPECT` 后
+`CENSUS_BAD=0` 才落盘。② 第一遍 10 项验收 **lint 红 1**（`semanticTokens.test.js:8 __dirname no-undef`）→
+按「测试自身 bug 先修」处理后复跑，第二遍 10 项全绿。**两笔都只触及取证脚本与测试自身，未触及被测语义。**
+
+**文档同步（同批）**：§1 新增 `R55` 行 + §8.86 本节；`PROJECT_HANDOVER.md` 新增条目 103；
+`pageStatus.json` 不动（理由见「七」）。**无既有留白可销** —— R55 是新题，登记的都是新留白。
+
+**R55 ✅ —— 浅字压浅底不会报错，只会让人读不清：把颜色从「样式偏好」升格成「有对比度断言的语义 token」，才第一次照得出来。**
 
 ## 9. 保留勿动（非任务，勿清理）
 

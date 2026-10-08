@@ -150,7 +150,7 @@ function StepRow({
                 {step.wrap?.stale && (
                     <span
                         data-testid={`step-wrap-stale-${index}`}
-                        className="border border-yellow-500/50 text-yellow-400 px-1 shrink-0 text-[9px] tracking-widest"
+                        className="border border-yellow-500/50 text-warn px-1 shrink-0 text-[9px] tracking-widest"
                         title="封装配方已失效：协议定义已变更（步骤冻结帧不受影响，不阻断保存/运行）"
                     >
                         失效
@@ -170,14 +170,14 @@ function StepRow({
                 {/* 批次二 (D14②): 宿主已删 → 失效徽标（帧已冻结仍可运行） */}
                 {hostMissing && (
                     <span
-                        className="border border-yellow-500/50 text-yellow-400 px-1 shrink-0 text-[9px] tracking-widest"
+                        className="border border-yellow-500/50 text-warn px-1 shrink-0 text-[9px] tracking-widest"
                         title="宿主指令已删除：步骤帧已冻结、可继续运行；编辑入口已降为只读"
                     >
                         失效
                     </span>
                 )}
                 <span className="opacity-50">{Number(step.delay_ms) > 0 ? `${step.delay_ms}ms` : '直发'}</span>
-                <span className={step.payload ? 'text-[#E58D28]' : 'text-red-400'}>
+                <span className={step.payload ? 'text-[#E58D28]' : 'text-warn'}>
                     {step.payload ? `${payloadByteCount(step.payload)}B` : '未编译'}
                 </span>
                 <span className="opacity-50 hidden lg:inline">{planText}</span>
@@ -205,7 +205,7 @@ function StepRow({
                     type="button"
                     onClick={() => onRemove(index)}
                     disabled={running}
-                    className="border border-red-500/30 px-1 text-red-300 hover:bg-red-500/10 transition-all disabled:opacity-25"
+                    className="border border-red-500/30 px-1 text-warn hover:bg-red-500/10 transition-all disabled:opacity-25"
                     title="移除步骤"
                 >
                     ×
@@ -607,7 +607,7 @@ export default function Sequences() {
                     <div className="text-[11px] font-mono tracking-[0.35em] opacity-50">{`PAGE ${page.shortcut} // SEQUENCE ORCHESTRATION`}</div>
                     <h1 className="mt-2 text-4xl font-black tracking-tight leading-none">{page.titleZh}</h1>
                     <p className="mt-2 text-sm uppercase tracking-[0.25em] opacity-60">{page.titleEn}</p>
-                    <div className="mt-3 inline-flex items-center gap-2 border border-yellow-500/40 bg-yellow-500/10 px-3 py-1 text-[11px] font-mono tracking-[0.2em] text-yellow-300">
+                    <div className="mt-3 inline-flex items-center gap-2 border border-yellow-500/40 bg-yellow-500/10 px-3 py-1 text-[11px] font-mono tracking-[0.2em] text-hl">
                         <span className="h-2 w-2 bg-yellow-300 animate-pulse" />
                         {page.status}
                     </div>
@@ -616,7 +616,7 @@ export default function Sequences() {
                 {(loadError || msg) && (
                     <div className="border border-nier-light/40 bg-nier-dark/70 px-4 py-2 text-xs font-mono">
                         {loadError
-                            ? <span className="text-red-400 break-all">ERR: {loadError}</span>
+                            ? <span className="text-warn break-all">ERR: {loadError}</span>
                             : <span>SYS: {msg}</span>}
                     </div>
                 )}
@@ -665,7 +665,7 @@ export default function Sequences() {
                             type="button"
                             onClick={() => setConfirmDelete(true)}
                             disabled={!selectedId || running || !!busy}
-                            className="border border-red-500/40 text-red-300 py-1 text-[11px] font-mono tracking-[0.2em] hover:bg-red-500/10 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="border border-red-500/40 text-warn py-1 text-[11px] font-mono tracking-[0.2em] hover:bg-red-500/10 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                             删除所选
                         </button>
@@ -674,7 +674,7 @@ export default function Sequences() {
                     {/* 中：定义与步骤编辑 */}
                     <section className="flex-1 min-w-0 border border-nier-light/30 bg-nier-dark/60 p-3 flex flex-col gap-3">
                         {!draft ? (
-                            <div className="py-4 text-center text-nier-light/40 font-mono tracking-widest animate-pulse">
+                            <div className="py-4 text-center text-muted font-mono tracking-widest animate-pulse">
                                 SELECT OR CREATE A SEQUENCE
                             </div>
                         ) : (
@@ -789,7 +789,7 @@ export default function Sequences() {
                                                 {step.wrap?.stale && (
                                                     <span
                                                         data-testid="step-editor-wrap-stale"
-                                                        className="border border-yellow-500/50 text-yellow-400 px-1 shrink-0 font-mono text-[9px] tracking-widest"
+                                                        className="border border-yellow-500/50 text-warn px-1 shrink-0 font-mono text-[9px] tracking-widest"
                                                         title="封装配方已失效：协议定义已变更（步骤冻结帧不受影响，不阻断保存/运行）"
                                                     >
                                                         失效
@@ -869,7 +869,7 @@ export default function Sequences() {
                                                 {stepConditionError && (
                                                     <span
                                                         data-testid="step-condition-error"
-                                                        className="text-red-400 text-[10px]"
+                                                        className="text-warn text-[10px]"
                                                     >
                                                         {stepConditionError}
                                                     </span>
@@ -906,7 +906,7 @@ export default function Sequences() {
                                         </div>
 
                                         {!formReady ? (
-                                            <div className="border border-yellow-500/40 bg-yellow-500/10 px-2 py-1 text-[11px] font-mono text-yellow-300">
+                                            <div className="border border-yellow-500/40 bg-yellow-500/10 px-2 py-1 text-[11px] font-mono text-warn">
                                                 宿主指令已删除：步骤帧是冻结快照、仍可继续运行（D14② 失效不阻断）；
                                                 本步骤编辑已降只读，要改请移除后重新添加。
                                             </div>
@@ -1031,7 +1031,7 @@ export default function Sequences() {
                             </div>
                         )}
                         {status?.error && (
-                            <div className="border border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] font-mono text-red-300 break-all">
+                            <div className="border border-red-500/40 bg-red-500/10 px-2 py-1 text-[11px] font-mono text-warn break-all">
                                 ERR: {status.error}
                             </div>
                         )}

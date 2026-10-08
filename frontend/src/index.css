@@ -11,6 +11,11 @@
   --color-nier-highlight: #5c5c5c;
   --color-nier-grid: #b0b0a8;
 
+  /* R55 语义色 token：浅底上实算 >= 4.5:1（见 __tests__/semanticTokens.test.js） */
+  --color-warn: #861e18; /* 深红：警告/失效/未保存/错误/停用/超时/失败 */
+  --color-hl: #7a3800; /* 深琥珀：高亮/REF/MATCHED/快照/徽标/选中/序号计数 */
+  --color-muted: #55514a; /* 深灰：降级正文（原 nier-light 浅字档） */
+
   --radius-none: 0px;
   --radius-sm: 0px;
   --radius-md: 0px;

@@ -21,11 +21,11 @@ export const profileOptionLabel = (profile) =>
 export const profileBadges = (profile) => {
     const badges = [];
     if (profile?.is_active) {
-        badges.push({ text: '已激活', className: 'border-yellow-500/40 bg-yellow-500/10 text-yellow-300' });
+        badges.push({ text: '已激活', className: 'border-yellow-500/40 bg-yellow-500/10 text-hl' });
     }
     // modified ⊆ is_active（后端口径）：未激活的「已改」无意义，防御性忽略
     if (profile?.is_active && profile?.modified) {
-        badges.push({ text: '已修改', className: 'border-nier-light/40 text-nier-light/70' });
+        badges.push({ text: '已修改', className: 'border-nier-light/40 text-muted' });
     }
     return badges;
 };

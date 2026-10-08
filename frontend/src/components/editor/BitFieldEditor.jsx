@@ -236,13 +236,13 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
                                 title={signed ? '有符号位段（两补码）— 点击切回无符号' : '无符号位段 — 点击切为有符号'}
                                 className={`text-[8px] font-black leading-none px-0.5 py-1 border transition-colors ${signed
                                     ? 'bg-nier-light text-black border-nier-light'
-                                    : 'border-nier-light/30 text-nier-light/60 hover:border-nier-light/70 hover:text-nier-light'}`}
+                                    : 'border-nier-light/30 text-muted hover:border-nier-light/70 hover:text-nier-light'}`}
                             >
                                 {signed ? 'S' : 'U'}
                             </button>
                             <button
                                 onClick={() => remove(idx)}
-                                className="text-red-500/50 hover:text-red-500 text-[10px] px-0.5"
+                                className="text-warn/90 hover:text-warn text-[10px] px-0.5"
                                 title="DELETE BIT"
                             >
                                 ×
@@ -261,19 +261,19 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
             <div className="border-t border-white/10 pt-1.5 space-y-0.5 text-[9px] font-mono">
                 <div className="flex justify-between">
                     <span className="opacity-50">默认打包值 (HEX)</span>
-                    <span className="text-yellow-500">
+                    <span className="text-hl">
                         0x{totalDefault}
                     </span>
                 </div>
                 <div className="flex justify-between">
                     <span className="opacity-50">所需字节 (REQ)</span>
-                    <span className={grid.overflow ? 'text-red-400' : 'text-nier-light'}>
+                    <span className={grid.overflow ? 'text-warn' : 'text-nier-light'}>
                         {grid.requiredBytes} / {byteLen || 0}
                         {grid.overflow ? ' ⚠ TOO SMALL' : ''}
                     </span>
                 </div>
                 {conflicts.size > 0 && (
-                    <div className="text-red-400 tracking-wider">⚠ 位范围重叠 (BIT OVERLAP)</div>
+                    <div className="text-warn tracking-wider">⚠ 位范围重叠 (BIT OVERLAP)</div>
                 )}
             </div>
         </div>

@@ -36,20 +36,20 @@ export default function InstructionTable({
     return (
         <div className="flex-1 flex flex-col overflow-hidden bg-nier-dark/70">
             <div className="border-b border-nier-light/30 bg-nier-dark px-3 py-2 flex items-center gap-2">
-                <span className="text-[10px] font-bold tracking-widest text-nier-light/70 whitespace-nowrap">检索 FILTER</span>
+                <span className="text-[10px] font-bold tracking-widest text-muted whitespace-nowrap">检索 FILTER</span>
                 <input
                     type="text"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm && setSearchTerm(e.target.value)}
                     placeholder="SEARCH BY CODE / NAME / DEVICE..."
-                    className="flex-1 min-w-0 bg-nier-light/5 border border-nier-light/30 text-[10px] p-1 text-nier-light outline-none focus:border-nier-light font-mono placeholder:text-nier-light/30"
+                    className="flex-1 min-w-0 bg-nier-light/5 border border-nier-light/30 text-[10px] p-1 text-nier-light outline-none focus:border-nier-light font-mono placeholder:text-muted"
                 />
-                <span className="text-[10px] font-mono text-nier-light/60 whitespace-nowrap">MATCH {rows.length}</span>
+                <span className="text-[10px] font-mono text-hl whitespace-nowrap">MATCH {rows.length}</span>
             </div>
             <div className="flex-1 overflow-auto">
                 <table className="w-full text-xs font-mono border-collapse">
                     <thead>
-                        <tr className="bg-nier-dark border-b border-nier-light/40 text-nier-light/70">
+                        <tr className="bg-nier-dark border-b border-nier-light/40 text-muted">
                             <th className={th}>代号 CODE</th>
                             <th className={th}>设备 DEVICE</th>
                             <th className={th}>名称 NAME</th>
@@ -60,7 +60,7 @@ export default function InstructionTable({
                     <tbody>
                         {rows.length === 0 && (
                             <tr>
-                                <td colSpan={5} className="px-3 py-3 text-center text-nier-light/40 italic">
+                                <td colSpan={5} className="px-3 py-3 text-center text-muted italic">
                                     无匹配指令 (NO MATCH)
                                 </td>
                             </tr>
@@ -69,7 +69,7 @@ export default function InstructionTable({
                             <tr
                                 key={r.id}
                                 onClick={() => onSelect && onSelect(r.id)}
-                                className={`cursor-pointer border-b border-nier-light/10 transition-colors ${r.id === activeInstructionId ? 'bg-nier-light text-nier-dark font-bold' : 'text-nier-light/80 hover:bg-nier-light/10'}`}
+                                className={`cursor-pointer border-b border-nier-light/10 transition-colors ${r.id === activeInstructionId ? 'bg-nier-light text-nier-dark font-bold' : 'text-muted hover:bg-nier-light/10'}`}
                             >
                                 <td className={`${td} font-bold`}>{r.code}</td>
                                 <td className={td}>{r.device}</td>

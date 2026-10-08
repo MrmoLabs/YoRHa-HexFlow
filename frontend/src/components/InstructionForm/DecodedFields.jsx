@@ -14,10 +14,10 @@ const DecodedFields = ({ decoded, title = 'HIT RESPONSE · 命中应答解码' }
     return (
         <div className="border border-nier-light/20 p-3 space-y-2">
             <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-nier-light/40">
+                <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted">
                     {title}
                 </span>
-                <span className="text-[9px] font-mono text-nier-light/25">
+                <span className="text-[9px] font-mono text-muted">
                     {fields.length}F / {total}B{residual > 0 ? ` / +${residual}B` : ''}
                 </span>
             </div>
@@ -29,8 +29,8 @@ const DecodedFields = ({ decoded, title = 'HIT RESPONSE · 命中应答解码' }
                         className="flex items-baseline justify-between gap-3 border-b border-nier-light/10 pb-0.5 last:border-b-0"
                         title={`${f.name} ${f.opCode || '—'} · ${f.start}–${f.end} 字节${f.truncated ? ' · 帧长不足，已截断' : ''}`}
                     >
-                        <span className="font-mono text-[10px] text-nier-light/50 truncate">{f.name}</span>
-                        <span className={`font-mono text-[10px] ${f.truncated ? 'text-yellow-400' : 'text-nier-light'}`}>
+                        <span className="font-mono text-[10px] text-muted truncate">{f.name}</span>
+                        <span className={`font-mono text-[10px] ${f.truncated ? 'text-warn' : 'text-nier-light'}`}>
                             {formatFieldValue(f.value)}
                         </span>
                     </li>
@@ -40,7 +40,7 @@ const DecodedFields = ({ decoded, title = 'HIT RESPONSE · 命中应答解码' }
             {warnings.length > 0 && (
                 <ul className="space-y-0.5" data-testid="decoded-warnings">
                     {warnings.map((w) => (
-                        <li key={w} className="font-mono text-[9px] text-yellow-400/90">// {w}</li>
+                        <li key={w} className="font-mono text-[9px] text-warn/90">// {w}</li>
                     ))}
                 </ul>
             )}

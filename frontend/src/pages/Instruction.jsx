@@ -495,7 +495,7 @@ export default function Instruction({ instructions: initialInstructions, setInst
                                 {byteOffsets.variable ? 'VAR' : 'FIXED'}
                             </span>
                         </span>
-                        {hasUnsavedChanges && <span className="text-yellow-500 animate-pulse">UNSAVED</span>}
+                        {hasUnsavedChanges && <span className="text-warn animate-pulse">UNSAVED</span>}
                         {hasUnsavedChanges && (
                             <button onClick={() => revertChanges(openConfirm)} className="hover:text-nier-light hover:underline">RESET</button>
                         )}

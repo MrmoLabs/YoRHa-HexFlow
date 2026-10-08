@@ -16,7 +16,7 @@ export default function FieldPickerParam({
         <div className="flex flex-col gap-1 border border-dashed border-nier-light/30 p-2 bg-nier-light/5">
             <div className="flex justify-between items-center">
                 <label className="text-[10px] opacity-70 uppercase tracking-widest">{paramKey}</label>
-                <div className="text-[9px] font-bold text-yellow-500">{currentRefs.length} REF(S)</div>
+                <div className="text-[9px] font-bold text-hl">{currentRefs.length} REF(S)</div>
             </div>
 
             <button

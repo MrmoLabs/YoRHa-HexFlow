@@ -324,7 +324,7 @@ export default function Canvas({
                     className={`mb-4 transition-all duration-300 ${isFocus ? 'opacity-100' : 'opacity-60'} flex flex-col`}
                 >
                     <div className="flex items-center gap-2 mb-1 pl-1">
-                        <div className={`text-[10px] font-mono tracking-widest px-1 border transition-colors ${isFocus ? 'text-nier-light opacity-80 bg-nier-dark border-nier-light/20' : 'text-nier-light/50 opacity-40 bg-transparent border-transparent'}`}>
+                        <div className={`text-[10px] font-mono tracking-widest px-1 border transition-colors ${isFocus ? 'text-nier-light opacity-80 bg-nier-dark border-nier-light/20' : 'text-muted opacity-40 bg-transparent border-transparent'}`}>
                             {lane.parentName || `GROUP CONTENT`}
                         </div>
                         {!isFocus && !activeDragId && (
@@ -333,7 +333,7 @@ export default function Canvas({
                                     e.stopPropagation();
                                     onSetFocusedLane && onSetFocusedLane(lane.parentId);
                                 }}
-                                className="text-[9px] text-nier-light/40 hover:text-nier-light underline cursor-pointer"
+                                className="text-[9px] text-muted hover:text-nier-light underline cursor-pointer"
                             >
                                 FOCUS
                             </button>

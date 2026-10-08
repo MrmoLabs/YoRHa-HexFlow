@@ -87,7 +87,7 @@ function BindingRow({ binding, selected, dirty, onSelect, onDelete, onToggleDefa
         <div
             ref={setRowRef}
             onClick={() => onSelect(b.id)}
-            className={`p-3 border-b border-nier-light/10 cursor-pointer hover:bg-white/5 flex justify-between group ${selected ? 'bg-nier-light/10 text-white font-bold' : 'text-nier-light/70'}${isDragging ? ' opacity-50' : ''}`}
+            className={`p-3 border-b border-nier-light/10 cursor-pointer hover:bg-white/5 flex justify-between group ${selected ? 'bg-nier-light/10 text-hl font-bold' : 'text-muted'}${isDragging ? ' opacity-50' : ''}`}
         >
             <div className="truncate text-xs">
                 <span
@@ -120,7 +120,7 @@ function BindingRow({ binding, selected, dirty, onSelect, onDelete, onToggleDefa
                         绑定已失效 STALE
                     </span>
                 )}
-                <button onClick={(e) => onDelete(e, b.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-400">×</button>
+                <button onClick={(e) => onDelete(e, b.id)} className="opacity-0 group-hover:opacity-100 hover:text-warn">×</button>
                 {/* 批次一 (D1): 星标 = 指令默认封装绑定（is_default）——放删除之后 */}
                 <button
                     type="button"
@@ -128,8 +128,8 @@ function BindingRow({ binding, selected, dirty, onSelect, onDelete, onToggleDefa
                     title={b.isDefault ? '取消默认封装 (UNSTAR)' : '设为指令默认封装 (STAR)'}
                     aria-pressed={Boolean(b.isDefault)}
                     className={b.isDefault
-                        ? 'text-yellow-400 leading-none'
-                        : 'opacity-0 group-hover:opacity-100 text-nier-light/50 hover:text-yellow-400 leading-none'}
+                        ? 'text-hl leading-none'
+                        : 'opacity-0 group-hover:opacity-100 text-muted hover:text-hl leading-none'}
                 >
                     {b.isDefault ? '★' : '☆'}
                 </button>
@@ -706,10 +706,10 @@ export default function Orchestration({ protocols, instructions }) {
             <aside className="w-48 border-r border-nier-light/30 bg-nier-dark/50 flex flex-col">
                 <div className="p-4 border-b border-nier-light/30 flex justify-between items-center">
                     <span className="text-xs font-bold tracking-widest">绑定列表 (Bindings)</span>
-                    <button onClick={handleAddBinding} className="hover:text-white text-lg leading-none">+</button>
+                    <button onClick={handleAddBinding} className="hover:text-nier-light text-lg leading-none">+</button>
                 </div>
                 {syncMsg && (
-                    <div className="px-3 py-2 border-b border-nier-light/20 text-[10px] font-mono text-red-300 break-all">
+                    <div className="px-3 py-2 border-b border-nier-light/20 text-[10px] font-mono text-warn break-all">
                         {syncMsg}
                     </div>
                 )}
@@ -781,12 +781,12 @@ export default function Orchestration({ protocols, instructions }) {
                                     </button>
                                 </div>
                                 {exportMsg && (
-                                    <div className={`text-[9px] font-mono mt-0.5 ${exportMsg === 'EXPORT OK' ? 'text-green-400' : 'text-red-400'}`}>
+                                    <div className={`text-[9px] font-mono mt-0.5 ${exportMsg === 'EXPORT OK' ? 'text-green-400' : 'text-warn'}`}>
                                         {exportMsg}
                                     </div>
                                 )}
                                 {sendMsg && (
-                                    <div className={`text-[9px] font-mono mt-0.5 break-all ${sendMsg.startsWith('SENT') ? 'text-green-400' : 'text-red-400'}`}>
+                                    <div className={`text-[9px] font-mono mt-0.5 break-all ${sendMsg.startsWith('SENT') ? 'text-green-400' : 'text-warn'}`}>
                                         {sendMsg}
                                     </div>
                                 )}
@@ -797,7 +797,7 @@ export default function Orchestration({ protocols, instructions }) {
                                         {sendWarnings.map((w, i) => (
                                             <span
                                                 key={`send-warn-${i}`}
-                                                className="border border-yellow-500/50 text-yellow-400 text-[9px] font-mono tracking-widest px-1.5 py-0.5 break-all"
+                                                className="border border-yellow-500/50 text-warn text-[9px] font-mono tracking-widest px-1.5 py-0.5 break-all"
                                             >
                                                 ⚠ {w}
                                             </span>
@@ -834,12 +834,12 @@ export default function Orchestration({ protocols, instructions }) {
                     <div className="break-all leading-relaxed opacity-80">
                         {/* Mock Hex Stream based on structure */}
                         {mergedBlocks.map((b, i) => (
-                            <span key={i} className={`mr-2 ${b.isInjected ? 'text-yellow-400 font-bold' : ''}`}>
+                            <span key={i} className={`mr-2 ${b.isInjected ? 'text-hl font-bold' : ''}`}>
                                 {b.children?.length ? `[${b.label}]` : (b.hex_value || '00'.repeat(b.byte_length || 0)).toUpperCase()}
                             </span>
                         ))}
                     </div>
-                    <div className="mt-2 text-[10px] text-yellow-400 opacity-70">* Yellow indicates injected Payload</div>
+                    <div className="mt-2 text-[10px] text-hl">* Yellow indicates injected Payload</div>
                 </div>
             </section>
 
@@ -876,7 +876,7 @@ export default function Orchestration({ protocols, instructions }) {
                                     onChange={(e) => handleUpdateBinding(currentBinding.id, { protocolId: e.target.value })}
                                     className="bg-transparent border-b border-nier-light/50 text-sm focus:outline-none focus:border-nier-light py-1 font-mono"
                                 >
-                                    {protocols.map(p => <option key={p.id} value={p.id} className="bg-nier-dark text-white">{p.label}</option>)}
+                                    {protocols.map(p => <option key={p.id} value={p.id} className="bg-nier-dark text-nier-light">{p.label}</option>)}
                                 </select>
                             </div>
                             <div className="flex flex-col gap-1 mt-4">
@@ -886,7 +886,7 @@ export default function Orchestration({ protocols, instructions }) {
                                     onChange={(e) => handleUpdateBinding(currentBinding.id, { instructionId: e.target.value })}
                                     className="bg-transparent border-b border-nier-light/50 text-sm focus:outline-none focus:border-nier-light py-1 font-mono"
                                 >
-                                    {instructions.map(i => <option key={i.id} value={i.id} className="bg-nier-dark text-white">{i.label || i.name}</option>)}
+                                    {instructions.map(i => <option key={i.id} value={i.id} className="bg-nier-dark text-nier-light">{i.label || i.name}</option>)}
                                 </select>
                             </div>
                         </div>
@@ -905,13 +905,13 @@ export default function Orchestration({ protocols, instructions }) {
                                     className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono"
                                 >
                                     {groupBindings.map((b, i) => (
-                                        <option key={b.id} value={i} className="bg-nier-dark text-white">
+                                        <option key={b.id} value={i} className="bg-nier-dark text-nier-light">
                                             {i}{b.id === currentBinding.id ? ` · 本绑定` : ` · ${b.label}`}
                                         </option>
                                     ))}
                                 </select>
                                 {holeWarning && (
-                                    <div data-testid="hole-warning" className="text-[10px] font-mono text-yellow-400 tracking-widest">
+                                    <div data-testid="hole-warning" className="text-[10px] font-mono text-hl tracking-widest">
                                         ⚠ {holeWarning}
                                     </div>
                                 )}

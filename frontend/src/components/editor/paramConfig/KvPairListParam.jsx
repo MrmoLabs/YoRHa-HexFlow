@@ -54,7 +54,7 @@ export default function KvPairListParam({
                             }}
                             className="flex-1 bg-transparent border-b border-nier-light/30 text-xs font-mono text-nier-light focus:border-nier-light focus:outline-none text-center"
                         />
-                        <span className="text-nier-light/50">:</span>
+                        <span className="text-muted">:</span>
                         {/* VALUE (Right) */}
                         <input
                             type="text"
@@ -100,7 +100,7 @@ export default function KvPairListParam({
                                 const newArray = kvArray.filter(x => x.id !== item.id);
                                 onUpdateParam('_kvArray', newArray);
                             }}
-                            className="text-red-500/50 hover:text-red-500 text-[10px] px-1"
+                            className="text-warn/90 hover:text-warn text-[10px] px-1"
                         >
                             ×
                         </button>

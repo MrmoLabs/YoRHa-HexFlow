@@ -250,6 +250,9 @@ describe('DataHub Page', () => {
         await waitFor(() => expect(screen.getByText('绑定 BINDINGS')).toBeDefined());
         expect(screen.getByText('应答规格 SPECS')).toBeDefined();
         expect(screen.getByText('7')).toBeDefined();
+        // R55（PLAN §8.86）：计数徽标 = 深琥珀语义类（原 text-yellow-300 压沙底 1.16）
+        expect(screen.getByText('7').className).toContain('text-hl');
+        expect(screen.getByText('7').className).not.toContain('text-yellow-300');
 
         fireEvent.click(screen.getByRole('button', { name: /下载 ZIP/ }));
         await waitFor(() => expect(screen.getByText(/导出完成/)).toBeDefined());
