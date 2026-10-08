@@ -118,7 +118,7 @@ export default function RunnerFieldTree({
                                     data-runner-presence-chip={presence.hit ? 'hit' : 'miss'}
                                     title={presence.title}
                                     className={`text-[8px] font-black font-mono leading-none border px-1 py-[2px] uppercase tracking-tighter shrink-0 select-none cursor-help ${presence.hit
-                                        ? 'text-[#E58D28] border-[#E58D28]/60'
+                                        ? 'text-hl border-[#E58D28]/60'
                                         : 'text-muted border-nier-light/30'}`}
                                 >
                                     IF
@@ -128,7 +128,7 @@ export default function RunnerFieldTree({
                                 <span
                                     data-runner-presence-skip
                                     title={presence.title}
-                                    className="text-[8px] font-black font-mono leading-none border border-[#E58D28]/60 text-[#E58D28] px-1 py-[2px] uppercase tracking-tighter shrink-0 select-none"
+                                    className="text-[8px] font-black font-mono leading-none border border-[#E58D28]/60 text-hl px-1 py-[2px] uppercase tracking-tighter shrink-0 select-none"
                                 >
                                     [SKIP 0B]
                                 </span>
@@ -270,7 +270,7 @@ export default function RunnerFieldTree({
                                     {i > 0 && ' · '}
                                     <span
                                         title={it.ref ? ENCODER_LIMITS[it.ref] : it.title}
-                                        className={it.ref || it.warn ? 'text-[#E58D28] font-bold cursor-help' : undefined}
+                                        className={it.warn ? 'text-warn font-bold cursor-help' : it.ref ? 'text-hl font-bold cursor-help' : undefined}
                                     >
                                         {it.text}{(it.ref || it.warn) ? ' ⚠' : ''}
                                     </span>

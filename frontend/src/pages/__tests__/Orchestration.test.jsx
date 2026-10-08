@@ -708,6 +708,8 @@ describe('Orchestration Page', () => {
         // 改名标脏 → 计数 1、SAVE 可用；SAVE 在绑定名称 input 之后（面板底部）
         fireEvent.change(screen.getByDisplayValue('默认绑定 (DEFAULT)'), { target: { value: '改名了' } });
         expect(screen.getByText('1 条未保存')).toBeDefined();
+        // R56（PLAN §8.88）：脏计数 = 深红语义类 text-warn（原 text-[#E58D28] 沙底 1.73:1）
+        expect(screen.getByText('1 条未保存').className).toContain('text-warn');
         const saveBtn = screen.getByRole('button', { name: '保存更改 (SAVE)' });
         expect(saveBtn.disabled).toBe(false);
         const nameInput = screen.getByDisplayValue('改名了');
@@ -762,6 +764,8 @@ describe('Orchestration Page', () => {
         const dot = container.querySelector('[title="有未保存更改"]');
         expect(dot).not.toBeNull();
         expect(dot.textContent).toBe('●');
+        // R56（PLAN §8.88）：脏点 = 深红语义类 text-warn（原 text-[#E58D28] 沙底 1.73:1）
+        expect(dot.className).toContain('text-warn');
     });
 
     // ─── 人工验证第 3 轮 #5: 分栏宽度（中心区可收缩 + 属性栏不收缩） ─────
@@ -845,6 +849,8 @@ describe('Orchestration Page', () => {
         expect(screen.getByTestId('recipe-stage-count').textContent).toContain('2 / 4');
         expect(api.updateRecipe).not.toHaveBeenCalled();
         expect(screen.getByTestId('recipe-dirty').textContent).toBe('配方未保存');
+        // R56（PLAN §8.88）：配方脏态 = 深红语义类 text-warn（原 text-[#E58D28] 沙底 1.73:1）
+        expect(screen.getByTestId('recipe-dirty').className).toContain('text-warn');
         expect(screen.getByTestId('recipe-save').disabled).toBe(false);
 
         // 离开拦截：配方脏稿同样拦刷新（与绑定脏点同口径）
@@ -1054,6 +1060,8 @@ describe('Orchestration Page', () => {
 
         const badge = await screen.findByTestId('binding-stale');
         expect(badge.textContent).toContain('绑定已失效 STALE');
+        // R56（PLAN §8.88）：失效徽标 = 深红语义类 text-warn（原 text-[#FFB74D] 更浅、沙底 < 1.5）
+        expect(badge.className).toContain('text-warn');
         expect(screen.getByText('失效绑定')).toBeDefined();
         // 同批行只出 1 枚（不重复渲染）
         expect(screen.getAllByTestId('binding-stale')).toHaveLength(1);

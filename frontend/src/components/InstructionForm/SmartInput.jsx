@@ -137,7 +137,7 @@ export const SmartInput = ({
     // Editable: solid light border that snaps dark on hover/focus (clearly enterable)
     const editClasses = "text-[#4a4a4a] border-2 border-[#4a4a4a]/25 hover:border-[#4a4a4a]/60 focus:border-[#4a4a4a] focus:bg-[#d1cbaf]/25 cursor-text";
     // Read-only (Fixed/Calculated): dark hatch fill + dashed border = locked plate
-    const readClasses = "text-[#4a4a4a]/60 bg-[#4a4a4a]/10 border-2 border-dashed border-[#4a4a4a]/40 cursor-default";
+    const readClasses = "text-muted bg-[#4a4a4a]/10 border-2 border-dashed border-[#4a4a4a]/40 cursor-default";
     // Inline so the locked fill wins over base bg regardless of CSS order:
     // 135° hazard hatch stripes read as "generated, not enterable" at a glance.
     const readStyle = {
@@ -178,7 +178,7 @@ export const SmartInput = ({
                         {kindLabel && (
                             <span
                                 title={kindTitle}
-                                className={`text-[8px] font-black font-mono leading-none border px-1 py-[2px] uppercase tracking-tighter shrink-0 select-none cursor-help ${readOnly && !pickerActive ? 'text-[#4a4a4a]/40 border-[#4a4a4a]/25' : 'text-[#4a4a4a]/85 border-[#4a4a4a]/45'}`}
+                                className={`text-[8px] font-black font-mono leading-none border px-1 py-[2px] uppercase tracking-tighter shrink-0 select-none cursor-help ${readOnly && !pickerActive ? 'text-muted border-[#4a4a4a]/25' : 'text-muted border-[#4a4a4a]/45'}`}
                             >
                                 {kindLabel}
                             </span>
@@ -191,13 +191,13 @@ export const SmartInput = ({
                                 data-runner-presence-chip={presence.hit ? 'hit' : 'miss'}
                                 title={presence.title}
                                 className={`text-[8px] font-black font-mono leading-none border px-1 py-[2px] uppercase tracking-tighter shrink-0 select-none cursor-help ${presence.hit
-                                    ? 'text-[#E58D28] border-[#E58D28]/60'
-                                    : 'text-[#4a4a4a]/45 border-[#4a4a4a]/30'}`}
+                                    ? 'text-hl border-[#E58D28]/60'
+                                    : 'text-muted border-[#4a4a4a]/30'}`}
                             >
                                 IF
                             </span>
                         )}
-                        <span className={`text-[11px] font-black uppercase tracking-widest truncate ${readOnly && !pickerActive ? 'text-[#4a4a4a]/40' : 'text-[#4a4a4a]'}`}>
+                        <span className={`text-[11px] font-black uppercase tracking-widest truncate ${readOnly && !pickerActive ? 'text-muted' : 'text-[#4a4a4a]'}`}>
                             {label}
                         </span>
                     </div>
@@ -228,7 +228,7 @@ export const SmartInput = ({
                     ) : (
                         <input
                             type="text"
-                            className={`${baseClasses} ${readOnly ? (pickerActive ? pickerClasses : readClasses) : editClasses} flex-1 min-w-0 placeholder:text-[#4a4a4a]/20 ${onClick ? 'pointer-events-none' : ''}`}
+                            className={`${baseClasses} ${readOnly ? (pickerActive ? pickerClasses : readClasses) : editClasses} flex-1 min-w-0 placeholder:text-muted ${onClick ? 'pointer-events-none' : ''}`}
                             style={readOnly && !pickerActive ? readStyle : undefined}
                             value={localValue}
                             onChange={handleChange}
@@ -257,7 +257,7 @@ export const SmartInput = ({
                         <span
                             data-runner-presence-skip
                             title={presence.title}
-                            className="text-[9px] font-black text-[#E58D28] border border-[#E58D28]/60 px-1.5 py-0.5 uppercase tracking-tighter whitespace-nowrap select-none"
+                            className="text-[9px] font-black text-hl border border-[#E58D28]/60 px-1.5 py-0.5 uppercase tracking-tighter whitespace-nowrap select-none"
                         >
                             [SKIP 0B]
                         </span>
@@ -281,7 +281,7 @@ export const SmartInput = ({
                         // 第 14 单：定长文本用量徽标（n/N CHARS|BYTES；超定长 =
                         // 编码端截断 → 琥珀警示，优先于通用长度徽标）
                         <span
-                            className={`text-[9px] font-black uppercase tracking-tighter whitespace-nowrap select-none ${usage.over ? 'text-[#E58D28]' : 'text-[#4a4a4a]/60'}`}
+                            className={`text-[9px] font-black uppercase tracking-tighter whitespace-nowrap select-none ${usage.over ? 'text-warn' : 'text-muted'}`}
                             title={usage.over
                                 ? `超定长 ${usage.total}（${usage.unit === 'BYTES' ? '字节' : '字符'}）：编码端截断到 ${usage.total}，当前 ${usage.used}`
                                 : `定长 ${usage.total} ${usage.unit === 'BYTES' ? '字节' : '字符'}，已用 ${usage.used}`}
@@ -291,7 +291,7 @@ export const SmartInput = ({
                     ) : usedBytes != null && type === 'hex' ? (
                         // 第 4 批 #4：定长 hex 长度徽标（n/N BYTES，n = 已用字节）
                         <span
-                            className="text-[9px] font-black text-[#4a4a4a]/60 uppercase tracking-tighter whitespace-nowrap select-none"
+                            className="text-[9px] font-black text-muted uppercase tracking-tighter whitespace-nowrap select-none"
                             title={`长度上限 ${byteLen} 字节（${Number(byteLen) * 2} 个十六进制字符）`}
                         >
                             {usedBytes}/{byteLen} BYTES
@@ -299,7 +299,7 @@ export const SmartInput = ({
                     ) : usedBits != null ? (
                         // 优化批 1：定长二进制徽标按位计（n/N BITS）
                         <span
-                            className="text-[9px] font-black text-[#4a4a4a]/60 uppercase tracking-tighter whitespace-nowrap select-none"
+                            className="text-[9px] font-black text-muted uppercase tracking-tighter whitespace-nowrap select-none"
                             title={`长度上限 ${Number(byteLen) * 8} 位（${byteLen} 字节）`}
                         >
                             {usedBits}/{Number(byteLen) * 8} BITS
@@ -307,13 +307,13 @@ export const SmartInput = ({
                     ) : usedBytes != null ? (
                         // 第 4 批 #4：非 hex 通道只标字节上限
                         <span
-                            className="text-[9px] font-black text-[#4a4a4a]/60 uppercase tracking-tighter whitespace-nowrap select-none"
+                            className="text-[9px] font-black text-muted uppercase tracking-tighter whitespace-nowrap select-none"
                             title={`长度上限 ${byteLen} 字节`}
                         >
                             [{byteLen}B]
                         </span>
                     ) : (
-                        <span className="text-[9px] font-black text-[#4a4a4a]/35 uppercase tracking-tighter whitespace-nowrap select-none">
+                        <span className="text-[9px] font-black text-muted uppercase tracking-tighter whitespace-nowrap select-none">
                             {`[${type.toUpperCase()}]`}
                         </span>
                     )}
@@ -321,7 +321,7 @@ export const SmartInput = ({
             </div>
 
             {readOnly && highlight && (
-                <div className="text-[8px] font-black text-[#4a4a4a]/40 uppercase ml-36 tracking-tighter flex items-center gap-1">
+                <div className="text-[8px] font-black text-muted uppercase ml-36 tracking-tighter flex items-center gap-1">
                     <span className="w-1 h-1 bg-[#4a4a4a]/40 animate-ping"></span>
                     SYNC_FIELD
                 </div>

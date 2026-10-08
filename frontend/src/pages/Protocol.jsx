@@ -709,7 +709,7 @@ export default function Protocol({ protocols, setProtocols }) {
                 批次五: 409 版本冲突态换双动作 —— 强制覆盖（GET 最新 version
                 重发）/ 加载最新（放弃本地），不给原样重试（必再 409）。 */}
             {saveError && (
-                <div className="border-b border-[#E58D28]/60 bg-nier-dark flex items-center gap-3 px-4 py-1.5 text-[11px] font-mono text-[#FFB74D]">
+                <div className="border-b border-[#E58D28]/60 bg-nier-dark flex items-center gap-3 px-4 py-1.5 text-[11px] font-mono text-warn">
                     <span className="font-bold whitespace-nowrap">保存失败 SAVE FAILED</span>
                     <span className="flex-1 truncate" title={saveError}>{saveError}</span>
                     <span className="opacity-70 whitespace-nowrap">本地更改保留</span>
@@ -912,7 +912,7 @@ export default function Protocol({ protocols, setProtocols }) {
                         onClick={handleGenerateSpec}
                         disabled={!specTargetId || specGenerating}
                         title="按指令分层链生成逐层应答规格并覆盖保存"
-                        className="border border-[#E58D28]/60 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-[#FFB74D] hover:bg-[#E58D28] hover:text-black disabled:opacity-30 disabled:pointer-events-none transition-colors duration-100 whitespace-nowrap"
+                        className="border border-[#E58D28]/60 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-hl hover:bg-[#E58D28] hover:text-black disabled:opacity-30 disabled:pointer-events-none transition-colors duration-100 whitespace-nowrap"
                     >
                         {specGenerating ? '生成中 GENERATING…' : '生成 GENERATE'}
                     </button>
@@ -920,7 +920,7 @@ export default function Protocol({ protocols, setProtocols }) {
                 {specTargetsError && (
                     <div
                         data-testid="response-spec-targets-error"
-                        className="truncate text-[10px] font-mono text-[#FFB74D]"
+                        className="truncate text-[10px] font-mono text-warn"
                         title={specTargetsError}
                     >
                         {specTargetsError}
@@ -934,7 +934,7 @@ export default function Protocol({ protocols, setProtocols }) {
                         <span className="whitespace-nowrap text-green-400">生成完成 {specMessage.text}</span>
                         {specMessage.warnings.length > 0 && (
                             <span
-                                className="truncate text-[#FFB74D] opacity-80"
+                                className="truncate text-warn opacity-80"
                                 title={specMessage.warnings.join(' / ')}
                             >
                                 ⚠ {specMessage.warnings.join(' / ')}
@@ -945,7 +945,7 @@ export default function Protocol({ protocols, setProtocols }) {
                 {specMessage && specMessage.kind === 'err' && (
                     <div
                         data-testid="response-spec-error"
-                        className="truncate text-[10px] font-mono text-[#FFB74D]"
+                        className="truncate text-[10px] font-mono text-warn"
                         title={specMessage.text}
                     >
                         生成失败 GENERATE FAILED：{specMessage.text}

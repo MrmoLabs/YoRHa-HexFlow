@@ -4164,6 +4164,37 @@
      - **留白**：任意值色 `text-[#…]` **55 处**（`#E58D28` 沙底 1.73:1、`#FFB74D` 更浅、
        `text-[#4a4a4a]/40` 一类压暗）与 R55 同缺陷类但按类名普查漏网 → **另开 R56** 同口径清理。
      - **工具账**：浏览器探测脚本 2 处语法错（正则吃进真实换行、括号不配平）当场改正，不影响取证结论。
+
+
+105. **R56 · 任意值文字色治理（`text-[#…]` 残留 → 语义三类）**（PLAN §8.88，2026-10-08；R54 §8.87
+     七 登记留白的收口批，按 R55 同口径「先判底色再判字色、红测先行」）
+     - **范围**：`frontend/src` 源码（不含测试）逐字复点 `text-[#` = **56 token / 53 行 / 12 文件**；
+       口径**只动文字色** —— `border-[#E58D28]/60`、`bg-[#E58D28]`、`hover:bg-[#E58D28]` 与 `opacity-*`
+       衰减一律不碰。落笔 **44 token / 42 行 / 12 源文件 → 45 处语义指派**（`text-warn` 18 · `text-hl` 15 ·
+       `text-muted` 12），脚本 `r56_apply.py` 逐条「行号 + 唯一锚点」、不恰好命中整批中止零写入。
+     - **判档**：警告 / 失效 / 未保存 / 脏 / ERR / stale / 超时 → `text-warn`；高亮 / REF / 变量标记 /
+       配方名 / 徽标 / 选中 → `text-hl`；次要 / 辅助 / 占位 / 只读降透明 → `text-muted`（token 复用 R55
+       `@theme`，硬指标仍 4.5:1）。关键分叉：`RunnerFieldTree:273` 拆 warn/hl 两支、`[SKIP 0B]` 徽标判 hl、
+       presence 未命中角标判 muted、`placeholder:text-[#4a4a4a]/20` 归 muted（仓内先例）。
+     - **红测先行**：**11 红 / 146 绿 / 6 文件**（逐字红因如
+       `expected 'ml-1 text-[#E58D28]' to contain 'text-hl'`、
+       `expected 'text-[#E58D28] mr-1' to contain 'text-warn'`）→ **三档记账：缺特性 10 / 测试自身 bug
+       先修 0 / 随新事实改写 1**（`SmartInput` 只读标签断言随新事实改写为 `text-muted`；可编辑支
+       `text-[#4a4a4a]` 断言不动仍绿），护栏 1 条单列不冒充红测。
+     - **保留 12 token**：深底 `text-[#dad4bb]` 5 · 不透明 `text-[#4a4a4a]` 5.96 达标 6 ·
+       `InstructionRunner:411` 深底面板琥珀 1（压 `bg-[#4a4a4a]` 非浅底，exact-count ALLOW 显式放行）。
+     - **pageStatus 同步 3 句**：`processing`「超定长琥珀警示」「语义行琥珀 NO OPTIONS」、
+       `orchestration`「计数行 >0 琥珀 / 侧栏脏点琥珀 ●」→ 均按现事实改「警告色深红」；改后
+       `node scripts/generate-page-status.mjs` 重生成 `docs/PAGE_STATUS.md`，JSON 复读合法 9 页。
+       `text-hl` 的「琥珀」措辞（深琥珀）仍真 → 只登记不改。
+     - **验收**：**10 项两遍全绿** —— BE 1033/1033 · FE **1520/1520**（97 文件，基线 1517 + 3 条新用例）·
+       `npx vite build` 0 · `npm run lint` 0 · yorha-ui 校验器（**18 个改动 js/jsx + 2 mjs + 全仓 14 md**）
+       0 违规 · md 8/8 · 自检 7/7 · 15ms 探测 1520/1520 · `ev40` mismatches=0 · `ev33` STAGED=0 BAD=0。
+     - **留白**：深底 5 + 达标不透明 6 + `InstructionRunner:411`（见上）；边框 / 背景字面与 `opacity-*`
+       未纳入；`Blueprint.jsx` 不在普查清单（其无 `text-[#` 字面）一行未碰；R54 §8.87 七 其余留白沿旧。
+     - **工具账**：`git diff` 对 12 个文件打「LF will be replaced by CRLF」提示 = 行尾归一化噪音
+       （逐行核对只有预期行变化）；`backend/db/yorha.db` 显示已修改属**既有状态、本批未碰**（硬约束），
+       不入本批提交范围。提交 = `feat(R56)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

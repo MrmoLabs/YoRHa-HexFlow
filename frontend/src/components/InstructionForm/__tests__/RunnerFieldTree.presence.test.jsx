@@ -72,6 +72,8 @@ describe('RunnerFieldTree · 叶字段命中态', () => {
         expect(chip.textContent).toBe('IF');
         expect(chip.getAttribute('title')).toContain('条件字段：[cmd] == 1');
         expect(chip.getAttribute('title')).toContain('命中 → 发射本字段');
+        // R56（PLAN §8.88）：命中角标 = 深琥珀语义类 text-hl（原 text-[#E58D28] 沙底 1.73:1）
+        expect(chip.className).toContain('text-hl');
 
         expect(skips(container).length).toBe(0);
         expect(container.querySelector('.opacity-50')).toBeNull();
@@ -95,6 +97,10 @@ describe('RunnerFieldTree · 叶字段未命中态（0 字节）', () => {
         expect(skip).toBeTruthy();
         expect(skip.textContent).toBe('[SKIP 0B]');
         expect(skip.getAttribute('title')).toContain('未命中 → 0 字节');
+        // R56（PLAN §8.88）：[SKIP 0B] 是**徽标**不是故障（既非 ERR/失效/脏）→ 深琥珀
+        // text-hl（原 text-[#E58D28] 沙底 1.73:1）；组级 miss 角标 R55 已 text-muted
+        expect(skip.className).toContain('text-hl');
+        expect(chip.className).toContain('text-muted');
 
         const row = container.querySelector('.opacity-50');
         expect(row).toBeTruthy();

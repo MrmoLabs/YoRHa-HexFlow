@@ -570,6 +570,9 @@ describe('CP3 3a 加工页降级链与分层预览', () => {
 
         await waitFor(() => expect(screen.getByTestId('wrap-stale')), { timeout: 2000 });
         expect(screen.getByTestId('wrap-stale').textContent).toContain('配方已失效');
+        // R56（PLAN §8.88）：失效提示压**沙底** → 深红语义类 text-warn
+        // （原 text-[#E58D28] 实测 1.73:1）
+        expect(screen.getByTestId('wrap-stale').className).toContain('text-warn');
         // 逐层告警挂在出错层；stale 层角标换 DEF STALE
         expect(screen.getByTestId('wrap-layer-0').textContent).toContain('DEF STALE');
         expect(screen.getByTestId('wrap-layer-0').textContent).toContain('配方已失效');

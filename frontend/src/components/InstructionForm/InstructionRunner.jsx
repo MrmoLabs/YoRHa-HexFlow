@@ -345,7 +345,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                         {/* 选中读数条：字段名 · 字节偏移区间 · 长度（与高亮联动） */}
                         <div data-testid="byte-readout" className="text-[9px] font-mono uppercase tracking-widest min-h-[14px]">
                             {selectedFieldId && matchedRanges.length > 0 ? (
-                                <span className="text-[#E58D28]">
+                                <span className="text-hl">
                                     SEL :: {fieldLabelOf(selectedFieldId)}
                                     {' · '}{formatByteRanges(matchedRanges)}
                                     {' · '}{matchedRanges.reduce((sum, e) => sum + (e.end - e.start), 0)}B
@@ -439,7 +439,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                                 </div>
                                 {/* CP3 3a · D7-A 失效徽标：definition_hash 不符 → 警示不阻断 */}
                                 {isRecipeWrap && (wrapPreview?.stages || []).some(stage => stage.stale) && (
-                                    <div data-testid="wrap-stale" className="mt-2 text-[9px] font-mono text-[#E58D28] tracking-widest break-all">
+                                    <div data-testid="wrap-stale" className="mt-2 text-[9px] font-mono text-warn tracking-widest break-all">
                                         ⚠ RECIPE STALE — 配方已失效：协议定义已变更，请重新保存配方
                                     </div>
                                 )}

@@ -103,7 +103,7 @@ function BindingRow({ binding, selected, dirty, onSelect, onDelete, onToggleDefa
                 {/* 人工验证 #6①: 脏行琥珀点（title 供定位/无障碍）；放 label
                     文本节点之前——RTL getByText 只取直接文本节点，脏行 label 仍可查 */}
                 {dirty && (
-                    <span title="有未保存更改" className="text-[#E58D28] mr-1">●</span>
+                    <span title="有未保存更改" className="text-warn mr-1">●</span>
                 )}
                 {b.label}
             </div>
@@ -115,7 +115,7 @@ function BindingRow({ binding, selected, dirty, onSelect, onDelete, onToggleDefa
                     <span
                         data-testid="binding-stale"
                         title="协议链已变更 — 绑定定义可能已失效 (STALE)"
-                        className="border border-[#E58D28]/60 px-1 py-0.5 text-[8px] font-mono tracking-widest text-[#FFB74D] whitespace-nowrap leading-none"
+                        className="border border-[#E58D28]/60 px-1 py-0.5 text-[8px] font-mono tracking-widest text-warn whitespace-nowrap leading-none"
                     >
                         绑定已失效 STALE
                     </span>
@@ -755,7 +755,7 @@ export default function Orchestration({ protocols, instructions }) {
                                         title={activeRecipe
                                             ? `配方 ${wrapRecipeName} · ${activeRecipe.stages?.length || 0} 层（后端逐层套壳）`
                                             : '组协议（当前绑定的协议外壳）'}
-                                        className={`text-[9px] font-mono tracking-widest min-w-0 max-w-[10rem] truncate ${activeRecipe ? 'text-[#E58D28]' : 'opacity-60'}`}
+                                        className={`text-[9px] font-mono tracking-widest min-w-0 max-w-[10rem] truncate ${activeRecipe ? 'text-hl' : 'opacity-60'}`}
                                     >
                                         WRAP :: {activeRecipe ? `配方 ${wrapRecipeName}` : '组协议'}
                                     </span>
@@ -959,8 +959,8 @@ export default function Orchestration({ protocols, instructions }) {
                 <div className="pt-4 border-t border-nier-light/20 mt-auto space-y-3">
                     <div className="text-[9px] opacity-50 border-b border-white/10 pb-1 mb-2">操作 (ACTIONS)</div>
                     <div className="flex items-center gap-1.5 text-[10px] font-mono tracking-widest">
-                        <span aria-hidden="true" className={dirtyIds.size > 0 ? 'text-[#E58D28]' : 'opacity-40'}>●</span>
-                        <span className={dirtyIds.size > 0 ? 'text-[#E58D28] font-bold' : 'opacity-40'}>{dirtyIds.size} 条未保存</span>
+                        <span aria-hidden="true" className={dirtyIds.size > 0 ? 'text-warn' : 'opacity-40'}>●</span>
+                        <span className={dirtyIds.size > 0 ? 'text-warn font-bold' : 'opacity-40'}>{dirtyIds.size} 条未保存</span>
                     </div>
                     <button
                         onClick={handleSaveBindings}

@@ -141,7 +141,7 @@ function StepRow({
                 {wrapName && (
                     <span
                         data-testid={`step-wrap-${index}`}
-                        className="text-[#E58D28] shrink-0 max-w-[9rem] truncate text-[9px] tracking-widest"
+                        className="text-hl shrink-0 max-w-[9rem] truncate text-[9px] tracking-widest"
                         title={`封装配方：${wrapName}（发送期由后端按配方重算外壳）`}
                     >
                         {`WRAP :: ${wrapName}`}
@@ -177,7 +177,7 @@ function StepRow({
                     </span>
                 )}
                 <span className="opacity-50">{Number(step.delay_ms) > 0 ? `${step.delay_ms}ms` : '直发'}</span>
-                <span className={step.payload ? 'text-[#E58D28]' : 'text-warn'}>
+                <span className={step.payload ? 'text-hl' : 'text-warn'}>
                     {step.payload ? `${payloadByteCount(step.payload)}B` : '未编译'}
                 </span>
                 <span className="opacity-50 hidden lg:inline">{planText}</span>
@@ -780,7 +780,7 @@ export default function Sequences() {
                                                 {step.wrap?.recipe_id && (
                                                     <span
                                                         data-testid="step-editor-wrap"
-                                                        className="font-mono text-[9px] tracking-widest text-[#E58D28] min-w-0 truncate"
+                                                        className="font-mono text-[9px] tracking-widest text-hl min-w-0 truncate"
                                                         title={`封装配方：${recipeName(step.wrap.recipe_id)}（保存期后端按配方冻结完整封装帧）`}
                                                     >
                                                         {`WRAP :: ${recipeName(step.wrap.recipe_id)}`}
@@ -934,7 +934,7 @@ export default function Sequences() {
                                                 {(live?.plan || frozenShell) && (
                                                     <div
                                                         data-testid="step-plan-summary"
-                                                        className="border border-nier-light/25 px-2 py-1 text-[10px] font-mono text-[#E58D28] break-all"
+                                                        className="border border-nier-light/25 px-2 py-1 text-[10px] font-mono text-hl break-all"
                                                     >
                                                         PLAN: {planSummary(live.plan)}
                                                         {frozenShell ? ` · ${frozenShell}` : ''}

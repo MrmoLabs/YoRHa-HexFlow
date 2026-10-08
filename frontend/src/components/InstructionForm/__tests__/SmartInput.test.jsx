@@ -42,13 +42,29 @@ describe('SmartInput 只读/可编辑区分度', () => {
         expect(screen.queryByText('[READ_ONLY]')).toBeNull();
     });
 
-    it('标签亮度区分：可编辑满亮、只读降到 40%', () => {
+    it('标签字色：可编辑保满亮深灰（5.96 达标）、只读降语义类 text-muted', () => {
+        // R56（PLAN §8.88）随新事实改写：原断言只读标签 text-[#4a4a4a]/40（压沙底
+        // 2.03:1）压根读不清，换语义类 text-muted（5.30:1）；可编辑支不透明
+        // #4a4a4a 5.96 达标 → 按本批口径原样保留，故 47 行断言不动。
         const { unmount } = render(<SmartInput label="A" value="1" onChange={() => {}} />);
         expect(screen.getByText('A').className).toContain('text-[#4a4a4a]');
         unmount();
 
         render(<SmartInput label="B" value="1" readOnly onChange={() => {}} />);
-        expect(screen.getByText('B').className).toContain('text-[#4a4a4a]/40');
+        expect(screen.getByText('B').className).toContain('text-muted');
+        expect(screen.getByText('B').className).not.toContain('text-[#4a4a4a]/40');
+    });
+
+    // R56（PLAN §8.88）：压暗深灰（/35 · /60 一类，压沙底 2.0 上下）一律降为
+    // 语义类 text-muted —— 类型徽标与只读输入字色都属「次要、辅助、只读态」。
+    it('R56 语义色：类型徽标 [HEX] 与只读输入字色用 text-muted', () => {
+        const { unmount } = render(<SmartInput label="自由位" value="AB" type="hex" onChange={() => {}} />);
+        expect(screen.getByText('[HEX]').className).toContain('text-muted');
+        unmount();
+
+        render(<SmartInput label="LEN" value="0000" readOnly type="hex" onChange={() => {}} />);
+        expect(screen.getByDisplayValue('0000').className).toContain('text-muted');
+        expect(screen.getByDisplayValue('0000').className).not.toContain('text-[#4a4a4a]/60');
     });
 
     it('行为锁：readOnly 时不触发 onChange（视觉改造不得改变交互）', () => {

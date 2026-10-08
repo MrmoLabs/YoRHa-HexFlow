@@ -344,7 +344,7 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
                                 <span
                                     data-testid="response-spec-stale"
                                     title="生成后协议链已变更，请重新生成（REGENERATE）"
-                                    className="text-[9px] font-mono uppercase tracking-widest border border-[#E58D28]/60 px-2 py-1 text-[#FFB74D]"
+                                    className="text-[9px] font-mono uppercase tracking-widest border border-[#E58D28]/60 px-2 py-1 text-warn"
                                 >
                                     规格已失效 STALE
                                 </span>

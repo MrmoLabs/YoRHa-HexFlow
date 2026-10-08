@@ -63,7 +63,7 @@ export default function ProtocolPropertiesPanel({
                         <button
                             type="button"
                             onClick={() => setShowWarnings(v => !v)}
-                            className="text-[10px] font-bold text-[#E58D28] underline"
+                            className="text-[10px] font-bold text-warn underline"
                         >
                             {showWarnings ? '收起提醒' : `展开提醒 (${validationIssues.warnings.length})`}
                         </button>

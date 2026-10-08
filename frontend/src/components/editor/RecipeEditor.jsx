@@ -207,7 +207,7 @@ export default function RecipeEditor({
                             return (
                                 <div key={`stage-${index}`} data-testid={`recipe-stage-${index}`} className="border border-nier-light/20 p-2">
                                     <div className="flex items-center justify-between gap-2 mb-2">
-                                        <span className={`text-[10px] font-mono tracking-widest ${missing ? 'text-[#E58D28]' : 'text-muted'}`}>
+                                        <span className={`text-[10px] font-mono tracking-widest ${missing ? 'text-warn' : 'text-muted'}`}>
                                             L{index + 1}{missing ? ' · 协议缺失' : ''}
                                         </span>
                                         <div className="flex gap-1">
@@ -293,8 +293,8 @@ export default function RecipeEditor({
 
                     {/* 手动保存（沿本页 SAVE 底置范式：脏点 + 计数 + 底部按钮） */}
                     <div className="flex items-center gap-1.5 text-[10px] font-mono tracking-widest">
-                        <span aria-hidden="true" className={dirty ? 'text-[#E58D28]' : 'opacity-40'}>●</span>
-                        <span data-testid="recipe-dirty" className={dirty ? 'text-[#E58D28] font-bold' : 'opacity-40'}>
+                        <span aria-hidden="true" className={dirty ? 'text-warn' : 'opacity-40'}>●</span>
+                        <span data-testid="recipe-dirty" className={dirty ? 'text-warn font-bold' : 'opacity-40'}>
                             {dirty ? '配方未保存' : '配方已同步'}
                         </span>
                     </div>

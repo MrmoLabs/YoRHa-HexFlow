@@ -459,6 +459,18 @@ describe('Sequences Page', () => {
         expect(screen.getByText('2B')).toBeTruthy();
     });
 
+    // R56（PLAN §8.88）：行上已编译 payload 字节数徽标 = 深琥珀语义类 text-hl
+    // （原 text-[#E58D28] 压沙底实测 1.73:1）；未编译支本就 text-warn、不在口径内。
+    it('R56 语义色：行上 payload 字节数徽标用 text-hl', async () => {
+        api.listSequences.mockResolvedValue([{
+            ...SEQ_ROW,
+            steps: [{ id: 'st-1', step_order: 0, instruction_id: 'instr-1', label: '第一步',
+                delay_ms: 0, params: null, payload: 'AABB', plan: null }]
+        }]);
+        await renderPage();
+        expect(screen.getByText('2B').className).toContain('text-hl');
+    });
+
     it('steps served without instruction_missing still badge when host absent locally', async () => {
         // 本地兜底：服务端未带标记（老会话）但 instructions 列表已无宿主 → 同样打标
         api.listSequences.mockResolvedValue([{

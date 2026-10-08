@@ -407,7 +407,7 @@ export default function BlockPropertiesPanel({
                                 <button
                                     type="button"
                                     onClick={() => setShowWarnings(v => !v)}
-                                    className="text-[10px] font-bold text-[#E58D28] underline"
+                                    className="text-[10px] font-bold text-warn underline"
                                 >
                                     {showWarnings ? '收起提醒' : `展开提醒 (${validationIssues.warnings.length})`}
                                 </button>
@@ -502,7 +502,7 @@ export default function BlockPropertiesPanel({
                         <div className="border border-[#E58D28] bg-[#E58D28]/10 p-2 text-[10px] leading-relaxed">
                             <div className="inline-block bg-[#E58D28] text-nier-dark font-bold uppercase tracking-widest px-1 mb-1">⚠ 编码器限制（仅记录配置，不参与编码）</div>
                             {blockLimitRefs.map(ref => (
-                                <div key={ref} className="text-nier-light"><span className="font-bold text-[#E58D28]">[{ref}]</span> {ENCODER_LIMITS[ref]}</div>
+                                <div key={ref} className="text-nier-light"><span className="font-bold text-hl">[{ref}]</span> {ENCODER_LIMITS[ref]}</div>
                             ))}
                         </div>
                     )}

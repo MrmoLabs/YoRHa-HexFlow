@@ -491,7 +491,7 @@ export default function Instruction({ instructions: initialInstructions, setInst
                                 : `定长指令：总长恒为 ${byteOffsets.total} 字节`}
                         >
                             LEN {byteOffsets.variable && byteOffsets.exact && '~'}{byteOffsets.total}B{!byteOffsets.exact && '+'}
-                            <span className={`ml-1 ${byteOffsets.variable ? 'text-[#E58D28]' : 'opacity-50'}`}>
+                            <span className={`ml-1 ${byteOffsets.variable ? 'text-hl' : 'opacity-50'}`}>
                                 {byteOffsets.variable ? 'VAR' : 'FIXED'}
                             </span>
                         </span>
@@ -504,7 +504,7 @@ export default function Instruction({ instructions: initialInstructions, setInst
                 {/* P4-2: persistent save-failure banner (retryable) — P0-2
                     validation failures use the modal path instead. */}
                 {saveError && (
-                    <div className="border-b border-[#E58D28]/60 bg-nier-dark flex items-center gap-3 px-4 py-1.5 text-[11px] font-mono text-[#FFB74D]">
+                    <div className="border-b border-[#E58D28]/60 bg-nier-dark flex items-center gap-3 px-4 py-1.5 text-[11px] font-mono text-warn">
                         <span className="font-bold whitespace-nowrap">保存失败 SAVE FAILED</span>
                         <span className="flex-1 truncate" title={saveError}>{saveError}</span>
                         <span className="opacity-70 whitespace-nowrap">本地更改保留 · RESET 可放弃</span>

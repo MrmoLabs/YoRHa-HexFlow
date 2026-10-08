@@ -76,7 +76,7 @@ export default function InstructionTable({
                                 <td className={`${td} max-w-[280px] overflow-hidden text-ellipsis`}>{r.name}</td>
                                 <td className={td}>
                                     {r.variable && r.exact && '~'}{r.total}B{!r.exact && '+'}
-                                    <span className={`ml-1 ${r.variable ? 'text-[#E58D28]' : 'opacity-50'}`}>
+                                    <span className={`ml-1 ${r.variable ? 'text-hl' : 'opacity-50'}`}>
                                         {r.variable ? 'VAR' : 'FIXED'}
                                     </span>
                                 </td>

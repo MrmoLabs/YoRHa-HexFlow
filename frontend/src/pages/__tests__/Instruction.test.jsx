@@ -9,6 +9,8 @@ const deps = vi.hoisted(() => ({
     onAddBlock: null,
     // R55（PLAN §8.86）：脏态开关由用例就地改写 —— UNSAVED 徽标只在真脏时渲染
     hasUnsavedChanges: false,
+    // R56（PLAN §8.88）：LEN 行 VAR/FIXED 标记字色由用例就地改写
+    fields: [],
 }));
 
 // Mock Child Components
@@ -43,7 +45,7 @@ vi.mock('../../hooks/useInstructionData', () => ({
         revertChanges: vi.fn(),
         statusMsg: '',
         hasUnsavedChanges: deps.hasUnsavedChanges,
-        currentInstruction: { id: 'mock', fields: [] },
+        currentInstruction: { id: 'mock', fields: deps.fields },
         // N2：STRING 模板形状与 backend SEED_TEMPLATES 同步（创建特判断言用）。
         operatorTemplates: {
             STRING: {
@@ -103,6 +105,23 @@ describe('Instruction Page (Smoke Test)', () => {
             expect(badge.className).not.toContain('text-yellow-500');
         } finally {
             deps.hasUnsavedChanges = false;
+        }
+    });
+
+    // R56（PLAN §8.88）：LEN 行 VAR 标记 = 深琥珀语义类 text-hl
+    // （原 text-[#E58D28] 压沙底实测 1.73:1）；FIXED 支本就降透明、不在口径内。
+    it('R56 语义色：LEN 行 VAR 标记用 text-hl（presence 门完整 → variable）', () => {
+        deps.fields = [
+            { id: 'cmd', name: '命令字', op_code: 'FIXED', byte_len: 1, sequence: 0,
+                parent_id: null, parameter_config: { hex: 'AA', value: 1 } },
+            { id: 'gated', name: '体', op_code: 'FIXED', byte_len: 1, sequence: 1,
+                parent_id: null, parameter_config: { hex: 'BB', presence: { ref_id: 'cmd', expect: '2' } } },
+        ];
+        try {
+            render(<Instruction />);
+            expect(screen.getByText('VAR').className).toContain('text-hl');
+        } finally {
+            deps.fields = [];
         }
     });
 });
