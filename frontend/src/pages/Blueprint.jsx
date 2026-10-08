@@ -173,7 +173,7 @@ export default function Blueprint() {
             </section>
 
             {/* Right Panel (Details) */}
-            <aside className="w-80 border-l border-nier-light bg-nier-dark/95 backdrop-blur-sm p-4 flex flex-col z-20 shadow-[-5px_0_15px_rgba(0,0,0,0.1)]">
+            <aside className="w-80 border-l border-nier-light bg-nier-dark/95 p-4 flex flex-col z-20 shadow-[-5px_0_15px_rgba(0,0,0,0.1)]">
                 <h2 className="text-lg border-b-2 border-nier-light mb-6 pb-1 font-bold tracking-wider">属性配置 (PROPERTIES)</h2>
 
                 {selectedBlock ? (
@@ -223,10 +223,10 @@ export default function Blueprint() {
                             </div>
                         )}
 
-                        <div className="pt-8 border-t border-nier-light/20">
+                        <div className="pt-4 border-t border-nier-light/20">
                             <button
                                 onClick={() => handleDeleteBlock(selectedBlock.id)}
-                                className="w-full border border-red-500/50 text-red-400 hover:bg-red-500 hover:text-white py-2 px-4 uppercase text-xs tracking-widest transition-colors"
+                                className="w-full border border-red-500/50 text-warn hover:bg-red-500 hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors"
                             >
                                 删除 (DELETE)
                             </button>

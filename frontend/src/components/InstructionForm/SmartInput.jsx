@@ -243,7 +243,7 @@ export const SmartInput = ({
                     )}
 
                     {suffix && (
-                        <div className="bg-[#4a4a4a]/80 text-[#dad4bb] px-2 flex items-center justify-center text-[10px] font-black font-mono select-none uppercase tracking-tighter shrink-0">
+                        <div className="bg-[#4a4a4a]/80 text-white px-2 flex items-center justify-center text-[10px] font-black font-mono select-none uppercase tracking-tighter shrink-0">
                             {suffix}
                         </div>
                     )}

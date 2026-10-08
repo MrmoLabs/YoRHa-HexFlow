@@ -395,7 +395,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                                 </div>
                                 <div className="mt-4 flex flex-col gap-2">
                                     {wrapPreviewErr ? (
-                                        <span className="font-mono text-red-400 text-[10px] break-all">{wrapPreviewErr}</span>
+                                        <span className="font-mono text-red-200 text-[10px] break-all">{wrapPreviewErr}</span>
                                     ) : isRecipeWrap ? (
                                         <div data-testid="wrap-layers" className="flex flex-col gap-2">
                                             {(wrapPreview?.stages || []).map(stage => (
@@ -408,7 +408,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                                                         <span className="text-[9px] font-mono tracking-widest text-nier-dark/90">
                                                             L{stage.index + 1} :: {stage.protocol_label || stage.protocol_id}
                                                         </span>
-                                                        <span className={`text-[9px] font-mono tracking-widest whitespace-nowrap ${stage.stale ? 'text-[#E58D28]' : 'text-nier-dark/90'}`}>
+                                                        <span className={`text-[9px] font-mono tracking-widest whitespace-nowrap ${stage.stale ? 'text-red-200' : 'text-nier-dark/90'}`}>
                                                             {stage.stale ? 'DEF STALE' : `Δ+${stage.delta_bytes}B`} · {stage.total_length}B
                                                         </span>
                                                     </div>
@@ -439,7 +439,7 @@ export default function InstructionRunner({ instruction, onSend, onOpenDatePicke
                                 </div>
                                 {/* CP3 3a · D7-A 失效徽标：definition_hash 不符 → 警示不阻断 */}
                                 {isRecipeWrap && (wrapPreview?.stages || []).some(stage => stage.stale) && (
-                                    <div data-testid="wrap-stale" className="mt-2 text-[9px] font-mono text-warn tracking-widest break-all">
+                                    <div data-testid="wrap-stale" className="mt-2 text-[9px] font-mono text-red-200 tracking-widest break-all">
                                         ⚠ RECIPE STALE — 配方已失效：协议定义已变更，请重新保存配方
                                     </div>
                                 )}

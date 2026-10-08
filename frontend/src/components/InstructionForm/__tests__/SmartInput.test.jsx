@@ -325,3 +325,12 @@ describe('SmartInput R46：时间配置弹窗只由值区触发', () => {
         expect(onSelect).toHaveBeenCalledTimes(1);
     });
 });
+
+describe('R57 半透明深底后缀章字色', () => {
+    it('后缀章 = text-white（bg-[#4a4a4a]/80 压沙底混算 #676661 → 5.75；原 text-[#dad4bb] 3.87）', () => {
+        render(<SmartInput label="速度" value="255" type="decimal" suffix="ms" onChange={() => {}} />);
+        const chip = screen.getByText('ms');
+        expect(chip.className).toContain('text-white');
+        expect(chip.className).not.toContain('text-[#dad4bb]');
+    });
+});

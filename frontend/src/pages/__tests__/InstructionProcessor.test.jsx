@@ -570,13 +570,43 @@ describe('CP3 3a 加工页降级链与分层预览', () => {
 
         await waitFor(() => expect(screen.getByTestId('wrap-stale')), { timeout: 2000 });
         expect(screen.getByTestId('wrap-stale').textContent).toContain('配方已失效');
-        // R56（PLAN §8.88）：失效提示压**沙底** → 深红语义类 text-warn
-        // （原 text-[#E58D28] 实测 1.73:1）
-        expect(screen.getByTestId('wrap-stale').className).toContain('text-warn');
+        // R57（PLAN §8.89）随新事实改写：该行实际在 wrap-preview 深底 bg-[#4a4a4a] 内，
+        // text-warn（#861e18）压深底实算 1.07 读不出 —— R56 判档时误按沙底计（原文「压沙底」）。
+        // 深底 warn 档 = text-red-200（tailwind 4.1.18 实算 #ffc9c9，压 #4a4a4a = 6.10）。
+        expect(screen.getByTestId('wrap-stale').className).toContain('text-red-200');
+        expect(screen.getByTestId('wrap-stale').className).not.toContain('text-warn');
         // 逐层告警挂在出错层；stale 层角标换 DEF STALE
         expect(screen.getByTestId('wrap-layer-0').textContent).toContain('DEF STALE');
         expect(screen.getByTestId('wrap-layer-0').textContent).toContain('配方已失效');
         expect(screen.getByTestId('wrap-layer-1').textContent).not.toContain('DEF STALE');
+    });
+
+    it('R57 深底失效层角标：stale 层 DEF STALE = text-red-200（原 text-[#E58D28] 压深底 3.45）', async () => {
+        api.getRecipes.mockResolvedValue([RECIPE]);
+        api.compileWrapped.mockResolvedValue(recipeCompileResult(0));
+        renderPage();
+        await selectInstruction();
+
+        await waitFor(() => expect(screen.getByTestId('wrap-layer-0')), { timeout: 2000 });
+        const staleChip = within(screen.getByTestId('wrap-layer-0')).getAllByText(/DEF STALE/)
+            .find((el) => el.tagName === 'SPAN');
+        expect(staleChip).toBeTruthy();
+        expect(staleChip.className).toContain('text-red-200');
+        expect(staleChip.className).not.toContain('text-[#E58D28]');
+    });
+
+    it('R57 深底错误行：compileWrapped 失败 → 错误文本 = text-red-200（原 text-red-400 压深底 3.07）', async () => {
+        api.getRecipes.mockResolvedValue([RECIPE]);
+        api.compileWrapped.mockRejectedValue(new Error('WRAP COMPILE FAILED'));
+        renderPage();
+        await selectInstruction();
+
+        const errLine = await waitFor(
+            () => screen.getByText('WRAP COMPILE FAILED'),
+            { timeout: 3000 }
+        );
+        expect(errLine.className).toContain('text-red-200');
+        expect(errLine.className).not.toContain('text-red-400');
     });
 
     it('TRANSMIT 与事务同带 recipe_id（预览 / 发送同参同字节）', async () => {

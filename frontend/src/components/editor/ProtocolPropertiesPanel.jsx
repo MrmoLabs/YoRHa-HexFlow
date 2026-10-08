@@ -314,7 +314,7 @@ export default function ProtocolPropertiesPanel({
                     <div className="pt-4 border-t border-nier-light/20 space-y-2">
                         <button
                             onClick={() => onDeleteBlock(selectedBlock.id)}
-                            className="w-full border border-red-500/50 text-warn hover:bg-red-500 hover:text-white py-2 px-4 uppercase text-xs tracking-widest transition-colors"
+                            className="w-full border border-red-500/50 text-warn hover:bg-red-500 hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors"
                         >
                             删除 (DELETE)
                         </button>

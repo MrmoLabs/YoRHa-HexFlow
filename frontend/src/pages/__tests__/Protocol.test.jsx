@@ -978,6 +978,10 @@ describe('Protocol Page', () => {
 
         expect(screen.queryByRole('button', { name: '复制块 (DUPLICATE)' })).toBeNull();
         expect(screen.getByRole('button', { name: '删除 (DELETE)' })).toBeDefined(); // 删除保留
+        // R57（PLAN §8.89）：hover 底 = tailwind red-500（4.1.18 实算 #fb2c36），白字 3.81
+        // 低于正文线 → hover:text-black 5.52。
+        expect(screen.getByRole('button', { name: '删除 (DELETE)' }).className).toContain('hover:text-black');
+        expect(screen.getByRole('button', { name: '删除 (DELETE)' }).className).not.toContain('hover:text-white');
     });
 
     // ─── 人工验证第 3 轮 #3: SAVE 移到属性面板底部动作区 ─────────────────────

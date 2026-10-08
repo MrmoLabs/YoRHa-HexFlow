@@ -178,6 +178,10 @@ describe('BlockPropertiesPanel 复制块按钮移除（R3 #1）', () => {
         expect(screen.queryByRole('button', { name: '复制块 (DUPLICATE)' })).toBeNull();
         expect(screen.getByRole('button', { name: '应用配置 (APPLY)' })).toBeDefined();
         expect(screen.getByRole('button', { name: '删除 (DELETE)' })).toBeDefined();
+        // R57（PLAN §8.89）：hover 底 = tailwind red-500（4.1.18 实算 #fb2c36），白字 3.81
+        // 低于正文线 → hover:text-black 5.52（同文件 :781 既有先例）。
+        expect(screen.getByRole('button', { name: '删除 (DELETE)' }).className).toContain('hover:text-black');
+        expect(screen.getByRole('button', { name: '删除 (DELETE)' }).className).not.toContain('hover:text-white');
 
         // R3 #5: 指令页属性 aside 类名对齐（补 shrink-0；overflow-y-auto 既有）
         const panelAside = container.querySelector('aside');
@@ -358,5 +362,21 @@ describe('BlockPropertiesPanel R25 加扰字段 (SCRAMBLE)', () => {
         expect(saved.parameter_config.hex).toBe('aabb');
         expect(saved.parameter_config.seed).toBe('A5');
         expect(saved.op_code).toBe('SCRAMBLE');
+    });
+});
+
+// ─── R57（PLAN §8.89）删除按钮 hover 态字色：红底白字 3.81 → 红底黑字 5.52 ─────
+describe('R57 删除按钮 hover 字色', () => {
+    it('指令级「删除指令 (DELETE)」= hover:text-black（原 hover:text-white 压 red-500 3.81）', () => {
+        render(
+            <BlockPropertiesPanel
+                {...baseProps}
+                selectedBlock={null}
+                currentInstruction={{ id: 'i1', name: 'TEST', code: 'T1', device_code: 'D1', fields: [] }}
+            />
+        );
+        const btn = screen.getByRole('button', { name: '删除指令 (DELETE)' });
+        expect(btn.className).toContain('hover:text-black');
+        expect(btn.className).not.toContain('hover:text-white');
     });
 });

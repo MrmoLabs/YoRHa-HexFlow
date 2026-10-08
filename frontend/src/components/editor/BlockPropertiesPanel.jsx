@@ -466,7 +466,7 @@ export default function BlockPropertiesPanel({
                                 保存更改 (SAVE)
                             </button>
                         )}
-                        <button onClick={(e) => onDeleteInstruction(e, currentInstruction.id)} className="w-full border border-red-500/50 text-warn hover:bg-red-500 hover:text-white py-2 px-4 uppercase text-xs tracking-widest transition-colors">
+                        <button onClick={(e) => onDeleteInstruction(e, currentInstruction.id)} className="w-full border border-red-500/50 text-warn hover:bg-red-500 hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors">
                             删除指令 (DELETE)
                         </button>
                     </div>
@@ -788,7 +788,7 @@ export default function BlockPropertiesPanel({
                         <button onClick={handleApply} className="w-full bg-nier-light/20 border border-nier-light text-nier-light hover:bg-nier-light hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors font-bold">
                             应用配置 (APPLY)
                         </button>
-                        <button onClick={() => onDeleteBlock(selectedBlock.id)} className="w-full border border-red-500/50 text-warn hover:bg-red-500 hover:text-white py-2 px-4 uppercase text-xs tracking-widest transition-colors">
+                        <button onClick={() => onDeleteBlock(selectedBlock.id)} className="w-full border border-red-500/50 text-warn hover:bg-red-500 hover:text-black py-2 px-4 uppercase text-xs tracking-widest transition-colors">
                             删除 (DELETE)
                         </button>
                     </div>

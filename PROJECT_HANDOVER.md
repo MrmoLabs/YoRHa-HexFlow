@@ -4195,6 +4195,42 @@
      - **工具账**：`git diff` 对 12 个文件打「LF will be replaced by CRLF」提示 = 行尾归一化噪音
        （逐行核对只有预期行变化）；`backend/db/yorha.db` 显示已修改属**既有状态、本批未碰**（硬约束），
        不入本批提交范围。提交 = `feat(R56)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+
+
+106. **R57 · Blueprint 低对比字色收尾 + 全仓色彩对比复审**（PLAN §8.89，2026-10-08；R55 §8.86 /
+     R56 §8.88 三处留白的收口批 —— 拍板解锁 `Blueprint.jsx` 字色改动（仅文本色 className），
+     复审 = R55 残余 14 行 + R56 残余 12 token 按**实际底色**逐行实算）
+     - **范围**：复审 27 行（R55 14 + R56 12 + 新发现 1）→ **18 保留 / 9 不达标全修**（9 处 /
+       8 行 / 5 文件）；`r57_apply.py` 9 op + `r57_apply2.py` 2 op，逐条「行号 + 唯一锚点」、
+       不恰好命中整批中止零写入（首跑 recon 行号偏移即中止，零写入）。
+     - **判档（实际底色优先，oklch → sRGB 实装 `tailwindcss@4.1.18` 调色板 + `@theme` 字面）**：
+       静态压沙底 red-400 1.94 → `text-warn` 6.38；hover 压 red-500 3.81 → `hover:text-black`
+       5.52（先例 BPP:781）；深底 `#4a4a4a` 的 warn/error 档 → `text-red-200` 6.10（IR:398 3.07 ·
+       IR:411 3.45 · IR:442 1.07，末者为 R56 落笔回归、darkscan 唯一实锤，另 3 处命中均为误报）；
+       半透明混底 3.87 → `text-white` 5.75（SmartInput:246）。
+     - **同触同清**：Blueprint 首次入改动清单 → 清 2 处 HEAD 存量校验器违规（`:176
+       backdrop-blur-sm` 删、`:226 pt-8` 改 `pt-4`；先例 R3「改到该文件就必须过校验器 → 顺手清」，
+       只清欠账不改行为，无测试依赖这两处）。
+     - **死码事实**：无路由无 import；Canvas 形参 `lanes` / `onSelect` / `selectedId` 而实参
+       `items` / `setItems` → 画布恒空、`selectedId` 恒 null → 删除按钮真实渲染不可达 → 字色断言走
+       **源码静态断言**（先例 `semanticTokens.test.js`）+ 1 条渲染冒烟（新增 `Blueprint.test.jsx`）。
+     - **红测先行**：**10 红 / 110 绿 / 5 文件**（逐字红因见 §8.89 三）→ **三档记账：缺特性 9 /
+       测试自身 bug 先修 0 / 随新事实改写 1**（wrap-stale 旧断言 `text-warn` 随新事实改写
+       `text-red-200`）；护栏 3 组单列不冒充红测。
+     - **复审后残余（源码）**：`text-white` 7 · `text-yellow-*` 2（5.63 达标）· `text-red-300/400`
+       **0** · `text-[#` 10 · `hover:text-white` 2（6.69 达标）。
+     - **pageStatus**：9 页色词逐句核对 **0 句失效**（`RECIPE STALE` 表述不含色词、「警告色深红」
+       所指均非本批 8 行）→ `pageStatus.json` / `docs/PAGE_STATUS.md` 不改不重生成。
+     - **验收**：**10 项两遍全绿** —— BE 1033/1033 · FE **1528/1528**（98 文件，基线 1520 +
+       8 条新用例）· `npx vite build` 0 · `npm run lint` 0 · yorha-ui 校验器（**10 个改动
+       js/jsx + 2 mjs + 全仓 14 md**）0 违规 · md 8/8 · 自检 7/7 · 15ms 探测 1528/1528 ·
+       `ev40` mismatches=0 · `ev33` STAGED=0 BAD=0。首遍第 4 项因 Blueprint 2 处存量违规红过
+       一次 → 同触同清后复跑转绿。跑法 `r57_verify.py`（复制 `r56_verify.py`），日志 `r57_*.txt`。
+     - **工具账**：红基线日志首跑被绿跑覆盖 → `git checkout` 回退 5 个源文件重跑重获 10 红逐字
+       证据，再按脚本重放、SHA256 逐一比对**逐字节一致**；`git checkout` 曾把 3 个 LF 文件还原成
+       CRLF、发现后转回（EOL 噪声未流入）；`backend/db/yorha.db` 显示已修改属**既有状态、本批
+       未碰**（硬约束），`frontend/red-report.json` 未跟踪 —— 均不入本批提交范围。提交 =
+       `feat(R57)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
