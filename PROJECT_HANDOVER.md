@@ -4231,6 +4231,43 @@
        CRLF、发现后转回（EOL 噪声未流入）；`backend/db/yorha.db` 显示已修改属**既有状态、本批
        未碰**（硬约束），`frontend/red-report.json` 未跟踪 —— 均不入本批提交范围。提交 =
        `feat(R57)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+
+
+107. **R58 · 删除 Blueprint.jsx 死码（用户拍板 A）**（PLAN §8.90，2026-10-08；R57 §8.89 三
+     钉死的死码事实的收口批 —— 无路由、全仓无 import、Canvas 形参不匹配 → 画布恒空 → 删除按钮
+     真实渲染不可达；拍板 A = 删除死码，R57 新建的 `Blueprint.test.jsx` 随被测物一并处置）
+     - **范围**：**2 删 1 增、纯 FE、零 DDL** —— D `frontend/src/pages/Blueprint.jsx`
+       （245 行 11665 B）· D `frontend/src/pages/__tests__/Blueprint.test.jsx`（46 行 2531 B，
+       R57 新建 4 例）· A `frontend/src/__tests__/noDeadBlueprint.test.js`（死码护栏 4 条）。
+       除删除目标与新护栏外**零产品代码改动**；零 BE、无 Migration、无 `chore(db)`、不引 pytest、
+       新 pip 依赖 = 0，`/dispatch` 缺省口径逐字节不变。
+     - **取证（先取证后动手）**：全仓大小写不敏感 grep `Blueprint`（排除 `.git` / `node_modules` /
+       `dist` / `coverage` / `venv` / `__pycache__` 与 `frontend/red-report.json`、
+       `backend/db/yorha.db`）→ 删前 **10 文件 166 行**：源码 2 文件 11 行 = 两个删除目标自身
+       （**barrel 导出、`ROUTE_LOADERS`、`PAGE_REGISTRY`、构建配置全 0 命中**）·
+       `backend/core/graph.py:97` 注释 1 行（BE 硬约束不碰）· 文档 7 份 154 行（历史叙述一律
+       不动）。删后 9 文件 167 行（含新护栏 12 行，自身按路径豁免）。证据 `r58_blueprint_hits_pre.txt`
+       与 `r58_blueprint_hits.txt`。
+     - **护栏（单列，不冒充红测）**：`noDeadBlueprint.test.js` 4 条静态断言 —— 扫描面非空 /
+       `src` 内无 Blueprint 命名文件 / 无 `pages/Blueprint` 路径字面（正反斜杠都认）/ 无
+       `from` `import` `import()` 三形引用；**实现前即绿 → 0 红 4 绿**。
+     - **红测记账**：**缺特性红 0（删除批无此档）**；原 4 例随被测物删除、不留孤儿 —— 删后全仓
+       `*.test.*` 与 `__tests__` 内对 Blueprint 的引用只剩护栏自身。
+     - **pageStatus**：`pageStatus.json` / `docs/PAGE_STATUS.md` 实测 **0 命中**（Blueprint 不在
+       9 页内）→ 未受影响、未改、未重生成。
+     - **验收**：**10 项两遍全绿** —— BE 1033/1033 · FE **1528/1528**（98 文件；删 4 例 + 护栏
+       4 例，用例与文件数均持平）· `npx vite build` 0 · `npm run lint` 0 · yorha-ui 校验器
+       （**9 个现存改动 js/jsx + 2 mjs + 全仓 14 md**，删除项只记路径不读文件）0 违规 · md 8/8 ·
+       自检 7/7 · 15ms 探测 1528/1528 · `ev40` mismatches=0 · `ev33` STAGED=0 BAD=0。
+       跑法 `r58_verify.py`（复制 `r57_verify.py`），日志 `r58_*.txt`。
+     - **现势句同步（经 question 拍板「随 R58 一并改」）**：`README.md:182` / `README_ZH.md:171`
+       「请勿删除 Blueprint.jsx」、本文件目录地图行「未接线（保留勿删）」、§7 指引条「不要删除」、
+       `docs/PLAN_Backlog.md:16` 硬约束行 —— 共 **5 处属现势表述、删除后已失效**，本批改写为现实
+       （只删失效指引、补一句 R58 删除事实）；docs 各份历史叙述与历批「未碰」记录仍一律不动。
+       `backend/core/graph.py:97` 注释提到 "Blueprint" 页面名 —— BE 硬约束不碰。
+     - **工具账**：`r58_verify.py` 改写点 = 改动清单双口径 + **已删除文件跳过读取、只保留路径
+       记录**；`backend/db/yorha.db` 已修改与 `frontend/red-report.json` 未跟踪 = 既有状态、本批
+       未碰，不入提交范围。提交 = `feat(R58)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
@@ -4310,7 +4347,6 @@
 | `src/pages/Orchestration.jsx` | 编排绑定页，EXPORT .BIN 走 `/export/binary` | ✅ |
 | `src/pages/Instruction.jsx` | 指令管理页（含 `handleAddBlock` 默认 bits 初始化） | ✅ |
 | `src/pages/DataHub.jsx` | 数据中心页：状态面板 + 聚合导出 + 备份与恢复 + 绑定矩阵；**R17 起「按域导出 DOMAINS」9 域芯片**（顺序 = `BUNDLE_DOMAIN_VERSIONS` 键序 = 导出序，送后端按表排序不看点击顺序）+ R19 示例包（**R44 起 6 域**，与按域导入能吃的范围逐字对齐）+ **按域导入选择器按顶层数组键识别域名**（含 `routing_rules`，FE 不兜白名单第二层） | ✅（§8.37），R17 起按域导出（§8.49），R44 补第 9 域（§8.76） |
-| `src/pages/Blueprint.jsx` | 旧蓝图页 | ⚠️ **未接线**（保留勿删，不进路由） |
 | `src/pages/Trash.jsx` | 回收站页：`KIND_LABELS`（**8 类**中文名，R37 补 `routing_rule`）+ `KIND_ORDER = Object.keys(KIND_LABELS)` 筛选 chip + 恢复 / 彻底删除 / 批量；`relatedText` **通用求和**（回执多一个键自动并入，无需改） | ✅（§8.44 / §8.69） |
 | `src/pages/RoutingRules.jsx` | **发前路由规则页**（第 9 页 · `/routing` · 快捷键 `H`）：列表顺序 = 匹配顺序、表单就地校验、启停 / 删除二次确认、**排序只改草稿、保存顺序只 PUT 真变化的行**；**R40 起页底常驻「试解析 (DRY RUN)」面板** —— 填键值调 `POST /dispatch/routed`，出一行事实 + 恒四行结果表（命中规则 / 目标指令 / 参与扫描 / 缺陷跳过），**按已保存的规则计算、只回显不改状态**，顺序有草稿时当场点破；**R43 起结果表下方出「逐条判定轨迹 (TRACE) · N 条」**（`data-testid="dry-trace-{n}"`，`MATCHED` 行黄字，回执没给 `trace` 就不出块）+ 口径列表补一条 + 未命中脚注改指轨迹 | ✅ 新增（R38 · §8.70），R40 增试解析（§8.72），R43 增轨迹（§8.75） |
 | `src/config/pageStatus.json` | 页面状态唯一数据源（**9 页**，数组序 = 侧栏序） | ✅ 改后重跑脚本 |
@@ -4330,7 +4366,7 @@
 *   **字段名归一化**: 前端 `Block.jsx` 兼容 `byte_len` / `byte_length`；后端块结构用 `byte_length`，指令字段用 `byte_len`，导出时由 `toFrameBlocks` 转换。
 *   **诚实文档**: 不要把环回说成真实链路，不要写不存在的表字段（如 `opcode_hex`）。
 *   **保留 pymysql**（`debug_db.py` 依赖）与 **保留 `backend/db/yorha.db` 跟踪**（用户决定）。
-*   **未接线代码**: `processor.py` / `graph.py` / `Blueprint.jsx` 保留原样，仅在文档中标注，不要删除。
+*   **未接线代码**: `processor.py` / `graph.py` 保留原样，仅在文档中标注，不要删除（原名单第三项 `Blueprint.jsx` 已于 R58 删除死码）。
 *   **B1 校验和收敛（2026-09 已修）**: 算法选择原先因键名（`algo` vs `algorithm`）与枚举值双重不匹配，恒算 CRC16-MODBUS。现 `backend/routers/operator.py` seed 枚举收敛为编码器真实实现的 `CRC_16_MODBUS / SUM_8 / XOR_8`；`utils/normalizeInstruction.js` 的 `mapChecksumAlgo` 负责旧值（`CRC16_CCITT/CRC32/XOR_SUM/ADD_SUM`）映射与 `parameter_config.algorithm` 别名。**若要新增算法，必须同时改 `formula.js` 的 `calculateChecksum` 并与 `backend/handlers/checksum.py` 核对**。
 *   **编码器已知限制（2026-09 字段覆盖面审计，B2–B8；B2–B8 已于 E1 批 E1-1..E1-6 解除）**: 以下均属 `InstructionEncoder.js` / 双端同步范围，**未获授权勿改**（加工页 UI 已对可展示项做语义标注；2026-09-22 管理页 Phase0：`utils/encoderLimits.js` 为标注单一事实源，面板横幅/⚠角标 + `utils/validateInstruction.js` 保存前校验（Error 阻断/Warning 不阻断），见 `docs/PLAN_InstructionManagement.md`）：
     1. ~~`FLOAT_IEEE` 按普通整数编码（浮点分支要求 `parameter_config.type='float'`，算子模板从不设置）~~ **已解决（E1-4，2026-09-23）**：`op=FLOAT_IEEE` + `byte_len=4`（bits=32）+ 规范 type（缺省/number）→ IEEE 754 float32 大端恒 4 字节（`orchestrator.encode_float_ieee` ↔ `getFieldBytes` FLOAT_IEEE 分支；严格十进制解析同 E1-1 口径，非有限→0，超 f32 范围 → ±Infinity IEEE 溢出对齐 JS Float32Array），byte-equal 向量表 22 例锚定双端测试（`test_encode_float_ieee.py` ↔ E1-4 describe，改一必改二；**R5 起再加 `f64` 组 23 例**）。~~**范围外保留现状**：bits=64（`byte_len=8`）仍走整数路径 / BE zeros（E1-4 只做 float32，如需 float64 另立子项）~~ → **✅ 已由 R5（PLAN §8.42，2026-10-02）收口**：`byte_len=8` 双端真出 float64（`struct.pack('>d')` / `Float64Array`），`vectors/float_ieee.json` 分 `f32`（22 行未改）/ `f64`（23 行）两组，**缺省 f32 逐字节不变**；矛盾 `type=float/string/hex` 模板不会产生，FE 走既有分支、BE 保持 zeros 契约外。

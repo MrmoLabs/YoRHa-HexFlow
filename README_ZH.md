@@ -1,4 +1,4 @@
-﻿# YoRHa-HexFlow: Hex Instruction Orchestrator
+# YoRHa-HexFlow: Hex Instruction Orchestrator
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Frontend](https://img.shields.io/badge/Frontend-React_19_%7C_Vite-61DAFB)
@@ -168,7 +168,7 @@ graph TD
     inspect_db.py             # SQLite 调试脚本（路径相对脚本解析，任意 cwd 可跑）
 ```
 
-> 有意保留的未接线遗留代码：`backend/core/processor.py`、`backend/core/graph.py`、`frontend/src/pages/Blueprint.jsx`。请勿删除，也不要向其中新增依赖。完整文件地图见 [PROJECT_HANDOVER.md](./PROJECT_HANDOVER.md)。
+> 有意保留的未接线遗留代码：`backend/core/processor.py`、`backend/core/graph.py`。请勿删除，也不要向其中新增依赖。原名单第三项 `frontend/src/pages/Blueprint.jsx` 已于 R58 作为死码删除。完整文件地图见 [PROJECT_HANDOVER.md](./PROJECT_HANDOVER.md)。
 
 ## ⚠️ 开发规范 (Guidelines)
 1. **单一职责**: 单文件不超过 400 行，复杂逻辑必须提取 Hook。

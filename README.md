@@ -1,4 +1,4 @@
-﻿# YoRHa-HexFlow: Hex Instruction Orchestrator
+# YoRHa-HexFlow: Hex Instruction Orchestrator
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Frontend](https://img.shields.io/badge/Frontend-React_19_%7C_Vite-61DAFB)
@@ -179,7 +179,7 @@ For detailed technical specifications, please refer to: [SPECIFICATION.md](./SPE
     inspect_db.py             # SQLite debug script (path resolved relative to script)
 ```
 
-> Unwired legacy code kept intentionally: `backend/core/processor.py`, `backend/core/graph.py`, `frontend/src/pages/Blueprint.jsx`. Do not delete; do not add new dependencies to them. See [PROJECT_HANDOVER.md](./PROJECT_HANDOVER.md) for the full file map.
+> Unwired legacy code kept intentionally: `backend/core/processor.py`, `backend/core/graph.py`. Do not delete; do not add new dependencies to them. `frontend/src/pages/Blueprint.jsx` was on this list until it was removed as dead code in R58. See [PROJECT_HANDOVER.md](./PROJECT_HANDOVER.md) for the full file map.
 
 ## ⚠️ Development Guidelines
 1. **Single Responsibility**: No single file should exceed 400 lines; complex logic must be extracted into Hooks.

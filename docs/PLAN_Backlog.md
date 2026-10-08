@@ -13,7 +13,8 @@
 - 解禁新增 pip 依赖：**pyserial**（仅 E2-T3 串口模式；其余一律不加依赖）。
 - 解禁 `backend/db/models.py`：**仅新增表、不改既有表**（E4 起沿用；2026-09-23
   用户批复 P 系列 C/D/B 新表继续此口径，SQLite `create_all` 自动建表）。
-- 其余硬约束继续有效：不碰 `processor.py` / `graph.py` / `Blueprint.jsx`；
+- 其余硬约束继续有效：不碰 `processor.py` / `graph.py`（原第三项 `Blueprint.jsx` 已于 R58
+  删除死码，该条「不碰」随之失效）；
   不移除 `pymysql`；`yorha.db` 保持 git 跟踪、**不随批提交**（需同步时单独本地
   commit，先例 8f1b171）；`/dispatch` 环回口径在 E2-T5
   真实传输落地前不变；提交时机 = 每批人工验证后。
@@ -89,6 +90,7 @@
 | R54 | **实机冒烟 + pageStatus 同步（九页只读走查）** —— R49 至 R53 连续五批纯测试与守卫改动期间从未开过真实浏览器；两问拍板：深度取「九页只读走查 + 零数据改动」，发现应用侧真 bug 则当批红测先行修完（§8.87；2026-10-08 question 回执选此项，余三候选为测试质量线收尾 / 边界 3 处补守卫 / 暂不排批） | ✅ **已完成（2026-10-08，§8.87，纯文档 + pageStatus 同步 · 零应用代码改动 · 零 DDL → 无 Migration、无 chore(db)、BE 一行未动）**：起后端 8055 + dev 5174（VITE_API_BASE 指向 8055），**库字节冒烟前后逐字节一致**（192512 字节、sha256 b760e618…，`r54_db.py check` = True）。九页按侧栏真实点击逐页走：**9/9 渲染完整**（正文 336 至 3119 字符）、顶栏 `PAGE:` 与 pageStatus 的 titleEn 逐页对上、侧栏激活项与路由一致；控制台 **0 新增 error 0 warning**，唯一 `GET /response-specs/{id} 404` 属 R45 §8.77 已 A/B 定性的既有口径。R55 改色实机复核：**九页 `text-yellow` 残留全 0**，`text-hl` 1 至 14、`text-warn` 0 至 16、`text-muted` 0 至 49 在屏。pageStatus 同步 2 处失效表述并重生成 md。**验收 10 项全绿**（BE 1033/1033 · FE 1517/1517 · build 0 · lint 0 · 校验器 0 违规 · md 8/8 · 自检 7/7 · 15ms 1517 · ev40 0 · ev33 STAGED=0 BAD=0）。**留白**：任意值色 `text-[#…]` 55 处（`#E58D28` 沙底仅 1.73:1）R55 按类名普查漏网 → 另开 R56 |
 | R56 | **任意值文字色治理（`text-[#…]` 残留 → 按语义换 `text-warn` / `text-hl` / `text-muted`）** —— R54 §8.87 七 登记的留白（R55 按四类类名普查漏掉任意值写法）：`#E58D28` 压沙底仅 **1.73:1**、`#FFB74D` 更浅、`text-[#4a4a4a]/35·40·45·60` 一类压暗深灰约 2.0，与 R55 浅字压浅底同缺陷类，不报错不缺功能、全量测试照常全绿；R54 收口问 R56 排批选中（§8.88） | ✅ **已完成（2026-10-08，§8.88，12 个源文件的应用代码改动 · 纯 FE · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`/dispatch` 缺省口径一行未动）**：**只动文字色** —— 边框 / 背景 / hover 底色（`border-[#E58D28]/60`、`bg-[#E58D28]`）与 `opacity-*` 衰减一律不碰；判档语义三支（警告 / 失效 / 未保存 / 脏 / stale / 超时 → 深红 `text-warn`；高亮 / REF / 变量标记 / 配方名 / 徽标 / 选中 → 深琥珀 `text-hl`；次要 / 辅助 / 占位 / 只读降透明 → 次级灰 `text-muted`），硬指标仍 4.5:1（R55 三个 token 与 7 浅底断言复用）。落笔 **44 个任意值 token / 42 行 / 12 源文件 → 45 处语义指派**（warn 18 · hl 15 · muted 12），脚本 `r56_apply.py` 逐条「行号 + 唯一锚点」、不恰好命中整批中止零写入；关键分叉逐处读上下文定档：`RunnerFieldTree:273` warn/hl 两支拆开、`[SKIP 0B]` 徽标判 hl（徽标非 ERR）、presence 命中角标 hl、未命中角标 muted、`placeholder:text-[#4a4a4a]/20` 归 muted（仓内先例）。**红测先行有据**：**11 红 / 146 绿 / 6 文件**（逐字红因如 `expected 'ml-1 text-[#E58D28]' to contain 'text-hl'`、`expected 'text-[#E58D28] mr-1' to contain 'text-warn'`）→ **三档记账：缺特性 10 / 测试自身 bug 先修 0 / 随新事实改写 1**，护栏 1 条单列不冒充红测。**保留 12 行**（深底 `text-[#dad4bb]` 5 · 不透明 `text-[#4a4a4a]` 5.96 达标 6 · 深底面板琥珀 1）。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1520/1520**（97 文件，+3 条用例）· build 0 · lint 0 · 校验器（**18 个改动 js/jsx + 2 个 mjs + 全仓 14 份 md**）**0 违规** · md 8/8 · 自检 7/7 · **15ms 探测 1520/1520** · ev40 0 · ev33 0；`pageStatus` 3 句改色连带失效表述随批改写并重生成 md |
 | R57 | **Blueprint 低对比字色收尾 + 全仓色彩对比复审（27 行按实际底色实算）** —— R56 §8.88 八 登记的硬约束留白「`Blueprint.jsx` 硬约束：本批清单不含该文件、一行未碰」与 R55 §8.86 深底浅红留白（`InstructionRunner:398`）、R56 §8.88 八 `InstructionRunner:411` exact-count ALLOW；R56 收口问 R57 排批时拍板**解锁 Blueprint 字色改动（仅文本色 className，结构与逻辑一行不动）**，同时把 R55 残余 14 行 + R56 残余 12 token 对**实际底色**逐行实算、不达 4.5:1 的本批全修（§8.89） | ✅ **已完成（2026-10-08，§8.89，5 个源文件改动 · 纯 FE · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`/dispatch` 缺省口径一行未动）**：**复审 27 行（R55 残余 14 + R56 残余 12 + 新发现 1）→ 18 保留 / 9 不达标全修**（9 处违规 / 8 行 / 5 文件；`r57_apply.py` 9 op + `r57_apply2.py` 2 op，逐条「行号 + 唯一锚点」、不恰好命中整批中止零写入）。修法全为字色 token：静态压沙底 `text-red-400` 1.94 → `text-warn` 6.38（Blueprint:229）；hover 压 red-500 底 `hover:text-white` 3.81 → `hover:text-black` 5.52（Blueprint:229 + BPP:469/791 + PPP:317，先例 BPP:781）；深底 `#4a4a4a` 的 warn/error 档 → `text-red-200` 6.10（IR:398 3.07 · IR:411 3.45 · IR:442 1.07，末者为 R56 落笔回归）；半透明混底 3.87 → `text-white` 5.75（SmartInput:246）。**同触同清**：Blueprint 首次入改动清单 → 清 2 处 HEAD 存量校验器违规（`:176 backdrop-blur-sm` 删、`:226 pt-8` 改 `pt-4`，先例 R3「改到该文件就必须过校验器」，只清欠账不改行为）。**死码事实钉死**：无路由无 import、Canvas 形参不匹配 → 画布恒空 → 删除按钮真实渲染不可达 → 字色断言走**源码静态断言**（先例 `semanticTokens.test.js`）+ 1 条渲染冒烟（新增 `Blueprint.test.jsx`）。**红测先行有据**：基线 **10 红 / 110 绿 / 5 文件** → **三档记账：缺特性 9 / 测试自身 bug 先修 0 / 随新事实改写 1**（wrap-stale 旧断言 `text-warn` 随新事实改写为 `text-red-200`），护栏单列不冒充红测。**复审后残余（源码）**：`text-white` 7 · `text-yellow-*` 2（5.63 达标）· `text-red-300/400` **0** · `text-[#` 10 · `hover:text-white` 2（6.69 达标）。**pageStatus 0 句色词失效 → 未改未重生成**。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1528/1528**（98 文件，+8 条用例）· build 0 · lint 0 · 校验器（**10 个改动 js/jsx + 2 个 mjs + 全仓 14 份 md**）**0 违规**（首遍 Blueprint 2 处存量违规同触同清后过）· md 8/8 · 自检 7/7 · **15ms 探测 1528/1528** · ev40 0 · ev33 0 |
+| R58 | **删除 Blueprint.jsx 死码（用户拍板 A）** —— R57 §8.89 三 钉死的死码事实（无路由、全仓无 import、给 `Canvas` 传 `items` / `setItems` 而形参是 `lanes` / `onSelect` / `selectedId` → 画布恒空 → 删除按钮真实渲染不可达）的收口批；R57 收口问 R58 排批时**拍板 A = 删除死码**，R57 新建的 `Blueprint.test.jsx`（3 条源码静态断言 + 1 条渲染冒烟）随被测物一并处置（§8.90） | ✅ **已完成（2026-10-08，§8.90，2 删 1 增 · 纯 FE · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`/dispatch` 缺省口径逐字节不变）**：**先取证后动手** —— 全仓大小写不敏感 grep `Blueprint`（排除 `.git` / `node_modules` / `dist` / `coverage` / `venv` / `__pycache__`，以及 `frontend/red-report.json` 与 `backend/db/yorha.db`）删前 **10 文件 166 行** → 逐条判档：源码 2 文件 11 行 = 两个删除目标自身（**barrel 导出 / `ROUTE_LOADERS` / `PAGE_REGISTRY` / 构建配置全 0 命中**）· `backend/core/graph.py:97` 注释 1 行（BE 硬约束不碰）· 文档 7 份 154 行（历史叙述一律不动）。**删除** `frontend/src/pages/Blueprint.jsx`（245 行 11665 B）与 `frontend/src/pages/__tests__/Blueprint.test.jsx`（46 行 2531 B，4 例）；**护栏单列不冒充红测** —— 新增 `src/__tests__/noDeadBlueprint.test.js` 4 条静态扫描（扫描面非空 · `src` 内无 Blueprint 命名文件 · 无 `pages/Blueprint` 路径字面 · 无 `from` `import` `import()` 三形引用，自身按路径豁免），**实现前即绿 = 0 红 4 绿**。**红测记账：缺特性红 0（删除批无此档）**，原 4 例随被测物删除不留孤儿（删后 `__tests__` 对 Blueprint 的引用仅剩护栏自身）。`pageStatus.json` / `PAGE_STATUS.md` 实测 0 命中 → 未改未重生成。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1528/1528**（98 文件，删 4 例 + 护栏 4 例、用例与文件数均持平）· build 0 · lint 0 · 校验器（**9 个现存改动 js/jsx + 2 mjs + 全仓 14 md**，删除项只记路径不读文件）**0 违规** · md 8/8 · 自检 7/7 · **15ms 探测 1528/1528** · ev40 0 · ev33 0。**另经 question 拍板「随 R58 一并改」：失效现势句 5 处同步改写**（README ×2、HANDOVER 目录地图行与 §7 指引条、§0 硬约束行，见 §8.90 六） |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -8209,6 +8211,102 @@ Blueprint 由「硬约束排除」改为「在范围内、必须在清单」断�
 
 **R57 ✅ —— 颜色治理第三批把口径从「类名扫」推进到「按实际底色实算」：hover 态、半透明混底、
 深底语义 token 三类只有实算才现形；死码页用源码静态断言照样钉得住字色，硬约束解锁后校验器存量欠账同触同清。**
+
+## 8.90 R58 删除 Blueprint.jsx 死码（用户拍板 A · 2 删 1 增护栏 · 2026-10-08）
+
+### 一 · 背景与拍板
+
+R57 §8.89 三 把 `frontend/src/pages/Blueprint.jsx` 的死码事实钉死：App.jsx 路由由 `PAGE_REGISTRY`
+生成、9 页不含它，全仓无任何 import（grep 只命中自身与文档留档），给 `Canvas` 传 `items` / `setItems`
+而形参是 `lanes` / `onSelect` / `selectedId` → 画布恒空 → `selectedId` 恒 null → 删除按钮真实渲染
+不可达。R57 收口问 R58 排批时**用户拍板 A：删除死码**，R57 为它新建的
+`frontend/src/pages/__tests__/Blueprint.test.jsx`（3 条源码静态断言 + 1 条渲染冒烟）随被测物一并
+处置，不留孤儿测试。
+
+### 二 · 取证（全仓 grep Blueprint 逐条判档）
+
+先取证后动手。脚本 `r58_grep.py`（大小写不敏感；排除 `.git` / `node_modules` / `dist` /
+`coverage` / `venv` / `__pycache__` / `.vite`；排除 `frontend/red-report.json` 与
+`backend/db/yorha.db`）→ 删前快照 `r58_blueprint_hits_pre.txt` = **10 文件 166 行**，删后快照
+（含新护栏、文档同步前）`r58_blueprint_hits.txt` = **9 文件 167 行**。
+
+| 档 | 位置 | 删前命中 | 处置 |
+|---|---|---|---|
+| 源码 · 删除目标 | `frontend/src/pages/Blueprint.jsx`（组件定义自身） | 3 行 | **D 删除**（245 行 11665 B） |
+| 测试 · 删除目标 | `frontend/src/pages/__tests__/Blueprint.test.jsx`（`import Blueprint from '../Blueprint'` + 4 断言） | 8 行 | **D 删除**（46 行 2531 B，R57 新建） |
+| 新增护栏 | `frontend/src/__tests__/noDeadBlueprint.test.js`（判据字面 + 自身按路径豁免） | 删前不存在 | **A 新增**（4 条静态断言） |
+| 配置 · 路由 · 构建 | `package.json` · `vite.config.js` · `routeChunks.js` · `PAGE_REGISTRY` · `index.html` | 0 行 | 无引用可清 |
+| BE 注释 | `backend/core/graph.py:97`（讲页面概念的注释） | 1 行 | 不动（BE 硬约束零改动） |
+| 文档 · 历史叙述 | `PROJECT_HANDOVER.md` 64 行 · `docs/PLAN_Backlog.md` 83 行 · `docs/DESIGN_CorePipeline.md` 3 行 · `docs/PLAN_InstructionManagement.md` 1 行 · `README.md` 1 行 · `README_ZH.md` 1 行 | 153 行 | 不动（只陈述已发生事实，不改写历史）；其中 README ×2、HANDOVER 目录地图与 §7 指引、`PLAN_Backlog.md:16` 硬约束行经甄别属**现势句**，随本批改写（见 六） |
+| 文档 · 业务泛称 | `docs/PRD_InstructionProcessing.md:51`（`instructionId` 注释里的 Reference to the blueprint） | 1 行 | 不动（业务概念，非页面引用） |
+
+**判档口径**：`pages/Blueprint` 组件引用与配置层引用（barrel 导出、懒加载登记、路由表、构建配置）
+= 要清；md 文档里的历史叙述 = 不动。
+
+### 三 · 删除清单
+
+- **D** `frontend/src/pages/Blueprint.jsx` —— 死码页本体（245 行 11665 B，HEAD 字节口径）。
+- **D** `frontend/src/pages/__tests__/Blueprint.test.jsx` —— R57 新建（46 行 2531 B，4 例），
+  随被测物删除。
+- **其余源码级引用 0**：无 barrel 导出、`ROUTE_LOADERS` 无登记、`PAGE_REGISTRY` 无项、测试与
+  工具无 import（见二 的判档表）。
+
+### 四 · 护栏（单列，不算红测）
+
+新增 `frontend/src/__tests__/noDeadBlueprint.test.js`，静态扫描 `frontend/src` 全树，4 条断言：
+
+1. 扫描面非空（可扫文件数大于 100，护栏自身不许空转）；
+2. `src` 内没有任何文件或目录以 Blueprint 命名（大小写不敏感，自身按文件名豁免）；
+3. `src` 内不出现 `pages/Blueprint` 路径字面（正斜杠与反斜杠都认）；
+4. `src` 内不出现 `from './Blueprint'` 一类引用（静态 `from` / 裸 `import` / 动态 `import()`
+   三形）。
+
+自身豁免按**路径**判（先例 R49 §8.81「按路径判、按名判不放过」）。**性质：护栏 —— 实现前即绿，
+记账时单列、不冒充红测**；实跑 **0 红 4 绿**。
+
+**红测记账：缺特性红 0（删除批无此档）** —— 删除批没有「缺特性红」可做，原 `Blueprint.test.jsx`
+4 例随被测物删除、不许留孤儿测试；删后全仓 `*.test.*` 与 `__tests__` 对 Blueprint 的引用仅剩护栏
+自身（残留断言排查）。
+
+### 五 · 验收（10 项 · 改码后与文档落完后各一遍）
+
+- **两遍逐项一致**：BE **1033/1033**（`BE_OK` · `BE_FAIL_N 0`）· FE **1528/1528**（98 文件）·
+  `npx vite build` EXIT=0 · `npm run lint` EXIT=0 · yorha-ui 校验器 **0 违规** · md 口径 **8/8** ·
+  自检 **7/7** · **15ms 探测 1528/1528** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 BAD=0。
+- **FE 用例总数**：1528 → **1528** 持平 —— 删 4 例（`Blueprint.test.jsx`）+ 增 4 例（护栏）；
+  测试文件 98 → 98 持平（删 1 增 1）。
+- **校验器清单**：9 个现存改动 js/jsx（工作树 ∪ `git diff --name-only HEAD~1 HEAD` 双口径）+ 2 个
+  mjs + 全仓 14 份 md；**两个删除项只记路径、不读文件**。
+
+### 六 · 留白
+
+- **现势表述 5 处已随批同步（经 question 拍板「随 R58 一并改」）**：`README.md:182` 与
+  `README_ZH.md:171` 原写「有意保留 … `frontend/src/pages/Blueprint.jsx` … 请勿删除」、
+  `PROJECT_HANDOVER.md` 目录地图原列「未接线（保留勿删）」与其 §7 指引原写「未接线代码 …
+  不要删除」、`docs/PLAN_Backlog.md:16` 硬约束行原含 `Blueprint.jsx` —— 共 **5 处现势性表述、
+  删除后已失效**，本批改写为现实（只删失效指引、补一句 R58 删除事实）。docs 各份历史叙述与
+  历批「未碰 Blueprint.jsx」记录仍一律不动。
+- **`backend/core/graph.py:97`** 注释里出现 "Blueprint" 页面名：BE 硬约束零改动，不碰。
+- **`pageStatus.json` / `docs/PAGE_STATUS.md`** 实测 **0 命中**（Blueprint 不在 9 页内）→ 未受
+  影响、未改、未重生成。
+
+### 七 · 工具账
+
+- 跑法 `r58_verify.py`（复制 `r57_verify.py` 改写），日志 `r58_*.txt`；改写点：改动清单取「工作树
+  ∪ `git diff --name-only HEAD~1 HEAD`」双口径，**清单里存在已删除文件时跳过读取、只保留路径
+  记录**（D 项逐条打印），断言改为「两个删除目标必须以 D 项出现在清单里、且磁盘上确实不存在」，
+  校验器只喂现存文件 —— 不让断言或校验器栽在不存在的文件上。
+- 取证文件：`r58_blueprint_hits_pre.txt`（删前 10 文件 166 行）· `r58_blueprint_hits.txt`（删后
+  9 文件 167 行）。判档表数字取**文档同步前**快照；本节、§1 R58 行与 HANDOVER 条目 107 新增的
+  Blueprint 字样属本批自述、不再计入判档。
+- PS 5.1 口径照旧：`npx` 走 `shell=True`，unittest 与 vitest 输出走 stderr 以 `BE_OK` 与
+  `Tests N passed` 为准，中文脚本先写成文件再跑，字节一律 python subprocess（不用 `>` 重定向写
+  文件）。
+- `backend/db/yorha.db` 已修改、`frontend/red-report.json` 未跟踪 = 既有状态、本批未碰（硬约束），
+  不入提交范围。
+
+**R58 ✅ —— 死码判定（R57）→ 删除收口（本批）闭环：源码层引用清零、护栏把「复活」钉在 `src`
+门口；删除批没有缺特性红可做，记账如实为 0 红、护栏 4 条单列。**
 
 ## 9. 保留勿动（非任务，勿清理）
 
