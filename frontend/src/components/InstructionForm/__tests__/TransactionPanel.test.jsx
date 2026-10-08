@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 vi.mock('../../../api', () => ({
     api: {
@@ -210,6 +210,59 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
             offset: 0, byte_length: 1, offset_val: 0, byte_order: 'big'
         });
         expect(Object.keys(second.length)).not.toContain('encoding');
+    });
+
+    // ─── R52 (PLAN §8.84): 过期回包不得覆盖更新的本地状态 ────────────────
+    it('R52 回归：PUT 回包晚于新编辑 → 不得把新编辑判成已保存（SAVE * 仍在）', async () => {
+        // 回包由本测试掌闸（mockImplementation 不进延迟注入，0ms / 15ms 档同形）：
+        // 模拟「点保存后、回包回来前，用户又改了一刀」
+        let release;
+        api.saveResponseSpec.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+        api.getResponseSpec.mockRejectedValue(Object.assign(new Error('nf'), { response: { status: 404 } }));
+
+        render(<TransactionPanel instruction={INSTRUCTION} payload={PAYLOAD} />);
+        fireEvent.click(await screen.findByRole('button', { name: /SPEC ▸/ }));
+        await globalThis.__YORHA_settle(); // R51：404 降级先落定，再动编辑器
+
+        fireEvent.click(screen.getByRole('button', { name: /LENGTH OFF/ })); // 本地改一刀 → 脏
+        expect(screen.getByRole('button', { name: /SAVE \*/ })).toBeDefined();
+        fireEvent.click(screen.getByRole('button', { name: /SAVE \*/ }));
+        await waitFor(() => expect(api.saveResponseSpec).toHaveBeenCalledTimes(1));
+
+        // 回包未回 → 用户再改：length encoding 写成 varint
+        fireEvent.change(screen.getByLabelText('length encoding'), { target: { value: 'varint' } });
+        expect(screen.getByRole('button', { name: /SAVE \*/ })).toBeDefined();
+
+        // 回包这时才到
+        release({ id: 1700000000001 });
+        await waitFor(() => expect(screen.getByText('SPEC SAVED')).toBeDefined());
+
+        // 判据：这份回包对应的是**上一次**的保存，不能把新编辑判成已保存 ——
+        // 判成已保存会让下一次发送走 response_spec: null，新编辑被静默丢弃
+        expect(screen.getByRole('button', { name: /SAVE \*/ })).toBeDefined();
+    });
+
+    it('R52 回归：GET 规格回包晚于本地编辑 → 本地优先，不被过期回包覆盖', async () => {
+        let release;
+        api.getResponseSpec.mockImplementation(() => new Promise((resolve) => { release = resolve; }));
+
+        render(<TransactionPanel instruction={INSTRUCTION} payload={PAYLOAD} />);
+        fireEvent.click(await screen.findByRole('button', { name: /SPEC ▸/ }));
+
+        // 回包未回 → 本地先改：开 LENGTH + 写 varint（设计期宽度文案即在场）
+        fireEvent.click(screen.getByRole('button', { name: /LENGTH OFF/ }));
+        fireEvent.change(screen.getByLabelText('length encoding'), { target: { value: 'varint' } });
+        expect(screen.getByText(/设计期宽度/)).toBeDefined();
+
+        // 回包这时才到，且带的是一份**没开 LENGTH** 的规格
+        release({ spec: defaultSpec(), stale: null });
+        await act(async () => {
+            await Promise.resolve();
+        });
+
+        // 判据：本地优先 —— 拉取期间敲下的编辑不能被过期回包整份冲掉
+        expect(screen.getByText(/设计期宽度/)).toBeDefined();
+        expect(screen.getByLabelText('length encoding').value).toBe('varint');
     });
 
     // ─── CP3 3d (D7-A): 应答规格失效徽标 ─────────────────────────────────

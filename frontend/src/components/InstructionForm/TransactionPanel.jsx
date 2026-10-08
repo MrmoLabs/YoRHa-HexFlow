@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api';
 import DecodedFields from './DecodedFields';
 import { InstructionDecoder } from '../../utils/InstructionDecoder';
@@ -58,10 +58,18 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
     const [result, setResult] = useState(null);
     const [message, setMessage] = useState(null); // { kind: 'ok' | 'err', text }
 
+    // R52（PLAN §8.84）：本地编辑世代号 —— 本地每改一次 +1。回包落地时比对：
+    // 号已前进 = 这份回包**过期**（发出之后用户又改过）→ 本地优先，不得覆盖。
+    // 缺这个判据时：GET 整份冲掉编辑、PUT 把新编辑判成已保存（下次发送走
+    // response_spec: null，编辑被静默丢弃）—— 两条同根，改一必改二。
+    const specRevRef = useRef(0);
+    const touchSpec = () => { specRevRef.current += 1; };
+
     // 切换指令 → 拉取按指令持久化的规格；404 = 未配置（常态，本地缺省）；
     // 其他错误降级本地默认并挂错误条（同编排页加载失败降级先例）。
     useEffect(() => {
         let alive = true;
+        const rev0 = specRevRef.current; // 本次拉取开始时的世代
         if (!instructionId) {
             setSpec(defaultSpec());
             setRangesText('');
@@ -73,6 +81,7 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
             try {
                 const row = await api.getResponseSpec(instructionId);
                 if (!alive) return;
+                if (specRevRef.current !== rev0) return; // R52：拉取期间本地改过 → 本地优先
                 setSpec(row.spec);
                 setRangesText(formatIgnoreRanges(row.spec.ignore_ranges));
                 setSpecDirty(false);
@@ -81,10 +90,14 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
                 setMessage(null);
             } catch (err) {
                 if (!alive) return;
-                setSpec(defaultSpec());
-                setRangesText('');
-                setSpecDirty(false);
-                setSpecStale(null); // 未取得行 → 无出处可比，不出徽标
+                // R52：降级同样本地优先（拉取期间敲的编辑不被 default 冲掉）；
+                // 错误条照旧挂 —— 它陈述的是「拉取失败」这个事实，与本地改动无关。
+                if (specRevRef.current === rev0) {
+                    setSpec(defaultSpec());
+                    setRangesText('');
+                    setSpecDirty(false);
+                    setSpecStale(null); // 未取得行 → 无出处可比，不出徽标
+                }
                 if (err?.response?.status === 404) {
                     setMessage(null);
                 } else {
@@ -117,11 +130,13 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
     const patchSpec = (patch) => {
         setSpec(prev => ({ ...prev, ...patch }));
         setSpecDirty(true);
+        touchSpec();
     };
 
     const patchNested = (key, patch) => {
         setSpec(prev => ({ ...prev, [key]: { ...(prev[key] || {}), ...patch } }));
         setSpecDirty(true);
+        touchSpec();
     };
 
     const toggleLength = (enabled) => patchSpec({
@@ -143,6 +158,7 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
             return { ...prev, length };
         });
         setSpecDirty(true);
+        touchSpec();
     };
 
     const toggleChecksum = (enabled) => patchSpec({
@@ -154,9 +170,11 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
     const handleSaveSpec = async () => {
         if (!instructionId || rangesInvalid) return;
         setMessage(null);
+        const rev0 = specRevRef.current; // 发出保存时的世代
         try {
             const saved = await api.saveResponseSpec(instructionId, spec);
-            setSpecDirty(false);
+            // R52：回包落地时本地又改过 → 新编辑仍是脏的，不能判成已保存
+            setSpecDirty(specRevRef.current !== rev0);
             // D7-A: PUT 回执与 GET 同形（含 stale）——出处指纹在手工编辑时保留 →
             // 比对仍有效；新建行无出处 → stale null → 徽标自然消失，不会崩。
             // 回执缺 stale（旧夹具）→ null 同样不出徽标。
@@ -553,6 +571,7 @@ export default function TransactionPanel({ instruction, payload, wrap = null }) 
                             onChange={e => {
                                 const text = e.target.value;
                                 setRangesText(text);
+                                touchSpec(); // 含非法文本：它也是一次本地敲击（合法时 patchSpec 会再记一次，计数只增无害）
                                 const parsed = parseIgnoreRanges(text);
                                 if (parsed !== null) patchSpec({ ignore_ranges: parsed });
                             }}
