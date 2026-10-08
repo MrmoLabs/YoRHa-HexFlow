@@ -115,7 +115,8 @@ describe('Protocol Page', () => {
             }));
         });
 
-        expect(setProtocols).toHaveBeenCalled();
+        // R51（PLAN §8.83）：createProtocol 回包后才回写共享态
+        await waitFor(() => expect(setProtocols).toHaveBeenCalled());
         vi.useFakeTimers();
     });
 
@@ -153,6 +154,10 @@ describe('Protocol Page', () => {
         });
         expect(api.updateProtocol).not.toHaveBeenCalled();
 
+        // R51（PLAN §8.83）：防抖窗口验完就切回真定时器 —— 后面要等**真实回包**，
+        // fake timers 会把 waitFor 冻死（本文件 L90 / L1010 同款先例）
+        vi.useRealTimers();
+
         // 点击保存 → PUT 一次（载荷同旧口径）
         await saveViaButton();
 
@@ -163,8 +168,9 @@ describe('Protocol Page', () => {
             children: []
         });
         // 保存成功：草稿毕业 → 按钮消失 + 共享态写穿（一次）
-        expect(screen.queryByRole('button', { name: '保存更改 (SAVE)' })).toBeNull();
-        expect(setProtocols).toHaveBeenCalledTimes(1);
+        // R51：两者都由**回包**触发 —— 等真结果（期望值一字未改）
+        await waitFor(() => expect(screen.queryByRole('button', { name: '保存更改 (SAVE)' })).toBeNull());
+        await waitFor(() => expect(setProtocols).toHaveBeenCalledTimes(1));
     });
 
     it('反馈 #3 切协议确认：脏态点侧栏他协议弹「放弃未保存的更改？」，取消留原协议、确认弃草稿切换（全程零 PUT）', () => {
@@ -437,6 +443,8 @@ describe('Protocol Page', () => {
     });
 
     it('should surface a save failure status when the API rejects', async () => {
+        // R51：本测试只等拒绝回包上屏，用不到假定时器（beforeEach 默认开）
+        vi.useRealTimers();
         const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
         api.updateProtocol.mockRejectedValue(new Error('boom'));
 
@@ -458,7 +466,8 @@ describe('Protocol Page', () => {
             await saveViaButton();
 
             expect(api.updateProtocol).toHaveBeenCalled();
-            expect(screen.getByText(/协议保存失败/)).toBeDefined();
+            // R51：失败横幅是**拒绝回包**上屏后才有的
+            await waitFor(() => expect(screen.getByText(/协议保存失败/)).toBeDefined());
         } finally {
             errorSpy.mockRestore();
         }
@@ -705,6 +714,8 @@ describe('Protocol Page', () => {
         expect(api.updateProtocol.mock.calls[0][1]).toMatchObject({ label: '改名一', version: 1 });
 
         // 成功响应的 version 2 已回写本地（共享行已更新）→ 下一次 PUT 必须带 2（1 已陈旧）
+        // R51：「已回写」的可观察信号 = 草稿毕业、SAVE 按钮随回包消失
+        await waitFor(() => expect(screen.queryByRole('button', { name: '保存更改 (SAVE)' })).toBeNull());
         await waitFor(() => expect(screen.getByDisplayValue('改名一')).toBeDefined());
         fireEvent.change(screen.getByDisplayValue('改名一'), { target: { value: '改名二' } });
         await saveViaButton();
@@ -1162,8 +1173,8 @@ describe('Protocol Page', () => {
 
         await waitFor(() => expect(api.getResponseSpecTargets).toHaveBeenCalledWith('proto-1'));
         const select = await screen.findByTestId('response-spec-targets');
-        // 占位 + 2 候选
-        expect(select.options.length).toBe(3);
+        // 占位 + 2 候选 —— R51：候选是**异步拉来的**，select 骨架先到、options 后到
+        await waitFor(() => expect(select.options.length).toBe(3));
         expect(select.options[1].textContent).toContain('★');
         expect(select.options[1].textContent).toContain('3层');
         expect(select.options[2].textContent).not.toContain('★');
@@ -1211,6 +1222,8 @@ describe('Protocol Page', () => {
         ]} setProtocols={vi.fn()} />);
 
         const select = await screen.findByTestId('response-spec-targets');
+        // R51：options 未到就 change 会落空 → generate 仍 disabled、click 空转
+        await waitFor(() => expect(select.options.length).toBeGreaterThan(1));
         fireEvent.change(select, { target: { value: 'i-star' } });
         fireEvent.click(screen.getByTestId('response-spec-generate'));
 
@@ -1238,6 +1251,8 @@ describe('Protocol Page', () => {
             ]} setProtocols={vi.fn()} />);
 
             const select = await screen.findByTestId('response-spec-targets');
+            // R51：同上，options 未到则 change 落空、generate 仍 disabled
+            await waitFor(() => expect(select.options.length).toBeGreaterThan(1));
             fireEvent.change(select, { target: { value: 'i-bare' } });
             fireEvent.click(screen.getByTestId('response-spec-generate'));
 

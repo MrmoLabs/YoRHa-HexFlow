@@ -3863,9 +3863,75 @@
       再用延迟把运气逼成必然。**
       **明确留白**：其余 **95 个测试文件未接探测器**（开关写在单个测试文件内，本批只治被三批
       登记的这一个，同类隐患**尚未排查**；候选做法是把 `ok/fail/settle` 抽成共用测试工具再逐文件
-      跑探测，**另议排批**）；探测只覆盖「mock 响应晚到」这一类竞态，不覆盖真定时器漂移 / CI 抢占 /
+      跑探测，**另议排批**）—— **→ 已排并完成 ✅（R51，条目 100 / PLAN §8.83）**；探测只覆盖
+      「mock 响应晚到」这一类竞态，不覆盖真定时器漂移 / CI 抢占 /
       DOM 动画；行内抑制注释机制、`~~~` 围栏与 `.txt` 纳入两条留白沿旧。
       提交 = `feat(R50)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+
+100. **R51 · 全仓抖动排查（延迟注入进 setupFiles · 14 红连修；PLAN §8.83 · 2026-10-08）**
+     - **来源与拍板**：R50 §8.82 八 第 1 条留白「其余 95 个测试文件未接探测器」。R50 收口问 R51，
+       **question 回执选推荐项「全仓抖动排查」**（选项原文 = 抽共用 helper 扫其余 95 文件、
+       **先产出清单再定修复批次**；余候选：行内抑制注释机制 / 暂不排批）。清单到手（14 红 / 4 文件）
+       后按承诺再问一次，**回执选「连修这 14 条」** —— 因为 `setupDelay.js` 入库后第 10 项
+       （`YORHA_API_DELAY_MS=15` 全量）从「只压 Terminal」变成「压全仓」，不连修就只能降级口径。
+     - **文件（6 个）**：**新增** `frontend/test/setupDelay.js`；改 `frontend/vite.config.js`
+       （`test.setupFiles` 注册）+ 4 个测试文件（`RoutingRules` / `DataHub` / `Protocol` /
+       `TransactionPanel`）。**零应用代码改动**：被测组件、`src/api/`、`backend/` 一行未改；
+       `models.py` 无改列改表、**无 Migration、无 `chore(db)`**、不引 pytest、无新 pip 依赖，
+       `processor.py` / `graph.py` / `Blueprint.jsx` 未碰、**`/dispatch` 缺省口径未动**。
+     - **摸底取数**：96 测试文件 · `render(` 220 · `waitFor(` 265 · `vi.fn()` 236；**只有 13 个文件**
+       真正设过 mock 返回值；可注入响应设置点 **299 处**（`mockResolvedValue` 231 /
+       `mockRejectedValue` 39 / Once 29）；**注入盲区 27 处**（`vi.fn(async …)` 14 处 / 5 个 api 测试 +
+       `mockImplementation(async …)` 13 处 / Protocol —— 微任务即达，行为与从前逐字相同）；
+       `vite.config.js` 的 `test` 块**没有 `setupFiles`** → 全局注入落点（零改测试文件）。
+     - **基建（`setupDelay.js` + `vite.config.js`）**：读 `YORHA_API_DELAY_MS`，**≤0 时一个钩子都不装**
+       （与没有它逐字等价）；>0 时包装 `vi.fn()` 造出的 mock，把 `mockResolvedValue` /
+       `mockRejectedValue`（含 Once）改成「**调用时**才起算延迟」的等价实现；挂
+       `globalThis.__YORHA_DELAY_MS__`（护栏可断言）与共用等待口 `__YORHA_settle()`
+       （R50 `settle()` 的全仓版）；全局 `afterEach` **收尾排空在途链**（R50 根因 ③ 全仓版）；
+       **假定时器下两者都跳过**（`setTimeout` 冻结，硬等会冻死收尾钩子 —— 实测教训）。
+     - **根因四类（14 红逐条核过错误全文与失败现场 DOM）**：① **回包之后才有的东西被提前断言**
+       9 条（chip 翻面 / 共享态回写 / 失败横幅 / version 回写 / 下载动作与回执文案 / STALE 徽标）；
+       ② **select 骨架先到 options 后到** 3 条（`findByTestId` 拿到只有占位项的骨架 → `change` 落空
+       → 生成钮仍 `disabled` → `click` 空转）；③ **跨测试在途链污染** 2 条
+       （`vi.clearAllMocks()` 只清已发生的调用、清不掉在途响应 → 上一测试的
+       `triggerBlobDownload` 落进本测试，`calls[0]` 读到串味文件名）；④ **没等落定就改、回包冲掉
+       本地改动** 1 条（规格 404 还在飞就开 LENGTH，回包 `setSpec(defaultSpec())` 把它冲掉）。
+     - **假通过（探测抓不到，分析时发现）**：`TransactionPanel` 3 处
+       `queryByTestId('response-spec-stale')).toBeNull()` —— 延迟下「徽标还没轮到上屏」同样让它过，
+       与 R50 那条 `toBeNull()` 假通过同款；**不在 14 红里，一起修**。
+     - **修法（22 处 · 断言期望一字未改）**：基建 2 处补强（等待口 + 排空，各加假定时器护栏）、
+       配置 1 处、RoutingRules 1、DataHub 4、Protocol 7、TransactionPanel 4；其中 **Protocol 2 条
+       切 `vi.useRealTimers()`** —— 本文件既有惯例（L90 与 L1010「fake timers 会冻住 onload」）：
+       要等真结果就不能让假定时器冻住 `waitFor`（首查不中 → interval 被 faked → 5000ms 测试超时，
+       这是补修前**等价性档当场红 2 条**的直接原因，如实记）。
+     - **测试（红测先行有据，三档 + 护栏单列）**：红 = **15ms 全仓探测 14 条**；**三档** =
+       缺特性 **0** / 测试自身 bug 先修 **17**（14 红 + **3 假通过**）/ 随新事实改写 **0**（2 条切
+       定时器模式换的是等待手段不是期望）；**实现 bug 0**。**护栏不冒充红测**：① 等价性 —— 不设 env
+       全量 **0 红**；② **阴性对照 3000ms → 4 文件 44 红**（缺省同 4 文件 78/78 绿，证明 0 红不是
+       「注入被改哑」）；③ 修后 15ms 全仓 0 红并进验收。
+     - **取证工具自身的账（2 笔）**：① `r51_classify.py` 输出用 PowerShell `>` 落盘 → **写成 UTF-16**
+       （R50 刚记过的旧坑复发），改走「python 写文件 → `read` 读回」；② 抠失败块按数组下标取，
+       **把 RoutingRules 那块当成 TransactionPanel**（块头一比就露馅），改按块头匹配。两笔均与被测代码无关。
+     - **验收（10 项 · 两遍全绿）**：**BE 1033/1033**、**FE 1501/1501（96 文件）**、`npx vite build` 0、
+       `npm run lint` 0 **且 0 warning**、yorha-ui 校验器（**6 个改动 js/jsx + 2 个 mjs + 全仓 14 份 md**）
+       **0 违规**、md 口径 **8/8**、自检收口 **7/7**、**15ms 探测 1501/1501**、`ev40` TOTAL_PROBLEMS=0、
+       `ev33` STAGED=0 BAD=0；**零 DDL → 无 Migration、无 `chore(db)`**。
+     - **第 10 项口径变化（如实写明）**：R50 拍板纳入时开关只写在 `Terminal.test.jsx` 内，
+       该项名义「全量」、**实际只压得动 1 个文件**；R51 把注入下沉 `setupFiles` 后，
+       **同一行命令第一次真正覆盖 96 文件 / 1501 条** —— 没换口径，验收力度自己变强。
+     - **人工验证**：**零应用代码改动 → 不启 8055 / 5174、不做浏览器冒烟**，以可复跑事实为准
+       （10 项两遍全绿 · 等价性 0 红 · 阴性对照 3000ms 必红 · lint 0）。`pageStatus.json` 与
+       `PAGE_STATUS.md` **双双不动**。
+     - **文档同步（同批）**：PLAN **§8.83 新节** + §1 新增 `R51` 行 + **销 §8.82 八 第 1 条**；
+       本条插入 + 条目 99 留白销项。
+     - **状态**：**R51 ✅ —— 排查的终点不是一张清单，是让下一次全量跑本身就带着探针：
+       抖动再也藏不进「偶发」。**
+       **明确留白**：**假通过只清了被查的 4 个文件**，其余 92 个文件有无同类**未排查**（探测只报红、
+       不报绿里的错）；**注入盲区 27 处**（async 形态的 mock 不进延迟）；**假定时器下排空与 `settle`
+       是跳过的**（本批已把要等回包的 2 条切真定时器，其余假定时器文件的在途链未逐一验证）；
+       行内抑制注释机制、`~~~` 围栏与 `.txt` 纳入沿旧。提交 = `feat(R51)` 单笔
+       （**零 DDL** → 无 Migration、无 `chore(db)`）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

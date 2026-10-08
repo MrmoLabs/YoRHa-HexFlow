@@ -179,7 +179,8 @@ describe('发前路由规则页 RoutingRules', () => {
             enabled: 0,
             description: null,
         });
-        expect(screen.getByLabelText('切换启停 meter 0001').textContent).toContain('OFF');
+        // R51（PLAN §8.83）：PUT 回包后本地章才翻面 —— 等真结果，期望 'OFF' 不变
+        await waitFor(() => expect(screen.getByLabelText('切换启停 meter 0001').textContent).toContain('OFF'));
     });
 
     it('删除需二次确认：取消零调用，确认才 DELETE 并出回收站提示', async () => {

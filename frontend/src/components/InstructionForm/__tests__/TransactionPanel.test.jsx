@@ -178,6 +178,9 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
 
         render(<TransactionPanel instruction={INSTRUCTION} payload={PAYLOAD} />);
         fireEvent.click(await screen.findByRole('button', { name: /SPEC ▸/ }));
+        // R51（PLAN §8.83）：规格拉取（本例 404 → 降级本地默认）**落定后再动编辑器** ——
+        // 否则回包 setSpec(defaultSpec()) 会把随后的 LENGTH 打开冲掉
+        await globalThis.__YORHA_settle();
         fireEvent.click(screen.getByRole('button', { name: /LENGTH OFF/ }));
 
         const box = screen.getByLabelText('length encoding');
@@ -223,12 +226,16 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
         });
         render(<TransactionPanel instruction={INSTRUCTION} payload={PAYLOAD} />);
         fireEvent.click(await screen.findByRole('button', { name: /SPEC ▸/ }));
+        // R51：先等拉取落定再断言「不出徽标」—— 否则徽标还没轮到上屏，
+        // toBeNull() 会**假通过**（探测只抓红、抓不到这种，是分析这批红时发现的）
+        await globalThis.__YORHA_settle();
     };
 
     it('D7-A stale=true → 编辑器头部出「规格已失效 STALE」徽标，字段编辑重渲染后仍在', async () => {
         await openSpecWith(true);
 
-        expect(screen.getByTestId('response-spec-stale').textContent).toContain('规格已失效 STALE');
+        // R51：徽标要等 getResponseSpec 的回包把 stale=true 写进来
+        await waitFor(() => expect(screen.getByTestId('response-spec-stale').textContent).toContain('规格已失效 STALE'));
 
         // 本地改字段（脏稿重渲染）→ 徽标不丢
         fireEvent.change(screen.getByPlaceholderText('AA55'), { target: { value: 'AA55' } });
@@ -252,6 +259,8 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
         render(<TransactionPanel instruction={INSTRUCTION} payload={PAYLOAD} />);
         fireEvent.click(await screen.findByRole('button', { name: /SPEC ▸/ }));
         expect(await screen.findByText('RESPONSE_SPEC')).toBeDefined();
+        // R51：同上，404 降级落定后再断言「无徽标」，防假通过
+        await globalThis.__YORHA_settle();
         expect(screen.queryByTestId('response-spec-stale')).toBeNull();
     });
 

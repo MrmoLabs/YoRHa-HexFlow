@@ -113,9 +113,11 @@ describe('DataHub Page', () => {
 
         await waitFor(() => expect(api.exportDataBundle).toHaveBeenCalledTimes(1));
         expect(api.exportDataBundle).toHaveBeenCalledWith(['recipes', 'sequences']);
+        // R51（PLAN §8.83）：下载动作在**回包之后**才发生 —— 等它真在场再取文件名
+        await waitFor(() => expect(triggerBlobDownload).toHaveBeenCalledTimes(1));
         const [, filename] = triggerBlobDownload.mock.calls[0];
         expect(filename).toMatch(/^yorha-datahub-recipes-sequences-\d+\.zip$/);
-        expect(screen.getByText(/导出完成（2 域：recipes \+ sequences）/)).toBeDefined();
+        await waitFor(() => expect(screen.getByText(/导出完成（2 域：recipes \+ sequences）/)).toBeDefined());
 
         // 取消到空 → 回到禁用，且**不再发请求**
         fireEvent.click(screen.getByRole('button', { name: 'recipes' }));
@@ -135,9 +137,11 @@ describe('DataHub Page', () => {
         fireEvent.click(screen.getByRole('button', { name: /下载 ZIP/ }));
         await waitFor(() => expect(api.exportDataBundle).toHaveBeenCalledTimes(1));
         expect(api.exportDataBundle).toHaveBeenCalledWith(); // 无参 → 不带 ?domains
+        // R51：同上，先等本测试自己的下载落定（跨测试在途链由收尾排空挡住）
+        await waitFor(() => expect(triggerBlobDownload).toHaveBeenCalledTimes(1));
         const [, filename] = triggerBlobDownload.mock.calls[0];
         expect(filename).toMatch(/^yorha-datahub-\d+\.zip$/);
-        expect(screen.getByText(/9 域：instructions\.json/)).toBeDefined();
+        await waitFor(() => expect(screen.getByText(/9 域：instructions\.json/)).toBeDefined());
     });
 
     it('R19 示例包：动态出「按域导入的 6 域」，文件名打 sample 标记', async () => {
@@ -155,9 +159,11 @@ describe('DataHub Page', () => {
         expect(api.exportDataBundle).toHaveBeenCalledWith([
             'recipes', 'sequences', 'transport', 'profiles', 'templates', 'routing_rules'
         ]);
+        // R51：同上，示例包的文件名要等这一条自己的回包
+        await waitFor(() => expect(triggerBlobDownload).toHaveBeenCalledTimes(1));
         const [, filename] = triggerBlobDownload.mock.calls[0];
         expect(filename).toMatch(/^yorha-datahub-sample-\d+\.zip$/);
-        expect(screen.getByText(/示例包已生成/)).toBeDefined();
+        await waitFor(() => expect(screen.getByText(/示例包已生成/)).toBeDefined());
         // 全量按钮仍是另一条路：不因示例包而改参
         expect(api.exportDataBundle).not.toHaveBeenCalledWith();
     });
@@ -200,7 +206,8 @@ describe('DataHub Page', () => {
         await waitFor(() => {
             expect(api.restoreDbBackup).toHaveBeenCalledWith('yorha-20260922-120000.db');
         });
-        expect(screen.getByText(/安全快照：pre-restore-20260922-120001\.db/)).toBeDefined();
+        // R51：快照回执要等 restoreDbBackup 的回包上屏
+        await waitFor(() => expect(screen.getByText(/安全快照：pre-restore-20260922-120001\.db/)).toBeDefined());
         await waitFor(() => {
             expect(api.getDatahubStatus).toHaveBeenCalledTimes(2);
         });
