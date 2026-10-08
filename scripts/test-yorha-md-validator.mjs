@@ -44,12 +44,14 @@ if (!existsSync(VALIDATOR)) {
 //       fixture 内联进本测试源码，这个文件自己就 9 条违规，「改动文件 0 违规」那条
 //       验收当场不成立；
 //    ② fixture 若写成仓内 `.md`，又会被「全仓 md → 0 违规」那条断言反过来咬住。
-//    所以放 `scripts/fixtures/md-validator/*.txt` —— `.txt` 不在校验器扫描面内
-//    （`SCANNED_EXTENSIONS` 里没有）。这是**刻意的放置不是掩盖**：哪天扫描面扩到
-//    `.txt`，这条会当场叫出来，不会被悄悄漏过去。
+//    所以放 `scripts/fixtures/md-validator/*.fixture` —— `.fixture` 不在校验器扫描面内
+//    （`SCANNED_EXTENSIONS` 里没有）。这是**刻意的放置不是掩盖**。
+//    **R59（§8.91）起 `.txt` 已纳入扫描面**，这 6 份数据文件因此从 `.txt` 改名
+//    `.fixture`：内容仍是故意违规的数据、断言其被抓，只是不能再借 `.txt` 躲在扫描面外
+//    —— 放置口径一字未变，换的是扩展名。
 //    运行时把它们复制成临时目录里的 `.md` / `.js`，再喂给校验器。
 const FIXTURE_DIR = join(REPO, 'scripts', 'fixtures', 'md-validator');
-const fixture = (name) => readFileSync(join(FIXTURE_DIR, `${name}.txt`), 'utf8');
+const fixture = (name) => readFileSync(join(FIXTURE_DIR, `${name}.fixture`), 'utf8');
 
 const dir = mkdtempSync(join(tmpdir(), 'yorha-r48-'));
 

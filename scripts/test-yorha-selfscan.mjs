@@ -53,9 +53,9 @@ const copy = (from, to) => writeFileSync(join(dir, to), readFileSync(from, 'utf8
 
 // ① 一个**外部**文件，内容含规则族会命中的 CSS 声明（复用 R48 的 fixture，
 //    本脚本源码里因此不必出现任何禁词字面量 —— 否则这个测试文件自己就先违规）
-copy(join(REPO, 'scripts', 'fixtures', 'md-validator', 'plain.js.txt'), 'elsewhere.js');
+copy(join(REPO, 'scripts', 'fixtures', 'md-validator', 'plain.js.fixture'), 'elsewhere.js');
 // ② R48 的 md 围栏口径回归（豁免不许把 md 扫描面一起关掉）
-copy(join(REPO, 'scripts', 'fixtures', 'md-validator', 'css-block.md.txt'), 'fence.md');
+copy(join(REPO, 'scripts', 'fixtures', 'md-validator', 'css-block.md.fixture'), 'fence.md');
 
 // 1 · skill 自检 → 退出码 0（缺特性红测：自指豁免未落地前是 1）
 {

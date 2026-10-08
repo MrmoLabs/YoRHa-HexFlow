@@ -1,0 +1,7 @@
+# 波浪围栏（~~~）进扫描面 · R59 故意违规 fixture
+
+~~~css
+.bad {
+  box-shadow: 0 4px 12px;
+}
+~~~

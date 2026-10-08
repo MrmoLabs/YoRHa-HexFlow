@@ -4268,6 +4268,72 @@
      - **工具账**：`r58_verify.py` 改写点 = 改动清单双口径 + **已删除文件跳过读取、只保留路径
        记录**；`backend/db/yorha.db` 已修改与 `frontend/red-report.json` 未跟踪 = 既有状态、本批
        未碰，不入提交范围。提交 = `feat(R58)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+
+108. **R59 · yorha-ui 校验器口径扩展三项 + 行级抑制**（PLAN §8.91，2026-10-08；R48 §8.80 七
+     第 2、3 条与 R49 §8.81 八 第 1 条两处留白同挂的收口批 —— 本会话拍板**三项全做**、抑制口径 =
+     **行级 + 规则号 + 理由**，四空格缩进代码块不在拍板范围、沿旧不判）
+     - **范围**：**仓外 skill 改动 + 仓内测试与 fixture · 零 DDL** —— `frontend/src` 一行不改、
+       零 BE、无 Migration、无 `chore(db)`、不引 pytest、新 pip 依赖 = 0，`/dispatch` 缺省口径
+       逐字节不变；仓内新增 1 个测试脚本 + 10 份 fixture、6 份 fixture 改名、2 个既有测试的
+       路径与注释更新。
+     - **扩面探测（实现前先取数，`r59_probe1.txt`）**：仓内 14 份 md 新口径下 `~~~` 新增
+       **0 条**（全仓 `^~{3,}` 0 命中，本就没有波浪围栏）；`.txt` 纳入后 7 份 `.txt` =
+       6 份 fixture **13 条 / 5 文件**（css-block 2 · html-block 2 · narrative 6 · plain.js 2 ·
+       ts-block 1）+ `backend/requirements.txt` **0 条** → fixture 改名后**净新增 0 条**；
+       skill 目录 5 份 md 新口径 **0 条**。**未触发**「>10 条或落在 PLAN / HANDOVER 历史叙述
+       示例即停手」条件，无需逐条上报的存量违规。
+     - **三项实现（仓外 `validate-yorha-ui.mjs`，判据与 8 条规则一个字没改）**：① 围栏正则换
+       `FENCE_LINE` —— 反引号围栏与 `~~~` **等价**（同字符才闭合、语言归一与别名表复用、
+       行号 = 围栏起始行 + 块内偏移），四空格缩进代码块沿旧不判；② `SCANNED_EXTENSIONS` 加
+       `.txt`（整份判、不走 md 口径），fixture 随之改名；③ **行级抑制** —— 新增
+       `parseSuppressionMarkers` / `dropSuppressed` / `makeLineLookup`，代码行
+       `// yorha-ui: allow <规则号> <中文理由>`、md 行用 HTML 注释同款（**两种各认各的，不互相
+       通吃**），**规则号与非空理由缺一不算数**、只抑制所在行（md = 报告所指行）。配套让 offset
+       对齐源文件：`stripComments` 改**原地留空保留换行**、`addMatches` 与 6 处声明式 push 记
+       `index`、二分查行号 → 普通代码文件从此也出 `Line: N`。
+     - **规则号表（8 个稳定 ID，写死在 `references/rules.md` §7 / §11 与测试断言里）**：
+       `NO_BORDER_RADIUS` · `NO_BOX_SHADOW` · `NO_TEXT_SHADOW` · `NO_GLASSMORPHISM` ·
+       `NO_CYBERPUNK_NEON` · `NO_SOFT_SAAS_PADDING` · `NO_SAAS_CARD_PATTERN` ·
+       `MISSING_INDUSTRIAL_TAG`。**失效三态**（一律违规照报、且标记仍被列点）：
+       ① 规则号位不是这 8 个之一（含完全没写）；② 有规则号但理由为空；③ 规则号与该行那条
+       违规不一致。第四条边界：标记与违规必须**同一行**，写在上一行不算。
+     - **列点不静默**：文本报告打 `Suppression markers (N total: A applied, I invalid,
+       U unused):`，逐条 `文件:行 [规则号] 理由 - 状态`；`--json` 每文件带
+       `suppressions[]`（file / line / rule / reason / valid / applied / suppressed）+
+       `totals.suppressions{markers, applied, invalid, unused}` —— 合法的、失效的、写了没用上
+       的**全列**。
+     - **fixture 重安置与 `.txt` 排查**：动手前 `git ls-files "*.txt"` = **7 份**（6 fixture +
+       `backend/requirements.txt`，无第 8 份）；6 份 fixture 从 `.txt` 改名 **`.fixture`**
+       （`clean` / `css-block` / `html-block` / `narrative` / `plain.js` / `ts-block`，内容一字
+       未改），新增 10 份 `.fixture`（`tilde-block.md` · `tilde-narrative.md` ·
+       `violating.js` · `suppress-ok.js` · `suppress-ok.md` · `suppress-norule.js` ·
+       `suppress-noreason.js` · `suppress-noreason.md` · `suppress-mismatch.js` ·
+       `suppress-elsewhere.js`）。改名后仓内 `.txt` 仅剩 `backend/requirements.txt`（0 违规）。
+       口径：**.txt 已纳入扫描面，故 fixture 改名；内容仍是故意违规数据、测试断言其被抓。**
+     - **红测先行**：新增 `scripts/test-yorha-validator-scope.mjs` **13 条**（单开脚本不并进
+       R48 那份 —— 「8 条」这个计数被 §8.80 / §8.81 / §8.89 / §8.90 与条目 97–107 反复引用，
+       加断言等于改写历史计数）→ **实现落笔前 6 红 / 7 护栏**，逐字红因
+       `r59_red1.txt`（`~~~` 不判 `code=0` / `.txt` 目录 `code=2 no scannable file` /
+       合法抑制 `code=1` / md 抑制 `code=1 Line: 4 (md fence)` / 报告缺 3 处列点 /
+       `--json` 形状 `{"s":[],"t":{}}`）。**三档记账：缺特性 6 / 测试自身 bug 先修 0 /
+       随新事实改写 0**，护栏 7 条单列不冒充红测；另记 1 处**实现 bug**（`printUsage` 模板
+       字符串里写了三个反引号 → 语法错，校验器起不来；修文字表述，并给测试 `run()` 补
+       「输出含 `SyntaxError` 记 code=2」的防呆，避免 node 退出码 1 假绿）。既有 R48 **8/8**
+       与 R49 **7/7** **断言零改写**（仅 3 处 fixture 路径随改名更新）。
+     - **验收**：**10 项两遍全绿** —— BE 1033/1033 持平 · FE **1528/1528** 持平（98 文件，
+       用例总数零变化）· `npx vite build` 0 · `npm run lint` 0 · yorha-ui 校验器（**4 个现存
+       改动 js/jsx/mjs + 全仓 14 md**，`HEAD~1..HEAD` 里 2 个已删 Blueprint 项只记路径不读）
+       **0 违规** · md 8/8 · **口径扩展 13/13** · 自检 7/7 · 15ms 探测 **1528/1528** ·
+       `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0。跑法 `r59_verify.py`
+       （复制 `r58_verify.py` 改写），日志 `r59_*.txt`。
+     - **工具账**：`r59_verify.py` 三处改写 —— **删掉 r58 的 DEAD 断言**（本批无删除目标，
+       fixture 是改名会以 D+A 或 R 出现，不能被「已删除目标必须不在磁盘」的断言误伤）、改动
+       清单口径放宽到**全仓** js/jsx/css/mjs（本批改动全在 `scripts/*.mjs`，r58 只取
+       `frontend/src/` 会取到 0 份）、第 6 项追加口径扩展测试。`backend/db/yorha.db` 已修改与
+       `frontend/red-report.json` 未跟踪 = 既有状态、本批未碰，不入提交范围。**仓外 skill 改动
+       3 个文件（`validate-yorha-ui.mjs` / `references/rules.md` / `SKILL.md`）不进本仓提交**，
+       详见 §8.91 七。提交 = `feat(R59)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
@@ -4282,7 +4348,8 @@
 | `scripts/inspect_db.py` | SQLite 调试脚本（原根目录 `inspect_db.py`；DB 路径按脚本位置解析，任意 cwd 可跑） | ✅ |
 | `scripts/test-yorha-md-validator.mjs` | R48 新增：yorha-ui 校验器 **md 口径**的 8 条断言（围栏才判 / 散文·行内·无标注·非样式围栏不判 / 违规出行号 / 语言别名 / 全仓 md 0 违规），兼**仓外 skill 的防回滚护栏** · 跑法 `node scripts/test-yorha-md-validator.mjs` | ✅ 固定验收新增一项（R48 起） |
 | `scripts/test-yorha-selfscan.mjs` | R49 新增：校验器**自检收口**的 7 条断言（自检 exit 0 / 报告写明豁免 / 无工业标记违规 / `components.md` 0 违规 / **外部文件照旧被判** / R48 围栏回归 / 全仓 md 0 违规），兼**仓外 skill 的防回滚护栏** · 跑法 `node scripts/test-yorha-selfscan.mjs` | ✅ 固定验收新增一项（R49 起） |
-| `scripts/fixtures/md-validator/*.txt` | 上一条测试的 fixture 数据（**故意违规**才测得到，故放 `.txt` 数据文件：`.txt` 不在校验器扫描面内，也不会被「全仓 md 0 违规」咬住） | ✅ 勿改成 `.md`、勿并进源码 |
+| `scripts/test-yorha-validator-scope.mjs` | R59 新增：校验器**口径扩展**的 13 条断言（`~~~` 围栏能抓 / `.txt` 进扫描面 / 合法行级抑制生效且被列点 / 抑制缺规则号·缺理由·规则号不匹配·不在同一行四种失效态都照报 / `--json` 列点 + 汇总计数 / 普通违规回归），兼**仓外 skill 的防回滚护栏** · 跑法 `node scripts/test-yorha-validator-scope.mjs` | ✅ 固定验收第 6 项加一个断言面（R59 起） |
+| `scripts/fixtures/md-validator/*.fixture` | R48 / R49 / R59 三份测试的 fixture 数据（**故意违规**才测得到）。**R59 起 `.txt` 已纳入校验器扫描面**，故 6 份从 `.txt` 改名 `.fixture`：内容仍是故意违规数据、断言其被抓，只是不再借扩展名躲在扫描面外 | ✅ 勿改成 `.md`、勿并进源码、勿改回 `.txt` |
 | `requirements.txt`（根目录） | **不存在**；requirements 在 `backend/` 下 | ⚠️ 勿在文档中引用根目录版本 |
 
 ### backend/

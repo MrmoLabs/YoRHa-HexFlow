@@ -1,0 +1,3 @@
+// R59 失效态四：抑制注释与违规不在同一行 → 只抑制所在行，第 2 行照报。
+// yorha-ui: allow NO_BOX_SHADOW 历史示例保留（注释在第 1 行、违规在第 2 行）
+export const s = 'box-shadow: 0 4px 12px';

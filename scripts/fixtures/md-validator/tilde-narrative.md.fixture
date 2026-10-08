@@ -1,0 +1,9 @@
+# 无标注 ~~~ 围栏与非样式 ~~~ 围栏 · R59 护栏 fixture（内容故意违规、但不该被判）
+
+~~~
+.bad { box-shadow: 0 4px 12px; }
+~~~
+
+~~~bash
+echo "box-shadow: 0 4px 12px"
+~~~

@@ -1,0 +1,5 @@
+# md 行级抑制用例 · R59
+
+```css
+.bad { box-shadow: 0 4px 12px; } <!-- yorha-ui: allow NO_BOX_SHADOW 历史示例保留（R59 用例） -->
+```

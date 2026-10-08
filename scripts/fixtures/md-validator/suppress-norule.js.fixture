@@ -1,0 +1,2 @@
+// R59 失效态一：抑制注释的规则号位不是合法规则号 → 不许抑制成功（理由位是有的）。
+export const s = 'box-shadow: 0 4px 12px'; // yorha-ui: allow <规则号> 历史示例保留（缺规则号）

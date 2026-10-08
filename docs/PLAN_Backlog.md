@@ -91,6 +91,7 @@
 | R56 | **任意值文字色治理（`text-[#…]` 残留 → 按语义换 `text-warn` / `text-hl` / `text-muted`）** —— R54 §8.87 七 登记的留白（R55 按四类类名普查漏掉任意值写法）：`#E58D28` 压沙底仅 **1.73:1**、`#FFB74D` 更浅、`text-[#4a4a4a]/35·40·45·60` 一类压暗深灰约 2.0，与 R55 浅字压浅底同缺陷类，不报错不缺功能、全量测试照常全绿；R54 收口问 R56 排批选中（§8.88） | ✅ **已完成（2026-10-08，§8.88，12 个源文件的应用代码改动 · 纯 FE · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`/dispatch` 缺省口径一行未动）**：**只动文字色** —— 边框 / 背景 / hover 底色（`border-[#E58D28]/60`、`bg-[#E58D28]`）与 `opacity-*` 衰减一律不碰；判档语义三支（警告 / 失效 / 未保存 / 脏 / stale / 超时 → 深红 `text-warn`；高亮 / REF / 变量标记 / 配方名 / 徽标 / 选中 → 深琥珀 `text-hl`；次要 / 辅助 / 占位 / 只读降透明 → 次级灰 `text-muted`），硬指标仍 4.5:1（R55 三个 token 与 7 浅底断言复用）。落笔 **44 个任意值 token / 42 行 / 12 源文件 → 45 处语义指派**（warn 18 · hl 15 · muted 12），脚本 `r56_apply.py` 逐条「行号 + 唯一锚点」、不恰好命中整批中止零写入；关键分叉逐处读上下文定档：`RunnerFieldTree:273` warn/hl 两支拆开、`[SKIP 0B]` 徽标判 hl（徽标非 ERR）、presence 命中角标 hl、未命中角标 muted、`placeholder:text-[#4a4a4a]/20` 归 muted（仓内先例）。**红测先行有据**：**11 红 / 146 绿 / 6 文件**（逐字红因如 `expected 'ml-1 text-[#E58D28]' to contain 'text-hl'`、`expected 'text-[#E58D28] mr-1' to contain 'text-warn'`）→ **三档记账：缺特性 10 / 测试自身 bug 先修 0 / 随新事实改写 1**，护栏 1 条单列不冒充红测。**保留 12 行**（深底 `text-[#dad4bb]` 5 · 不透明 `text-[#4a4a4a]` 5.96 达标 6 · 深底面板琥珀 1）。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1520/1520**（97 文件，+3 条用例）· build 0 · lint 0 · 校验器（**18 个改动 js/jsx + 2 个 mjs + 全仓 14 份 md**）**0 违规** · md 8/8 · 自检 7/7 · **15ms 探测 1520/1520** · ev40 0 · ev33 0；`pageStatus` 3 句改色连带失效表述随批改写并重生成 md |
 | R57 | **Blueprint 低对比字色收尾 + 全仓色彩对比复审（27 行按实际底色实算）** —— R56 §8.88 八 登记的硬约束留白「`Blueprint.jsx` 硬约束：本批清单不含该文件、一行未碰」与 R55 §8.86 深底浅红留白（`InstructionRunner:398`）、R56 §8.88 八 `InstructionRunner:411` exact-count ALLOW；R56 收口问 R57 排批时拍板**解锁 Blueprint 字色改动（仅文本色 className，结构与逻辑一行不动）**，同时把 R55 残余 14 行 + R56 残余 12 token 对**实际底色**逐行实算、不达 4.5:1 的本批全修（§8.89） | ✅ **已完成（2026-10-08，§8.89，5 个源文件改动 · 纯 FE · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`/dispatch` 缺省口径一行未动）**：**复审 27 行（R55 残余 14 + R56 残余 12 + 新发现 1）→ 18 保留 / 9 不达标全修**（9 处违规 / 8 行 / 5 文件；`r57_apply.py` 9 op + `r57_apply2.py` 2 op，逐条「行号 + 唯一锚点」、不恰好命中整批中止零写入）。修法全为字色 token：静态压沙底 `text-red-400` 1.94 → `text-warn` 6.38（Blueprint:229）；hover 压 red-500 底 `hover:text-white` 3.81 → `hover:text-black` 5.52（Blueprint:229 + BPP:469/791 + PPP:317，先例 BPP:781）；深底 `#4a4a4a` 的 warn/error 档 → `text-red-200` 6.10（IR:398 3.07 · IR:411 3.45 · IR:442 1.07，末者为 R56 落笔回归）；半透明混底 3.87 → `text-white` 5.75（SmartInput:246）。**同触同清**：Blueprint 首次入改动清单 → 清 2 处 HEAD 存量校验器违规（`:176 backdrop-blur-sm` 删、`:226 pt-8` 改 `pt-4`，先例 R3「改到该文件就必须过校验器」，只清欠账不改行为）。**死码事实钉死**：无路由无 import、Canvas 形参不匹配 → 画布恒空 → 删除按钮真实渲染不可达 → 字色断言走**源码静态断言**（先例 `semanticTokens.test.js`）+ 1 条渲染冒烟（新增 `Blueprint.test.jsx`）。**红测先行有据**：基线 **10 红 / 110 绿 / 5 文件** → **三档记账：缺特性 9 / 测试自身 bug 先修 0 / 随新事实改写 1**（wrap-stale 旧断言 `text-warn` 随新事实改写为 `text-red-200`），护栏单列不冒充红测。**复审后残余（源码）**：`text-white` 7 · `text-yellow-*` 2（5.63 达标）· `text-red-300/400` **0** · `text-[#` 10 · `hover:text-white` 2（6.69 达标）。**pageStatus 0 句色词失效 → 未改未重生成**。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1528/1528**（98 文件，+8 条用例）· build 0 · lint 0 · 校验器（**10 个改动 js/jsx + 2 个 mjs + 全仓 14 份 md**）**0 违规**（首遍 Blueprint 2 处存量违规同触同清后过）· md 8/8 · 自检 7/7 · **15ms 探测 1528/1528** · ev40 0 · ev33 0 |
 | R58 | **删除 Blueprint.jsx 死码（用户拍板 A）** —— R57 §8.89 三 钉死的死码事实（无路由、全仓无 import、给 `Canvas` 传 `items` / `setItems` 而形参是 `lanes` / `onSelect` / `selectedId` → 画布恒空 → 删除按钮真实渲染不可达）的收口批；R57 收口问 R58 排批时**拍板 A = 删除死码**，R57 新建的 `Blueprint.test.jsx`（3 条源码静态断言 + 1 条渲染冒烟）随被测物一并处置（§8.90） | ✅ **已完成（2026-10-08，§8.90，2 删 1 增 · 纯 FE · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`/dispatch` 缺省口径逐字节不变）**：**先取证后动手** —— 全仓大小写不敏感 grep `Blueprint`（排除 `.git` / `node_modules` / `dist` / `coverage` / `venv` / `__pycache__`，以及 `frontend/red-report.json` 与 `backend/db/yorha.db`）删前 **10 文件 166 行** → 逐条判档：源码 2 文件 11 行 = 两个删除目标自身（**barrel 导出 / `ROUTE_LOADERS` / `PAGE_REGISTRY` / 构建配置全 0 命中**）· `backend/core/graph.py:97` 注释 1 行（BE 硬约束不碰）· 文档 7 份 154 行（历史叙述一律不动）。**删除** `frontend/src/pages/Blueprint.jsx`（245 行 11665 B）与 `frontend/src/pages/__tests__/Blueprint.test.jsx`（46 行 2531 B，4 例）；**护栏单列不冒充红测** —— 新增 `src/__tests__/noDeadBlueprint.test.js` 4 条静态扫描（扫描面非空 · `src` 内无 Blueprint 命名文件 · 无 `pages/Blueprint` 路径字面 · 无 `from` `import` `import()` 三形引用，自身按路径豁免），**实现前即绿 = 0 红 4 绿**。**红测记账：缺特性红 0（删除批无此档）**，原 4 例随被测物删除不留孤儿（删后 `__tests__` 对 Blueprint 的引用仅剩护栏自身）。`pageStatus.json` / `PAGE_STATUS.md` 实测 0 命中 → 未改未重生成。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1528/1528**（98 文件，删 4 例 + 护栏 4 例、用例与文件数均持平）· build 0 · lint 0 · 校验器（**9 个现存改动 js/jsx + 2 mjs + 全仓 14 md**，删除项只记路径不读文件）**0 违规** · md 8/8 · 自检 7/7 · **15ms 探测 1528/1528** · ev40 0 · ev33 0。**另经 question 拍板「随 R58 一并改」：失效现势句 5 处同步改写**（README ×2、HANDOVER 目录地图行与 §7 指引条、§0 硬约束行，见 §8.90 六） |
+| R59 | **校验器口径扩展三项 + 行级抑制（`~~~` 围栏 · `.txt` 纳入 · 豁免口开在「行 + 规则号 + 理由」）** —— R48 §8.80 七 第 2、3 条与 R49 §8.81 八 第 1 条两处留白同挂的收口批（本会话拍板**三项全做**、抑制口径 = **行级 + 规则号 + 理由**；四空格缩进代码块不在拍板范围、沿旧不判）（§8.91） | ✅ **已完成（2026-10-08，§8.91，仓外 skill 改动 + 仓内新增可复跑测试 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 与零 FE 业务代码改动、`frontend/src` 一行未改）**：**扩面探测先取数** —— 仓内 14 份 md 在新口径下 `~~~` 新增 **0 条**（全仓本就没有 `~~~` 围栏）；`.txt` 纳入后 7 份 `.txt` 中 6 份 fixture 共 **13 条**、`backend/requirements.txt` **0 条** → fixture 改名 `.fixture` 后**净新增 0 条**，且未落在 PLAN / HANDOVER 历史叙述的示例里 → **未触发**「新增量 >10 或落在历史示例即停手」条件。**三项实现**（仓外 `validate-yorha-ui.mjs`）：① `extractMarkdownFences` 换 `FENCE_LINE` —— 反引号围栏与 `~~~` 等价（同字符闭合、语言归一与别名表复用、行号 = 围栏起始行 + 块内偏移）；② `SCANNED_EXTENSIONS` 加 `.txt`（整份判，不走 md 口径），R48 那 6 份 fixture 随之 `.txt` → `.fixture`（**放置口径未变、扩展名换到扫描面外**）；③ **行级抑制** —— 代码行 `// yorha-ui: allow <规则号> <中文理由>`、md 行用 HTML 注释同款，**规则号与非空理由缺一不算数**、只抑制所在行（md = 报告所指行），报告与 `--json` 全量列点 文件 / 行 / 规则号 / 理由 + `totals.suppressions`。**8 条规则与 `RULES` 表一行未改**（`validateYoRHaCode` 只多第二个可选参数）。**红测先行**：新增 `scripts/test-yorha-validator-scope.mjs` **13 条**，实现落笔前 **6 红 / 7 护栏**（逐字红因存 `r59_red1.txt`）；三档记账 **缺特性 6 / 测试自身 bug 先修 0 / 随新事实改写 0**；既有 R48 **8/8** 与 R49 **7/7** 断言零改写（仅 3 处 fixture 路径随改名更新）。**验收 = 10 项两遍全绿**：BE **1033/1033** 持平 · FE **1528/1528** 持平（98 文件，用例数零变化）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**4 个现存改动 js/jsx/mjs + 全仓 14 md**）**0 违规** · md 8/8 · **口径扩展 13/13** · 自检 7/7 · **15ms 探测 1528/1528** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -8307,6 +8308,186 @@ R57 §8.89 三 把 `frontend/src/pages/Blueprint.jsx` 的死码事实钉死：Ap
 
 **R58 ✅ —— 死码判定（R57）→ 删除收口（本批）闭环：源码层引用清零、护栏把「复活」钉在 `src`
 门口；删除批没有缺特性红可做，记账如实为 0 红、护栏 4 条单列。**
+
+## 8.91 R59 校验器口径扩展（`~~~` 围栏 · `.txt` 纳入 · 行级抑制 · 2026-10-08）
+
+**批次**：2026-10-08 · **仓外 skill 改动（用户本会话拍板三项全做）+ 仓内新增可复跑测试 · 零 DDL、
+零 BE 改动、零 FE 业务代码改动、`frontend/src` 一行未改** —— 动的是 `~/.agents/skills/yorha-ui`，
+仓内只多 1 个测试脚本与 10 份 fixture 数据、6 份 fixture 改名、2 处测试路径更新；`models.py`
+无改列改表、**无 Migration、无 `chore(db)`**、不引 pytest、无新 pip 依赖，`processor.py` /
+`graph.py` 未碰，**`/dispatch` 缺省口径逐字节不变**。
+
+### 一 · 来源与拍板（R48 §8.80 七 2·3 与 R49 §8.81 八 第 1 条，两处留白同挂的收口批）
+
+留白原文两处**原样留档，本节不改写**（历史条目一律不动）：
+
+- §8.80 七：「**`~~~` 围栏与缩进代码块不判**（fail-open），要认它们另议」·
+  「**`.txt` 等其余非扫描扩展名不纳入** —— 一旦纳入，fixture 的放置就要重议」；
+- §8.81 八：「**行内抑制注释机制（`// yorha-ui: allow` 之类）不做** … 真要给仓内文件开豁免口，
+  **另议排批并连『谁能开、开什么』一起拍**」。
+
+2026-10-08 本会话用户拍板：**三项全做**；抑制口径 = **行级 + 规则号 + 理由** —— 于是
+「谁能开」= 谁在那一行写标记谁就开那一条，「开什么」= 只开写明的规则号那一条，
+**两问一起拍完**。**四空格缩进代码块不在拍板范围，沿旧不判**（见「六」）。
+
+**已落地 ✅ → 本节 §8.91**（三条：`~~~` 围栏 / `.txt` 纳入 / 行级抑制）。§8.80 七 与
+§8.81 八 的**原文一字未改**，历史条目一律留档，只在此指认收口位置。
+
+### 二 · 扩面探测取数（实现前先做，脚本 `r59_probe1.mjs` → `r59_probe1.txt`）
+
+新口径 = 「`~~~` 按 ``` 等价判」+「`.txt` 整份判」，实现前先量存量会新增几条：
+
+| 探测面 | 旧口径 | 新口径新增 |
+|---|---|---|
+| 仓内 14 份 md · `~~~` 围栏 | 不判 | **0 条 / 0 文件**（全仓 `^~{3,}` 正则 0 命中，压根没有 `~~~` 围栏） |
+| 仓内 7 份 `.txt` · 整份判 | 不在扫描面 | **13 条 / 5 文件**，全在 fixture：css-block 2 · html-block 2 · narrative 6 · plain.js 2 · ts-block 1；`backend/requirements.txt` **0 条** |
+| skill 目录 5 份 md（含 `components.md` / `rules.md`） | 0 条 | **0 条** |
+
+**判定**：`.txt` 那 13 条全落在**本批本就改名的 6 份 fixture**上，改名 `.fixture` 后
+**净新增 0 条**；`~~~` 一条新增都没有；**没有任何一条落在 PLAN / HANDOVER 历史叙述的示例里**
+→ **未触发**「新增量 >10 条、或落在 PLAN / HANDOVER 历史叙述示例 → 停下等拍板」的条件，
+继续实现（也就没有需要逐条上报的存量违规）。
+
+### 三 · 三项实现（规则号表 · 抑制语法 · 失效三态 · fixture 重安置）
+
+仓外 `validate-yorha-ui.mjs` 一个文件 + 两份 skill 文档；**判据与 8 条规则一个字没改**。
+
+**① `~~~` 围栏** —— `extractMarkdownFences` 的围栏正则从「只认反引号」改成
+`FENCE_LINE`（行首 0–3 空格 + 反引号三连以上 **或** 波浪号三连以上 + 可选语言标注）：
+
+- 两种围栏字符**等价**：带语言标注才判、语言归一（裸 token → 带点扩展名）与
+  `MD_LANGUAGE_ALIASES` 别名表复用同一份，`~~~css` / `~~~typescript` 与 ``` 同判；
+- **闭合只认同一种字符** —— ``` 开的块不会被一行 `~~~` 关掉，反之亦然；不同字符在块内按内容算；
+- 行号 = **围栏起始行 + 块内偏移**（`makeLineLookup(fence.code, fence.startLine)` 二分查行），
+  `fenceLineNumber` 保留为「违规没带回 offset」时的文本兜底，行为与 R48 一致；
+- 四空格缩进代码块**仍不判**（不在拍板范围）。
+
+**② `.txt` 纳入** —— `SCANNED_EXTENSIONS` 加 `.txt`，目录扫描会收 `.txt` 并**整份判**
+（不走 md 围栏口径）。随之 fixture 重安置（见下表），`backend/requirements.txt` 实测 0 违规，
+不受影响。
+
+**③ 行级抑制** —— 语法两条，**各自只认自己那种文件**（md 只认 HTML 注释式、代码只认 `//` 式，
+两种不互相通吃）：
+
+```
+代码行：// yorha-ui: allow <规则号> <中文理由>
+md 行 ：<!-- yorha-ui: allow <规则号> <中文理由> -->
+```
+
+- **规则号表（8 个稳定 ID，即 `references/rules.md` §7 的 Rule ID 列，测试里写死）**：
+
+  | 规则号（稳定 ID） | 管什么 |
+  |---|---|
+  | `NO_BORDER_RADIUS` | 任何非零圆角 |
+  | `NO_BOX_SHADOW` | 带模糊半径的阴影 / `drop-shadow` |
+  | `NO_TEXT_SHADOW` | 带模糊半径的文字阴影 |
+  | `NO_GLASSMORPHISM` | `backdrop-filter` / `backdrop-blur` / `blur()` |
+  | `NO_CYBERPUNK_NEON` | 青 / 品红霓虹色 |
+  | `NO_SOFT_SAAS_PADDING` | `p-6` 以上的大留白 |
+  | `NO_SAAS_CARD_PATTERN` | 圆角 + 阴影的 SaaS 卡片 |
+  | `MISSING_INDUSTRIAL_TAG` | 面板缺工业标记 |
+
+- **失效三态（缺一不算数，违规一律照报）**：① 规则号位**不是**那 8 个之一（含完全没写）；
+  ② 有规则号但**理由为空**；③ 规则号与**该行**那条违规不一致。另外第四条边界 ——
+  **标记与违规必须同一行**（md = 报告所指那一行），注释写在上一行不算；
+- **不买什么**：抑制不了别的规则、别的行、advisory，也关不掉整个文件；
+- **列点不静默**：文本报告在文件列表后打一段
+  `Suppression markers (N total: A applied, I invalid, U unused):`，逐条
+  `文件:行 [规则号] 理由 - 状态`（状态 = `applied (k violation(s) suppressed)` /
+  `invalid (unknown rule id 或 missing reason)` / `unused (no violation on that line)`）；
+  `--json` 每个文件带 `suppressions[]`（`file` / `line` / `rule` / `reason` / `valid` /
+  `applied` / `suppressed`）+ `totals.suppressions{markers, applied, invalid, unused}` ——
+  **valid 与 unused 的标记也全列**，谁绕过了什么一眼可查；
+- **为此让 offset 对齐**（判据没改、只是记位置）：`stripComments` 把注释**原地留空并保留换行**
+  （原来整段删掉会挪 offset），`addMatches` 与 6 处声明式 push 记 `match.index`，
+  新增 `makeLineLookup`（行首数组 + 二分）把 offset 换成行号 —— 于是普通代码文件
+  **也开始出行号**（`Line: N`，md 仍是 `Line: N (md fence)`）。
+
+**fixture 重安置**（`.fixture` 不在 `SCANNED_EXTENSIONS` 里，先验证过）：
+
+| 动作 | 文件 |
+|---|---|
+| 改名 6 份（内容一字未改） | `clean.md.txt` · `css-block.md.txt` · `html-block.md.txt` · `narrative.md.txt` · `plain.js.txt` · `ts-block.md.txt` → 同名 `.fixture` |
+| 新增 10 份 | `tilde-block.md` · `tilde-narrative.md` · `violating.js` · `suppress-ok.js` · `suppress-ok.md` · `suppress-norule.js` · `suppress-noreason.js` · `suppress-noreason.md` · `suppress-mismatch.js` · `suppress-elsewhere.js`（均 `.fixture`） |
+
+**全仓 `.txt` 排查**：动手前 `git ls-files "*.txt"` = **7 份**（6 fixture + `backend/
+requirements.txt`），**无第 8 份**；改名后仓内 `.txt` 仅剩 `backend/requirements.txt`（0 违规）。
+文档口径：**.txt 已纳入扫描面，故 fixture 改名；内容仍是故意违规数据、测试断言其被抓。**
+
+配套两处测试改动（**断言语义 0 改，只换 fixture 路径**）：
+`scripts/test-yorha-md-validator.mjs` 的 `fixture()` 读 `.fixture` + 注释里「`.txt` 不在扫描面」
+那句改写为现势；`scripts/test-yorha-selfscan.mjs` 两处 `copy()` 路径同步。
+
+### 四 · 红测先行有据（三档记账）
+
+**新增 `scripts/test-yorha-validator-scope.mjs`（13 条）**，**实现落笔前先跑红**，
+逐字红因存 `C:\Users\Administrator\AppData\Local\Temp\opencode\r59_red1.txt`：
+
+| 档 | 条数 | 明细 |
+|---|---|---|
+| 缺特性（真红测） | **6** | ① `~~~css` 围栏违规应 exit 1，实为 **`code=0`**「All constraints verified」；② `.txt` 应进目录扫描面，实为 **`code=2`** `no scannable file under "…\txtdir"`；③ 合法代码行抑制应 0 违规，实为 `code=1` `Found: box-shadow: 0 4px 12px`；④ 合法 md 行抑制应 0 违规，实为 `code=1` 且 `Line: 4 (md fence)`；⑤ 报告应列点，实为**三处正则全缺**（段头 / 文件行规则号理由 / 汇总计数）；⑥ `--json` 应带数组与 totals，实为 `json 形状不符：{"s":[],"t":{}}` |
+| 护栏（实现前即绿，不冒充红测） | **7** | 无标注 + bash 的 `~~~` 围栏 → 0 · 缺规则号 → 照报 · 缺理由 → 照报 · 规则号不匹配 → 照报 · 抑制不在同一行 → 照报 · md 侧缺理由 → 照报 · 无抑制注释的普通违规 → exit 1 |
+| 测试自身 bug 先修 | **0** | 无 |
+| 测试随新事实改写 | **0** | 本脚本内无既有断言；R48 的 8 条与 R49 的 7 条**断言一字未改**（仅 3 处 fixture 路径随改名更新，属路径项） |
+
+实现中被自己的红测抓到 1 处**实现 bug**（如实记账、不属测试 bug）：`printUsage` 的模板字符串里
+写了三个反引号 → 语法错，校验器整个起不来；改成文字表述后修复（护栏 ① 的 `code === 1`
+当时还被 node 的退出码 1 假绿过一次 → 测试的 `run()` 补一条「输出含 `SyntaxError` 一律记
+`code=2`」的防呆，红基线是修复前另跑的一轮，未受影响）。终态 **13/13 绿**。
+
+### 五 · 验收（10 项 × 两遍：改完后一遍 + 文档落完后一遍）
+
+跑法 `r59_verify.py`（复制 `r58_verify.py` 改写），日志 `r59_*.txt`。两遍**逐项全绿**：
+
+| 项 | 结果（两遍一致） |
+|---|---|
+| BE 全量 | **BE_OK · 1033/1033 持平**（零改动） |
+| FE 全量 | **1528/1528 · 98 文件**（用例总数**零变化**） |
+| `npx vite build` | 0（`✓ built in 1.49s`） |
+| `npm run lint` | 0 |
+| yorha-ui 校验器 | 0 违规（**4 个现存改动 js/jsx/mjs + 全仓 14 md**；`git diff HEAD~1 HEAD` 里的 2 个已删 Blueprint 项只记路径不读文件） |
+| md 口径测试 | **8/8**（既有断言零改写） |
+| R59 口径扩展测试 | **13/13**（新脚本，计数自持） |
+| 自检收口测试 | **7/7** |
+| 15ms 抖动探测 | **1528/1528** |
+| `ev40` / `ev33` | `TOTAL_PROBLEMS=0` / `STAGED=0 DEL=0 BAD=0` |
+
+（第 6 项在脚本里跑 md 口径与口径扩展两个脚本，两份都绿才算该项绿 —— 十项不变、多一个断言面。）
+
+### 六 · 明确留白（本批不做）
+
+- **四空格缩进代码块仍不判**（fail-open）—— 不在本批拍板范围，沿 R48 / R49 原样留档；
+- **抑制滥用的后续监控口径（本批开出的口，后续批次照此看）**：固定验收第 5 项的校验器输出里
+  若出现 `Suppression markers` 段，**其中 `applied` 每一条都必须在当批 PLAN / HANDOVER 点名**
+  （文件 · 行 · 规则号 · 理由），不点名即视为偷渡；`invalid` / `unused` 不阻断验收，但属噪声、
+  应随批清理或说明（本批现存 4 条已知：仓内 2 invalid = `test-yorha-validator-scope.mjs:13`
+  与 `PLAN_Backlog.md:8374` 两处语法示例（仓内验收 0 applied）+ skill 侧 `rules.md` §11 的 1 applied + 1 unused）；
+- **`.md` 整份判、非样式围栏判**等更大扩面继续不动 —— R48 §8.80 的「围栏口径」是本批地基，
+  不在拍板范围。
+
+### 七 · 工具账（**skill 仓外改动不进本仓提交**）
+
+**仓外共享资产改动 3 个文件，逐条列明、均不进本仓提交**（仓内以三份可复跑测试当防回滚护栏）：
+
+| 仓外文件 | 改了什么 |
+|---|---|
+| `~/.agents/skills/yorha-ui/scripts/validate-yorha-ui.mjs` | `SCANNED_EXTENSIONS` 加 `.txt`；`stripComments` 改原地留空（保留换行）；`addMatches` + 6 处声明式 push 记 `index`；新增 `makeLineLookup` / `RULE_IDS` / `CODE_SUPPRESSION` / `MD_SUPPRESSION` / `parseSuppressionMarkers` / `dropSuppressed`；`validateYoRHaCode(source, options)` 加第二可选参（`markers` / `lineOf`）；`extractMarkdownFences` 换 `FENCE_LINE`（反引号围栏与 `~~~` 等价、同字符闭合）；`validateMarkdown` 解析 md 标记并回贴绝对 md 行号、返回 `suppressions` + `markdown`；`validateSource` 代码路径解析 `//` 标记、自指豁免补 `suppressions: []`；`formatReport` 行号分 md / 普通代码；`main` 打列点段 + `totals.suppressions`；文件头与 `printUsage` 更新 |
+| `~/.agents/skills/yorha-ui/references/rules.md` | §9 更新（反引号围栏与 `~~~` 等价、缩进代码块沿旧不判）；**新增 §11 Line-level suppression（行级抑制）**：语法两式、8 个规则号、失效三态、列点格式、不买什么、`.txt` 扫描面附注，含一段 `~~~css` 自证示例（违规 + 同行标记，自检 0 违规） |
+| `~/.agents/skills/yorha-ui/SKILL.md` | 工作流第 4 步补两句：行级抑制语法与 `rules.md` §11 指认、反引号围栏与 `~~~` 等价且 `.txt` 整份扫 |
+
+**仓内**：新增 `scripts/test-yorha-validator-scope.mjs`（13 断言）+ 10 份 `.fixture`、
+6 份 fixture 改名、2 个既有测试的路径与注释更新。
+**Temp 取证**：`r59_probe1.mjs` / `r59_probe1.txt`（扩面探测）· `r59_red1.py` / `r59_red1.txt`
+（红测基线逐字红因）· `r59_verify.py`（10 项验收）· `r59_*.txt`（验收日志）·
+`r59_fixtures_dump.txt`（fixture 改名前后内容清册）· `r59_probe_files.txt` / `r59_skill_files.txt`
+（枚举取证）。
+PS 5.1 口径照旧：`npx` 走 `shell=True`，unittest / vitest 输出走 stderr 以 `BE_OK` /
+`Tests N passed` 为准，中文脚本先写成文件再跑，字节一律 python subprocess（不用 `>` 重定向写文件）。
+`backend/db/yorha.db` 已修改、`frontend/red-report.json` 未跟踪 = 既有状态、本批未碰（硬约束），
+不入提交范围。
+
+**R59 ✅ —— 三项留白一次收口：`~~~` 与 ``` 同判、`.txt` 进扫描面（fixture 随之换扩展名）、
+豁免口开在「行 + 规则号 + 理由」且全量列点。判据与 8 条规则一个字没改。**
 
 ## 9. 保留勿动（非任务，勿清理）
 
