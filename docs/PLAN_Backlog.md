@@ -86,6 +86,7 @@
 | R53 | **过期回包同类扫（R52 判据推广全仓 · 99 处候选逐条判档）** —— **无既有登记项**（新题）：R52 §8.84 收口后盘点剩余工作时顺手摸底出「同判据可推广」的题 —— `await 回包 → 中间无守卫 → 直接 setState` 全仓有多少处；问 R53 排批时用户选中**推荐项「过期回包同类扫」**（余候选：测试质量线收尾 / 实机冒烟 + pageStatus 同步 / 暂不排批），清单判档后第二问「修到哪一层」，**回执选「实锤 6 处全修」**（§8.85） | ✅ **已完成（2026-10-08，§8.85，含 4 个文件的应用代码改动 · 零 DDL → 无 Migration、无 `chore(db)`）**：静态规则扫 **99 处 / 12 文件**（动作 → 7 行内 `setXxx(`，标注中间有无 `if` / `alive` / `prev =>` 守卫），启发式初分 **L 22 / ? 5 / N 72**，再逐处读回上下文定档 —— N 档是刷新列表、置消息与 `prev =>` 函数式更新（天然不覆盖别处改动），`Protocol.handleConflictLoadLatest` 按钮语义本身就是「放弃本地草稿加载最新」，`RoutingRules` 编辑态在独立 `draft` 与 `rows` 无关；L 档 **6 处进红测实锤**：**⑥ 首屏拉取经渲染门控判定不可达**（`config`/`draft` 初值 null、面板 `{!draft ? (` 门控、`refreshConfig` 仅 mount 跑一次）→ 撤测记账；**③ 的强形态不可达**（`recipe-new` 只在 `!draft` 分支）→ 红测改走可达路径；**实锤 5 处**。**红测先行有据**：5 条确定性回归测试（本测试掌闸 Promise，**不依赖延迟开关**）先红后绿；修法 = **本地草稿对象身份判据**（点保存/新建/应用那一刻 vs 回包落地那一刻，期间编辑必换新对象），4 文件 13 处补丁：`useInstructionData.saveChanges`（不清草稿·不清脏标·不重建 undo 基线）、`Orchestration.handleSaveRecipe`（列表写穿服务端行，草稿与脏点留本地）、`handleCreateRecipe`（新行照常入列、本地已前进则不切选中不覆盖）、`Sequences` 保存后「服务端行重建草稿」一次性消费守卫、`Terminal.handleApplyConfig`（生效配置照常更新，表单不被回填）。**三档记账**：缺特性（真红测）**5** / 测试自身 bug 先修 **4**（③ 不可达改可达路径、⑥ 撤测、① 插错 describe 作用域、① 断言属性名写错）/ 随新事实改写 **0**；**实现缺陷 5 处（同根：过期回包覆盖更新的本地状态）**；静态误报 2 处如实记账。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1508/1508**（96 文件，含新增 5 条）· build 0 · lint 0 · 校验器（**8 个改动 js/jsx + 2 个 mjs + 全仓 14 份 md**）0 违规 · md 测试 8/8 · 自检 7/7 · **15ms 探测 1508/1508** · ev40 0 · ev33 0；**第二遍 15ms 探测红过 1 条一次性抖动**（`InstructionProcessor` 开关切裸发），A/B 定责非本批引入（带改动 3/3 绿 · HEAD 源码 3/3 同条绿 · 复现 0/6），第三遍全绿凑成两遍 —— 详见 §8.85 |
 
 | R55 | **全站低对比文字治理（浅字压浅底 → 按语义换 `text-warn` / `text-hl` / `text-muted`）** —— **无既有登记项**（新题，不销旧留白）：R53 §8.85 收口后盘点，摸出一类**从没被任何批次登记过、却肉眼读不清**的问题 —— 站内大量文字是浅字直接压沙色底 `#DAD4BB`（浅黄 `text-yellow-*`、纯白 `text-white`、半透明 `text-nier-light/xx`、浅红 `text-red-300/400`），实测对比度**全部 < 1.5:1**，而 WCAG 正文线是 4.5:1；它不报错、不缺功能、全量测试照常全绿，所以一直照不出来（§8.86） | ✅ **已完成（2026-10-08，§8.86，31 个源文件的应用代码改动 · 纯 FE · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`/dispatch` 缺省口径一行未动）**：**先普查再判档** —— 四类目标样式 HEAD 共 **240 行 × 样式 / 33 文件**（`text-yellow-*` 56 · `text-white` 27 · `text-nier-light/xx` 99 · `text-red-300/400` 58）+ 超口径静态 `text-red-500` 5 处 → **判档口径 243 处**，逐处读上下文定档（证据 `r55_ctx.txt` / `r55_sem.txt` / `r55_nl.txt`）。**判档两条轴**：语义（警告·失效·未保存·错误·停用·超时·失败 → 深红 `text-warn`；高亮·注入 payload·`REF`·`MATCHED`·快照·徽标·选中·计数 → 深琥珀 `text-hl`；中性说明与降级正文 → 次级灰 `text-muted`）× 底色（压浅底换语义 token；**实心深底原色保留**；同色深底上的半透明深字换**浅色档** `text-nier-dark/90`）。**落笔 230 条操作 / 31 文件**（`muted` 108 · `warn` 87 · `hl` 32 · 深底换浅 3），脚本 `r55_apply.py` 逐条「行号 + 唯一锚点」、命中不恰好 1 次整批中止零写入、自底向上应用、**内存改 → 普查过才写字节**。**三个语义 token 入 `@theme`**：`--color-warn #861e18`（沙底 6.38）· `--color-hl #7a3800`（5.90）· `--color-muted #55514a`（5.30），透明度只放行 `/90`（`/80` = 4.49 压线以下禁用）；对比度硬指标由 `semanticTokens.test.js` 在站内 **7 种浅底**上逐个断言 `>= 4.5`，旧浅字 `< 4.5` 的换色理由同文件钉死。**红测先行有据**：基线 **16 红 / 10 文件**（`expected 'text-yellow-500 animate-pulse' to contain 'text-warn'` 等逐字红因）→ **三档记账 缺特性 10 / 测试自身 bug 先修 4（+1 笔 lint `__dirname` no-undef）/ 随新事实改写 2**，护栏（旧色 `< 4.5` 证据断言）单列不冒充红测。**白字 27 处改 17 留 10**；深底三处特例（`text-nier-dark/90` 换 3 · 深底浅黄 5.63 保留 2 · 深底浅红 3.21 留白 1）。**残余源码 14 行**：`text-white` 10 · `text-yellow-*` 2 · `text-red-300/400` 2 · **`text-nier-light/xx` 归零**。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1517/1517**（97 文件，+7 条用例声明、实跑 +9，+1 文件）· build 0 · lint 0（第一遍 lint 红 1 属测试自身 bug，先修后过）· 校验器（**42 个改动 js/jsx/css + 2 个 mjs + 全仓 14 份 md**）**0 违规** · md 测试 8/8 · 自检 7/7 · **15ms 探测 1517/1517** · ev40 0 · ev33 0 |
+| R54 | **实机冒烟 + pageStatus 同步（九页只读走查）** —— R49 至 R53 连续五批纯测试与守卫改动期间从未开过真实浏览器；两问拍板：深度取「九页只读走查 + 零数据改动」，发现应用侧真 bug 则当批红测先行修完（§8.87；2026-10-08 question 回执选此项，余三候选为测试质量线收尾 / 边界 3 处补守卫 / 暂不排批） | ✅ **已完成（2026-10-08，§8.87，纯文档 + pageStatus 同步 · 零应用代码改动 · 零 DDL → 无 Migration、无 chore(db)、BE 一行未动）**：起后端 8055 + dev 5174（VITE_API_BASE 指向 8055），**库字节冒烟前后逐字节一致**（192512 字节、sha256 b760e618…，`r54_db.py check` = True）。九页按侧栏真实点击逐页走：**9/9 渲染完整**（正文 336 至 3119 字符）、顶栏 `PAGE:` 与 pageStatus 的 titleEn 逐页对上、侧栏激活项与路由一致；控制台 **0 新增 error 0 warning**，唯一 `GET /response-specs/{id} 404` 属 R45 §8.77 已 A/B 定性的既有口径。R55 改色实机复核：**九页 `text-yellow` 残留全 0**，`text-hl` 1 至 14、`text-warn` 0 至 16、`text-muted` 0 至 49 在屏。pageStatus 同步 2 处失效表述并重生成 md。**验收 10 项全绿**（BE 1033/1033 · FE 1517/1517 · build 0 · lint 0 · 校验器 0 违规 · md 8/8 · 自检 7/7 · 15ms 1517 · ev40 0 · ev33 STAGED=0 BAD=0）。**留白**：任意值色 `text-[#…]` 55 处（`#E58D28` 沙底仅 1.73:1）R55 按类名普查漏网 → 另开 R56 |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -7893,6 +7894,69 @@ build 0 · lint 0（第一遍 lint 红 1 属测试自身 bug，先修后过）·
 `pageStatus.json` 不动（理由见「七」）。**无既有留白可销** —— R55 是新题，登记的都是新留白。
 
 **R55 ✅ —— 浅字压浅底不会报错，只会让人读不清：把颜色从「样式偏好」升格成「有对比度断言的语义 token」，才第一次照得出来。**
+
+## 8.87 R54 实机冒烟 + pageStatus 同步（九页只读走查 · 零应用代码改动）
+
+### 一 背景与拍板
+R49 至 R53 五批均为测试、校验器与守卫类改动，其间未开真实浏览器。2026-10-08 question 两问拍板：范围取
+「九页只读走查 + 零数据改动」（不新建、不保存、不删除，库字节前后比对），处置取「发现应用侧真 bug 当批
+修完（红测先行）」。选题时用户当场反馈：编排页「⚠ 空洞：1 个洞未被绑定填充」等字色与背景区分度过低、
+肉眼难以辨认 —— 该缺陷经两问拍板另立 R55（§8.86）先行修完，本批改在其最终树上走查。
+
+### 二 启动与零数据自证
+后端 `python -m uvicorn backend.main:app --port 8055`（55 条路径、openapi 正常），前端
+`VITE_API_BASE=http://localhost:8055 npx vite --port 5174`。开壳前 `r54_db.py snap` 备份
+`backend/db/yorha.db`（192512 字节、sha256 b760e618…），走查结束 `r54_db.py check` = **逐字节一致 True**，
+即本轮只读走查对库零写入。
+
+### 三 走查结果（九页）
+按侧栏真实点击逐页走，每页记录 URL、顶栏 `PAGE:`、激活项、正文长度、类名残留与控制台：
+| 页 | 顶栏 titleEn | 激活项 | 正文 | text-yellow | hl / warn / muted |
+| --- | --- | --- | --- | --- | --- |
+| /protocol | PROTOCOL DEFINITION | 协议定义 [A] | 703 | 0 | 1 / 3 / 10 |
+| /instruction | INSTRUCTION MANAGEMENT | 指令管理 [B] | 991 | 0 | 0 / 16 / 49 |
+| /processing | INSTRUCTION PROCESSING | 指令加工 [R] | 1497 | 0 | 0 / 0 / 49 |
+| /orchestration | ORCHESTRATION BINDING | 编排绑定 [C] | 336 | 0 | 1 / 0 / 0 |
+| /terminal | COMMUNICATION TERMINAL | 通讯调试 [D] | 1112 | 0 | 2 / 0 / 9 |
+| /datahub | DATA HUB | 数据中心 [E] | 3119 | 0 | 14 / 6 / 9 |
+| /sequences | SEQUENCE ORCHESTRATION | 序列编排 [F] | 581 | 0 | 1 / 3 / 1 |
+| /routing | ROUTING RULES | 发前路由规则 [H] | 915 | 0 | 1 / 0 / 2 |
+| /trash | TRASH | 回收站 [G] | 409 | 0 | 1 / 0 / 0 |
+
+九页顶栏均由 `PAGE_STATUS_BY_PATH` 取值，逐页与 pageStatus 的 titleEn 对上；侧栏激活项与路由一致；
+**九页 `text-yellow` 残留全 0**，R55 三个语义 token 在屏可读。
+
+### 四 控制台判档
+九页各 1 条 `GET /response-specs/sample-inst-heartbeat 404`（去重后唯一）—— 与 R45 §8.77 的 A/B 结论一致：
+该指令无存档应答规格、FE 本就按 404 处理，R45 至 R48 每批冒烟均记「本批新增 0 error」，本批同样
+**0 新增 error、0 warning**，不属缺陷、不需修。
+
+### 五 pageStatus 同步 2 处（R55 改色连带失效）
+1. `processing`：原文「尾部残字节计入 residual 并出黄色 warning」—— 现类为 `text-warn`（深红、≥4.5:1），
+   改写为「并出 warning（警告色深红 `text-warn`，对比度 4.5 以上，不静默给错值）」。
+2. `sequences`：原文「列表行亮琥珀「失效」徽标」「红提示改黄提示」—— 现三处「失效」徽标均为 `text-warn`
+   （边框仍 `border-yellow-500/50`），阻断 ERR 与非阻断提示同为深红、靠文案区分；两处按当前事实改写。
+改后 `node scripts/generate-page-status.mjs` 重生成 `docs/PAGE_STATUS.md`（md 由 json 生成、不手编），
+JSON 复读合法、仍 9 页。
+
+### 六 验收
+10 项全绿：BE 1033/1033 · FE 1517/1517（97 文件）· `npx vite build` 0 · `npm run lint` 0 ·
+yorha-ui 校验器 0 违规 · `test-yorha-md-validator` 8/8 · `test-yorha-selfscan` 7/7 ·
+`YORHA_API_DELAY_MS=15` 探测 1517/1517 · `ev40` mismatches=0 · `ev33` STAGED=0 BAD=0。
+本批零应用代码改动 → 无红测可做、无三档记账项（缺陷均落在 R55 或另开批次）。
+
+### 七 留白
+- **任意值色 `text-[#…]` 55 处**：`#E58D28`（YoRHa 琥珀 accent，沙底 1.73:1）、`#FFB74D`（更浅）与
+  `text-[#4a4a4a]/40` 一类压暗深灰，与 R55 治理的浅字压浅底同缺陷类，但 R55 按 `text-yellow`、`text-white`、
+  `text-nier-light/`、`text-red-300·400` 四类类名普查、未覆盖任意值写法 —— 另开 R56 按同口径（先判底色再判字色、
+  红测先行）清。
+- **语义层次**：阻断 ERR 与非阻断提示经 R55 二支映射后同为 `text-warn`，区分改由文案承担（已在 §8.86 九登记）。
+- 深底（实心 `bg-nier-light` 及其 hover）上的原色文字按拍板保留。
+
+### 八 取证与工具账
+`r54_survey.py`（9 页清单、路由与 md 漂移检测）、`r54_db.py`（snap / check 字节自证）、`r54_health.py`
+（双服务就绪与 55 条路径）、走查记录（本节三表）。工具账：浏览器探测脚本两处语法错（正则吃进真实换行、
+`poll` 括号不配平致 `Unexpected token ':'`）当场改正，未影响任何取证结论 —— 属工具自身 bug，非测试缺陷。
 
 ## 9. 保留勿动（非任务，勿清理）
 
