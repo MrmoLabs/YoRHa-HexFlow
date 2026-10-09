@@ -450,3 +450,78 @@ describe('R68 连续位带拼图条（默认视图 = 位带）', () => {
         expect(screen.getByText(/TOO SMALL/)).toBeTruthy();
     });
 });
+
+// R69：二进制直觉层 —— 位带下逐位 0/1 值流行（按字节分组、段同色）、预览区
+// 加 0b 二进制行、表格默认值支持 0b1010 前缀录入。打包/存储口径零触碰。
+describe('R69 位带 0/1 值流行 · 0b 回显/录入', () => {
+    const BITS2 = [
+        { id: 'a', bit_name: 'MODE', start_bit: 0, bit_len: 2, default_val: 1 }
+    ];
+
+    it('位带下逐位 0/1 值流行在场：msb 序、段同色、值 = 默认打包值', () => {
+        render(<BitFieldEditor bits={BITS2} byteLen={1} onUpdateBits={vi.fn()} />);
+        const row = document.querySelector('[data-strip-values]');
+        expect(row).toBeTruthy();
+        const cells = [...row.querySelectorAll('[data-strip-value-bit]')];
+        // msb 视角：bit7..bit0；MODE=01 → bit0=1 其余 0
+        expect(cells.map(c => c.textContent)).toEqual(['0', '0', '0', '0', '0', '0', '0', '1']);
+        expect(cells[0].getAttribute('data-strip-value-bit')).toBe('7');
+        // 段同色：bit0/1（MODE 占位）带色，bit7（缺块）不带色
+        const byBit = (n) => row.querySelector(`[data-strip-value-bit="${n}"]`);
+        expect(byBit(0).style.backgroundColor).toBeTruthy();
+        expect(byBit(1).style.backgroundColor).toBeTruthy();
+        expect(byBit(7).style.backgroundColor).toBe('');
+    });
+
+    it('0/1 值流行跟视角镜像：lsb → bit0 在最左', () => {
+        render(<BitFieldEditor bits={BITS2} byteLen={1} onUpdateBits={vi.fn()} />);
+        fireEvent.click(document.querySelector('[data-orient-btn="lsb"]'));
+        const cells = [...document.querySelectorAll('[data-strip-value-bit]')];
+        expect(cells.map(c => c.getAttribute('data-strip-value-bit')))
+            .toEqual(['0', '1', '2', '3', '4', '5', '6', '7']);
+        expect(cells[0].textContent).toBe('1');
+    });
+
+    it('0/1 值流行按字节分组：byteLen 2 → 字节边界标记在场', () => {
+        render(<BitFieldEditor bits={[]} byteLen={2} onUpdateBits={vi.fn()} />);
+        const row = document.querySelector('[data-strip-values]');
+        expect(row.querySelectorAll('[data-strip-value-byte]')).toHaveLength(1);
+        expect(row.querySelectorAll('[data-strip-value-bit]')).toHaveLength(16);
+    });
+
+    it('预览区加 0b 二进制行：0b + 半字节分组，与 HEX 行同源', () => {
+        render(
+            <BitFieldEditor
+                bits={[{ id: 'w', bit_name: 'W', start_bit: 8, bit_len: 8, default_val: 0x12 }]}
+                byteLen={1}
+                onUpdateBits={vi.fn()}
+            />
+        );
+        const binRow = document.querySelector('[data-preview-bin]');
+        expect(binRow).toBeTruthy();
+        expect(binRow.textContent).toContain('0b0001 0010 0000 0000'); // 0x1200
+        // 既有 HEX 契约保留
+        expect(document.querySelector('[data-preview-hex]').textContent).toContain('0x1200');
+    });
+
+    it('表格默认值支持 0b1010 前缀录入：二进制解析写回 default_val', () => {
+        const onUpdateBits = vi.fn();
+        render(<BitFieldEditor bits={BITS2} byteLen={1} onUpdateBits={onUpdateBits} />);
+        const input = document.querySelector('[data-bit-default="0"]');
+        fireEvent.change(input, { target: { value: '0b10' } });
+        expect(onUpdateBits.mock.calls[0][0][0]).toMatchObject({ default_val: 2 });
+    });
+
+    it('十进制录入不回归：-40 照旧按十进制解析写回', () => {
+        const onUpdateBits = vi.fn();
+        render(
+            <BitFieldEditor
+                bits={[{ id: 't', bit_name: 'TEMP', start_bit: 0, bit_len: 8, default_val: 0, signed: true }]}
+                byteLen={1}
+                onUpdateBits={onUpdateBits}
+            />
+        );
+        fireEvent.change(document.querySelector('[data-bit-default="0"]'), { target: { value: '-40' } });
+        expect(onUpdateBits.mock.calls[0][0][0]).toMatchObject({ default_val: -40 });
+    });
+});

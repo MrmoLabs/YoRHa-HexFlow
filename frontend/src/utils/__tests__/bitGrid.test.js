@@ -15,6 +15,8 @@ import { loadVectors } from '../../../../vectors/vectors.js';
 import bitfieldVec from '../../../../vectors/bitfield.json';
 import { parseValueTable, formatValueTable } from '../bitMeta';
 import { packBitfieldDefault } from '../../config/runnerRenderRules';
+// R69 红测先行：新纯函数经命名空间调用（实现落地前仅新用例红，既有纯函数绿）
+import * as bitGridNS from '../bitGrid';
 
 // 批 2：BitFieldEditor 可视化位图的纯函数层。
 // 存储约定（与指令侧 BITFIELD 一致）：start_bit 以整字段位偏移计，bit 0 = LSB。
@@ -331,5 +333,31 @@ describe('buildStripLayout（R68 连续位带：纯布局层）', () => {
         expect(l.units).toHaveLength(1);
         expect(l.units[0].kind).toBe('gap');
         expect(l.units[0].bits).toHaveLength(8);
+    });
+});
+
+// R69：二进制直觉层纯函数 —— hex 打包值 → 按字节分组的二进制显示串（半字节
+// 空格分隔）。纯展示格式化：packBits 打包口径零触碰（镜像测试在上方）。
+describe('formatBinaryBytes（R69 二进制显示格式化）', () => {
+    it('hex → 每字节二进制串数组：定宽 8 位、半字节空格分隔', () => {
+        expect(bitGridNS.formatBinaryBytes('09')).toEqual(['0000 1001']);
+        expect(bitGridNS.formatBinaryBytes('1200')).toEqual(['0001 0010', '0000 0000']);
+        expect(bitGridNS.formatBinaryBytes('FF')).toEqual(['1111 1111']);
+    });
+
+    it('定宽保持：0x02 → "0000 0010"（前导零不丢）；空/非法 → 空数组', () => {
+        expect(bitGridNS.formatBinaryBytes('02')).toEqual(['0000 0010']);
+        expect(bitGridNS.formatBinaryBytes('')).toEqual([]);
+        expect(bitGridNS.formatBinaryBytes(null)).toEqual([]);
+    });
+
+    it('与 packBits 同源：packBits(bits) 出的 hex 直接喂入不炸且逐字节 8 位', () => {
+        const hex = packBits([
+            { id: 'a', bit_name: 'MODE', start_bit: 0, bit_len: 2, default_val: 1 },
+            { id: 'b', bit_name: 'LONG', start_bit: 2, bit_len: 2, default_val: 2 }
+        ], 2);
+        const bytes = bitGridNS.formatBinaryBytes(hex);
+        expect(bytes).toHaveLength(2);
+        expect(bytes.join('').replace(/\s/g, '')).toMatch(/^[01]{8}[01]{8}$/);
     });
 });

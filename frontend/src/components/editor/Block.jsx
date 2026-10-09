@@ -4,7 +4,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { OP_CODES } from '../../constants';
 import { formatOffset } from '../../utils/byteOffsets';
 import { formatUnknown } from '../../utils/formula';
-import { packBits } from '../../utils/bitGrid';
+import { packBits, formatBinaryBytes, buildStripLayout, BIT_GRID_COLORS } from '../../utils/bitGrid';
 import { padSpec } from '../../utils/padSpec';
 
 export default function Block({ id, label, name, byte_length, byte_len, type, op_code, hex_value, parameter_config, bits, isSelected, isPickMode, isPickRef, isGroupActive, offsetMeta, issue = null, onClick }) {
@@ -44,6 +44,39 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
     }, [parameter_config?.base_time]);
     const baseLineText = `BASE ${baseTimeStr || '?'}`;
 
+    // R69（返工终拍 B）：位域卡面 = 泳道式多卡 —— 泳道头（段数 chip + 总览
+    // 位带）+ 泳道体（实线带，每段一张独立卡：色块 + 段名 + 位宽 + 段 0/1
+    // 值），缺块占一张 GAP 卡；根去卡壳、与 hex 容器泳道虚线泳道区分；图例与
+    // 整行值流删除（段卡即图例、段值即值流）。纯展示层：packBits 打包口径
+    // 零触碰（镜像测试在 bitGrid.test.js），后端 bitfield.py 与编码器无感；
+    // 段名 break-all 不截断（段卡换行变高，不丢名）。
+    const isBitfield = type === 'bitfield';
+    const bitFace = React.useMemo(() => {
+        if (!isBitfield) return null;
+        const packed = packBits(bits, length);
+        const binBytes = formatBinaryBytes(packed);
+        const strip = buildStripLayout(bits, length, 'msb');
+        // 独立子卡：位带单位逐张出卡 —— 段卡 = 色块 + 段名 + 位宽 + 段 0/1
+        // 值（msb 视角序、半字节分组，与打包值同源逐位展开），缺块单元也占
+        // 一张；digit 从打包值串尾取（bit0 = LSB = 串尾），超出打包宽度显 0。
+        const packedBin = binBytes.join('').replace(/\s/g, '');
+        const digit = (bit) => {
+            const i = packedBin.length - 1 - bit;
+            return i >= 0 && i < packedBin.length ? packedBin[i] : '0';
+        };
+        const group4 = (v) => v.replace(/(.{4})/g, '$1 ').trim();
+        const subs = strip.units.map((u, ui) => ({
+            key: ui,
+            kind: u.kind,
+            name: u.kind === 'seg' ? (u.name || '(未命名)') : null,
+            color: u.conflict ? '#D94834' : u.color,
+            conflict: !!u.conflict,
+            len: u.bits.length,
+            value: group4(u.bits.map(digit).join('')),
+        }));
+        return { packed, binBytes, strip, subs };
+    }, [isBitfield, bits, length]);
+
     // Footer byte length: trust byteOffsets when the ruler is wired (accurate
     // "??B" for unknown instead of the legacy `|| 1` guess); fall back to the
     // legacy display when no offsets were passed (e.g. Orchestration page).
@@ -62,7 +95,7 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
     const extentBytes = (isGroupCard
         ? (offsetMeta && typeof offsetMeta.size === 'number' ? offsetMeta.size : 0)
         : length) + padBytes;
-    const footerText = [footerBytes, offsetStr].filter(Boolean).join(' ');
+    const footerText = [footerBytes, offsetStr, isBitfield && bitFace ? `0x${bitFace.packed}` : null].filter(Boolean).join(' ');
     // Label floor: 名称必须单行完整显示（不截断、不换行）→ 卡片宽度必须容纳
     // 标签。10px + tracking-widest ≈ CJK 11.5px / latin 8px 每字符（含估算安全
     // 量）；组卡另加 `::` 指示位。header 与 footer 分属两行 → 取较大值（非求和），
@@ -103,7 +136,12 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
         padCfg.padTo > 0 ? `填充：内容末尾补位到 ${padCfg.padTo} 字节边界` : null,
     ].filter(Boolean).join('；');
     const padNeed = padChip ? Math.ceil(padText.length * 5.4) + 8 : 0;
-    const contentMin = Math.max(footerNeed, labelPx, baseNeed, issueNeed, presenceNeed, padNeed) + 20; // card padding + safety margin
+    // R69: 位域泳道地板 —— 泳道体每行至多 4 张段卡（88px + 间距 6），泳道头
+    // 段数 chip 与总览位带同宽嵌行不另占需求；+30 = 根 p-2 内缩 + 泳道体 p-1.5。
+    // 非位域卡不参与（既有 60px 地板 / 字节驱动宽度语义逐字节不变）。
+    const lanePerRow = bitFace ? Math.max(1, Math.min(bitFace.subs.length, 4)) : 0;
+    const laneBodyNeed = bitFace ? lanePerRow * 88 + (lanePerRow - 1) * 6 + 30 : 0;
+    const contentMin = Math.max(footerNeed, labelPx, baseNeed, issueNeed, presenceNeed, padNeed, laneBodyNeed) + 20; // card padding + safety margin
 
     // 验证反馈批次：校验标色 —— 错误红 / 提醒琥珀（与属性面板同色系）。
     // 内联 borderColor 优先于主题类；选中态（3px 亮边）与拾取态让位，角标不受影响。
@@ -139,6 +177,11 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
             // 不与 fixed 的浅色字面块混淆。
             'length', 'checksum', 'container', 'group', 'cobs'
         ].includes(op);
+
+        // R69 返工终拍 B：位域卡 = 泳道式多卡 —— 根去卡壳（透明无框，泳道头/
+        // 体与段卡自己成卡；选中/拖拽/拾取态描边仍由 getClasses 叠加），与 hex
+        // 容器泳道（border-dashed + 外置标题 + FOCUS）视觉区分。
+        if (type === 'bitfield') return 'border-transparent bg-transparent text-nier-light';
 
         if (isDark) return darkStyle;
         if (type === 'optional') return 'border-dashed border-nier-light text-nier-light opacity-80';
@@ -311,10 +354,87 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
                 </span>
             </div>
 
-            {/* Byte Indicator centered */}
-            <div className="flex-1 flex items-center justify-center text-sm font-bold font-mono break-all text-center leading-tight overflow-hidden px-1">
-                {displayValue}
-            </div>
+            {/* Bitfield lane — R69 返工终拍 B：位域卡 = 泳道式多卡（根去卡壳）
+                —— 泳道头（段数 chip + 总览位带，头内嵌）+ 泳道体（实线窄带，
+                每段一张独立卡、缺块一张 GAP 卡），与 hex 容器泳道（虚线 + 外置
+                标题 + FOCUS）区分；值流/图例删除；hex 打包值留页脚小字。 */}
+            {isBitfield ? (
+                <div className="flex-1 flex flex-col gap-1 w-full" data-card-lane="true">
+                    {/* 泳道头：段数 chip + 总览位带（内嵌行，区别于泳道外置标题） */}
+                    <div className="flex items-center gap-1.5 w-full" data-card-lane-head="true">
+                        <span
+                            className="text-[8px] font-mono tracking-widest px-1 border border-nier-light/25 shrink-0 opacity-80"
+                            title={`位段泳道 · ${bitFace.subs.length} 片（段 + 缺块）`}
+                        >
+                            {`BITS·${bitFace.subs.length}`}
+                        </span>
+                        <div className="flex flex-1 h-1.5 border border-nier-light/30 min-w-[40px]" data-card-strip="true">
+                            {bitFace.strip.units.map((u, ui) => (u.kind === 'gap' ? (
+                                <div key={`cg-${ui}`} className="flex" style={{ flexGrow: u.bits.length }}>
+                                    {u.bits.map(bit => (
+                                        <div key={bit} data-card-strip-gap={bit} className="flex-1 bg-nier-light/5" />
+                                    ))}
+                                </div>
+                            ) : (
+                                <div
+                                    key={`cs-${ui}`}
+                                    data-card-strip-seg={u.owner}
+                                    data-conflict={u.conflict ? 'true' : undefined}
+                                    className="flex-1 border border-nier-dark/40"
+                                    style={{ flexGrow: u.bits.length, backgroundColor: u.conflict ? '#D94834' : u.color }}
+                                />
+                            )))}
+                        </div>
+                    </div>
+
+                    {/* 泳道体：实线窄带 + 浅底（区分 hex 容器泳道的虚线大框），
+                        每段一张独立卡（色块 + 段名 + 段 0/1 值 + 位宽），缺块占
+                        一张 GAP 虚线卡；段名 break-all 不截断、卡随行伸展。 */}
+                    <div
+                        className="flex flex-wrap gap-1.5 p-1.5 w-full border border-nier-light/25 bg-nier-light/5"
+                        data-card-lane-body="true"
+                    >
+                        {bitFace.subs.map((t, i) => (t.kind === 'gap' ? (
+                            <div
+                                key={`sg-${t.key}`}
+                                data-card-seg-gap={i}
+                                className="flex flex-col gap-0.5 border border-dashed border-nier-light/25 px-2 py-1.5 min-w-[88px] grow opacity-60"
+                                title="未覆盖位（缺块）"
+                            >
+                                <span className="text-[8px] font-mono tracking-wider">GAP</span>
+                                <span className="text-[11px] font-bold font-mono leading-tight">{t.value}</span>
+                                <span className="text-[8px] font-mono opacity-60">{t.len}b</span>
+                            </div>
+                        ) : (
+                            <div
+                                key={`ss-${t.key}`}
+                                data-card-seg={i}
+                                className="flex flex-col gap-0.5 border border-nier-light/30 bg-nier-dark px-2 py-1.5 min-w-[88px] grow"
+                                style={t.conflict ? { borderColor: '#D94834' } : undefined}
+                                title={t.name}
+                            >
+                                <span className="flex items-center gap-1 min-w-0">
+                                    <span
+                                        data-card-seg-chip={i}
+                                        className="w-2.5 h-2.5 shrink-0 border border-nier-dark/50"
+                                        style={{ backgroundColor: t.color }}
+                                    />
+                                    <span
+                                        className="text-[9px] font-mono min-w-0 break-all"
+                                        style={t.conflict ? { color: '#D94834' } : undefined}
+                                    >{t.name}</span>
+                                </span>
+                                <span data-card-seg-val={i} className="text-[11px] font-bold font-mono leading-tight">{t.value}</span>
+                                <span className="text-[8px] font-mono opacity-60">{t.len}b</span>
+                            </div>
+                        )))}
+                    </div>
+                </div>
+            ) : (
+                <div className="flex-1 flex items-center justify-center text-sm font-bold font-mono break-all text-center leading-tight overflow-hidden px-1">
+                    {displayValue}
+                </div>
+            )}
 
             {/* TIME_ACCUMULATOR 基准时间：中央值下方小字（未配置 → BASE ?） */}
             {isTimeAccum && (
@@ -332,6 +452,10 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
                         <span className="font-mono" title={`字节偏移 ${offsetMeta.offset === null ? '未知（前序块长度动态）' : `0x${offsetMeta.offset.toString(16).toUpperCase()}`}`}>
                             {formatOffset(offsetMeta)}
                         </span>
+                    )}
+                    {/* R69: hex 打包值降为页脚小字（卡面已让位给泳道段卡） */}
+                    {isBitfield && (
+                        <span data-card-hex="true" className="font-mono" title="位段打包值（十六进制）">0x{bitFace.packed}</span>
                     )}
                 </span>
                 {isGroupActive && <span className="text-[8px] animate-pulse">OPEN</span>}

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { buildBitGrid, buildStripLayout, rangeToSegment, defaultSegmentName, packBits } from '../../utils/bitGrid';
+import { buildBitGrid, buildStripLayout, rangeToSegment, defaultSegmentName, packBits, formatBinaryBytes } from '../../utils/bitGrid';
 import { parseValueTable, formatValueTable, sanitizeValueTable } from '../../utils/bitMeta';
 
 /**
@@ -48,6 +48,21 @@ const findOverlaps = (bits) => {
     return conflicts;
 };
 
+/**
+ * R69：默认值录入解析（纯函数）—— 0b 前缀二进制（Wireshark/010 惯例）或十进制。
+ *  - '0b1010' / '0B1010' → 10（大小写不敏感，仅 [01] 才算合法二进制）
+ *  - '-40' / '12' → 十进制（既有 number 输入口径迁移）
+ *  - ''（清空）→ null，调用方按旧口径写回 minVal
+ *  - '0b' 半截 / 垃圾 → null，调用方不写回（草稿缓冲，不发半截值）
+ */
+const parseBitDefaultInput = (text) => {
+    const t = String(text ?? '').trim();
+    if (/^0b[01]+$/i.test(t)) return parseInt(t.slice(2), 2);
+    if (t === '') return null;
+    if (/^[+-]?\d+$/.test(t)) return parseInt(t, 10);
+    return null;
+};
+
 export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
     const list = Array.isArray(bits) ? bits : [];
     const conflicts = findOverlaps(list);
@@ -68,6 +83,9 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
     const [stripDrag, setStripDrag] = useState(null);
     const [stripResize, setStripResize] = useState(null);
     const [stripRename, setStripRename] = useState(null);
+    // R69：默认值输入本地草稿 —— 0b 前缀录入不被受控回写打断（'0b' 半截时
+    // 不写回、显示保持草稿原文）；blur 清草稿回显十进制定值。
+    const [defaultDraft, setDefaultDraft] = useState(null); // { idx, text } | null
     const strip = buildStripLayout(list, byteLen, orient);
 
     const update = (index, patch) => {
@@ -168,6 +186,12 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
     };
 
     const totalDefault = packBits(list, grid.requiredBytes || 1);
+    // R69: 打包 hex → 逐位 0/1（bit0 = LSB = 串尾；超出打包宽度的位显 0）
+    const defaultBin = formatBinaryBytes(totalDefault).join('').replace(/\s/g, '');
+    const digitOf = (bit) => {
+        const i = defaultBin.length - 1 - bit;
+        return i >= 0 && i < defaultBin.length ? defaultBin[i] : '0';
+    };
 
     return (
         <div className="flex flex-col gap-2 border border-dashed border-nier-light/50 p-2 space-y-2">
@@ -350,6 +374,33 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
                             );
                         })}
                     </div>
+
+                    {/* R69: 逐位 0/1 值流行（位带下方）—— 默认打包值按位直觉回显，
+                        段同色、字节边界竖线与位带对齐、视角镜像随 ruler；值 =
+                        packBits 同源 hex 逐位展开（存储/打包口径零触碰）。 */}
+                    <div className="relative flex border border-t-0 border-nier-light/20" data-strip-values="true">
+                        {strip.boundaries.map(b => (
+                            <div
+                                key={`vb-${b.bit}`}
+                                data-strip-value-byte={b.bit}
+                                className="absolute top-0 bottom-0 w-px bg-nier-light/30 pointer-events-none"
+                                style={{ left: `${b.xPct}%` }}
+                            />
+                        ))}
+                        {strip.ruler.map(n => {
+                            const u = strip.units.find(x => x.kind === 'seg' && x.bits.includes(n));
+                            return (
+                                <span
+                                    key={n}
+                                    data-strip-value-bit={n}
+                                    className="flex-1 text-center text-[7px] font-mono leading-none py-0.5"
+                                    style={u && !u.conflict ? { backgroundColor: u.color } : undefined}
+                                >
+                                    {digitOf(n)}
+                                </span>
+                            );
+                        })}
+                    </div>
                 </div>
             )}
 
@@ -461,16 +512,24 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
                                 className="bg-transparent border-b border-nier-light/30 text-[10px] font-mono text-nier-light text-right focus:border-nier-light focus:outline-none py-0.5"
                             />
                             <input
-                                type="number"
+                                type="text"
                                 data-bit-default={idx}
                                 min={minVal}
                                 max={maxVal}
-                                value={b.default_val ?? 0}
+                                value={defaultDraft && defaultDraft.idx === idx ? defaultDraft.text : String(b.default_val ?? 0)}
                                 onChange={(e) => {
-                                    const raw = parseInt(e.target.value, 10);
-                                    const v = isNaN(raw) ? minVal : Math.max(minVal, Math.min(maxVal, raw));
-                                    update(idx, { default_val: v });
+                                    const text = e.target.value;
+                                    // R69: 草稿缓冲 —— '0b' 半截/垃圾不写回不丢字；
+                                    // 合法（0b 二进制或十进制）→ 钳制到值域写回。
+                                    setDefaultDraft({ idx, text });
+                                    const parsed = parseBitDefaultInput(text);
+                                    if (parsed === null) {
+                                        if (String(text).trim() === '') update(idx, { default_val: minVal });
+                                        return;
+                                    }
+                                    update(idx, { default_val: Math.max(minVal, Math.min(maxVal, parsed)) });
                                 }}
+                                onBlur={() => setDefaultDraft(null)}
                                 title={vtLabel !== undefined ? `${b.default_val ?? 0} = ${vtLabel}` : '默认值'}
                                 className="bg-transparent border-b border-nier-light/30 text-[10px] font-mono text-nier-light text-right focus:border-nier-light focus:outline-none py-0.5"
                             />
@@ -518,10 +577,18 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
 
             {/* LIVE PREVIEW（批 2：打包值改由 bitGrid.packBits 出，与编码器同口径） */}
             <div className="border-t border-white/10 pt-1.5 space-y-0.5 text-[9px] font-mono">
-                <div className="flex justify-between">
+                <div className="flex justify-between" data-preview-hex="true">
                     <span className="opacity-50">默认打包值 (HEX)</span>
                     <span className="text-hl">
                         0x{totalDefault}
+                    </span>
+                </div>
+                {/* R69: 0b 二进制回显行 —— 与 HEX 行同源（packBits 同一 hex 直出），
+                    补 0/1 直觉（半字节分组便于逐位对读）。 */}
+                <div className="flex justify-between" data-preview-bin="true">
+                    <span className="opacity-50">默认打包值 (BIN)</span>
+                    <span className="text-hl">
+                        0b{formatBinaryBytes(totalDefault).join(' ')}
                     </span>
                 </div>
                 <div className="flex justify-between">

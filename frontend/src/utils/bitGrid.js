@@ -203,6 +203,22 @@ export const packBits = (bits, byteLen = 1) => {
     return packed.toString(16).toUpperCase().padStart(target, '0').slice(-target);
 };
 
+/**
+ * R69：二进制显示格式化（纯展示层，packBits 打包口径零触碰）——
+ * hex 打包值 → 按字节分组的二进制显示串数组，每字节定宽 8 位、半字节空格分隔。
+ *  - 定宽保持：'02' → '0000 0010'（前导零不丢，与 packBits 的 padStart 同源）；
+ *  - 空/非法输入 → 空数组（调用方回落 hex 显示，不炸）。
+ * 只读 hex 字符串，不参与任何打包/存储计算（编码器与后端 bitfield.py 无感）。
+ */
+export const formatBinaryBytes = (hex) => {
+    const clean = String(hex ?? '').replace(/\s/g, '').toUpperCase();
+    if (!clean || /[^0-9A-F]/.test(clean)) return [];
+    return (clean.match(/.{1,2}/g) || []).map(byte =>
+        parseInt(byte, 16).toString(2).padStart(8, '0')
+            .replace(/(.{4})(.{4})/, '$1 $2')
+    );
+};
+
 // ───────────────────────── 批 3：加工侧子位录入（拆包 / 回写） ─────────────────────────
 // 单一真源 = 字段整数输入值；子位行是派生视图。改子位只重写本段位，
 // 间隙位（无主位）与其它段原样保留 → onFieldChange 仍只发一个整数，

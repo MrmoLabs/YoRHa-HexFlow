@@ -268,3 +268,99 @@ describe('Block 文本字段卡面（N2 · G2）', () => {
         expect(centerOf(container).textContent).toBe('');
     });
 });
+
+// R69：位域卡面 = 泳道式多卡组合（2026-10-09 拍板链四轮定形：初拍二进制化 →
+//  「类似容器」二拍段子片 → 真机联调「单卡拥挤」三拍 A 容器盒+独立子卡 →
+//  再反馈「不要都塞在一个卡片里，参考泳道但须与 hex 容器泳道区分」终拍 B）：
+//  根去卡壳（透明无框）= 名称行 + 泳道头（段数 chip + 总览位带，头内嵌）+
+//  泳道体（实线窄带、每段一张独立卡、缺块一张 GAP 卡）；与 hex 容器泳道
+//  （border-dashed + 外置标题 + FOCUS）视觉区分（区分契约入测）；值流/图例
+//  删除，hex 打包值留页脚小字。纯展示层：packBits 打包口径零触碰。
+describe('R69 位域卡泳道式多卡（根去卡壳 + 实线泳道带，区分 hex 容器泳道）', () => {
+    const BF_BITS = [
+        { id: 'a', bit_name: 'MODE', start_bit: 0, bit_len: 2, default_val: 1 },
+        { id: 'b', bit_name: 'VERY_LONG_SEGMENT_NAME_HERE', start_bit: 2, bit_len: 2, default_val: 2 }
+    ];
+    // packBits: MODE=01 @bit0..1 + LONG=10 @bit2..3 → 0b1001 → '09'
+
+    it('泳道式：根去卡壳（旧封闭盒缺席），泳道头内嵌（段数 chip + 位带），泳道体实线带 ≠ hex 容器泳道虚线', () => {
+        const { container } = renderBlock({
+            name: '控制', type: 'bitfield', byte_length: 1, bits: BF_BITS,
+        });
+        const lane = container.querySelector('[data-card-lane]');
+        expect(lane).toBeTruthy();
+        // 泳道头内嵌：段数 chip（2 段 + 1 缺块 = 3 片）+ 总览位带
+        const head = lane.querySelector('[data-card-lane-head]');
+        expect(head).toBeTruthy();
+        expect(head.textContent).toContain('BITS·3');
+        expect(head.querySelector('[data-card-strip]')).toBeTruthy();
+        // 终拍 B 区分契约：hex 容器泳道 = border-dashed + 外置标题；本泳道体 =
+        // 实线窄带（border-nier-light/25、非 dashed），两者不可混淆
+        const body = lane.querySelector('[data-card-lane-body]');
+        expect(body).toBeTruthy();
+        expect(body.className).toContain('border-nier-light/25');
+        expect(body.className).not.toContain('border-dashed');
+        // 旧封闭容器盒 / 位域外卡壳不再在场；hex 打包值留页脚小字
+        expect(container.querySelector('[data-card-box]')).toBeNull();
+        const hexEl = container.querySelector('[data-card-hex]');
+        expect(hexEl).toBeTruthy();
+        expect(hexEl.textContent).toContain('0x09');
+        expect(centerOf(container).textContent).not.toBe('09');
+    });
+
+    it('每段一张独立卡（色块 + 段名 + 位宽 + 段 0/1 值），缺块也占一张 GAP 卡', () => {
+        const { container } = renderBlock({
+            name: '控制', type: 'bitfield', byte_length: 1, bits: BF_BITS,
+        });
+        const segs = [...container.querySelectorAll('[data-card-seg]')];
+        expect(segs).toHaveLength(2);
+        // 段值与打包值同源：LONG@bit2..3 = 10、MODE@bit0..1 = 01（msb 视角序）
+        const longSeg = segs.find(t => t.textContent.includes('VERY_LONG_SEGMENT_NAME_HERE'));
+        const modeSeg = segs.find(t => t.textContent.includes('MODE'));
+        expect(longSeg).toBeTruthy();
+        expect(longSeg.querySelector('[data-card-seg-val]').textContent).toContain('10');
+        expect(longSeg.textContent).toContain('2b');
+        expect(longSeg.querySelector('[data-card-seg-chip]').style.backgroundColor).toBeTruthy();
+        expect(modeSeg).toBeTruthy();
+        expect(modeSeg.querySelector('[data-card-seg-val]').textContent).toContain('01');
+        expect(modeSeg.textContent).toContain('2b');
+        // 缺块单元（bit4..7 连续一片）也占一张卡，值 = 0000
+        const gaps = [...container.querySelectorAll('[data-card-seg-gap]')];
+        expect(gaps).toHaveLength(1);
+        expect(gaps[0].textContent).toContain('0000');
+    });
+
+    it('总览位带（泳道头内）：段按位宽着色在场、间隙 = 缺块、两段色不同（调色板按段序）', () => {
+        const { container } = renderBlock({
+            name: '控制', type: 'bitfield', byte_length: 1, bits: BF_BITS,
+        });
+        const strip = container.querySelector('[data-card-strip]');
+        expect(strip).toBeTruthy();
+        const segs = container.querySelectorAll('[data-card-strip-seg]');
+        expect(segs).toHaveLength(2);
+        expect(segs[0].style.backgroundColor).toBeTruthy();
+        expect(segs[0].style.backgroundColor).not.toBe(segs[1].style.backgroundColor);
+        // 未覆盖位 bit4..7 = 缺块（4 位）
+        expect(container.querySelectorAll('[data-card-strip-gap]')).toHaveLength(4);
+    });
+
+    it('非位域卡不出泳道（既有卡面口径零迁移）', () => {
+        const { container } = renderBlock({
+            name: 'RAW', type: 'hex', byte_length: 1, hex_value: 'AABB',
+        });
+        expect(container.querySelector('[data-card-lane]')).toBeNull();
+        expect(container.querySelector('[data-card-box]')).toBeNull();
+    });
+
+    it('多字节泳道：高字段 W 的段卡值 = 0001 0010（与打包值同源逐位展开）', () => {
+        const { container } = renderBlock({
+            name: '控制', type: 'bitfield', byte_length: 2,
+            bits: [{ id: 'w', bit_name: 'W', start_bit: 8, bit_len: 8, default_val: 0x12 }],
+        });
+        const segs = [...container.querySelectorAll('[data-card-seg]')];
+        const wSeg = segs.find(t => t.textContent.includes('W'));
+        expect(wSeg).toBeTruthy();
+        expect(wSeg.querySelector('[data-card-seg-val]').textContent).toContain('0001 0010');
+        expect(wSeg.textContent).toContain('8b');
+    });
+});
