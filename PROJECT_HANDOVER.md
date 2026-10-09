@@ -4557,6 +4557,28 @@
        `r64_commit.py` · `r64_msg.txt`。提交 = `feat(R64)` 单笔（**零 DDL** → 无 Migration、
        无 `chore(db)`）。**未 git add、未 commit**（待 review 后自行提交）。
 
+114. **R65 · pageStatus 165 条逐条现势审计（成立 160 · 过期 5 · 存疑 0）+ 404 口径拍板关闭**
+     （PLAN §8.97，2026-10-09；R64 §8.96 五 留白② 收口批，同场拍板 404 静音 = 保持现状 → 留白① 关闭）
+     - **范围**：纯审计 + 数据修正 —— 改动面 = `pageStatus.json` 6 处行级文本 + 重生成
+       `PAGE_STATUS.md` + 两文档纯插入；零产品代码、零测试改动、零 DDL、`backend/` 未碰。
+     - **审计两段式**：子代理 165 条逐条 file:line 取证（报告 Temp `r65_audit.txt`）+
+       我方独立复核（5 计数重数 22 / 70 / 18 / 30+35 全对平、`KIND_LABELS` 实数 8、抽核 3 锚、
+       CP3-3b 4 例点数、分页合计 165）→ **成立 160 · 过期 5 · 存疑 0**；nextSteps = 17 条
+       准确记录不动 + N017 尾句过期（删，R45 已由 N016 记录）。
+     - **修复 7 锚**：A011 10→22 例 · A065 69→70 项 · A087 17→18 份 · A107 28→30 例 与
+       27→35 例 · A165 补「路由规则」· N017 删尾句；JSON 可解析 + 165/18/9 页结构断言过，
+       md 由生成器重出（numstat = json 6/6 · md 6/6 纯行级）；测试面仅断 implemented /
+       shortcut → 无红测面。
+     - **404 拍板**：保持现状（REST 语义正确 + FE 文档化降级 + 浏览器日志不可抑制），
+       留白① 关闭不实施。
+     - **验收**：10 项提交前 + post-commit 全绿（BE 1033 · FE 1537/101 · probe15 1537 ·
+       ev33 STAGED=4 DEL=0 BAD=0）。
+     - **工具账**：Temp = `r65_extract.py` / `r65_claims.txt` / `r65_recount.py` /
+       `r65_audit.txt`（+子代理取证脚本 `r65_anchors.*` / `r65_vectors.py` / `r65_report.py`）/
+       `r65_fix.py` / `r65_mkverify.py` / `r65_verify.py` / `r65_docs.py` / `r65_commit.py` /
+       `r65_msg.txt`。提交 = `feat(R65)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+       **未 git add、未 commit**（待 review 后自行提交）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

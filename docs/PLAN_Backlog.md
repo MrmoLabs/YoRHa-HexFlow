@@ -97,6 +97,7 @@
 | R62 | 测试质量三件：weak assert 判档处置（`.toBeDefined()` 221 处全量改 `.not.toBeNull()`（反形态 0）；`.toBeTruthy()` 222 处 = 等价非弱记账保留 201 + 精确化 19 + 判不准记账 2）；窄修 3 项（`frontend/test/settleFakeTimers` 补断言、`InstructionEncoder` 两处标题与断言对齐、新增静态护栏 3 条）；BE 27 条无断言（不抛即过）测试方法与 17 处正形态裸 `toHaveBeenCalled()` 仅记账（本批零 BE 改动、零产品代码改动，121 裸 called 一行不改登记 R63）（§8.94） | ✅ **已完成（2026-10-09，§8.94，仅测试文件 + 新增静态护栏 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`frontend/src` 产品代码零改动、期望值除 19 处精确化外一字未改）**：**判档口径（用户拍板）** `.toBeDefined()` 全改 `.not.toBeNull()`；`.toBeTruthy()` 依上下文三分（元素存在类等价非弱记账保留、可定值者精确化、判不准者记账）。**红测先行**：护栏实现前 **2 红 1 绿**（逐字红因 `r62_red1.txt`；第 1 条扫描面非空基线即绿、单列不冒充红测）；**转换暴露红 0、触及产品的红 0**；三档 = 缺特性 2 / 先修 0 / 改写 0。**窄修 3 项**：`frontend/test/settleFakeTimers.test.js:35` 补 `chainLanded` 断言、`InstructionEncoder.test.js:135/:319` int / float 标题对齐、新增 `weakAssertions.test.js` 3 条（自身按路径豁免，先例 R58 §8.90）。**等价性**：不设 env 全量 **1536/1536 · 0 红**；**15ms 探测 1536/1536**。**验收 = 10 项两遍全绿**：BE **1033/1033** 持平零改动 · FE **1536/1536**（101 文件，1533 → 1536 = +3 护栏 +1 文件）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**27 个改动 js/jsx/css/mjs + 全仓 14 md**）**0 违规**（`applied` 0 · invalid 1 · unused 0，均沿既有）· md 8/8 · 口径扩展 13/13 · 自检 7/7 · 15ms 探测 **1536/1536** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
 | R63 | **测试质量线收尾（全修档 · 第 2/2 批 · 裸 called 收敛）** —— R62 §8.94 二 拆账的 121 裸 called 处置（104 阴性保留 + 17 正形态真弱收敛）与 §8.94 五 登记的「BE 27 处置对象」收口（§8.95；R62 收口后本会话拍板下一批 = 本项，即第 1 批所留「第 2 批接余量」） | ✅ **已完成（2026-10-09，§8.95，仅测试文件 + 护栏第 4 条 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`frontend/src` 产品代码零改动、除 17 处补实参外断言一字未改）**：**17 处正形态裸 `.toHaveBeenCalled()` 全量收敛为 `.toHaveBeenCalledWith(实参)`**（DataHub 12 · Sequences 2 · Protocol 2 · useInstructionData 1；实参取证全部上下文推导 —— 零参 3 类按产品唯一调用点、`setProtocols` 按 `prev => [...prev, created]` 函数式更新器、PUT 载荷按同文件 :167 既有精确断言先例、随机 name · code 走 `expect.objectContaining` 锁类型），**104 处阴性 `not.toHaveBeenCalled()` 一行不改**（记账 = 精确非弱）；BE 27 = **只记账**（口径钉死 §8.95 五，`backend/` 一行未碰）；`expect(x).toBe(true)` 112 与 `.toBeFalsy()` / `.toBeCalled()` 未触。**红测先行**：护栏第 4 条实现前 **1 红 3 绿**（逐字红因 `r63_red1.txt`：`AssertionError: expected [ …(17) ] to deeply equal []`），改后 4 绿；**三档 = 缺特性 1 / 先修 0 / 改写 0**；触及产品的红 **0**。**护栏第 4 条**：字面判据（`toHaveBeenCalled` 紧跟空括号 → With / Times 形态天然不在面内；前缀 `not` = 阴性剔除）+ `BARE_CALLED_EXEMPT` 显式豁免**当前 0 条**（预期即 0，stale 豁免同判红），自身按路径豁免（先例 R58 §8.90）。**等价性**：off 档全量 **1537/1537 · 0 红**；15ms 探测 **1537/1537**。**验收 = 10 项两遍全绿**：BE **1033/1033** 持平零改动 · FE **1537/1537**（101 文件，1536 → 1537 = +1 护栏第 4 条）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**26 份双口径 union 改动 js·jsx·css·mjs + 全仓 14 md**）**0 违规**（`applied` 0 · invalid 1 · unused 0，均沿既有）· md 8/8 · 口径扩展 13/13 · 自检 7/7 · probe15 **1537** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
 | R64 | **实机冒烟 + pageStatus 同步** —— R63 §8.95 七 收口后注册候选清零，本会话 question 拍板下一批 = R53 起挂账的末个历史候选「实机冒烟 + pageStatus 同步」；性质 = 纯验证 + 同步核对批（§8.96） | ✅ **已完成（2026-10-09，§8.96，纯验证批 · 零产品改动 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 零 FE 改动、零测试改动）**：**9/9 页实机加载冒烟**（root 560 至 3272 字符 · 导航全对 · 实 API 82 条往返；非 200 仅 `/processing` 应答规格 404 ×2 = 设计内降级 `responseSpecs.js:4`，实机无错误横幅；console error 仅该 2 条浏览器网络日志、其余 8 页 0/0；API ×2 = dev StrictMode 双挂载）+ **只读实操 4 项全过 0 错误**（指令点选切换 · 协议 LENGTH 属性面板 REFS 真数据 · 容器 FOCUS 内联展开 · datahub 域切换；全程零写入）+ **pageStatus 同步三面零漂移**（`generate-page-status.mjs` 跑完 md diff 空 · `PAGE_REGISTRY` = json 1:1 · 9 页 implemented 全实机成立）。**验收 = 10 项** 提交前 + post-commit 全绿（BE 1033 · FE 1537/101 文件 · build 0 · lint 0 · 校验器 0 · md 8/8 · 13/13 · 7/7 · probe15 1537 · ev40 0 · ev33 STAGED=2）。留白登记 2 条（404 静音口径待拍板 · 165 条 availableNow 逐条审计未做即不声称） |
+| R65 | **pageStatus 165 条逐条现势审计** —— R64 §8.96 五 登记留白②（165 条 availableNow 逐条审计）本会话拍板下一批 = 本项；同场拍板 404 静音 = 保持现状（留白① 关闭不实施）（§8.97） | ✅ **已完成（2026-10-09，§8.97，纯审计 + 数据修正批 · 零产品代码改动 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动）**：**两段式审计**（子代理 165 条逐条 file:line 取证 + 我方独立复核重数与抽核）→ **成立 160 · 过期 5 · 存疑 0**；过期 5 条全为计数漂移/枚举落后（A011 10→22 例、A065 69→70 项、A087 17→18 份、A107 28/27→30/35 例、A165 补「路由规则」8 类）+ N017 尾句删除（R45 已落地、与 N016 记录矛盾）；nextSteps 17 条准确记录不动。**7 锚外科替换 + JSON 结构断言（165/18/9 页）+ 重生成 md**（numstat = json 6/6 · md 6/6 纯行级）；测试面仅断 implemented / shortcut → 无红测面。**验收 = 10 项** 提交前 + post-commit 全绿（ev33 STAGED=4）。留白：两留白一关闭一收口，**无新增** |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -9067,6 +9068,46 @@ R61 已闭）与 §8.92 七 第 3 条同族沿旧提及；`PROJECT_HANDOVER.md` 
   （本节 + §1 行 + 条目 113 落盘）、`r64_commit.py`（2 文件明列 + ev33 断言 + 消息核验）、
   `r64_msg.txt`。提交 = `feat(R64)` 单笔，仅 `docs/PLAN_Backlog.md` 与
   `PROJECT_HANDOVER.md` 两文件（纯插入）。
+
+
+## 8.97 R65 pageStatus 165 条逐条现势审计 + 404 口径拍板关闭（2026-10-09）
+
+- 批次来源：R64 §8.96 五 登记的留白②「pageStatus 165 条 availableNow 逐条现势审计」，
+  本会话 question 拍板下一批 = 本项；同场拍板 R64 留白①「应答规格 404 静音」= **保持现状**
+  （404 是 REST 语义正确用法、FE 已按 `responseSpecs.js:4` 文档化降级、浏览器对失败网络请求
+  的固有日志无法从应用层抑制，改 200-null 反而混淆「未配置」与「空规格」）→ 该留白
+  **关闭不实施**。性质 = 纯审计 + 数据修正批：零产品代码、零测试改动、零 DDL（无 Migration、
+  无 `chore(db)`、`backend/` 未碰）。
+- 一、审计方法（两段式 = 子代理全量取证 + 我方独立复核）：子代理对 A001–A165 逐条对代码/
+  测试取证（每条锚到 file:line 或测试用例名，可跑定向 vitest、不碰浏览器、仓库零改动，
+  报告落 Temp `r65_audit.txt` 63716 B，清单 `r65_claims.txt` 由 `r65_extract.py` 抽出）；
+  我方独立复核 = 5 处过期计数**亲自重数**（行首 `it(` = 22 / 70 / 30 / 35 全对平、vectors
+  实数 19 份减 presence = 18）、`KIND_LABELS` 亲自读源（`Trash.jsx:22-31` 实数 8 类）、「成立」
+  条目抽核 3 锚（`Instruction.jsx:367` 导入链、`InstructionRunner.jsx:213` 错误入日志、
+  Orchestration CP3-3b 段 4 例逐个点数）+ 结构合计对平（29+30+33+17+15+13+10+11+7 = 165）。
+- 二、审计结果：**成立 160 · 过期 5 · 存疑 0**（165 全覆盖）；nextSteps 18 条 = 17 条
+  「已落地 / 无余项 / 拍板不立项」**准确记录**（原文自述与实锚一致，不动）+ **1 条过期**
+  （N017 尾句与 N016 记录的 R45 落地自相矛盾）。
+- 三、过期 5 条修复（全部为计数漂移 / 枚举落后，功能描述本身成立 → 原文仅改数字与枚举）：
+  A011 validateProtocol 单测 10 → **22 例** · A065 runnerRenderRules 69 → **70 项** ·
+  A087 vectors 其余 17 → **18 份** · A107 blockMerge 28 → **30 例**、页面级 27 → **35 例**
+  （子计数「CP3-3b 配方编辑器 4 例」实数仍 4，不改）· A165 chips 枚举 7 → **8 类**（补
+  「路由规则」）；另 N017 尾句「加工页……仍另议」**删除**（R45 已落地且 N016 已记，不重复）。
+- 四、落盘与测试面：`r65_fix.py` 7 锚（5 条 availableNow 内含 A107 两处 + N017）唯一命中
+  外科替换（任一锚不恰好 1 次即中止零写入），改后 JSON 可解析 + `availableNow=165` /
+  `nextSteps=18` / 9 页结构断言全过，`node scripts/generate-page-status.mjs` 重生成 md；
+  `git diff --numstat` = **json 6/6 · md 6/6**（纯行级替换零结构变）。测试面核过 = 仅
+  `pageRegistry.test.js` 断 `implemented` / `shortcut`，**无任何测试引用 availableNow 文本**
+  → 本批无红测面（审计批无新特性，不冒充红测）。
+- 五、验收 = 固定 10 项 提交前 + post-commit 各遍全绿（`r65_verify.py` 复制 `r64_verify.py`
+  只换日志前缀与说明、逻辑字节级一致）：BE 1033 · FE 1537/101 · build 0 · lint 0 · 校验器 0 ·
+  md 8/8 · 口径扩展 13/13 · 自检 7/7 · probe15 1537 · ev40 0 · ev33 STAGED=4 DEL=0 BAD=0。
+- 六、留白：审计后**无新增登记**（165 条面内全部定档，存疑 0；R64 两留白一关闭一收口）。
+- 七、落盘与工具账：Temp = `r65_extract.py` / `r65_claims.txt`（清单）、`r65_recount.py`
+  （我方重数）、`r65_audit.txt`（子代理审计报告，其取证脚本 `r65_anchors.*` / `r65_vectors.py` /
+  `r65_report.py` 同在 Temp）、`r65_fix.py`、`r65_mkverify.py` / `r65_verify.py`、
+  `r65_docs.py`、`r65_commit.py` / `r65_msg.txt`。提交 = `feat(R65)` 单笔 4 文件
+  （`pageStatus.json` + 生成的 `PAGE_STATUS.md` + 两份文档纯插入）。
 
 
 ## 9. 保留勿动（非任务，勿清理）
