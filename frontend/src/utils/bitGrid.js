@@ -97,6 +97,83 @@ export const buildBitGrid = (bits, byteLen = 1) => {
 };
 
 /**
+ * R68：连续位带拼图条的纯布局层 —— 存储口径（start_bit LSB）不变，只做
+ * 「一条连续带 + 单位切分 + 字节边界」的展示映射。
+ *  - 容量/溢出/conflictBits 一律沿 buildBitGrid（同一真源，改一必改二禁触发）；
+ *  - 视角：msb = 文档阅读序（高位在左），lsb = 存储序（bit0 在左）；
+ *  - 单位：视角序上连续同主的位并成一块 —— 段 = 拼图块（带名/色/段级冲突），
+ *    间隙 = 逐位缺块；段标红按段级传播（被首 owner 压住的重叠段不漏标）。
+ * 网格视图照旧走 buildBitGrid，两视图共享存储与打包口径。
+ */
+export const buildStripLayout = (bits, byteLen = 1, view = 'msb') => {
+    const g = buildBitGrid(bits, byteLen);
+    const capacity = g.byteCount * 8;
+    const norm = normalizeBits(bits);
+    const conflictSet = new Set(g.conflictBits);
+
+    // 逐位归属（与网格同口径：首 owner 优先）
+    const ownerByBit = new Map();
+    norm.forEach((b, idx) => {
+        for (let i = b.start; i < b.start + b.len; i++) {
+            if (!ownerByBit.has(i)) ownerByBit.set(i, idx);
+        }
+    });
+    // 段级冲突：段占任一冲突位即红（与表格 findOverlaps 同语义）
+    const segConflict = new Set();
+    norm.forEach((b, idx) => {
+        for (let i = b.start; i < b.start + b.len; i++) {
+            if (conflictSet.has(i)) segConflict.add(idx);
+        }
+    });
+
+    // 视角顺序（标尺与单位排布同源）
+    const ruler = Array.from({ length: capacity }, (_, i) =>
+        (view === 'lsb' ? i : capacity - 1 - i));
+
+    // 单位切分
+    const units = [];
+    ruler.forEach((bit) => {
+        const owner = ownerByBit.has(bit) ? ownerByBit.get(bit) : -1;
+        const last = units.length ? units[units.length - 1] : null;
+        if (last && last.owner === owner) {
+            last.bits.push(bit);
+            if (owner >= 0) last.conflict = segConflict.has(owner);
+            return;
+        }
+        units.push(owner < 0
+            ? { kind: 'gap', owner: -1, bits: [bit] }
+            : {
+                kind: 'seg',
+                owner,
+                name: norm[owner].name,
+                color: BIT_GRID_COLORS[owner % BIT_GRID_COLORS.length],
+                conflict: segConflict.has(owner),
+                bits: [bit]
+            });
+    });
+
+    // 字节边界竖线：x% = 视角序中界线左侧的位数占比（msb/lsb 镜像）
+    const boundaries = [];
+    for (let k = 8; k < capacity; k += 8) {
+        boundaries.push({
+            bit: k,
+            xPct: (view === 'lsb' ? k : capacity - k) / capacity * 100
+        });
+    }
+
+    return {
+        capacity,
+        byteCount: g.byteCount,
+        requiredBytes: g.requiredBytes,
+        overflow: g.overflow,
+        conflictBits: g.conflictBits,
+        units,
+        ruler,
+        boundaries
+    };
+};
+
+/**
  * 点击式设段：两格的绝对位号 → { start_bit, bit_len }（方向无关）。
  * 非法输入 → null（调用方不提交位段）。
  */

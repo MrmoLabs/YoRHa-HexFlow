@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { buildBitGrid, rangeToSegment, defaultSegmentName, packBits } from '../../utils/bitGrid';
+import { buildBitGrid, buildStripLayout, rangeToSegment, defaultSegmentName, packBits } from '../../utils/bitGrid';
 import { parseValueTable, formatValueTable, sanitizeValueTable } from '../../utils/bitMeta';
 
 /**
@@ -13,6 +13,13 @@ import { parseValueTable, formatValueTable, sanitizeValueTable } from '../../uti
  *  - 点已有位段的格子 = 选中该段（与下方表格行双向联动）
  *  - 重叠位红标、溢出位段照常渲染（容量告警另由 requiredBytes 表达）
  * 打包预览走 bitGrid.packBits（与编码器同口径，见其镜像测试）。
+ *
+ * R68：默认主视图改为「连续位带拼图条」（一条横向带 = 整字段）——
+ *  - 段 = 带名带宽角标的拼图块，间隙 = 逐位虚线缺块（点即补段）；
+ *  - msb 视角（文档阅读序，高位在左，默认）/ lsb 视角（存储序）可切；
+ *  - 字节边界竖线 + 连续位号标尺；拖拽画段、拖两端柄改宽、双击段名内联改名；
+ *  - 旧 byte×8 网格降为切换副视图（视图按钮），批 2 契约原样保留。
+ * 存储口径（start_bit LSB）、打包、校验零触碰；两视图共享 bitGrid 纯函数层。
  */
 const emptyBit = (sequence) => ({
     id: uuidv4(),
@@ -50,6 +57,19 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
     const [selectedIndex, setSelectedIndex] = useState(null);
     const grid = buildBitGrid(list, byteLen);
 
+    // R68：连续位带拼图条（默认主视图）。存储口径零触碰，纯展示/交互层：
+    //  - stripView：strip（默认拼图条）/ grid（批 2 网格副视图）
+    //  - orient：msb 文档阅读序（高位在左）/ lsb 存储序（bit0 在左）
+    //  - stripArm 跨点击持久的上膛区间；stripDrag 按住期间的作画会话
+    //  - stripResize 拖柄改宽会话（start = LSB 侧、end = MSB 侧，与视角无关）
+    const [stripView, setStripView] = useState('strip');
+    const [orient, setOrient] = useState('msb');
+    const [stripArm, setStripArm] = useState(null);
+    const [stripDrag, setStripDrag] = useState(null);
+    const [stripResize, setStripResize] = useState(null);
+    const [stripRename, setStripRename] = useState(null);
+    const strip = buildStripLayout(list, byteLen, orient);
+
     const update = (index, patch) => {
         const next = list.map((b, i) => (i === index ? { ...b, ...patch } : b));
         onUpdateBits(next);
@@ -82,70 +102,309 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
         onUpdateBits([...list, { ...emptyBit(list.length), ...range, bit_name: defaultSegmentName(range.start_bit) }]);
     };
 
+    // ── R68 位带交互（提交与批 2 网格同口径：emptyBit + rangeToSegment） ──
+    const inArm = (bit) => stripArm !== null
+        && bit >= Math.min(stripArm.from, stripArm.hover)
+        && bit <= Math.max(stripArm.from, stripArm.hover);
+
+    const commitStripSegment = (from, to) => {
+        const range = rangeToSegment(from, to);
+        setStripArm(null);
+        if (!range) return;
+        onUpdateBits([...list, { ...emptyBit(list.length), ...range, bit_name: defaultSegmentName(range.start_bit) }]);
+    };
+
+    // 缺块按下：首击上膛；已上膛则把终点接到新格（拖拽与两下设段同一状态轨）。
+    // 状态机走 mousedown/mouseup（真浏览器一次点击 = 完整按下松开序列）；
+    // 测试侧同构（press = mouseDown + mouseUp），单一提交路径无双轨。
+    const onStripGapDown = (bit) => {
+        setStripDrag((d) => d || { hadArm: stripArm !== null });
+        setStripArm((a) => (a ? { ...a, hover: bit } : { from: bit, hover: bit }));
+    };
+
+    // 按住划过任一位（缺块/段内位）：更新拖拽区间或改宽目标位
+    const onStripHover = (bit) => {
+        if (stripDrag) setStripArm((a) => (a ? { ...a, hover: bit } : a));
+        if (stripResize) setStripResize((r) => (r ? { ...r, target: bit } : r));
+    };
+
+    // 点段（含段内冒泡）= 选中该段（表格行联动，网格上膛同清）
+    const onStripSegDown = (owner) => {
+        setSelectedIndex(owner);
+        setArmedBit(null);
+    };
+
+    // 拖柄起手：end = MSB 侧边界、start = LSB 侧边界（存储语义，视角无关）
+    const onStripEdgeDown = (e, idx, edge) => {
+        e.stopPropagation();
+        const b0 = list[idx] || {};
+        const s0 = Number(b0.start_bit) || 0;
+        const l0 = Math.max(1, Number(b0.bit_len) || 1);
+        setStripResize({ idx, edge, target: edge === 'end' ? s0 + l0 - 1 : s0 });
+    };
+
+    // 带上松开：改宽会话先提交；画段仅在「已上膛的第二击」或「拖过头」时提交
+    const onStripMouseUp = () => {
+        if (stripResize) {
+            const { idx, edge, target } = stripResize;
+            setStripResize(null);
+            const b0 = list[idx] || {};
+            const s0 = Number(b0.start_bit) || 0;
+            const l0 = Math.max(1, Number(b0.bit_len) || 1);
+            const end0 = s0 + l0 - 1;
+            let start = s0;
+            let end = end0;
+            if (edge === 'end') end = Math.min(Math.max(Number(target), s0), strip.capacity - 1);
+            else start = Math.max(Math.min(Number(target), end0), 0);
+            if (start === s0 && end === end0) return; // 无变化不写回（免得空转保存）
+            onUpdateBits(list.map((b, i) => (i === idx ? { ...b, start_bit: start, bit_len: end - start + 1 } : b)));
+            return;
+        }
+        if (!stripDrag) return;
+        const had = stripDrag.hadArm;
+        setStripDrag(null);
+        if (!stripArm) return;
+        if (had || stripArm.hover !== stripArm.from) commitStripSegment(stripArm.from, stripArm.hover);
+    };
+
     const totalDefault = packBits(list, grid.requiredBytes || 1);
 
     return (
         <div className="flex flex-col gap-2 border border-dashed border-nier-light/50 p-2 space-y-2">
             <div className="flex justify-between items-center">
                 <div className="text-[9px] font-bold text-nier-light">位域布局 (BIT LAYOUT)</div>
-                <button
-                    onClick={add}
-                    className="text-[9px] bg-nier-light/10 hover:bg-nier-light hover:text-nier-dark px-2 py-0.5 transition-colors border border-nier-light/30"
-                >
-                    + ADD BIT
-                </button>
+                <div className="flex items-center gap-1">
+                    {/* R68 视图切换：位带（默认拼图条）/ 网格（批 2 byte×8 副视图） */}
+                    <div className="flex border border-nier-light/30">
+                        <button
+                            type="button"
+                            data-view-btn="strip"
+                            onClick={() => setStripView('strip')}
+                            title="连续位带（拼图条）"
+                            className={`text-[8px] px-1.5 py-0.5 transition-colors ${stripView === 'strip' ? 'bg-nier-light text-nier-dark' : 'opacity-60 hover:opacity-100'}`}
+                        >
+                            位带
+                        </button>
+                        <button
+                            type="button"
+                            data-view-btn="grid"
+                            onClick={() => setStripView('grid')}
+                            title="byte×8 网格（批 2 副视图）"
+                            className={`text-[8px] px-1.5 py-0.5 transition-colors ${stripView === 'grid' ? 'bg-nier-light text-nier-dark' : 'opacity-60 hover:opacity-100'}`}
+                        >
+                            网格
+                        </button>
+                    </div>
+                    {stripView === 'strip' && (
+                        <div className="flex border border-nier-light/30">
+                            <button
+                                type="button"
+                                data-orient-btn="msb"
+                                onClick={() => setOrient('msb')}
+                                title="文档阅读序：高位在左"
+                                className={`text-[8px] px-1.5 py-0.5 transition-colors ${orient === 'msb' ? 'bg-nier-light text-nier-dark' : 'opacity-60 hover:opacity-100'}`}
+                            >
+                                MSB←
+                            </button>
+                            <button
+                                type="button"
+                                data-orient-btn="lsb"
+                                onClick={() => setOrient('lsb')}
+                                title="存储序：bit0 在左"
+                                className={`text-[8px] px-1.5 py-0.5 transition-colors ${orient === 'lsb' ? 'bg-nier-light text-nier-dark' : 'opacity-60 hover:opacity-100'}`}
+                            >
+                                LSB→
+                            </button>
+                        </div>
+                    )}
+                    <button
+                        onClick={add}
+                        className="text-[9px] bg-nier-light/10 hover:bg-nier-light hover:text-nier-dark px-2 py-0.5 transition-colors border border-nier-light/30"
+                    >
+                        + ADD BIT
+                    </button>
+                </div>
             </div>
 
-            {/* 批 2：位网格（bit0 在最右 = LSB 口径）。点空格上膛 → 再点一格提交位段；
-                点占用格 = 选中该段（表格行同步高亮）。 */}
-            <div className="border border-nier-light/20 p-1 flex flex-col gap-1" data-bit-grid={armedBit !== null ? 'armed' : 'idle'}>
-                <div className="flex items-center justify-between text-[8px] opacity-60 uppercase tracking-widest">
-                    <span>位图 (BIT MAP) · 右端为 bit0</span>
-                    <span className={armedBit !== null ? 'text-nier-light' : 'opacity-50'}>
-                        {armedBit !== null ? `起点 bit${armedBit} → 选终点` : '点两格设段 / 点色块选段'}
-                    </span>
-                </div>
-                {/* 优化批 4：位号标尺 —— 列头标 7..0（LSb0 口径；绝对位号 = B行号×8 + 本列位号） */}
-                <div className="flex items-center gap-1" data-bit-ruler="true">
-                    <span className="w-6 text-right" />
-                    {[7, 6, 5, 4, 3, 2, 1, 0].map(n => (
-                        <span key={n} data-bit-ruler-no={n} className="flex-1 text-center text-[8px] font-mono opacity-70">
-                            {n}
+            {/* R68：连续位带拼图条（默认主视图）—— 段 = 带名带色拼图块，间隙 =
+                逐位虚线缺块，字节边界竖线 + 连续位号标尺。存储口径不变。 */}
+            {stripView === 'strip' && (
+                <div
+                    className="border border-nier-light/20 p-1 flex flex-col gap-1"
+                    data-strip="true"
+                    data-strip-view={orient}
+                    onMouseUp={onStripMouseUp}
+                >
+                    <div className="flex items-center justify-between text-[8px] opacity-60 uppercase tracking-widest">
+                        <span>位带 (BIT STRIP) · {orient === 'msb' ? '高位在左' : '低位在左'}</span>
+                        <span className={stripArm !== null ? 'text-nier-light' : 'opacity-50'}>
+                            {stripArm !== null ? `起点 bit${stripArm.from} → 拖/点终点` : '拖拽画段 / 点两格设段'}
                         </span>
-                    ))}
-                    <span className="w-6" />
-                </div>
-                {grid.bytes.map((row, r) => (
-                    <div key={r} className="flex items-center gap-1" data-byte-row={r}>
-                        <span className="text-[8px] opacity-40 font-mono w-6 text-right">B{r}</span>
-                        {row.map(cell => {
-                            const armed = armedBit !== null && Math.min(armedBit, cell.bitIndex) <= cell.bitIndex && cell.bitIndex <= Math.max(armedBit, cell.bitIndex);
-                            const sel = cell.owner >= 0 && cell.owner === selectedIndex;
-                            // 优化批 2：占用格 title 带值表名称解码（MODE = 1 (开) · bit0）
-                            const seg = cell.owner >= 0 ? list[cell.owner] : null;
-                            const segVt = seg ? sanitizeValueTable(seg.value_table) : null;
-                            const segLabel = segVt ? (segVt.find(e => e.value === Number(seg.default_val)) || {}).label : undefined;
-                            const note = segLabel ? ` = ${seg.default_val} (${segLabel})` : '';
+                    </div>
+                    {/* 连续位号标尺（视角序；绝对位号 = 存储 LSB 口径） */}
+                    <div className="flex" data-strip-ruler="true">
+                        {strip.ruler.map(n => (
+                            <span
+                                key={n}
+                                data-strip-ruler-no={n}
+                                className="flex-1 text-center text-[6px] font-mono opacity-60 leading-none"
+                            >
+                                {n}
+                            </span>
+                        ))}
+                    </div>
+                    {/* 位带本体：单位（段/缺块）按视角序排布，字节边界竖线压顶层 */}
+                    <div className="relative flex h-7 border border-nier-light/20">
+                        {strip.boundaries.map(b => (
+                            <div
+                                key={b.bit}
+                                data-strip-byte={b.bit}
+                                className="absolute top-0 bottom-0 w-px bg-nier-light/30 pointer-events-none"
+                                style={{ left: `${b.xPct}%` }}
+                            />
+                        ))}
+                        {strip.units.map((u, ui) => {
+                            if (u.kind === 'gap') {
+                                return (
+                                    <div key={`gap-${ui}`} className="flex" style={{ flexGrow: u.bits.length }}>
+                                        {u.bits.map(bit => (
+                                            <div
+                                                key={bit}
+                                                data-strip-gap={bit}
+                                                data-strip-arm={inArm(bit) ? bit : undefined}
+                                                onMouseDown={() => onStripGapDown(bit)}
+                                                onMouseOver={() => onStripHover(bit)}
+                                                title={`空 bit${bit} · 点两格/拖拽设段`}
+                                                className={`flex-1 border transition-colors cursor-crosshair ${inArm(bit) ? 'border-dashed border-nier-light/60 bg-nier-light/10' : 'border-nier-light/20 bg-nier-light/5 hover:bg-nier-light/20'}`}
+                                            />
+                                        ))}
+                                    </div>
+                                );
+                            }
+                            // 拖柄语义与视角无关：start = LSB 侧、end = MSB 侧
+                            //（msb 视角下 end 在左、start 在右）
+                            const leftEdge = orient === 'msb' ? 'end' : 'start';
+                            const rightEdge = orient === 'msb' ? 'start' : 'end';
                             return (
                                 <div
-                                    key={cell.bitIndex}
-                                    data-bit-cell={cell.bitIndex}
-                                    data-owner={cell.owner >= 0 ? cell.owner : null}
-                                    data-conflict={cell.conflict ? 'true' : null}
-                                    data-bit-arm={armed ? 'true' : null}
-                                    onClick={() => handleCellClick(cell)}
-                                    title={cell.owner >= 0
-                                        ? `${cell.name}${note} · bit${cell.bitIndex}`
-                                        : `空闲 bit${cell.bitIndex} · 点击设段`}
-                                    className={`flex-1 h-4 border cursor-pointer transition-colors ${cell.owner >= 0 ? '' : 'bg-nier-light/5 hover:bg-nier-light/20'} ${cell.conflict ? 'border-red-500 bg-red-500/30' : 'border-nier-light/30'} ${armed ? 'border-dashed border-nier-light/60' : ''} ${sel ? 'ring-1 ring-nier-light' : ''}`}
-                                    style={cell.owner >= 0 ? { backgroundColor: cell.conflict ? undefined : `${cell.color}55` } : undefined}
-                                />
+                                    key={`seg-${u.owner}`}
+                                    data-strip-seg={u.owner}
+                                    data-conflict={u.conflict ? 'true' : undefined}
+                                    data-strip-selected={selectedIndex === u.owner ? 'true' : undefined}
+                                    onMouseDown={() => onStripSegDown(u.owner)}
+                                    onClick={() => onStripSegDown(u.owner)}
+                                    onDoubleClick={() => setStripRename(u.owner)}
+                                    title={`${u.name || '(未命名)'} · bit${Math.min(...u.bits)}..${Math.max(...u.bits)} · ${u.bits.length}b${u.conflict ? ' · 位范围重叠' : ''}`}
+                                    className={`relative flex ${u.conflict ? 'border border-red-500 bg-red-500/30' : 'border border-nier-light/40'} ${selectedIndex === u.owner ? 'ring-1 ring-nier-light' : ''}`}
+                                    style={{ flexGrow: u.bits.length }}
+                                >
+                                    {/* 改宽拖柄（两端各一）：窄竖条压带边，不挡段内指针 */}
+                                    <span
+                                        data-strip-edge={leftEdge}
+                                        data-strip-edge-seg={u.owner}
+                                        onMouseDown={(e) => onStripEdgeDown(e, u.owner, leftEdge)}
+                                        className="absolute left-0 top-0 bottom-0 w-1 bg-nier-dark/60 cursor-ew-resize z-10"
+                                    />
+                                    <span
+                                        data-strip-edge={rightEdge}
+                                        data-strip-edge-seg={u.owner}
+                                        onMouseDown={(e) => onStripEdgeDown(e, u.owner, rightEdge)}
+                                        className="absolute right-0 top-0 bottom-0 w-1 bg-nier-dark/60 cursor-ew-resize z-10"
+                                    />
+                                    {/* 段名标签（双击容器任意处进入改名）；不吃指针事件，
+                                        点击穿透到段内位 → 冒泡选中段 */}
+                                    {stripRename === u.owner ? (
+                                        <input
+                                            type="text"
+                                            data-strip-rename={u.owner}
+                                            value={list[u.owner]?.bit_name ?? ''}
+                                            autoFocus
+                                            onChange={(e) => update(u.owner, { bit_name: e.target.value })}
+                                            onBlur={() => setStripRename(null)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' || e.key === 'Escape') setStripRename(null);
+                                            }}
+                                            className="absolute inset-x-1 top-0 z-20 bg-nier-dark border border-nier-light/50 text-[8px] font-mono text-nier-light px-0.5 focus:outline-none"
+                                        />
+                                    ) : (
+                                        <span
+                                            data-strip-label={u.owner}
+                                            title="双击改名"
+                                            className="absolute inset-x-0 top-0 z-10 text-[7px] font-mono text-nier-light truncate px-1 pointer-events-none"
+                                        >
+                                            {u.name || '—'} ({u.bits.length}b)
+                                        </span>
+                                    )}
+                                    {/* 段内逐位命中层：悬停/改宽目标位号都从这里取 */}
+                                    {u.bits.map(bit => (
+                                        <div
+                                            key={bit}
+                                            data-strip-bit={bit}
+                                            data-strip-arm={inArm(bit) ? bit : undefined}
+                                            onMouseOver={() => onStripHover(bit)}
+                                            className="flex-1"
+                                            style={u.conflict ? undefined : { backgroundColor: `${u.color}66` }}
+                                        />
+                                    ))}
+                                </div>
                             );
                         })}
-                        <span className="text-[8px] opacity-40 font-mono w-6">B{r}</span>
                     </div>
-                ))}
-            </div>
+                </div>
+            )}
+
+            {/* 批 2：位网格（bit0 在最右 = LSB 口径）。R68 起为切换副视图，契约原样：
+                点空格上膛 → 再点一格提交位段；点占用格 = 选中该段（表格行同步高亮）。 */}
+            {stripView === 'grid' && (
+                <div className="border border-nier-light/20 p-1 flex flex-col gap-1" data-bit-grid={armedBit !== null ? 'armed' : 'idle'}>
+                    <div className="flex items-center justify-between text-[8px] opacity-60 uppercase tracking-widest">
+                        <span>位图 (BIT MAP) · 右端为 bit0</span>
+                        <span className={armedBit !== null ? 'text-nier-light' : 'opacity-50'}>
+                            {armedBit !== null ? `起点 bit${armedBit} → 选终点` : '点两格设段 / 点色块选段'}
+                        </span>
+                    </div>
+                    {/* 优化批 4：位号标尺 —— 列头标 7..0（LSb0 口径；绝对位号 = B行号×8 + 本列位号） */}
+                    <div className="flex items-center gap-1" data-bit-ruler="true">
+                        <span className="w-6 text-right" />
+                        {[7, 6, 5, 4, 3, 2, 1, 0].map(n => (
+                            <span key={n} data-bit-ruler-no={n} className="flex-1 text-center text-[8px] font-mono opacity-70">
+                                {n}
+                            </span>
+                        ))}
+                        <span className="w-6" />
+                    </div>
+                    {grid.bytes.map((row, r) => (
+                        <div key={r} className="flex items-center gap-1" data-byte-row={r}>
+                            <span className="text-[8px] opacity-40 font-mono w-6 text-right">B{r}</span>
+                            {row.map(cell => {
+                                const armed = armedBit !== null && Math.min(armedBit, cell.bitIndex) <= cell.bitIndex && cell.bitIndex <= Math.max(armedBit, cell.bitIndex);
+                                const sel = cell.owner >= 0 && cell.owner === selectedIndex;
+                                // 优化批 2：占用格 title 带值表名称解码（MODE = 1 (开) · bit0）
+                                const seg = cell.owner >= 0 ? list[cell.owner] : null;
+                                const segVt = seg ? sanitizeValueTable(seg.value_table) : null;
+                                const segLabel = segVt ? (segVt.find(e => e.value === Number(seg.default_val)) || {}).label : undefined;
+                                const note = segLabel ? ` = ${seg.default_val} (${segLabel})` : '';
+                                return (
+                                    <div
+                                        key={cell.bitIndex}
+                                        data-bit-cell={cell.bitIndex}
+                                        data-owner={cell.owner >= 0 ? cell.owner : null}
+                                        data-conflict={cell.conflict ? 'true' : null}
+                                        data-bit-arm={armed ? 'true' : null}
+                                        onClick={() => handleCellClick(cell)}
+                                        title={cell.owner >= 0
+                                            ? `${cell.name}${note} · bit${cell.bitIndex}`
+                                            : `空闲 bit${cell.bitIndex} · 点击设段`}
+                                        className={`flex-1 h-4 border cursor-pointer transition-colors ${cell.owner >= 0 ? '' : 'bg-nier-light/5 hover:bg-nier-light/20'} ${cell.conflict ? 'border-red-500 bg-red-500/30' : 'border-nier-light/30'} ${armed ? 'border-dashed border-nier-light/60' : ''} ${sel ? 'ring-1 ring-nier-light' : ''}`}
+                                        style={cell.owner >= 0 ? { backgroundColor: cell.conflict ? undefined : `${cell.color}55` } : undefined}
+                                    />
+                                );
+                            })}
+                            <span className="text-[8px] opacity-40 font-mono w-6">B{r}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
 
             <div className="grid grid-cols-[1fr_44px_36px_48px_96px_18px_16px] gap-1 text-[8px] opacity-50 uppercase tracking-widest px-0.5">
                 <span>名称 (NAME)</span>

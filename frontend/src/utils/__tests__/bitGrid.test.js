@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
     buildBitGrid,
+    buildStripLayout,
     rangeToSegment,
     defaultSegmentName,
     normalizeBits,
@@ -260,5 +261,75 @@ describe('优化批 2：值表文本解析/回显（BitFieldEditor 编辑格式�
         expect(formatValueTable(undefined)).toBe('');
         expect(formatValueTable([])).toBe('');
         expect(formatValueTable('garbage')).toBe('');
+    });
+});
+
+// R68：连续位带拼图条的纯布局层 —— 存储口径（start_bit LSB）不变，
+// 只做「一条连续带 + 单位切分 + 字节边界」的展示映射（msb/lsb 视角）。
+describe('buildStripLayout（R68 连续位带：纯布局层）', () => {
+    const L = (bits, byteLen, view) => buildStripLayout(bits, byteLen, view);
+
+    it('msb 视角 = 高位在左（ruler 降序）；lsb = 低位在左（升序）', () => {
+        const msb = L([], 2, 'msb');
+        expect(msb.ruler).toEqual([15, 14, 13, 12, 11, 10, 9, 8,
+            7, 6, 5, 4, 3, 2, 1, 0]);
+        expect(msb.capacity).toBe(16);
+        const lsb = L([], 2, 'lsb');
+        expect(lsb.ruler).toEqual([0, 1, 2, 3, 4, 5, 6, 7,
+            8, 9, 10, 11, 12, 13, 14, 15]);
+    });
+
+    it('默认视角 = msb（不传 view）', () => {
+        expect(L([], 1).ruler).toEqual([7, 6, 5, 4, 3, 2, 1, 0]);
+    });
+
+    it('容量口径沿 buildBitGrid：byteLen 0 回落 1 字节；溢出段撑开容量并标 overflow', () => {
+        expect(L([], 0, 'msb').capacity).toBe(8);
+        const g = L([{ id: 'w', start_bit: 8, bit_len: 8 }], 1, 'msb');
+        expect(g.capacity).toBe(16);
+        expect(g.requiredBytes).toBe(2);
+        expect(g.overflow).toBe(true);
+    });
+
+    it('单位切分：段 = 一个连续块（归属/色/位列表随行），间隙 = 缺块', () => {
+        const l = L([{ id: 'a', bit_name: 'MODE', start_bit: 0, bit_len: 2 }],
+            1, 'msb');
+        expect(l.units).toHaveLength(2);
+        expect(l.units[0]).toMatchObject({ kind: 'gap', bits: [7, 6, 5, 4, 3, 2] });
+        expect(l.units[1]).toMatchObject({
+            kind: 'seg', owner: 0, name: 'MODE', bits: [1, 0]
+        });
+        expect(l.units[1].color).toBe(BIT_GRID_COLORS[0]);
+        expect(l.units[1].conflict).toBe(false);
+    });
+
+    it('字节边界百分比：msb 与 lsb 镜像（byteLen 3 → 8/24、16/24 处）', () => {
+        const msb = L([], 3, 'msb');
+        expect(msb.boundaries).toHaveLength(2);
+        expect(msb.boundaries.map(b => b.bit)).toEqual([8, 16]);
+        expect(msb.boundaries[0].xPct).toBeCloseTo((24 - 8) / 24 * 100, 5);
+        expect(msb.boundaries[1].xPct).toBeCloseTo((24 - 16) / 24 * 100, 5);
+        const lsb = L([], 3, 'lsb');
+        expect(lsb.boundaries[0].xPct).toBeCloseTo(8 / 24 * 100, 5);
+        expect(lsb.boundaries[1].xPct).toBeCloseTo(16 / 24 * 100, 5);
+    });
+
+    it('重叠段红标按段级冲突传播（两段都标，不静默吞并）+ 冲突位逐位在账', () => {
+        const l = L([
+            { id: 'a', bit_name: 'A', start_bit: 0, bit_len: 4 },
+            { id: 'b', bit_name: 'B', start_bit: 2, bit_len: 4 }
+        ], 1, 'lsb');
+        const segs = l.units.filter(u => u.kind === 'seg');
+        expect(segs).toHaveLength(2);
+        expect(segs[0].conflict).toBe(true);
+        expect(segs[1].conflict).toBe(true);
+        expect(l.conflictBits).toEqual([2, 3]);
+    });
+
+    it('脏位段被 normalizeBits 剔除后不占带', () => {
+        const l = L([{ id: 'x', start_bit: 0, bit_len: 0 }], 1, 'msb');
+        expect(l.units).toHaveLength(1);
+        expect(l.units[0].kind).toBe('gap');
+        expect(l.units[0].bits).toHaveLength(8);
     });
 });

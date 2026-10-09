@@ -100,6 +100,7 @@
 | R65 | **pageStatus 165 条逐条现势审计** —— R64 §8.96 五 登记留白②（165 条 availableNow 逐条审计）本会话拍板下一批 = 本项；同场拍板 404 静音 = 保持现状（留白① 关闭不实施）（§8.97） | ✅ **已完成（2026-10-09，§8.97，纯审计 + 数据修正批 · 零产品代码改动 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动）**：**两段式审计**（子代理 165 条逐条 file:line 取证 + 我方独立复核重数与抽核）→ **成立 160 · 过期 5 · 存疑 0**；过期 5 条全为计数漂移/枚举落后（A011 10→22 例、A065 69→70 项、A087 17→18 份、A107 28/27→30/35 例、A165 补「路由规则」8 类）+ N017 尾句删除（R45 已落地、与 N016 记录矛盾）；nextSteps 17 条准确记录不动。**7 锚外科替换 + JSON 结构断言（165/18/9 页）+ 重生成 md**（numstat = json 6/6 · md 6/6 纯行级）；测试面仅断 implemented / shortcut → 无红测面。**验收 = 10 项** 提交前 + post-commit 全绿（ev33 STAGED=4）。留白：两留白一关闭一收口，**无新增** |
 | R66 | **M1/M2/E1–E4「待人工验证」挂账逐条核销** —— R65 §8.97 六 收口后候选清零，本会话 question 拍板下一批 = §2–§7 的 11 处历史挂账（M1 / M2 / E1-1…6 / E2 / E3 / E4）逐条核销（§8.98） | ✅ **已完成（2026-10-09，§8.98，纯验证 + 文档同步批 · 零产品代码改动 · 零测试改动 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 零 FE 改动）**：**28 项两段式取证**（子代理逐条锚定 + 我方独立复核 38 项全对平 `FAIL=0`）→ 核销 22 · 补验 4 · 真机残项 2；补验 4 项实机全过（A1-b 合成按钮实点精确填入 `[原始Hex] + [无符号整数] + [有符号整数]` · A1-c 两页 Σ 对账 8B/7B/5B 全对平 · A1-x 只读复跑命中 2 块 · E3 终端四步含禁发与清空弹窗）→ **终账 = 核销 26 · 真机残项 2**（E2 T2 真实 TCP 对端 / T3 真 COM 口，需真实硬件如实登记）；**12 处 marker/标题外科翻转（R41 体例 · 删除线保留原文）**；零库污染铁证 = API 双采样逐字节相同 + formula 恒 null；记账 = R65 提交实况更正（真实提交 `8810071`，§8.98 七）。**验收 = 10 项** 提交前 + post-commit 全绿（ev33 STAGED=2）。留白：无新增（存疑 0） |
 | R67 | **验收基建加固（虚设门修复 + 门单测）** —— R66 §8.98 八 过程记账登记「下批 `mkverify` 起补 `BE_OK` 断言」，本会话 question 拍板下一批 = 验收基建加固小批（全链复查「打印不设门」同类隐患）（§8.99） | ✅ **已完成（2026-10-09，§8.99，零产品代码改动 · 零测试改动 · 零 DDL → 无 Migration、无 `chore(db)` · 仓内改动面 = 两文档纯插入）**：**隐患审计** —— 链内 6 个助手脚本（3 测试 mjs / validate-yorha-ui / ev40 / ev33）退出纪律全合规，虚设门收窄于验收脚本自身 3 处：H1 BE `-c` 打印后无 `sys.exit` → rc 恒 0（R66 post-commit 首遍假绿实证）· H2 总门只打印 → 脚本 EXIT 恒 0 · H3 日志前缀 `r65_` 冻结（mkverify 漏小写替换 → R66 日志覆写 R65 批）。**红测先行** = `r67_gate_red.txt`（真实失败 BE 制品喂旧门判「全部绿」exit 0 = 假绿复现；同输入新门 exit 1 抓住、绿输入 exit 0 不误报）；三档 = 缺特性 1 / 先修 2（新门初版 rc 项语义倒挂 + 单测 kwargs 冲突，门单测首跑当场抓住）/ 改写 0。**修复** = `r67_mkverify.py` 六组补丁生成 `r67_verify.py`：BE `-c` 补 `sys.exit` + `be_ok` token 门（`BE_OK` ∧ `BE_FAIL_N 0`）· FE/probe15 增 `failed` 汇总 token 门（vitest 绿跑 rc 实证 0 → rc∧token 双保险）· 总门 `results` 汇总 + `sys.exit(1 if bad else 0)` · 日志前缀 `r67_`；门单测 `r67_gate_test.py`（真品 gate 段正则抽取 exec）= 7 静态契约 + 9 行为全过。**验收 = 10 项** 提交前 + post-commit 全绿（ev33 STAGED=2）。留白：无新增 |
+| R68 | **位域布局「连续位带拼图条」** —— 用户举真实协议 40bit 主控头样例（2+1+1+2+8+6+10+10 = 40bit 整 5 字节、文档 MSB-first）问位域能力，现状盘点后 question 拍板下一批 = 「连续位带拼图条」（卡片/拼图产品语言里 bit 配置是最不直观一环）（§8.100） | ✅ **已完成（2026-10-09，§8.100，纯 FE 展示/交互层批 · 零后端改动 · 零 DDL → 无 Migration、无 `chore(db)`）**：**红测先行** = `r68_red1.txt`（23 红 = 16 位带组件契约 + 7 `buildStripLayout` 纯函数缺席实证 · 36 绿 = 13 既有契约迁移守卫跳过 + 23 既有纯函数）→ 实现后 59/59 → 全量 **1560/101**（+23）；**迁移保真** = git 真源恢复 + `r68_fidelity.py` 剥离法证 13 条既有契约测试 9422 = 9422 字节逐字节未动（9 处仅前置 `showGrid()` 守卫）；**新面** = `buildStripLayout`（容量/溢出/conflictBits 单真源沿 `buildBitGrid`；msb 文档序默认/lsb 可切；单位切分；字节边界 x% msb/lsb 镜像）+ `BitFieldEditor` 位带视图（段 = 带名带宽角标拼图块、间隙 = 逐位虚线缺块、拖拽画段、拖两端柄改宽 start=LSB/end=MSB 视角无关、双击段名 change 即时写回、点段↔表格行联动、重叠段红标段级传播）+ 网格降切换副视图（批 2 契约全保留）；存储口径（start_bit LSB）/打包/校验/双端口径零触碰；三档 = 缺特性 1 / 先修 4（jsdom click 无 md·mu → 测试改 `press()` 同构单一提交路径 · 改名 blur→change · seg 补 onClick · R62 裸 `toHaveBeenCalled` 收敛带载荷断言）/ 改写 1 类（9 处 showGrid 前置，剥离法逐字节保真）；pageStatus 批 2 条目现时态括注更正 + 新增 R68 availableNow 条目（零漂移）。**验收 = 10 项** 提交前 + post-commit 全绿（ev33 STAGED=7）。留白：无新增 |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -9250,6 +9251,67 @@ R61 已闭）与 §8.92 七 第 3 条同族沿旧提及；`PROJECT_HANDOVER.md` 
   `r67_verify.py`、`r67_gate_test.py`、`r67_docs.py`、`r67_commit.py` /
   `r67_msg.txt`。提交 = `feat(R67)` 单笔 2 文件（两文档纯插入 = §1 行 102 /
   §8.99 / 条目 116）。
+
+
+## 8.100 R68 位域布局「连续位带拼图条」（2026-10-09）
+
+- 一、拍板：用户举真实协议 40bit 主控头样例（版本 2b · 通过 1b · 控制命令 1b ·
+  明密 2b · 设备识别 8b · 虚拟信道 6b · 帧长 10b · 帧序列 10b = 40bit 整 5 字节，
+  文档 MSB-first 描述 → 仓内口径映射 = 序号 start0 · 帧长 10 · 信道 20 · 设备 26 ·
+  明密 34 · 控制 36 · 通过 37 · 版本 38）问位域能力。现状盘点（协议侧 bitfield 块 /
+  指令侧 BITFIELD 算子均可表达；指令侧值可调、协议侧静态默认值语义）后 question
+  拍板 =「连续位带拼图条」（选项 A 推荐）：一条横向连续位带 = 整字段，段 = 带名
+  带色拼图块，间隙 = 点即补虚线缺块，拖拽画段/拖块边改宽/双击内联改名，msb 文档序
+  默认可切视角；存储与双端打包口径零触碰。
+- 二、现状差距（读码取证）：① byte×8 行网格把 40bit 主头切碎、文档 MSB-first 无法
+  整条对照；② 段只有颜色无标签（名字/值都在下方表格）；③ 点两格上膛→提交绕、无
+  拖拽；④ 字节边界靠换行暗示、无连续位号标尺。挂载面 = 共享组件 `BitFieldEditor`
+  双挂（协议 `ProtocolPropertiesPanel` / 指令 `BlockPropertiesPanel`），改一处两页同得。
+- 三、红测先行有据：`r68_red1.txt` = 23 failed · 36 passed —— 23 红全为新特性缺席
+  （16 组件位带契约 + 7 纯函数）；36 绿 = 13 既有组件契约（`showGrid()` 守卫：实现前
+  按钮不存在 → 跳过，红不掺假）+ 23 既有纯函数。
+- 四、迁移保真（过程自抓 0）：全量重写测试文件时凭记忆重构偏离原始断言（值/标题/
+  断言强度多处），git HEAD 恢复真源 + `r68_fidelity.py` 剥离法（去头注释扩展 +
+  showGrid 行 + R68 describe 后 9422 = 9422 字节逐字节相等）→ 按真源重写，13 条既有
+  契约零改写实证。
+- 五、实现：`buildStripLayout`（bitGrid.js 纯布局层）= 容量/requiredBytes/overflow/
+  conflictBits 单真源沿 `buildBitGrid`（改一必改二禁触发面不扩），逐位归属首 owner
+  优先（与网格同口径）、单位切分（视角序连续同主并块）、段级冲突传播（被首 owner
+  压住的重叠段不漏标）、字节边界 x% = 视角序界左位数占比（msb/lsb 镜像）；
+  `BitFieldEditor` 位带视图 = 连续位号标尺 / 逐位缺块 / 拼图块（名+宽角标+色）/
+  边界竖线 / 改宽双柄（start=LSB 侧 end=MSB 侧，视角无关存储语义）/ 双击改名
+  （change 即时写回，与表格同口径）/ 选中双向联动；网格视图整体条件包裹零删改。
+  状态机单轨：设段/画段全走 mousedown/mouseup（真浏览器一次点击 = 完整 md+mu 序列），
+  测试 `press()` 同构，无 click 双轨分叉。
+- 六、三档：缺特性 1（位带 + 纯布局层）/ 先修 4 = ① jsdom `fireEvent.click` 只派
+  click 无 md·mu → 测试改 press 同构（非产品缺陷，状态机本就挂 md/mu 轨）；
+  ② 改名写回 blur→change（表格同口径即时写回）；③ seg 容器补 onClick（jsdom 单事件
+  面 + 真浏览器幂等）；④ R62 护栏抓裸 `toHaveBeenCalled` → 收敛
+  `toHaveBeenCalledWith([expect.objectContaining({bit_name})])`（更强不更弱）。
+  改写 1 类 = 9 处网格测试前置 `showGrid();`（剥离法证逐字节保真，非断言改写）。
+- 六.五、环境事件（过程记账 · 非仓内缺陷）：定稿遍首跑 = 11/12 项绿、BE 单点红
+  （`test_diagnostics` 中唯一走 `asyncio.run` 新建事件环的用例报
+  `ConnectionError: Unexpected peer connection`）。三级取证：`socket.socketpair()`
+  压测 0/500 必现 → 地址自认证现场（accept 对端源口 ≠ 我方 csock 源口、恒 +2 偏移、
+  空闲期零不请自来连接排除扫描器）→ 持连接抓 netstat 直击 `Proxifier.exe`
+  （PID 49656）握重起源连接；进程树 = 用户当日 14:21-14:22 重装 Proxifier
+  （`D:\Program\Proxifier\Driver\` 14:22:05 落盘），其后规则变更开始拦截
+  python 回环 —— 时间线矛盾解除（R67 `45b752d` 15:05:42 双遍绿时规则尚未匹配）。
+  零仓内改动（暂存 7 文件全为 FE + 文档）、与代码无关；question 拍板处置 → 解除后
+  socketpair 500/500 全过 + 对端归属仅 python → 复跑全量 = 全绿。
+- 七、验收 = 固定 10 项 提交前 + post-commit 遍全绿（`r68_verify.py`，谱系 §8.99 八：
+  源 `r67_verify.py` 大小写同换 R67→R68 + r67→r68、历史 R66 引用恰 2 处保护断言过）：
+  BE 1033 · FE 1560/101（+23）· build 0 · lint 0 · 校验器 0 · md 8/8 ·
+  口径扩展 13/13 · 自检 7/7 · probe15 1560 · ev40 0 · ev33 STAGED=7 DEL=0 BAD=0。
+- 八、pageStatus 零漂移：指令页批 2 条目「位图…做主视图」补 R68 位带接棒括注 +
+  新增 availableNow R68 条目；协议页批 4 条目「复用指令侧位编辑器（位图 + 点击式
+  设段 + 打包预览）」三能力仍成立（位图为副视图仍在场）不改。
+- 九、留白：无新增。真机残项 2（E2 T2/T3）沿 §8.98 登记不变。
+- 十、落盘与工具账：Temp = `r68_orig_test.jsx`（git 真源）、`r68_fidelity.py`
+  （剥离保真核验）、`r68_red1.txt`（红证据）、`r68_green1/2.txt`、
+  `r68_fe_all1/2.txt`、`r68_build/lint/validator.txt`、`r68_mkverify.py` /
+  `r68_verify.py`、`r68_docs.py`、`r68_commit.py` / `r68_msg.txt`。
+  提交 = `feat(R68)` 单笔 7 文件（4 FE + pageStatus.json + 两文档）。
 
 
 ## 9. 保留勿动（非任务，勿清理）

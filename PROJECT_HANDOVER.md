@@ -4632,6 +4632,40 @@
        提交 = `feat(R67)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
        **未 git add、未 commit**（待 review 后自行提交）。
 
+117. **R68 · 位域布局「连续位带拼图条」（默认主视图换带，网格降副视图）**
+     （PLAN §8.100，2026-10-09；用户 40bit 主控头样例 → question 拍板
+     「连续位带拼图条」）
+     - **范围**：纯 FE 展示/交互层（`bitGrid.js` + `BitFieldEditor.jsx` +
+       两测试文件）；零后端、零 DDL；存储口径（start_bit LSB）/打包/校验/
+       双端镜像口径零触碰。
+     - **新面**：`buildStripLayout` 纯布局层（容量/溢出/冲突单真源沿
+       `buildBitGrid`；msb 文档序默认/lsb 可切；单位切分；字节边界镜像
+       百分比）；位带视图 = 带名带宽角标拼图块 + 逐位虚线缺块 + 连续位号
+       标尺 + 边界竖线；交互 = 拖拽画段 / 拖两端柄改宽（start=LSB、
+       end=MSB，视角无关）/ 双击段名 change 即时写回改名 / 点段↔表格行
+       联动 / 重叠段红标段级传播；网格 = 切换副视图（批 2 契约全保留）。
+     - **红测先行**：`r68_red1.txt` 23 红（16 组件 + 7 纯函数）· 36 绿
+       （13 迁移守卫跳过 + 23 既有纯函数）→ 实现后 59/59 → 全量 1560/101。
+     - **迁移保真**：git 真源恢复 + `r68_fidelity.py` 剥离法证 13 条既有
+       契约 9422 = 9422 字节逐字节未动（9 处仅 `showGrid()` 前置守卫）。
+     - **三档**：缺特性 1 / 先修 4（press 同构 · 改名 change 即时写回 ·
+       seg onClick · R62 裸断言收敛带载荷）/ 改写 1 类（showGrid 前置，
+       保真法核过）。
+     - **环境事件**：定稿遍首跑 BE 1 error = 用户当日 14:22 重装的 Proxifier
+       拦截 python 回环（`socketpair` 0/500 必现 · 地址自认证 +2 恒偏移 ·
+       netstat 直击重起源连接归属 PID 49656 · R67 双遍绿时规则未匹配故时间线
+       矛盾解除）；question 拍板处置解除后复跑全绿 —— 零仓内改动，与代码无关。
+     - **验收**：10 项提交前 + post-commit 全绿（BE 1033 · FE 1560/101 ·
+       probe15 1560 · ev33 STAGED=7 DEL=0 BAD=0）。
+     - **pageStatus**：指令页批 2 条目现时态括注更正 + 新增 R68
+       availableNow 条目（零漂移）。
+     - **工具账**：Temp = `r68_orig_test.jsx` / `r68_fidelity.py` /
+       `r68_red1.txt` / `r68_green*.txt` / `r68_fe_all*.txt` /
+       `r68_mkverify.py` / `r68_verify.py` / `r68_docs.py` /
+       `r68_commit.py` / `r68_msg.txt`。
+       提交 = `feat(R68)` 单笔 7 文件（**零 DDL** → 无 Migration、无 `chore(db)`）。
+       **未 git add、未 commit**（待 review 后自行提交）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
