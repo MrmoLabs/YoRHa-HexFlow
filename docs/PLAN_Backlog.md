@@ -99,6 +99,7 @@
 | R64 | **实机冒烟 + pageStatus 同步** —— R63 §8.95 七 收口后注册候选清零，本会话 question 拍板下一批 = R53 起挂账的末个历史候选「实机冒烟 + pageStatus 同步」；性质 = 纯验证 + 同步核对批（§8.96） | ✅ **已完成（2026-10-09，§8.96，纯验证批 · 零产品改动 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 零 FE 改动、零测试改动）**：**9/9 页实机加载冒烟**（root 560 至 3272 字符 · 导航全对 · 实 API 82 条往返；非 200 仅 `/processing` 应答规格 404 ×2 = 设计内降级 `responseSpecs.js:4`，实机无错误横幅；console error 仅该 2 条浏览器网络日志、其余 8 页 0/0；API ×2 = dev StrictMode 双挂载）+ **只读实操 4 项全过 0 错误**（指令点选切换 · 协议 LENGTH 属性面板 REFS 真数据 · 容器 FOCUS 内联展开 · datahub 域切换；全程零写入）+ **pageStatus 同步三面零漂移**（`generate-page-status.mjs` 跑完 md diff 空 · `PAGE_REGISTRY` = json 1:1 · 9 页 implemented 全实机成立）。**验收 = 10 项** 提交前 + post-commit 全绿（BE 1033 · FE 1537/101 文件 · build 0 · lint 0 · 校验器 0 · md 8/8 · 13/13 · 7/7 · probe15 1537 · ev40 0 · ev33 STAGED=2）。留白登记 2 条（404 静音口径待拍板 · 165 条 availableNow 逐条审计未做即不声称） |
 | R65 | **pageStatus 165 条逐条现势审计** —— R64 §8.96 五 登记留白②（165 条 availableNow 逐条审计）本会话拍板下一批 = 本项；同场拍板 404 静音 = 保持现状（留白① 关闭不实施）（§8.97） | ✅ **已完成（2026-10-09，§8.97，纯审计 + 数据修正批 · 零产品代码改动 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动）**：**两段式审计**（子代理 165 条逐条 file:line 取证 + 我方独立复核重数与抽核）→ **成立 160 · 过期 5 · 存疑 0**；过期 5 条全为计数漂移/枚举落后（A011 10→22 例、A065 69→70 项、A087 17→18 份、A107 28/27→30/35 例、A165 补「路由规则」8 类）+ N017 尾句删除（R45 已落地、与 N016 记录矛盾）；nextSteps 17 条准确记录不动。**7 锚外科替换 + JSON 结构断言（165/18/9 页）+ 重生成 md**（numstat = json 6/6 · md 6/6 纯行级）；测试面仅断 implemented / shortcut → 无红测面。**验收 = 10 项** 提交前 + post-commit 全绿（ev33 STAGED=4）。留白：两留白一关闭一收口，**无新增** |
 | R66 | **M1/M2/E1–E4「待人工验证」挂账逐条核销** —— R65 §8.97 六 收口后候选清零，本会话 question 拍板下一批 = §2–§7 的 11 处历史挂账（M1 / M2 / E1-1…6 / E2 / E3 / E4）逐条核销（§8.98） | ✅ **已完成（2026-10-09，§8.98，纯验证 + 文档同步批 · 零产品代码改动 · 零测试改动 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 零 FE 改动）**：**28 项两段式取证**（子代理逐条锚定 + 我方独立复核 38 项全对平 `FAIL=0`）→ 核销 22 · 补验 4 · 真机残项 2；补验 4 项实机全过（A1-b 合成按钮实点精确填入 `[原始Hex] + [无符号整数] + [有符号整数]` · A1-c 两页 Σ 对账 8B/7B/5B 全对平 · A1-x 只读复跑命中 2 块 · E3 终端四步含禁发与清空弹窗）→ **终账 = 核销 26 · 真机残项 2**（E2 T2 真实 TCP 对端 / T3 真 COM 口，需真实硬件如实登记）；**12 处 marker/标题外科翻转（R41 体例 · 删除线保留原文）**；零库污染铁证 = API 双采样逐字节相同 + formula 恒 null；记账 = R65 提交实况更正（真实提交 `8810071`，§8.98 七）。**验收 = 10 项** 提交前 + post-commit 全绿（ev33 STAGED=2）。留白：无新增（存疑 0） |
+| R67 | **验收基建加固（虚设门修复 + 门单测）** —— R66 §8.98 八 过程记账登记「下批 `mkverify` 起补 `BE_OK` 断言」，本会话 question 拍板下一批 = 验收基建加固小批（全链复查「打印不设门」同类隐患）（§8.99） | ✅ **已完成（2026-10-09，§8.99，零产品代码改动 · 零测试改动 · 零 DDL → 无 Migration、无 `chore(db)` · 仓内改动面 = 两文档纯插入）**：**隐患审计** —— 链内 6 个助手脚本（3 测试 mjs / validate-yorha-ui / ev40 / ev33）退出纪律全合规，虚设门收窄于验收脚本自身 3 处：H1 BE `-c` 打印后无 `sys.exit` → rc 恒 0（R66 post-commit 首遍假绿实证）· H2 总门只打印 → 脚本 EXIT 恒 0 · H3 日志前缀 `r65_` 冻结（mkverify 漏小写替换 → R66 日志覆写 R65 批）。**红测先行** = `r67_gate_red.txt`（真实失败 BE 制品喂旧门判「全部绿」exit 0 = 假绿复现；同输入新门 exit 1 抓住、绿输入 exit 0 不误报）；三档 = 缺特性 1 / 先修 2（新门初版 rc 项语义倒挂 + 单测 kwargs 冲突，门单测首跑当场抓住）/ 改写 0。**修复** = `r67_mkverify.py` 六组补丁生成 `r67_verify.py`：BE `-c` 补 `sys.exit` + `be_ok` token 门（`BE_OK` ∧ `BE_FAIL_N 0`）· FE/probe15 增 `failed` 汇总 token 门（vitest 绿跑 rc 实证 0 → rc∧token 双保险）· 总门 `results` 汇总 + `sys.exit(1 if bad else 0)` · 日志前缀 `r67_`；门单测 `r67_gate_test.py`（真品 gate 段正则抽取 exec）= 7 静态契约 + 9 行为全过。**验收 = 10 项** 提交前 + post-commit 全绿（ev33 STAGED=2）。留白：无新增 |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -9185,6 +9186,70 @@ R61 已闭）与 §8.92 七 第 3 条同族沿旧提及；`PROJECT_HANDOVER.md` 
   （我方独立复核 FAIL=0）、`r66_docs.py`、`r66_mkverify.py` / `r66_verify.py`、
   `r66_commit.py` / `r66_msg.txt`。提交 = `feat(R66)` 单笔 2 文件（两文档：12 处
   marker/标题外科翻转 + 纯插入 = §1 行 101 / §8.98 / 条目 115）。
+
+
+## 8.99 R67 验收基建加固（虚设门修复 + 门单测）（2026-10-09）
+
+- 一、性质与范围：验收基建加固小批（本会话 question 拍板推荐项）。**零产品代码、
+  零测试改动、零 DDL**（无 Migration、无 `chore(db)`）；仓内改动面 = 两文档纯插入
+  （§1 行 102 / §8.99 / HO 条目 116）；验收链 6 个助手脚本一行未碰（只读审计）。
+- 二、起因：R66 post-commit 首遍 BE 环境瞬态暴露验收脚本虚设门（§8.98 八 过程记账，
+  当时靠打印行人工抓出），登记「下批 mkverify 起补断言」→ 本会话拍板下一批 = 验收
+  基建加固（含全链同类隐患复查）。
+- 三、隐患审计（11 项链逐环节，证据 = 源码 grep `process.exit` / `sys.exit` + 读尾段）：
+  - **合规 6**：`scripts/test-yorha-md-validator.mjs:149` ·
+    `scripts/test-yorha-validator-scope.mjs:186` ·
+    `scripts/test-yorha-selfscan.mjs:119` 均 `process.exit(failed === 0 ? 0 : 1)`
+    （另各带参数错 `exit(2)`）；`validate-yorha-ui.mjs:777/:780` 置
+    `process.exitCode`（失败码 / 参数错 2）；Temp `ev40_md_all.py` 尾
+    `sys.exit(1 if total else 0)`、`ev33_index_hygiene.py` 尾
+    `sys.exit(1 if bad else 0)`。vite build / eslint 退出码语义为工具标准
+    （红路径 = 工具自身行为面，未单独造红）。
+  - **虚设 3（均在 `r66_verify.py` 自身）**：
+    H1 = BE `python -c` 打印 `BE_OK/BE_FAIL` 三行后无 `sys.exit` → 子进程 rc 恒 0，
+    末段 `bad` 只看 rc → R66 post-commit 首遍 `BE_FAIL_N 1` 而末段按 rc 必落
+    「全部绿」（`r67_gate_red.txt` 机械复现假绿 = 实证）；
+    H2 = 脚本末段只打印不 `sys.exit` → **脚本 EXIT 恒 0，修复前「EXIT=0」不构成
+    验收证据**（真门 = 逐项 rc 行打印 + 人工核）；
+    H3 = 日志前缀写死 `r65_%s.txt`（mkverify 只换大写 R65 → r66 批日志仍落
+    `r65_*.txt`）→ **R66 各遍覆写 R65 批日志**（实证 = R66 瞬态 BE 输出曾存于
+    `r65_be.txt`，其后重跑已被覆盖）→ 跨批日志归属断裂。
+  - **实证插曲**：`npx vitest run` 单文件带 `--reporter=basic` 得 rc=1 —— 查明为
+    该 reporter 不存在、CLI 自身报错退出（`loadCustomReporterModule` 抛错），
+    **非 vitest 假码**；裸跑全量绿 = `VITEST_GREEN_EXIT=0`（101 文件 1537 用例）
+    实证 **subprocess 层 rc 真实** → FE/probe15 门可用 rc。
+- 四、红测先行（`r67_gate_red.py` → `r67_gate_red.txt`）：临时红测试走 R66 同款
+  `-c` 打印块得**真实失败制品**（`BE_FAIL / BE_RUN 1 / BE_FAIL_N 1`、rc=0 = H1
+  虚设实证）；同输入喂旧门逻辑 → `bad=[]` · `verdict='全部绿'` · `exit=0` =
+  **假绿复现**；新门 → `exit=1 · bad=['be']` 抓住、全绿输入 `exit=0` 不误报。
+  三档记账 = 缺特性 1（门缺失）/ 先修 2（新门初版 rc 项裸值按 `not ok` 判 →
+  全绿反判红 + 单测 `dict(**rcs)` kwargs 冲突，门单测首跑当场抓住、各 1 修）/
+  改写 0。
+- 五、修复（`r67_mkverify.py` 从 `r66_verify.py` 六组补丁生成 `r67_verify.py`，
+  每锚 assert 唯一命中 + 终态断言）：C1 日志前缀 `r67_`（H3）；C2 BE `-c` 尾补
+  `sys.exit(0 if r.wasSuccessful() else 1)` + `be_ok = BE_OK ∧ BE_FAIL_N 0`
+  token 门（H1，rc∧token 双保险）；C3 FE `fe_ok` = 双汇总行齐 ∧ 无 `failed`；
+  C4 probe15 `probe_ok` 同款；C5 总门改 `results` 元组（**全部 `== 0` 布尔
+  语义**）+ `sys.exit(1 if bad else 0)`（H2）；C6 说明块重写（R67 批语义与
+  谱系）。生成物 `r67_verify.py` 7431 字符（源 6731）。
+- 六、门单测（`r67_gate_test.py`，对**真品**非副本）：静态契约 7 条（sys.exit 进
+  `-c` / BE·FE·probe token 门 / 总门 sys.exit / 前缀 `r67_` 且 `r65_` 绝迹 /
+  标签 R67 且 R66 绝迹）+ 行为 9 条 —— 正则从 `r67_verify.py` 源抽取
+  `results = [ … sys.exit(1 if bad else 0)` 真实 gate 段 exec：全绿→0 / BE 红
+  token·rc→1 / FE 红 token·rc→1 / build 红→1 / probe token 红→1 / ev33 红→1 /
+  三重叠加→1，**全过 `GATE-TEST ALL OK`**；未走到 exit 判 `None` = 缺陷
+  （防门再被掏空）。
+- 七、验收 = 固定 10 项 提交前 + post-commit 遍全绿（`r67_verify.py`；本批起末段
+  打印 + `sys.exit` 双落地，绿遍回执 = 脚本 EXIT=0 **始构成**证据，与 H2 修复前
+  语义不同）：BE 1033 · FE 1537/101 · build 0 · lint 0 · 校验器 0 · md 8/8 ·
+  口径扩展 13/13 · 自检 7/7 · probe15 1537 · ev40 0 · ev33 STAGED=2 DEL=0 BAD=0。
+- 八、留白：无新增（谱系约定 = r68 起 mkverify 源 `r67_verify.py`，替换须大小写
+  同换 `R67→R68` + `r67→r68` 防 H3 复发 —— 工具账约定，非仓内留白）。
+- 九、落盘与工具账：Temp = `r67_h4_probe.py`（出口码 / FE token 实证）、
+  `r67_gate_red.py` / `r67_gate_red.txt`（红证据）、`r67_mkverify.py` /
+  `r67_verify.py`、`r67_gate_test.py`、`r67_docs.py`、`r67_commit.py` /
+  `r67_msg.txt`。提交 = `feat(R67)` 单笔 2 文件（两文档纯插入 = §1 行 102 /
+  §8.99 / 条目 116）。
 
 
 ## 9. 保留勿动（非任务，勿清理）

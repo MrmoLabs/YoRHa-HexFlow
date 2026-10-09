@@ -4606,6 +4606,32 @@
        提交 = `feat(R66)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
        **未 git add、未 commit**（待 review 后自行提交）。
 
+116. **R67 · 验收基建加固（虚设门修复 + 门单测）**
+     （PLAN §8.99，2026-10-09；R66 §8.98 八 登记「下批 mkverify 起补断言」，
+     本会话拍板下一批 = 验收基建加固小批）
+     - **范围**：零产品代码、零测试改动、零 DDL；仓内改动面 = 两文档纯插入
+       （§1 行 102 / §8.99 / 本条目）；链内 6 个助手脚本只读审计、一行未碰。
+     - **审计**：11 项链逐环节 —— 6 助手退出纪律全合规（3 测试 mjs
+       `process.exit(failed===0?0:1)` · validator `exitCode` · ev40/ev33
+       `sys.exit`）；虚设门收窄验收脚本自身 3 处：H1 BE `-c` 无 `sys.exit` →
+       rc 恒 0（R66 首遍假绿实证）· H2 总门只打印 → EXIT 恒 0 · H3 前缀
+       `r65_` 冻结 → R66 日志覆写 R65 批。
+     - **红测先行**：`r67_gate_red.txt` = 真实失败 BE 制品喂旧门 → 判「全部绿」
+       exit 0（假绿复现）；同输入新门 exit 1 抓住、绿输入不误报。三档 =
+       缺特性 1 / 先修 2（新门语义倒挂 + 单测 kwargs 冲突，门单测首跑抓住）/
+       改写 0。
+     - **修复**：`r67_mkverify.py` 六补丁生成 `r67_verify.py`（BE `sys.exit` +
+       token 门 · FE/probe `failed` 汇总门，vitest 绿跑 rc 实证 0 → rc∧token
+       双保险 · 总门 `results` + `sys.exit(1 if bad else 0)` · 前缀 `r67_`）；
+       门单测 `r67_gate_test.py` 抽真品 gate 段 exec = 7 静态 + 9 行为全过。
+     - **验收**：10 项提交前 + post-commit 全绿（BE 1033 · FE 1537/101 ·
+       probe15 1537 · ev33 STAGED=2 DEL=0 BAD=0）。
+     - **工具账**：Temp = `r67_h4_probe.py` / `r67_gate_red.py` /
+       `r67_gate_red.txt` / `r67_mkverify.py` / `r67_verify.py` /
+       `r67_gate_test.py` / `r67_docs.py` / `r67_commit.py` / `r67_msg.txt`。
+       提交 = `feat(R67)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+       **未 git add、未 commit**（待 review 后自行提交）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
