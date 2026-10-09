@@ -96,6 +96,7 @@
 | R61 | **假定时器在途链（两个盲跳点改有界排空）** —— R51 §8.83 八 第 3 条登记的留白「**假定时器下的排空与 `settle` 是跳过的**（等不到就硬跳，防冻死钩子）—— 若某文件既用假定时器、又跨测试留在途链，排空不生效；本批已把 Protocol 那 2 条要等回包的测试切真定时器，其余假定时器文件的在途链**未逐一验证**；」（口径原文 §8.83 行 7401-7402、留白行 7480-7482；§8.92 七 第 3 条同族沿旧一次）；R60 收口后**本会话拍板下一批 = 本项**（推荐理由 = 根治后这类修法收敛成统一口径）（§8.93） | ✅ **已完成（2026-10-08，§8.93，仅测试基建 + 测试文件 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`frontend/src` 产品代码零改动、断言期望一字未改）**：**中央解** `frontend/test/setupDelay.js` —— `__YORHA_settle()` 与全局 `afterEach` 两个盲跳点都改成**有界排空**：假定时器档**推进假时钟**（每轮 `advanceTimersByTimeAsync(DELAY_MS + 5)` + 微任务随轮排空，**自己在账的在途链清零**或**时钟无挂起计时器**即早退；**轮数 ≤ 8 且累计 ≤ 1000ms** 双上限防死循环），真定时器档**先等一轮 `DELAY_MS + 5`（与 R51 旧口径逐字一致）再按在途链账有界续等**（多跳链的第二跳不再漏到下一个测试）；**在途链分账 `{ real, fake }`**（计时器**发起 +1、落地 -1**，按发起那一刻是不是假时钟入账），走真档即把随 `useRealTimers()` 卸载被丢弃的假陈账就地清零。与 R52 §8.84 的 `__YORHA_harnessSettle` **收编同源**（该口当时只作临时复检、跑完 `git checkout` 还原、**从未入库**）——**不另起第二个等待口**；与 R60 `delayAsync` 共存（其回包计时器同样进 `delayTimer` 记账）。**红测先行**：新增 `frontend/test/settleFakeTimers.test.js` 3 条，实现落笔前 15ms 档 **2 红**（逐字红因 `r61_red1.txt`：`AssertionError: expected false to be true` @ `:23:28` 与 `:40:33` —— 假定时器下 `settle` 与收尾排空都盲跳、链没落地），不设 env 同文件 **3 绿**（`r61_red1_off.txt`，等价性护栏单列）。**三档记账：缺特性 2 / 测试自身 bug 先修 0 / 随新事实改写 0**（实现 bug 0）。**逐一验证（grep `useFakeTimers` 全仓 = 4 个文件 + 1 个伪）**：现状打点实测既有 99 文件两个盲跳分支**0 命中**（`r61_probe_skip.txt`，跑完即撤）；在途链审计（发起落地埋点 + 测试序号）**100 文件 1533 条 · 跨测试落地 0**（改前 `Sequences.test.jsx` **6 至 7 条**在途响应落到下一个测试 = 真档单次固定等待盖不住多跳链 → 只补收尾续等，断言一字未改）。**等价性**：不设 env 全量 **1533/1533 · 0 红**；**15ms 探测 1533/1533 · 推进时钟翻红断言 0 条**。**验收 = 10 项两遍全绿**：BE **1033/1033** 持平 · FE **1533/1533**（100 文件，+3 条 +1 文件）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**4 个改动 js/jsx + 全仓 14 md**）**0 违规**（`applied` 0 · invalid 1 · unused 0，均沿既有）· md 8/8 · 口径扩展 13/13 · 自检 7/7 · 15ms 探测 **1533/1533** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
 | R62 | 测试质量三件：weak assert 判档处置（`.toBeDefined()` 221 处全量改 `.not.toBeNull()`（反形态 0）；`.toBeTruthy()` 222 处 = 等价非弱记账保留 201 + 精确化 19 + 判不准记账 2）；窄修 3 项（`frontend/test/settleFakeTimers` 补断言、`InstructionEncoder` 两处标题与断言对齐、新增静态护栏 3 条）；BE 27 条无断言（不抛即过）测试方法与 17 处正形态裸 `toHaveBeenCalled()` 仅记账（本批零 BE 改动、零产品代码改动，121 裸 called 一行不改登记 R63）（§8.94） | ✅ **已完成（2026-10-09，§8.94，仅测试文件 + 新增静态护栏 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`frontend/src` 产品代码零改动、期望值除 19 处精确化外一字未改）**：**判档口径（用户拍板）** `.toBeDefined()` 全改 `.not.toBeNull()`；`.toBeTruthy()` 依上下文三分（元素存在类等价非弱记账保留、可定值者精确化、判不准者记账）。**红测先行**：护栏实现前 **2 红 1 绿**（逐字红因 `r62_red1.txt`；第 1 条扫描面非空基线即绿、单列不冒充红测）；**转换暴露红 0、触及产品的红 0**；三档 = 缺特性 2 / 先修 0 / 改写 0。**窄修 3 项**：`frontend/test/settleFakeTimers.test.js:35` 补 `chainLanded` 断言、`InstructionEncoder.test.js:135/:319` int / float 标题对齐、新增 `weakAssertions.test.js` 3 条（自身按路径豁免，先例 R58 §8.90）。**等价性**：不设 env 全量 **1536/1536 · 0 红**；**15ms 探测 1536/1536**。**验收 = 10 项两遍全绿**：BE **1033/1033** 持平零改动 · FE **1536/1536**（101 文件，1533 → 1536 = +3 护栏 +1 文件）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**27 个改动 js/jsx/css/mjs + 全仓 14 md**）**0 违规**（`applied` 0 · invalid 1 · unused 0，均沿既有）· md 8/8 · 口径扩展 13/13 · 自检 7/7 · 15ms 探测 **1536/1536** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
 | R63 | **测试质量线收尾（全修档 · 第 2/2 批 · 裸 called 收敛）** —— R62 §8.94 二 拆账的 121 裸 called 处置（104 阴性保留 + 17 正形态真弱收敛）与 §8.94 五 登记的「BE 27 处置对象」收口（§8.95；R62 收口后本会话拍板下一批 = 本项，即第 1 批所留「第 2 批接余量」） | ✅ **已完成（2026-10-09，§8.95，仅测试文件 + 护栏第 4 条 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`frontend/src` 产品代码零改动、除 17 处补实参外断言一字未改）**：**17 处正形态裸 `.toHaveBeenCalled()` 全量收敛为 `.toHaveBeenCalledWith(实参)`**（DataHub 12 · Sequences 2 · Protocol 2 · useInstructionData 1；实参取证全部上下文推导 —— 零参 3 类按产品唯一调用点、`setProtocols` 按 `prev => [...prev, created]` 函数式更新器、PUT 载荷按同文件 :167 既有精确断言先例、随机 name · code 走 `expect.objectContaining` 锁类型），**104 处阴性 `not.toHaveBeenCalled()` 一行不改**（记账 = 精确非弱）；BE 27 = **只记账**（口径钉死 §8.95 五，`backend/` 一行未碰）；`expect(x).toBe(true)` 112 与 `.toBeFalsy()` / `.toBeCalled()` 未触。**红测先行**：护栏第 4 条实现前 **1 红 3 绿**（逐字红因 `r63_red1.txt`：`AssertionError: expected [ …(17) ] to deeply equal []`），改后 4 绿；**三档 = 缺特性 1 / 先修 0 / 改写 0**；触及产品的红 **0**。**护栏第 4 条**：字面判据（`toHaveBeenCalled` 紧跟空括号 → With / Times 形态天然不在面内；前缀 `not` = 阴性剔除）+ `BARE_CALLED_EXEMPT` 显式豁免**当前 0 条**（预期即 0，stale 豁免同判红），自身按路径豁免（先例 R58 §8.90）。**等价性**：off 档全量 **1537/1537 · 0 红**；15ms 探测 **1537/1537**。**验收 = 10 项两遍全绿**：BE **1033/1033** 持平零改动 · FE **1537/1537**（101 文件，1536 → 1537 = +1 护栏第 4 条）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**26 份双口径 union 改动 js·jsx·css·mjs + 全仓 14 md**）**0 违规**（`applied` 0 · invalid 1 · unused 0，均沿既有）· md 8/8 · 口径扩展 13/13 · 自检 7/7 · probe15 **1537** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
+| R64 | **实机冒烟 + pageStatus 同步** —— R63 §8.95 七 收口后注册候选清零，本会话 question 拍板下一批 = R53 起挂账的末个历史候选「实机冒烟 + pageStatus 同步」；性质 = 纯验证 + 同步核对批（§8.96） | ✅ **已完成（2026-10-09，§8.96，纯验证批 · 零产品改动 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 零 FE 改动、零测试改动）**：**9/9 页实机加载冒烟**（root 560 至 3272 字符 · 导航全对 · 实 API 82 条往返；非 200 仅 `/processing` 应答规格 404 ×2 = 设计内降级 `responseSpecs.js:4`，实机无错误横幅；console error 仅该 2 条浏览器网络日志、其余 8 页 0/0；API ×2 = dev StrictMode 双挂载）+ **只读实操 4 项全过 0 错误**（指令点选切换 · 协议 LENGTH 属性面板 REFS 真数据 · 容器 FOCUS 内联展开 · datahub 域切换；全程零写入）+ **pageStatus 同步三面零漂移**（`generate-page-status.mjs` 跑完 md diff 空 · `PAGE_REGISTRY` = json 1:1 · 9 页 implemented 全实机成立）。**验收 = 10 项** 提交前 + post-commit 全绿（BE 1033 · FE 1537/101 文件 · build 0 · lint 0 · 校验器 0 · md 8/8 · 13/13 · 7/7 · probe15 1537 · ev40 0 · ev33 STAGED=2）。留白登记 2 条（404 静音口径待拍板 · 165 条 availableNow 逐条审计未做即不声称） |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -9019,6 +9020,53 @@ R61 已闭）与 §8.92 七 第 3 条同族沿旧提及；`PROJECT_HANDOVER.md` 
 - 落盘与验收：`r63_docs.py`（本节 + §1 行 + 条目 112）、`r63_mkverify.py` / `r63_verify.py`
   （10 项）、`r63_fe_after.txt` / `r63_fe_15ms.txt`（中途全量取证，复用 `r62_ferun.py`）、
   验收日志 `r63_*.txt`；BE 27 清单沿用 `r62_be27_body.txt`。
+
+
+## 8.96 R64 实机冒烟 + pageStatus 同步核对（2026-10-09）
+
+- 批次来源：R63 §8.95 七 收口后注册候选清零，本会话 question 拍板下一批 = R53 起挂账的末个
+  历史候选「实机冒烟 + pageStatus 同步」。性质 = 纯验证 + 同步核对批：零产品改动、零测试改动、
+  零 DDL（无 Migration、无 `chore(db)`、零 BE 零 FE 文件入提交），提交仅两份文档纯插入。
+- 环境：BE :8055（`sh_11e903f470010uFLLseCQ3O1nX`）+ FE :5174（`sh_11e903f48001V2LjBZ7CKPQhCa`，
+  `VITE_API_BASE` 指 8055）实机在跑；冒烟走浏览器 `tab_8cdbf871`（127.0.0.1:5174），用户
+  `tab_47d3abeb`（localhost:5174/processing）全程未触。证据落 Temp `r64_smoke1.txt`。
+- 一、9/9 页加载冒烟（逐页导航 → 页内 1s 等待 → `performance` 取 :8055 实 API 轮询 +
+  console error 读取）：9 页 root 渲染 560 至 3272 字符、侧栏「当前位置」全对；实 API 往返
+  82 条（每页 6 至 16 条）；非 200 仅 1 处 = `/processing` GET
+  `/response-specs/sample-inst-heartbeat` 404 ×2；console error 仅同源 2 条（浏览器失败网络
+  请求日志），其余 8 页 error 0、warning 0。所有 API 均出现 ×2 = dev StrictMode 双挂载，非问题。
+- 二、404 定档 = 设计内降级（非缺陷）：`frontend/src/api/responseSpecs.js:4` 文档化「404 =
+  该指令尚未配置规格 → 调用方降级 defaultSpec（`error.response.status` 可判）」；实机复核
+  `/processing` 无错误横幅（`hasErrBanner=false`）、指令库 16 条真数据完整渲染
+  （rootChars 1656）。零产品改动；「404 静音（BE 200-null 或 FE 抑制）」属产品口径 →
+  只登记留白不实施（见 五）。
+- 三、只读实操 4 项（全程零写入：保存、新建、删除、恢复、导入、发送按钮一个未点）：
+  ① `/instruction` 点选「示例状态包」→ 详情动态切换成功（YoRHa-A2 / DEMO-002 · LEN 12B ·
+  帧头 FA FA · 状态块 7B；初值自动选中「示例心跳帧」= YoRHa-9S / DEMO-001 · LEN 21B ·
+  ROOT SEQUENCE 11 块全渲染）；② `/protocol` 点 LENGTH 块 → 属性面板完整（标签、字节长度、
+  结构引用 REFS 3 REF(S)、SELECT FIELDS、字节序 BIG 与 LITTLE、出线编码 FIXED 与 VARINT、
+  删除、据此生成，全部真数据）；③ `/protocol` 点容器 FOCUS → 内联展开（pageStatus 协议条
+  「嵌套容器内联展开导航」实机成立）；④ `/datahub` 点 relations 域 → 视图切换至关系数据面板。
+  4 项 console error 均 0。
+- 四、pageStatus 同步三面核对 = 全部在轨零漂移：① json 至 md —— `node
+  scripts/generate-page-status.mjs` 跑完 `git diff docs/PAGE_STATUS.md` 为空（md 与 json 逐字
+  同步；「占位或待实现页面」标题下 3 空行 = 生成器对空清单的正规输出，不手改）；② json 至路由
+  —— `config/pageRegistry.js:1-3` 直接 `PAGE_REGISTRY = pageStatus.json` 1:1 派生，路由与
+  清单结构性零漂移（`/` 至 `/protocol` 重定向在场）；③ json 至实机 —— 9 条 `implemented:
+  true` 全部实机可加载真数据，`availableNow` 抽查（协议嵌套展开、REFS 引用、datahub 域导入
+  面板）与实况一致。165 条 `availableNow` 逐条全量审计不在本批范围（未做即不声称，登记见 五）。
+- 五、留白登记（只登记不实施）：① 应答规格 404 静音 = 产品口径改动（BE 改 200-null 或 FE
+  抑制，任一都改默认口径），待拍板后另排批；② pageStatus 165 条 `availableNow` 逐条现势
+  审计（本批仅页级 + 抽查通过）。
+- 六、红测与验收：本批零产品、零测试改动 → 无红测面（不冒充不虚报，红测与三档记账不适用）。
+  固定验收 10 项 = 提交前 + post-commit 各遍全绿（BE 1033 · FE 1537/101 文件 · build 0 ·
+  lint 0 · 校验器 0 违规 · md 8/8 · 口径扩展 13/13 · 自检 7/7 · probe15 1537 · ev40
+  TOTAL_PROBLEMS=0 · ev33 提交脚本断言 STAGED=2 DEL=0 BAD=0）。
+- 七、落盘与工具账：Temp = `r64_phase0.py`（页清单取数）、`r64_smoke1.txt`（冒烟证据）、
+  `r64_verify.py`（10 项，复制 `r63_verify.py` 只换日志前缀与本说明）、`r64_docs.py`
+  （本节 + §1 行 + 条目 113 落盘）、`r64_commit.py`（2 文件明列 + ev33 断言 + 消息核验）、
+  `r64_msg.txt`。提交 = `feat(R64)` 单笔，仅 `docs/PLAN_Backlog.md` 与
+  `PROJECT_HANDOVER.md` 两文件（纯插入）。
 
 
 ## 9. 保留勿动（非任务，勿清理）

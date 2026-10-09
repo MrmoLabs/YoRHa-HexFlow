@@ -4538,6 +4538,25 @@
        `r63_*.txt`（验收日志）。提交 = `feat(R63)` 单笔（**零 DDL** → 无 Migration、
        无 `chore(db)`）。**未 git add、未 commit**（待 review 后自行提交）。
 
+113. **R64 · 实机冒烟 + pageStatus 同步核对（纯验证批 · 零产品改动）**
+     （PLAN §8.96，2026-10-09；R63 §8.95 七 收口后注册候选清零，question 拍板 = R53 起挂账的
+     末个历史候选「实机冒烟 + pageStatus 同步」）
+     - **范围**：纯验证 + 同步核对 —— 零产品文件入提交（`frontend/`、`backend/` 一行未碰）、
+       零测试改动、零 DDL → 无 Migration、无 `chore(db)`、不引 pytest；提交 = 两份文档纯插入。
+     - **冒烟**：9/9 页实机加载（root 560 至 3272 字符 · 导航全对 · 实 API 82 条往返），
+       非 200 仅 `/processing` 应答规格 404 ×2 = 设计内降级（`responseSpecs.js:4` 文档化，
+       实机无错误横幅）；console error 仅该 2 条浏览器网络日志、其余 8 页 0/0；只读实操 4 项
+       全过 0 错误（指令点选切换 · 协议 LENGTH 属性面板 REFS 真数据 · 容器 FOCUS 内联展开 ·
+       datahub 域切换）；全程零写入（未点任何保存、新建、删除、恢复、导入、发送按钮）。
+     - **pageStatus 同步三面零漂移**：`generate-page-status.mjs` 跑完 md diff 空 ·
+       `PAGE_REGISTRY` = json 1:1 · 9 页 implemented 全实机成立；留白登记 2 条（404 静音口径
+       待拍板 · 165 条 availableNow 逐条审计未做即不声称）。
+     - **验收**：10 项提交前 + post-commit 全绿（BE 1033 · FE 1537/101 · build 0 · lint 0 ·
+       校验器 0 · md 8/8 · 13/13 · 7/7 · probe15 1537 · ev40 0 · ev33 STAGED=2 DEL=0 BAD=0）。
+     - **工具账**：Temp = `r64_phase0.py` · `r64_smoke1.txt` · `r64_verify.py` · `r64_docs.py` ·
+       `r64_commit.py` · `r64_msg.txt`。提交 = `feat(R64)` 单笔（**零 DDL** → 无 Migration、
+       无 `chore(db)`）。**未 git add、未 commit**（待 review 后自行提交）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 
