@@ -4495,6 +4495,49 @@
      - **下一批（R63）**：121 裸 called 处置（104 阴性 + 17 阳性真弱）+ BE 27 清单
        + 17 处正形态裸 `toHaveBeenCalled()` 收敛。
 
+112. **R63 · 测试质量线收尾（全修档 · 第 2/2 批）裸 called 收敛 17 处 + 护栏第 4 条 + BE 27 口径钉死**
+     （PLAN §8.95，2026-10-09；R62 §8.94 二、五 两处登记的收口批 = 第 1 批所留「第 2 批接余量」）
+     - **范围**：**仅测试文件 + 护栏第 4 条 · 零 DDL** —— 零 BE（`backend/` 一行未碰）、
+       无 Migration、无 `chore(db)`、不引 pytest、新 pip 依赖 = 0，`/dispatch` 缺省口径
+       逐字节不变，`frontend/src` 产品代码一行未改，`frontend/test/` 未触
+       （`setupDelay.js` 不碰）；`frontend/red-report.json` 与 `backend/db/yorha.db`
+       = 仓内既有状态、本批未碰，不入提交范围。
+     - **17 处收敛（实参取证全部上下文推导、跑测打点 0）**：`DataHub.test.jsx` **12** 处
+       （:81 / :99 / :135 / :152 / :178 / :272 / :295 / :311 / :342 / :368 / :395 / :417）→
+       `.toHaveBeenCalledWith()`（产品 `DataHub.jsx:121` 零参）；`Sequences.test.jsx` **2** 处
+       （:141 / :142）→ 同零参（`Sequences.jsx:262` / `:287`）；`Protocol.test.jsx` **2** 处 ——
+       :119 `setProtocols` → `expect.any(Function)`（`Protocol.jsx:323` 函数式更新器）、
+       改前 :471 → `.toHaveBeenCalledWith('proto-1', {label: '改名后的协议', type: 'container', description: null, children: []})`
+       （`Protocol.jsx:212-221` + 同文件 :167 精确断言先例）；`useInstructionData.test.js` **1** 处
+       （改前 :90，现 :91）→ `expect.objectContaining`（`device_code` / `type` / `fields` 定值 +
+       `name` / `code` 锁 `expect.any(String)`；`useInstructionData.js:346-352` 含随机数 → 锁类型）。
+     - **阴性与旁支一行不改**：`.not.toHaveBeenCalled()` **104**、`expect(x).toBe(true)` **112**、
+       `.toBeFalsy()` / `.toBeCalled()` 未触；实扫终态 **POS = 0 · NEG = 104 · With/Times 275 ·
+       文件 101**（`r63_scan.txt`；判据复验 `guard=0 gap=0`）。
+     - **红测先行**：护栏第 4 条实现前 = **1 红 3 绿**（逐字红因 `r63_red1.txt` 3175 字节：
+       `AssertionError: expected [ …(17) ] to deeply equal []` @ `weakAssertions.test.js:137:32`），
+       改后 **4 绿**（`r63_guard_after.txt`）；**三档 = 缺特性 1 / 先修 0 / 改写 0**；
+       转换暴露红 0、触及产品的红 **0**；off 档 0 红照跑、15ms 探测照跑全绿（红档曾被护栏复跑
+       覆盖 2 次，`r63_redredo.py` 重取真红后与复跑分文件存放）。
+     - **护栏第 4 条**：字面判据（`toHaveBeenCalled` 紧跟空括号 → With / Times 天然不在面内；
+       前缀 `not` = 阴性剔除）+ `BARE_CALLED_EXEMPT` 显式豁免**当前 0 条**（预期即 0，
+       stale 豁免同判红）；自身按路径豁免（先例 R58 §8.90）。
+     - **BE 27 处置 = 只记账**：有意为之的「不抛即过」惯用法，口径钉死 PLAN §8.95 五
+       （后续不重开）；BE 全量 **1033 / 0 红**（`BE_OK 1033`、`BE_FAIL_N 0`）。
+     - **等价性与验收**：FE **1536 → 1537**（101 文件，+1 = 护栏第 4 条，17 处为断言收紧、
+       不增用例）、不设 env 全量 0 红。**10 项 × 两遍**（`r63_verify.py`，复制 r62 口径、
+       逻辑一字不动）全绿：BE 1033 · FE 1537 · `npx vite build` 0 · `npm run lint` 0 ·
+       校验器（26 份双口径 union + 全仓 14 md）0 违规 · md 8/8 · 口径扩展 13/13 ·
+       自检 7/7 · probe15 1537 · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0。
+     - **留白**：无新增登记（测试质量线两批收口；`.toBeFalsy()` / `.toBeCalled()` 与
+       `expect(x).toBe(true)` 112 均非本批口径，未触）。
+     - **工具账**：Temp = `r63_scan.py` / `.txt` · `r63_regex_check.py` / `.txt` ·
+       `r63_redrun.py` · `r63_red1.txt` · `r63_redredo.py` · `r63_guardrun.py` /
+       `r63_guard_after.txt` · `r63_fixbak/` · `r63_docscan.py` · `r63_docs.py` ·
+       `r63_mkverify.py` · `r63_verify.py` · `r63_fe_after.txt` · `r63_fe_15ms.txt` ·
+       `r63_*.txt`（验收日志）。提交 = `feat(R63)` 单笔（**零 DDL** → 无 Migration、
+       无 `chore(db)`）。**未 git add、未 commit**（待 review 后自行提交）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

@@ -78,7 +78,7 @@ describe('DataHub Page', () => {
         api.exportDataBundle.mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }));
 
         render(<DataHub />);
-        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledWith());
 
         fireEvent.click(screen.getByRole('button', { name: /下载 ZIP/ }));
 
@@ -96,7 +96,7 @@ describe('DataHub Page', () => {
         api.exportDataBundle.mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }));
 
         render(<DataHub />);
-        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledWith());
 
         // 9 域芯片齐（= 后端 BUNDLE_DOMAIN_VERSIONS 键序），全不选时按钮禁用
         ['instructions', 'relations', 'frames', 'recipes', 'sequences', 'transport', 'profiles', 'templates', 'routing_rules']
@@ -132,7 +132,7 @@ describe('DataHub Page', () => {
         api.exportDataBundle.mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }));
 
         render(<DataHub />);
-        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledWith());
 
         fireEvent.click(screen.getByRole('button', { name: /下载 ZIP/ }));
         await waitFor(() => expect(api.exportDataBundle).toHaveBeenCalledTimes(1));
@@ -149,7 +149,7 @@ describe('DataHub Page', () => {
         api.exportDataBundle.mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }));
 
         render(<DataHub />);
-        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledWith());
 
         fireEvent.click(screen.getByRole('button', { name: /下载示例包/ }));
 
@@ -175,7 +175,7 @@ describe('DataHub Page', () => {
         });
 
         render(<DataHub />);
-        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledWith());
 
         fireEvent.click(screen.getByRole('button', { name: /新建备份/ }));
 
@@ -269,7 +269,7 @@ describe('DataHub Page', () => {
         });
 
         render(<DataHub />);
-        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledWith());
 
         fireEvent.change(screen.getByTestId('relations-import-input'), {
             target: { files: [makeJsonFile(JSON.stringify(RELATIONS))] }
@@ -292,7 +292,7 @@ describe('DataHub Page', () => {
         api.getDatahubStatus.mockResolvedValue(STATUS);
 
         render(<DataHub />);
-        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledWith());
 
         fireEvent.change(screen.getByTestId('relations-import-input'), {
             target: { files: [makeJsonFile(JSON.stringify(RELATIONS))] }
@@ -308,7 +308,7 @@ describe('DataHub Page', () => {
         api.getDatahubStatus.mockResolvedValue(STATUS);
 
         render(<DataHub />);
-        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledWith());
         const input = screen.getByTestId('relations-import-input');
 
         fireEvent.change(input, { target: { files: [makeJsonFile('{oops')] } });
@@ -339,7 +339,7 @@ describe('DataHub Page', () => {
         });
 
         render(<DataHub />);
-        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledWith());
 
         fireEvent.change(screen.getByTestId('domain-import-input'), {
             target: { files: [makeJsonFile(JSON.stringify(SEQUENCES), 'sequences.json')] }
@@ -365,7 +365,7 @@ describe('DataHub Page', () => {
         api.importDomain.mockResolvedValue({ domain: 'x', imported: 0, updated: 0, skipped: [], warnings: [] });
 
         render(<DataHub />);
-        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledWith());
         const input = screen.getByTestId('domain-import-input');
 
         const cases = [
@@ -392,7 +392,7 @@ describe('DataHub Page', () => {
         api.getDatahubStatus.mockResolvedValue(STATUS);
 
         render(<DataHub />);
-        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledWith());
         const input = screen.getByTestId('domain-import-input');
 
         fireEvent.change(input, { target: { files: [makeJsonFile('{oops')] } });
@@ -414,7 +414,7 @@ describe('DataHub Page', () => {
         });
 
         render(<DataHub />);
-        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalled());
+        await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledWith());
 
         // ① 导出芯片多第 9 颗 —— 只勾它，送后端的就是它（顺序仍按 9 域表）
         fireEvent.click(screen.getByRole('button', { name: 'routing_rules' }));

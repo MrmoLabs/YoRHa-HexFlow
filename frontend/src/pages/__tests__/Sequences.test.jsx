@@ -138,8 +138,8 @@ const baseMocks = () => {
 
 const renderPage = async () => {
     const utils = render(<Sequences />);
-    await waitFor(() => expect(api.listSequences).toHaveBeenCalled());
-    await waitFor(() => expect(api.getSequenceStatus).toHaveBeenCalled());
+    await waitFor(() => expect(api.listSequences).toHaveBeenCalledWith());
+    await waitFor(() => expect(api.getSequenceStatus).toHaveBeenCalledWith());
     // 名称输入回填 = 列表已渲染且首条已自动选中（effect 链已收敛）
     await screen.findByDisplayValue('冒烟序列');
     // 「追加一步」title 随指令库加载翻转 → instructions state 已就位

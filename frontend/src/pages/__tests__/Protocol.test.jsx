@@ -115,8 +115,8 @@ describe('Protocol Page', () => {
             }));
         });
 
-        // R51（PLAN §8.83）：createProtocol 回包后才回写共享态
-        await waitFor(() => expect(setProtocols).toHaveBeenCalled());
+        // R51（PLAN §8.83）：createProtocol 回包后才回写共享态（函数式更新器）
+        await waitFor(() => expect(setProtocols).toHaveBeenCalledWith(expect.any(Function)));
         vi.useFakeTimers();
     });
 
@@ -468,7 +468,13 @@ describe('Protocol Page', () => {
             expect(api.updateProtocol).not.toHaveBeenCalled(); // 反馈 #3：无自动落库
             await saveViaButton();
 
-            expect(api.updateProtocol).toHaveBeenCalled();
+            // 载荷同 L167 既有精确断言口径（version 为 undefined → JSON 丢键，toEqual 语义忽略）
+            expect(api.updateProtocol).toHaveBeenCalledWith('proto-1', {
+                label: '改名后的协议',
+                type: 'container',
+                description: null,
+                children: []
+            });
             // R51：失败横幅是**拒绝回包**上屏后才有的
             await waitFor(() => expect(screen.getByText(/协议保存失败/)).not.toBeNull());
         } finally {

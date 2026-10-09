@@ -10,6 +10,16 @@ import path from 'node:path';
 //   ② 同文件重复测试标题零残留（本批实测 1 真：InstructionEncoder.test.js:135 与 :319
 //      两个不同意图复制未改名，已改名区分 int / float；另 3 处为标题提取器伪报）。
 //
+// R63（PLAN §8.95 · 2026-10-09）：第 2/2 批（裸 called 收敛）新增第 4 条硬指标：
+//
+//   ③ 正形态裸 called 零残留 —— 正形态裸断言 17 处全部收敛为**带实参**形态
+//      （实现前实测 17 处在场，本文件实现前跑 = 红）；
+//      判据天然不碰阴性 not 前缀（阴性 104 处 = 精确非弱，一行不改）与
+//      With / Times 带参形态（字面要求
+//      toHaveBeenCalled 紧跟空括号，With / Times 形态天然被排除在外）。
+//      判不准者按「文件:行」登记进 BARE_CALLED_EXEMPT 显式豁免（预期 0 条；
+//      豁免项必须实测在场，否则判 stale 一并翻红）。
+//
 // **自身豁免按路径判**（本文件正文必然含上面两条判据的字面，先例 R58 死码护栏
 //  §8.90「按路径判、按名判不放过」）；换个名字复制一份进来照判。
 // 标题提取按 it( / test( 的**第一个实参源码**整体取（含引号、模板字面量 ${} 原样），
@@ -84,6 +94,32 @@ for (const f of testFiles) {
     }
 }
 
+// 判据 ③（R63 · PLAN §8.95）：正形态裸 called —— 字面要求 toHaveBeenCalled 紧跟空
+// 括号，故 With / Times 带参形态天然不在面内；
+// 断言前缀（去尾部空白）落在 not 上 = 阴性精确非弱（not 前缀的裸 called），
+// 一行不改、剔除（104 处）。判不准者按「文件:行」显式豁免，理由须 §8.95 逐条点名。
+const CALLED_BARE = /\.toHaveBeenCalled\(\)/g;
+const BARE_CALLED_EXEMPT = new Map([
+    // ['frontend/src/pages/__tests__/Example.test.jsx:90', '判不准理由（须 PLAN §8.95 点名）'],
+]);
+
+const bareCalledAll = [];
+for (const f of testFiles) {
+    const text = fs.readFileSync(f, 'utf8');
+    for (const m of text.matchAll(CALLED_BARE)) {
+        const prefix = text.slice(0, m.index).replace(/\s+$/, '');
+        bareCalledAll.push({
+            key: `${rel(f)}:${text.slice(0, m.index).split('\n').length}`,
+            negative: /(?:^|[^\w])not$/.test(prefix),
+        });
+    }
+}
+const bareCalledHits = bareCalledAll
+    .filter((h) => !h.negative && !BARE_CALLED_EXEMPT.has(h.key))
+    .map((h) => h.key);
+const staleExempts = [...BARE_CALLED_EXEMPT.keys()]
+    .filter((k) => !bareCalledAll.some((h) => h.key === k && !h.negative));
+
 describe('R62 弱断言护栏：FE 测试文件零 toBeDefined 残留 + 同文件零重复标题', () => {
     it('扫描面非空（护栏自身不许空转）', () => {
         expect(testFiles.length).toBeGreaterThan(90);
@@ -95,5 +131,10 @@ describe('R62 弱断言护栏：FE 测试文件零 toBeDefined 残留 + 同文�
 
     it('同文件内 it/test 标题不重复（实现前 1 真重复 → 红）', () => {
         expect(dupTitles).toEqual([]);
+    });
+
+    it('正形态裸 toHaveBeenCalled 收敛为 toHaveBeenCalledWith（实现前 17 处在场 → 红）', () => {
+        expect(bareCalledHits).toEqual([]);
+        expect(staleExempts).toEqual([]);
     });
 });

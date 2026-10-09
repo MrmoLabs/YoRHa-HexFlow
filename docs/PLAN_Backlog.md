@@ -95,6 +95,7 @@
 | R60 | **补注入盲区 27 处（async 形态 mock 也进延迟）** —— R51 §8.83 八 第 2 条登记的留白「注入盲区 27 处（`vi.fn(async …)` / `mockImplementation(async …)`）不进延迟 —— 微任务即达，与从前逐字相同，要压这类得换注入点，本批不做」（同批 §8.83 二 取数表同数同登，§8.84 与 §8.85 两处「R51 留白沿旧」各再提一次）；R51 收口问 R52 排批时本项曾列为候选（用户当时选了假通过全仓排查），**本会话拍板下一批 = 本项**（§8.92） | ✅ **已完成（2026-10-08，§8.92，仅测试基建 + 测试文件 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`frontend/src` 产品代码零改动）**：**走路线 1 中央解** —— 扩 `frontend/test/setupDelay.js`：`vi.fn(async …)` 实参与 `mockImplementation` / `mockImplementationOnce` 传入的 async 函数统一包一层（判据 = `AsyncFunction`），**回调体照旧调用时立即执行**（副作用与调用记账一字不差），被推迟的只有「响应何时到」；处理器在调用当下挂上原 Promise（在途拒绝不露 unhandled 窗口）、包装点幂等打标防双倍延迟；**非 async 形态一个不碰**（R50 `Terminal.test.jsx` 自己的 `ok()` / `fail()` 与手动掌闸 Promise 照旧）。**27 处调用点一行未动**（路线 2「改写调用点为声明式形态」落选：Protocol 那 13 处回包由实参算出，`mockResolvedValue` 接不住）。**红测先行**：新增 `frontend/test/delayAsync.test.js` 2 条，实现前 15ms 档 **2 红**（逐字红因 `r60_red1.txt`：`AssertionError: expected true to be false` —— 宏任务刻度后 resolve 已落定 = 微任务即达），不设 env 同文件 **2 绿**（等价性护栏，单列不冒充红测）。**三档记账**：缺特性（真红测）2 / 测试自身 bug 先修 2 / 随新事实改写 0。**15ms 探测新暴露 2 红 / 1 文件**（Protocol：假定时器冻住回包计时器 → SAVE 未消失；options 未到齐就 change → 生成钮仍禁用），**只补等待**（`act` 内推 `DELAY+5`、`waitFor` options 真在场），断言期望一字未改，**触及产品的红 0 条**。**覆盖证明 27 → 29**（延迟路径打点去重 union：api 5 文件 14 处 + Protocol 13 处全进 + 护栏自测 2 处，`r60_cover.txt`）。**等价性**：不设 env 全量 **1530/1530 · 0 红**。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1530/1530**（99 文件，+2 条 +1 文件）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**3 个改动 js/jsx + 3 个 mjs + 全仓 14 md**）**0 违规**（`applied` 新增 0）· md 8/8 · 口径扩展 13/13 · 自检 7/7 · **15ms 探测 1530/1530** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
 | R61 | **假定时器在途链（两个盲跳点改有界排空）** —— R51 §8.83 八 第 3 条登记的留白「**假定时器下的排空与 `settle` 是跳过的**（等不到就硬跳，防冻死钩子）—— 若某文件既用假定时器、又跨测试留在途链，排空不生效；本批已把 Protocol 那 2 条要等回包的测试切真定时器，其余假定时器文件的在途链**未逐一验证**；」（口径原文 §8.83 行 7401-7402、留白行 7480-7482；§8.92 七 第 3 条同族沿旧一次）；R60 收口后**本会话拍板下一批 = 本项**（推荐理由 = 根治后这类修法收敛成统一口径）（§8.93） | ✅ **已完成（2026-10-08，§8.93，仅测试基建 + 测试文件 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`frontend/src` 产品代码零改动、断言期望一字未改）**：**中央解** `frontend/test/setupDelay.js` —— `__YORHA_settle()` 与全局 `afterEach` 两个盲跳点都改成**有界排空**：假定时器档**推进假时钟**（每轮 `advanceTimersByTimeAsync(DELAY_MS + 5)` + 微任务随轮排空，**自己在账的在途链清零**或**时钟无挂起计时器**即早退；**轮数 ≤ 8 且累计 ≤ 1000ms** 双上限防死循环），真定时器档**先等一轮 `DELAY_MS + 5`（与 R51 旧口径逐字一致）再按在途链账有界续等**（多跳链的第二跳不再漏到下一个测试）；**在途链分账 `{ real, fake }`**（计时器**发起 +1、落地 -1**，按发起那一刻是不是假时钟入账），走真档即把随 `useRealTimers()` 卸载被丢弃的假陈账就地清零。与 R52 §8.84 的 `__YORHA_harnessSettle` **收编同源**（该口当时只作临时复检、跑完 `git checkout` 还原、**从未入库**）——**不另起第二个等待口**；与 R60 `delayAsync` 共存（其回包计时器同样进 `delayTimer` 记账）。**红测先行**：新增 `frontend/test/settleFakeTimers.test.js` 3 条，实现落笔前 15ms 档 **2 红**（逐字红因 `r61_red1.txt`：`AssertionError: expected false to be true` @ `:23:28` 与 `:40:33` —— 假定时器下 `settle` 与收尾排空都盲跳、链没落地），不设 env 同文件 **3 绿**（`r61_red1_off.txt`，等价性护栏单列）。**三档记账：缺特性 2 / 测试自身 bug 先修 0 / 随新事实改写 0**（实现 bug 0）。**逐一验证（grep `useFakeTimers` 全仓 = 4 个文件 + 1 个伪）**：现状打点实测既有 99 文件两个盲跳分支**0 命中**（`r61_probe_skip.txt`，跑完即撤）；在途链审计（发起落地埋点 + 测试序号）**100 文件 1533 条 · 跨测试落地 0**（改前 `Sequences.test.jsx` **6 至 7 条**在途响应落到下一个测试 = 真档单次固定等待盖不住多跳链 → 只补收尾续等，断言一字未改）。**等价性**：不设 env 全量 **1533/1533 · 0 红**；**15ms 探测 1533/1533 · 推进时钟翻红断言 0 条**。**验收 = 10 项两遍全绿**：BE **1033/1033** 持平 · FE **1533/1533**（100 文件，+3 条 +1 文件）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**4 个改动 js/jsx + 全仓 14 md**）**0 违规**（`applied` 0 · invalid 1 · unused 0，均沿既有）· md 8/8 · 口径扩展 13/13 · 自检 7/7 · 15ms 探测 **1533/1533** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
 | R62 | 测试质量三件：weak assert 判档处置（`.toBeDefined()` 221 处全量改 `.not.toBeNull()`（反形态 0）；`.toBeTruthy()` 222 处 = 等价非弱记账保留 201 + 精确化 19 + 判不准记账 2）；窄修 3 项（`frontend/test/settleFakeTimers` 补断言、`InstructionEncoder` 两处标题与断言对齐、新增静态护栏 3 条）；BE 27 条无断言（不抛即过）测试方法与 17 处正形态裸 `toHaveBeenCalled()` 仅记账（本批零 BE 改动、零产品代码改动，121 裸 called 一行不改登记 R63）（§8.94） | ✅ **已完成（2026-10-09，§8.94，仅测试文件 + 新增静态护栏 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`frontend/src` 产品代码零改动、期望值除 19 处精确化外一字未改）**：**判档口径（用户拍板）** `.toBeDefined()` 全改 `.not.toBeNull()`；`.toBeTruthy()` 依上下文三分（元素存在类等价非弱记账保留、可定值者精确化、判不准者记账）。**红测先行**：护栏实现前 **2 红 1 绿**（逐字红因 `r62_red1.txt`；第 1 条扫描面非空基线即绿、单列不冒充红测）；**转换暴露红 0、触及产品的红 0**；三档 = 缺特性 2 / 先修 0 / 改写 0。**窄修 3 项**：`frontend/test/settleFakeTimers.test.js:35` 补 `chainLanded` 断言、`InstructionEncoder.test.js:135/:319` int / float 标题对齐、新增 `weakAssertions.test.js` 3 条（自身按路径豁免，先例 R58 §8.90）。**等价性**：不设 env 全量 **1536/1536 · 0 红**；**15ms 探测 1536/1536**。**验收 = 10 项两遍全绿**：BE **1033/1033** 持平零改动 · FE **1536/1536**（101 文件，1533 → 1536 = +3 护栏 +1 文件）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**27 个改动 js/jsx/css/mjs + 全仓 14 md**）**0 违规**（`applied` 0 · invalid 1 · unused 0，均沿既有）· md 8/8 · 口径扩展 13/13 · 自检 7/7 · 15ms 探测 **1536/1536** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
+| R63 | **测试质量线收尾（全修档 · 第 2/2 批 · 裸 called 收敛）** —— R62 §8.94 二 拆账的 121 裸 called 处置（104 阴性保留 + 17 正形态真弱收敛）与 §8.94 五 登记的「BE 27 处置对象」收口（§8.95；R62 收口后本会话拍板下一批 = 本项，即第 1 批所留「第 2 批接余量」） | ✅ **已完成（2026-10-09，§8.95，仅测试文件 + 护栏第 4 条 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`frontend/src` 产品代码零改动、除 17 处补实参外断言一字未改）**：**17 处正形态裸 `.toHaveBeenCalled()` 全量收敛为 `.toHaveBeenCalledWith(实参)`**（DataHub 12 · Sequences 2 · Protocol 2 · useInstructionData 1；实参取证全部上下文推导 —— 零参 3 类按产品唯一调用点、`setProtocols` 按 `prev => [...prev, created]` 函数式更新器、PUT 载荷按同文件 :167 既有精确断言先例、随机 name · code 走 `expect.objectContaining` 锁类型），**104 处阴性 `not.toHaveBeenCalled()` 一行不改**（记账 = 精确非弱）；BE 27 = **只记账**（口径钉死 §8.95 五，`backend/` 一行未碰）；`expect(x).toBe(true)` 112 与 `.toBeFalsy()` / `.toBeCalled()` 未触。**红测先行**：护栏第 4 条实现前 **1 红 3 绿**（逐字红因 `r63_red1.txt`：`AssertionError: expected [ …(17) ] to deeply equal []`），改后 4 绿；**三档 = 缺特性 1 / 先修 0 / 改写 0**；触及产品的红 **0**。**护栏第 4 条**：字面判据（`toHaveBeenCalled` 紧跟空括号 → With / Times 形态天然不在面内；前缀 `not` = 阴性剔除）+ `BARE_CALLED_EXEMPT` 显式豁免**当前 0 条**（预期即 0，stale 豁免同判红），自身按路径豁免（先例 R58 §8.90）。**等价性**：off 档全量 **1537/1537 · 0 红**；15ms 探测 **1537/1537**。**验收 = 10 项两遍全绿**：BE **1033/1033** 持平零改动 · FE **1537/1537**（101 文件，1536 → 1537 = +1 护栏第 4 条）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**26 份双口径 union 改动 js·jsx·css·mjs + 全仓 14 md**）**0 违规**（`applied` 0 · invalid 1 · unused 0，均沿既有）· md 8/8 · 口径扩展 13/13 · 自检 7/7 · probe15 **1537** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -8915,6 +8916,109 @@ R61 已闭）与 §8.92 七 第 3 条同族沿旧提及；`PROJECT_HANDOVER.md` 
   校验器 0 违规（改动 27 份 js·jsx·css·mjs + 全仓 14 md）/ md 8/8 / 口径扩展 13/13 /
   自检 7/7 / probe15 1536 / `ev40` TOTAL_PROBLEMS=0 / `ev33` STAGED=0 DEL=0 BAD=0。
 - `PROJECT_HANDOVER.md` 新增条目 111。`setupDelay.js` 本批不碰。
+
+
+## 8.95 R63 测试质量线收尾（全修档 · 第 2/2 批 · 裸 called 收敛）台账（2026-10-09）
+
+> **已落地 ✅ → 本节 §8.95**。历史条目一律不改写；本批**零 BE 改动、零产品代码改动**，
+> `backend/` 一行未碰，`frontend/src` 只动 `__tests__` 测试文件，`frontend/test/` 未触
+> （`setupDelay.js` 不碰）；`/dispatch` 缺省口径逐字节不变；`frontend/red-report.json` 与
+> `backend/db/yorha.db` 为仓内既有状态未触；无 pytest、无新 pip、无 DDL / Migration、
+> 无 `chore(db)`。104 处阴性与 112 处 `expect(x).toBe(true)` **一行不改**；
+> `.toBeFalsy()` / `.toBeCalled()` 未触。
+
+### 一 · 来源（销 §8.94 两处 R63 登记）
+
+- §8.94 二：裸 `.toHaveBeenCalled()` 121 = `.not.toHaveBeenCalled()` 104（阴性精确、非弱）
+  + 正形态裸 17（真弱）→ 本批处置 = **17 收敛、104 保留一行不改**。
+- §8.94 五：BE 无断言 27 条清单（`r62_be27_body.txt`，R62 已录方法体与调用面）标
+  「R63 处置对象」→ 本批处置 = **只记账，口径钉死本节五**（`backend/` 一行未碰，见五）。
+
+### 二 · 17 处台账（正形态裸 → 收敛形态 · 实参取证全部上下文推导、跑测打点 0）
+
+- `frontend/src/pages/__tests__/DataHub.test.jsx` **12 处**（改前 :81 · :99 · :135 · :152 ·
+  :178 · :272 · :295 · :311 · :342 · :368 · :395 · :417，12 处同形）→ `.toHaveBeenCalledWith()`；
+  取证 = 产品 `DataHub.jsx:121` `setStatus(await api.getDatahubStatus())` **零参**
+  （全文件唯一调用点）。
+- `frontend/src/pages/__tests__/Sequences.test.jsx` **2 处**（:141 `listSequences` ·
+  :142 `getSequenceStatus`，`renderPage` 收敛等待口）→ `.toHaveBeenCalledWith()`；取证 =
+  `Sequences.jsx:262` / `:287` **零参**（同为唯一调用点）。
+- `frontend/src/pages/__tests__/Protocol.test.jsx` **2 处**：
+  - 改前 :119 `expect(setProtocols)` → `.toHaveBeenCalledWith(expect.any(Function))`；取证 =
+    `Protocol.jsx:323` `setProtocols(prev => [...prev, created])`（createProtocol 回包后回写
+    共享态 = 函数式更新器，断言**本该如此**而非恰好如此）。
+  - 改前 :471（现前置注释 :471、断言 :472）`expect(api.updateProtocol)` →
+    `.toHaveBeenCalledWith('proto-1', { label: '改名后的协议', type: 'container', description: null, children: [] })`；
+    取证 = `Protocol.jsx:212-221` PUT 载荷 + 同文件 :167 既有**精确断言先例**（fixture 无
+    `version` → `undefined` 键在 JSON 层丢键、`toEqual` 语义忽略，故不写 `version`、与 :167 同形）。
+- `frontend/src/hooks/__tests__/useInstructionData.test.js` **1 处**（改前 :90，现 :91）
+  `expect(api.createInstruction)` → `expect.objectContaining` 形态，字段 = `device_code:
+  'DEV-001'` · `name` / `code` 走 `expect.any(String)` · `type: 'STATIC'` · `fields: []`；
+  取证 = `useInstructionData.js:346-352` `newInstPayload` —— `name` / `code` 含
+  `Math.random()` **无法定值 → 锁类型**，其余三字段定值钉死。
+- **判不准 0 处 → 显式豁免 0 条**（护栏 `BARE_CALLED_EXEMPT` 空 Map，预期即 0；
+  `staleExempts` 保证豁免项必须实测在场、过期豁免同判红）。
+
+### 三 · 阴性 104 与旁支不动的证据
+
+- 实扫终态（`r63_scan.py` → `r63_scan.txt`）：**POS = 0 · NEG = 104 · With/Times 形态 = 275
+  （= 改前 258 + 本次收敛 17）· 文件 101**；判据 ④ 三形态复验（`r63_regex_check.py` →
+  `r63_regex_check.txt`）：**guard = 0 · bare_all = 104 · neg = 104 · with = 118 · times = 157
+  （118 + 157 = 275）· gap = 0 · gap2 = 0**（自身在枚举面内、护栏按路径豁免，
+  输出 `self_in_list = True` 为预期内）。
+- 判据 ④ = 字面形态匹配：`toHaveBeenCalled` **紧跟空括号**才计，故 `.toHaveBeenCalledWith(`
+  与 `.toHaveBeenCalledTimes(` 天然不在面内；断言前缀去尾部空白落在 `not` 上 = 阴性剔除。
+- 阴性 104、`expect(x).toBe(true)` 112、`.toBeFalsy()` / `.toBeCalled()` 全程一行未改。
+
+### 四 · 红测先行（三档记账）
+
+- 护栏第 4 条**实现前**单跑 = **1 红 3 绿**，逐字红因存 `r63_red1.txt`（3175 字节）：
+  `AssertionError: expected [ …(17) ] to deeply equal []`（`weakAssertions.test.js:137:32`，
+  17 条 file:line 全列）；既有 3 条护栏同轮绿。
+- 改写完成后护栏 **4 绿**（`r63_guard_after.txt`，与红档分文件存放）。
+- **三档 = 缺特性（真红测）1 / 测试自身 bug 先修 0 / 随新事实改写 0**；转换暴露红 **0**、
+  触及产品的红 **0**（17 处只改 `__tests__` 断言形态，撞红即判档停报，本批未触产品）。
+- off 档（不设 env）全量 **1537/1537 · 0 红**（`r63_fe_after.txt`）；15ms 探测 **1537/1537**
+  （`r63_fe_15ms.txt`）。
+- 红档曾被护栏复跑覆盖 2 次，均以 `r63_redredo.py` 重取真红（暂存 17 处改写 → `git checkout`
+  还原 4 文件 → 重跑红 → 逐字还原改写），终档 3175 字节；此后护栏复跑一律走
+  `r63_guardrun.py`（独立目标 `r63_guard_after.txt`），红档不再被覆盖。
+
+### 五 · BE 27 记账收口（§8.94 五「R63 处置」= 本节）
+
+- 处置 = **只记账 · 有意为之的「不抛即过」惯用法**：27 条（清单与方法体取证
+  `r62_be27_body.txt`）均为异常路径测试 —— 靠抛出与捕获即过、方法体不放显式断言属写法惯用
+  而非缺断言；**`backend/` 一行未碰**，不引 pytest、无新 pip、无 DDL / Migration、
+  无 `chore(db)`。
+- 口径自此**钉死本节、不重开**（除非用户拍板改 BE 测试）。
+- BE 全量照绿 **1033 用例 · 0 红**（`BE_OK 1033`、`BE_FAIL_N 0`）。
+
+### 六 · 护栏第 4 条与等价性、验收（10 项 × 两遍）
+
+- **护栏第 4 条**（`frontend/src/__tests__/weakAssertions.test.js`）：正形态裸 called 零残留
+  + `BARE_CALLED_EXEMPT` 显式豁免（「文件:行」+ 理由，**当前 0 条**、理由须本节点名）+
+  `staleExempts` 过期豁免同判红；自身按路径豁免（先例 R58 §8.90）—— 判据与豁免的字面必然
+  出现在其注释里，按路径判、按名判不放过。
+- **等价性**：用例 **1536 → 1537**（+1 = 护栏第 4 条；17 处为断言收紧、不增用例）、
+  文件 101 持平；不设 env 全量 0 红；15ms 探测全绿。
+- **验收 = 10 项 × 两遍**（`r63_verify.py`，复制 `r62_verify.py`、只换日志前缀与说明、
+  逻辑一字不动）：BE **1033/1033** · FE **1537/1537**（101 文件）· `npx vite build` 0 ·
+  `npm run lint` 0 · 校验器（**26 份双口径 union 改动 js·jsx·css·mjs + 全仓 14 md**）
+  **0 违规**（`applied` 0 · invalid 1 · unused 0，均沿既有）· md 口径 8/8 · 口径扩展 13/13 ·
+  自检 7/7 · probe15 **1537** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0。
+- `PROJECT_HANDOVER.md` 新增条目 112。`frontend/test/` 与 `setupDelay.js` 本批不碰。
+
+### 七 · 工具账（Temp 取证）
+
+- 取数与判据：`r63_scan.py` / `r63_scan.txt`（17 处清单 + 终态 POS / NEG / OTHER）、
+  `r63_regex_check.py` / `r63_regex_check.txt`（判据 ④ 三形态 gap = 0）、`r63_docscan.py`
+  （文档锚点行号）。
+- 红测与护栏：`r63_redrun.py` / `r63_red1.txt`（红档 3175 字节）、`r63_redredo.py`
+  （红档重取）、`r63_guardrun.py` / `r63_guard_after.txt`（护栏复跑）、`r63_fixbak/`
+  （17 处改写暂存）。
+- 落盘与验收：`r63_docs.py`（本节 + §1 行 + 条目 112）、`r63_mkverify.py` / `r63_verify.py`
+  （10 项）、`r63_fe_after.txt` / `r63_fe_15ms.txt`（中途全量取证，复用 `r62_ferun.py`）、
+  验收日志 `r63_*.txt`；BE 27 清单沿用 `r62_be27_body.txt`。
 
 
 ## 9. 保留勿动（非任务，勿清理）

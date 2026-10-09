@@ -87,7 +87,14 @@ describe('useInstructionData', () => {
             await result.current.addInstruction();
         });
 
-        expect(api.createInstruction).toHaveBeenCalled();
+        // name/code 含随机数（useInstructionData.js newInstPayload）→ 定值字段全钉 + 随机字段锁类型
+        expect(api.createInstruction).toHaveBeenCalledWith(expect.objectContaining({
+            device_code: 'DEV-001',
+            name: expect.any(String),
+            code: expect.any(String),
+            type: 'STATIC',
+            fields: []
+        }));
         expect(result.current.instructions).toHaveLength(3);
         expect(result.current.activeInstructionId).toBe('inst-3');
     });
