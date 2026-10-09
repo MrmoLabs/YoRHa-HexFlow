@@ -4577,6 +4577,33 @@
        `r65_audit.txt`（+子代理取证脚本 `r65_anchors.*` / `r65_vectors.py` / `r65_report.py`）/
        `r65_fix.py` / `r65_mkverify.py` / `r65_verify.py` / `r65_docs.py` / `r65_commit.py` /
        `r65_msg.txt`。提交 = `feat(R65)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+        **未 git add、未 commit**（待 review 后自行提交）。
+
+115. **R66 · M1/M2/E1–E4「待人工验证」挂账逐条核销（终账 核销 26 · 真机残项 2）**
+     （PLAN §8.98，2026-10-09；R65 收口后候选清零，本会话拍板下一批 = 11 处历史挂账逐条核销）
+     - **范围**：纯验证 + 文档同步 —— 改动面 = 两文档（§2–§7 12 处 marker/标题外科
+       翻转【原文删除线保留】+ §1 行 101 / §8.98 / 本条目纯插入）；零产品代码、
+       零测试改动、零 DDL、`backend/` 未碰。
+     - **取证两段式**：子代理 28 项逐条锚定（M1 9 · M2 6 · E1-1…6 · E2 T1–T5 ·
+       E3 · E4；报告 Temp `r66_audit.txt`）+ 我方独立复核（18 计数 + 9 锚 + §1
+       六提交号 git 实锚，38 项 `r66_recheck.py` FAIL=0）→ **核销 22 · 补验 4 ·
+       真机残项 2**。
+     - **实机补验 4 项全过**（零库写）：A1-b 682 合成按钮实点 → 公式精确填入
+       `[原始Hex] + [无符号整数] + [有符号整数]`（未 SAVE，API 复验恒 null）；
+       A1-c 示例状态包两页 Σ 对账（8B/7B/5B 全对平 + 加工页 SYNC_FIELD 结构对等）；
+       A1-x 脚本只读复跑 EXIT=0（今日命中 2 块）；E3 终端四步（SEND → 历史行 →
+       RAW/RESPONSE 回显 `AA 55 01` → 非法/奇数禁发 → 清空弹窗开而取消；`_history`
+       内存 deque 零库写）→ **终账 = 核销 26 · 真机残项 2**。
+     - **真机残项 2（需真实硬件，登记不实施）**：E2-T2 真实 TCP 对端 · E2-T3 真
+       COM 口 —— 硬件条件具备后按 §5 T2/T3 清单复验。
+     - **记账**：R65 提交实况更正 = 其提交脚本一度未跑、上下文误记（失实），R66
+       开工核对 `git log` 发现后补跑得真实提交 **`8810071`**（三步验收补齐）；
+       详见 §8.98 七。
+     - **验收**：10 项提交前 + post-commit 全绿（BE 1033 · FE 1537/101 ·
+       probe15 1537 · ev33 STAGED=2 DEL=0 BAD=0）。
+     - **工具账**：Temp = `r66_audit.txt` / `r66_recheck.py` / `r66_docs.py` /
+       `r66_mkverify.py` / `r66_verify.py` / `r66_commit.py` / `r66_msg.txt`。
+       提交 = `feat(R66)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
        **未 git add、未 commit**（待 review 后自行提交）。
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）

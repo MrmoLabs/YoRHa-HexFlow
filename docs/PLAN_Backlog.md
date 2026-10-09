@@ -98,10 +98,11 @@
 | R63 | **测试质量线收尾（全修档 · 第 2/2 批 · 裸 called 收敛）** —— R62 §8.94 二 拆账的 121 裸 called 处置（104 阴性保留 + 17 正形态真弱收敛）与 §8.94 五 登记的「BE 27 处置对象」收口（§8.95；R62 收口后本会话拍板下一批 = 本项，即第 1 批所留「第 2 批接余量」） | ✅ **已完成（2026-10-09，§8.95，仅测试文件 + 护栏第 4 条 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`frontend/src` 产品代码零改动、除 17 处补实参外断言一字未改）**：**17 处正形态裸 `.toHaveBeenCalled()` 全量收敛为 `.toHaveBeenCalledWith(实参)`**（DataHub 12 · Sequences 2 · Protocol 2 · useInstructionData 1；实参取证全部上下文推导 —— 零参 3 类按产品唯一调用点、`setProtocols` 按 `prev => [...prev, created]` 函数式更新器、PUT 载荷按同文件 :167 既有精确断言先例、随机 name · code 走 `expect.objectContaining` 锁类型），**104 处阴性 `not.toHaveBeenCalled()` 一行不改**（记账 = 精确非弱）；BE 27 = **只记账**（口径钉死 §8.95 五，`backend/` 一行未碰）；`expect(x).toBe(true)` 112 与 `.toBeFalsy()` / `.toBeCalled()` 未触。**红测先行**：护栏第 4 条实现前 **1 红 3 绿**（逐字红因 `r63_red1.txt`：`AssertionError: expected [ …(17) ] to deeply equal []`），改后 4 绿；**三档 = 缺特性 1 / 先修 0 / 改写 0**；触及产品的红 **0**。**护栏第 4 条**：字面判据（`toHaveBeenCalled` 紧跟空括号 → With / Times 形态天然不在面内；前缀 `not` = 阴性剔除）+ `BARE_CALLED_EXEMPT` 显式豁免**当前 0 条**（预期即 0，stale 豁免同判红），自身按路径豁免（先例 R58 §8.90）。**等价性**：off 档全量 **1537/1537 · 0 红**；15ms 探测 **1537/1537**。**验收 = 10 项两遍全绿**：BE **1033/1033** 持平零改动 · FE **1537/1537**（101 文件，1536 → 1537 = +1 护栏第 4 条）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**26 份双口径 union 改动 js·jsx·css·mjs + 全仓 14 md**）**0 违规**（`applied` 0 · invalid 1 · unused 0，均沿既有）· md 8/8 · 口径扩展 13/13 · 自检 7/7 · probe15 **1537** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
 | R64 | **实机冒烟 + pageStatus 同步** —— R63 §8.95 七 收口后注册候选清零，本会话 question 拍板下一批 = R53 起挂账的末个历史候选「实机冒烟 + pageStatus 同步」；性质 = 纯验证 + 同步核对批（§8.96） | ✅ **已完成（2026-10-09，§8.96，纯验证批 · 零产品改动 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 零 FE 改动、零测试改动）**：**9/9 页实机加载冒烟**（root 560 至 3272 字符 · 导航全对 · 实 API 82 条往返；非 200 仅 `/processing` 应答规格 404 ×2 = 设计内降级 `responseSpecs.js:4`，实机无错误横幅；console error 仅该 2 条浏览器网络日志、其余 8 页 0/0；API ×2 = dev StrictMode 双挂载）+ **只读实操 4 项全过 0 错误**（指令点选切换 · 协议 LENGTH 属性面板 REFS 真数据 · 容器 FOCUS 内联展开 · datahub 域切换；全程零写入）+ **pageStatus 同步三面零漂移**（`generate-page-status.mjs` 跑完 md diff 空 · `PAGE_REGISTRY` = json 1:1 · 9 页 implemented 全实机成立）。**验收 = 10 项** 提交前 + post-commit 全绿（BE 1033 · FE 1537/101 文件 · build 0 · lint 0 · 校验器 0 · md 8/8 · 13/13 · 7/7 · probe15 1537 · ev40 0 · ev33 STAGED=2）。留白登记 2 条（404 静音口径待拍板 · 165 条 availableNow 逐条审计未做即不声称） |
 | R65 | **pageStatus 165 条逐条现势审计** —— R64 §8.96 五 登记留白②（165 条 availableNow 逐条审计）本会话拍板下一批 = 本项；同场拍板 404 静音 = 保持现状（留白① 关闭不实施）（§8.97） | ✅ **已完成（2026-10-09，§8.97，纯审计 + 数据修正批 · 零产品代码改动 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动）**：**两段式审计**（子代理 165 条逐条 file:line 取证 + 我方独立复核重数与抽核）→ **成立 160 · 过期 5 · 存疑 0**；过期 5 条全为计数漂移/枚举落后（A011 10→22 例、A065 69→70 项、A087 17→18 份、A107 28/27→30/35 例、A165 补「路由规则」8 类）+ N017 尾句删除（R45 已落地、与 N016 记录矛盾）；nextSteps 17 条准确记录不动。**7 锚外科替换 + JSON 结构断言（165/18/9 页）+ 重生成 md**（numstat = json 6/6 · md 6/6 纯行级）；测试面仅断 implemented / shortcut → 无红测面。**验收 = 10 项** 提交前 + post-commit 全绿（ev33 STAGED=4）。留白：两留白一关闭一收口，**无新增** |
+| R66 | **M1/M2/E1–E4「待人工验证」挂账逐条核销** —— R65 §8.97 六 收口后候选清零，本会话 question 拍板下一批 = §2–§7 的 11 处历史挂账（M1 / M2 / E1-1…6 / E2 / E3 / E4）逐条核销（§8.98） | ✅ **已完成（2026-10-09，§8.98，纯验证 + 文档同步批 · 零产品代码改动 · 零测试改动 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 零 FE 改动）**：**28 项两段式取证**（子代理逐条锚定 + 我方独立复核 38 项全对平 `FAIL=0`）→ 核销 22 · 补验 4 · 真机残项 2；补验 4 项实机全过（A1-b 合成按钮实点精确填入 `[原始Hex] + [无符号整数] + [有符号整数]` · A1-c 两页 Σ 对账 8B/7B/5B 全对平 · A1-x 只读复跑命中 2 块 · E3 终端四步含禁发与清空弹窗）→ **终账 = 核销 26 · 真机残项 2**（E2 T2 真实 TCP 对端 / T3 真 COM 口，需真实硬件如实登记）；**12 处 marker/标题外科翻转（R41 体例 · 删除线保留原文）**；零库污染铁证 = API 双采样逐字节相同 + formula 恒 null；记账 = R65 提交实况更正（真实提交 `8810071`，§8.98 七）。**验收 = 10 项** 提交前 + post-commit 全绿（ev33 STAGED=2）。留白：无新增（存疑 0） |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
-## 2. M1 明细（实现完成，待人工验证）
+## 2. M1 明细（实现完成，已核销 ✅ R66）
 
 > **进度（2026-09-22）**：A1（a/b/x）+ C1（a–d）+ C2 全部实现。自动化验证：
 > 前端 137/137（基线 113 + 新增 24：synthesizeFormula 4 / useHistory 7 /
@@ -115,7 +116,7 @@
 > 原样通过）；新增 `Block.test.jsx` 第 5 例固化「长名单行 + 宽度撑开」契约
 > （138/138）；顺手清理 REF 徽标 `rounded-sm`/`shadow-sm` 两处既有违规
 > （Block.jsx 校验器 0 违规）。
-> 待人工验证 → 一批一提交。
+> ~~待人工验证 → 一批一提交。~~ **已核销 ✅（2026-10-09 · R66 · §8.98）**
 
 ### A1 加工页「refs 无 formula」LENGTH_CALC 不可算
 
@@ -169,7 +170,7 @@
 > `SmartInput` 只读态改斜纹警示填充 + 虚线边框 + 反白 `[READ_ONLY]` 徽标 +
 > 暗淡标签/幽灵刻度条，可编辑态实线边框悬停聚焦加深、行导轨仅可编辑行响应；
 > 新增 `SmartInput.test.jsx` 6 例锁视觉+行为契约（213/213）。
-> 待人工验证 → 一批一提交。
+> ~~待人工验证 → 一批一提交。~~ **已核销 ✅（2026-10-09 · R66 · §8.98）**
 
 - **C3 数据中心页一期**：D1 聚合导出入口（指令 JSON + `/export` .bin/.hex 打包
   下载）M；D2 备份/恢复（复制 yorha.db 新端点，设计运行中换库风险）M；
@@ -195,7 +196,7 @@
   编排页 `getTotalBytes` / 指令页 LEN 三处总长口径同步改 + Phase 1 测试更新
 - **E1-6** ✅ B8 TIME_ACCUMULATOR / AUTO_COUNTER 语义生效（base_time / step / max）
 
-> **E1-1 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · 待人工验证）**：
+> **E1-1 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · ~~待人工验证~~ 已核销 ✅ R66）**：
 > 字节级设计 = 两补码 mod 2^(8·byteLen) 溢出环绕 + 双端统一解析口径（number
 > 取 floor 非有限→0 / 严格十进制字符串 / 其余含 bool、null、"FF"、"1e3" → 0）。
 > 落点：`InstructionEncoder.getFieldBytes` 新增 INT_SIGNED 分支（BigInt 掩码）、
@@ -207,7 +208,7 @@
 > `vite build` EXIT=0、撤 B5 标注（encoderLimits 单一事实源 + 校验引用 + 测试
 > 断言同步）。加工页 hex 输入负数表达 = 直接写补码字节（FF→255→掩码 FF）。
 
-> **E1-2 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · 待人工验证）**：
+> **E1-2 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · ~~待人工验证~~ 已核销 ✅ R66）**：
 > 字节级设计 = 先按 op 语义出大端字节、`endianness=LITTLE` 时对整段字节逆序
 > （字节数不变；单字节与组容器本身不动，子字段逐个经 wrapper 处理）。
 > 落点：前端 `getFieldBytes` 改为 wrapper（内部实现改名 `_encodeFieldBytes`，
@@ -224,7 +225,7 @@
 > `vite build` EXIT=0、校验器改动文件仅 BlockPropertiesPanel 既知旧违规
 > （backdrop-blur-sm / pt-8，非本批引入）。
 
-> **E1-3 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · 待人工验证）**：
+> **E1-3 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · ~~待人工验证~~ 已核销 ✅ R66）**：
 > 字节级设计：① B3 packed BCD —— 与 INT_SIGNED 同款 floor 解析（抽公共
 > `_floor_numeric`）→ abs（负号无 nibble 表达，同通用路径口径）→ 数字逐 nibble
 > 打包，超长截高位保低 2n 位、高位补 0（大端；LITTLE 经 E1-2 wrapper 联动）；
@@ -243,7 +244,7 @@
 > B4 ref→null（ParamConfigForm `if(!ref)` 守卫自动消失）。验证：前端 288/288、
 > 后端 43/43、`vite build` EXIT=0、校验器 5 文件 0 违规。
 
-> **E1-4 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · 待人工验证）**：
+> **E1-4 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · ~~待人工验证~~ 已核销 ✅ R66）**：
 > 字节级设计：`op=FLOAT_IEEE` + `byte_len=4`（bits=32）+ 规范 type（缺省/number）
 > → IEEE 754 float32 大端（网络序）恒 4 字节。解析口径 = number 原样 / 严格
 > 十进制字符串（同 E1-1 正则，拒 `1e3`/`0x`/`FF`）/ bool→1|0 / 其余→0；非有限
@@ -263,7 +264,7 @@
 > 去 B2。验证：前端 317/317（288+29）、后端 49/49（43+6）、`vite build` EXIT=0、
 > 校验器 5 文件 0 违规。
 
-> **E1-5 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · 待人工验证 ·
+> **E1-5 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · ~~待人工验证~~ 已核销 ✅ R66 ·
 > ⚠️ 联动三处总长口径）**：
 > 字节级设计（三端统一 N 口径）：NONE/缺省→1；FIXED→`max(0, floor(repeat_count))`
 > （非 number/非有限防御→1，对齐 normalize 归一与 BE isinstance 检查）；
@@ -288,7 +289,7 @@
 > 既知旧违规（backdrop-blur-sm/pt-8，非本批引入）。Phase 1 测试更新：byteOffsets
 > DYNAMIC 断言翻转为降级口径 + FIXED×N/×0/防御三用例、blockMerge repeat 组用例。
 
-> **E1-6 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · 待人工验证 ·
+> **E1-6 进度（2026-09-23，实现 + 自动验证完成，随 E1 整批提交 · ~~待人工验证~~ 已核销 ✅ R66 ·
 > 🎉 E1 批 B2–B8 全部解除）**：
 > 字节级设计：TIME_ACCUMULATOR → `n = floor((now − base_time)/1000)`，墙钟主导
 > （inputs/value 不参与）；base 缺失/非法（契约外）→ 双端各自现状回落（FE value
@@ -321,7 +322,7 @@
 - **T4** `POST /transport/config` API + 发送历史三类事件（原始/响应/错误）
 - **T5** 文档口径更新（真实传输落地后才改 /dispatch 描述）
 
-> **E2 进度（2026-09-23，T1–T5 整批完成，随 E2 整批提交 · 待人工验证 · 传输层落地）**：
+> **E2 进度（2026-09-23，T1–T5 整批完成，随 E2 整批提交 · ~~待人工验证~~ 已核销 ✅ R66（T2/T3 真机残项 §8.98）· 传输层落地）**：
 > T1 `backend/core/transport.py` 传输抽象：loopback 默认（`/dispatch` 口径不变——
 > loopback 记录字段与存量逐位一致，echo=回显压缩 hex）；配置为进程内存态，POST
 > patch 深合并 + 整体校验，非法 → 400。T2 TCP：stdlib socket 持久连接（复用同一
@@ -348,7 +349,7 @@
 - 三面板：发送历史 / 原始报文 / 响应与错误日志
 - 验收：`pageStatus.json` `terminal.implemented` → true，人工验证清单过
 
-> **E3 进度（2026-09-23，整批完成，随 E3 整批提交 · 待人工验证 · 验收字段已翻）**：
+> **E3 进度（2026-09-23，整批完成，随 E3 整批提交 · ~~待人工验证~~ 已核销 ✅ R66（实机四步复验 §8.98）· 验收字段已翻）**：
 > 页面 `Terminal.jsx` 全量重写（弃 FeaturePlaceholder 占位，组件保留未删——第 13 单
 > 死代码清理批已删，仅此一
 > 个使用方已迁走）：① 通讯配置面板 —— 三模式切换（loopback 默认，反白填充选中
@@ -377,7 +378,7 @@
 - 新端点 CRUD（绑定 = protocol_id + instruction_id + 插槽序）+ 编排页读写接线
 - 验收：刷新/重启后 bindings 仍在；编排页行为回归
 
-> **E4 进度（2026-09-23，整批完成，随 E4 整批提交 · 待人工验证）**：
+> **E4 进度（2026-09-23，整批完成，随 E4 整批提交 · ~~待人工验证~~ 已核销 ✅ R66）**：
 > ① `models.py` 新表 `protocol_bindings`（`id/protocol_id/instruction_id/label/
 > slot_order`；**逻辑外键**沿 `op_code` 先例不加 FK 约束——本库
 > `PRAGMA foreign_keys=ON`，占位期空串会炸真 FK；models.py 仅追加、既有表零改）。
@@ -9108,6 +9109,82 @@ R61 已闭）与 §8.92 七 第 3 条同族沿旧提及；`PROJECT_HANDOVER.md` 
   `r65_report.py` 同在 Temp）、`r65_fix.py`、`r65_mkverify.py` / `r65_verify.py`、
   `r65_docs.py`、`r65_commit.py` / `r65_msg.txt`。提交 = `feat(R65)` 单笔 4 文件
   （`pageStatus.json` + 生成的 `PAGE_STATUS.md` + 两份文档纯插入）。
+
+
+## 8.98 R66 M1/M2/E1–E4「待人工验证」挂账逐条核销（2026-10-09）
+
+- 批次来源：R65 §8.97 六 收口后候选清零，本会话 question 拍板下一批 = §2–§7 的
+  11 处「待人工验证」历史挂账（M1 / M2 / E1-1…E1-6 / E2 / E3 / E4）逐条核销；
+  性质 = 纯验证 + 文档同步批：零产品代码、零测试改动、零 DDL（无 Migration、
+  无 `chore(db)`、`backend/` 未碰）。
+- 一、挂账定性：§0 写死「提交时机 = 每批人工验证后」，§1 六批全 ✅ 带真实提交号
+  （M1 `0ad7a1c` / M2 `47904ef` / E1 `23ca9c5` / E2 `3149726` / E3 `530f0b4` /
+  E4 `394c886`，`git log --all` 全部实锚核过）→ 11 处 marker = 当批快照未回翻
+  （历史留档性质，非功能开放项）；HO §5 待办 1–5 同期已划线。本批把「快照」翻成
+  「现势」时原文一律删除线保留（R41 体例：只改声明当前状态的登记面，叙事与排期
+  快照不动）。
+- 二、取证方法（两段式 = 子代理 28 项逐条锚定 + 我方独立复核）：子代理对
+  M1（A1-a/b/c/x · C1-a/b/c/d · C2，9 项）/ M2（C3–C8，6 项）/ E1-1…E1-6（6 项）/
+  E2（T1–T5，5 项）/ E3 / E4 共 28 项逐条给「核销 / 需实机补验 / 真机残项」判档
+  （每项 = 后续人工复测收口批引用 + 测试文件存在性与用例计数 + 代码 file:line 锚；
+  仓库零改动，报告 Temp `r66_audit.txt`）；我方独立复核 = 18 项用例计数重数 +
+  9 个代码锚 + §1 六提交号 git 实锚 + §0 规则句，38 项全对平（`r66_recheck.py`
+  **FAIL = 0**）。
+- 三、审计终账：**核销 22 · 需实机补验 4 · 真机残项 2**（28 全覆盖）；补验 4 项 =
+  A1-b 合成按钮 / A1-c 两页 Σ 对账 / A1-x 脚本复跑 / E3 终端交互清单。
+- 四、实机补验（我方，dev 壳 :8055 / :5174，全程零库写）：
+  A1-b —— `/instruction` 选 `New Instruction 682`（formula=null、refs 非空实证），
+  LENGTH_CALC 卡（⚠ 角标 + 按引用求和预览 5B）点开参数区，「用 refs 合成公式」
+  按钮在场、点击后公式框精确填入 `[原始Hex] + [无符号整数] + [有符号整数]`
+  （Σ 镜像口径），代码链 = `FormulaParam.jsx:47-48 onUpdateParam →
+  parameter_config.formula`；填入未 SAVE（API 复验 formula 恒 null），卡片 ⚠
+  徽标不即时刷新（重校验时机 = 保存/重载后，观察注记不立案）。
+  A1-c —— 示例状态包两页对账：指令页画布 Σ 值 8B（长度）/ 7B（长度计算_1）/
+  5B（长度计算）与公式手算全对平；加工页同指令字段结构对等（LENGTH_CALC 行 =
+  `[READ_ONLY] SYNC_FIELD`）、无 LENGTH_NO_FORMULA、console 0 error。
+  A1-x —— `python scripts/fix_length_formulas.py --base-url :8055` 只读复跑
+  EXIT=0：今日命中 **2 块**（`New Instruction 682` + `示例状态包 (副本)`，
+  当批 3 块、期间 1 块已修），未带 `--apply` 零写入。
+  E3 —— `/terminal` 四步：① 只读（三模式 chips / 当前生效 LOOPBACK / CONNECTED /
+  事件面板 / 档案区全在场）② APPLY 无变更点击 console 0 error ③ SEND `AA 55 01`
+  → `SYS: SENT … LOOPBACK · 3 字节` → 历史行 → 行点击 → 原始报文 `AA 55 01` +
+  响应回显 `AA 55 01`；非法 `GG` 与奇数 `AA 55 0` → SEND 禁用 ④ 清空弹窗
+  「确认清空发送历史？· 仅内存历史，清空不可恢复」开 → 取消（记录仍在）；
+  `_history` = 内存 deque(maxlen=100)（`routers/dispatch.py:32`），全程零库写。
+  → **终账 = 核销 26 · 真机残项 2**。
+- 五、真机残项 2（如实登记，需真实硬件，本批不实施）：E2-T2 真实 TCP 对端
+  （本地回声对端已测，真实网络对端未验）/ E2-T3 真 COM 口（pyserial 路径 +
+  坏端口 400 已测，真实串口硬件未验）——用户真机条件具备后按 §5 T2/T3 清单复验。
+- 六、零库污染铁证：示例状态包 API 双采样（45 秒间隔）逐字节相同、11 字段 /
+  3 LENGTH_CALC 公式完好；`New Instruction 682` formula 全程恒 null（补验前后
+  各复验一次）。补验中一度出现的「示例状态包 12B→15B 增长 + 持久 UNSAVED」
+  定性 = 我方冒烟点击误中左侧块菜单（`aside.w-24 > button.w-full`「长度计算」
+  加块条目）连加幻影块进**本地草稿**（localStorage / sessionStorage /
+  IndexedDB 三查全空 = 页面内存态，关 tab 即消），库内从未变动；教训入账：点
+  画布块取 `div[role=button]` 祖先，不按叶子文本（叶子会先命中菜单按钮）。
+- 七、记账（R65 收口实况更正）：R65 会话尾段 `r65_commit.py` 一度未执行、上下文
+  误记「已提交 9c7d828」（失实 —— `git log` HEAD 仍为 `1974e98`）；R66 开工
+  核对时发现 → 补跑脚本得真实提交 **`8810071`**（ev33 STAGED=4 过、`%B` 逐字节
+  一致、post-commit 遍 10/10 全绿）。两份文档从未写入错误哈希，失实仅存在于
+  会话上下文，此处存档为唯一书面更正。
+- 八、验收 = 固定 10 项 提交前 + post-commit 各遍全绿（`r66_verify.py` 复制
+  `r65_verify.py` 只换日志前缀与说明、逻辑字节级一致）：BE 1033 · FE 1537/101 ·
+  build 0 · lint 0 · 校验器 0 · md 8/8 · 口径扩展 13/13 · 自检 7/7 · probe15 1537 ·
+  ev40 0 · ev33 STAGED=2 DEL=0 BAD=0。
+  **过程记账（收口前补）**：post-commit 首遍 BE 出 1 例环境级瞬态 ——
+  `test_plain_http_exception_keeps_default_shape` 挂在 `asyncio.run` 建事件循环时
+  Windows `socketpair` 兜底路径抛 `ConnectionError: Unexpected peer connection`
+  （本地回环自连接竞态；**非断言失败、非被测代码、非本批 2 文件改动面**），
+  同码即时重跑 BE 1033 全绿不复现 → 最终验收以重跑后的 post-commit 绿遍为准。
+  **顺带暴露验收脚本 BE 门虚设**：`python -c` 打印 `BE_OK/BE_FAIL` 后无 `sys.exit`
+  → 子进程 rc 恒 0、脚本末 rc 门放行，真门 = 打印行（本次即靠打印行抓出）；
+  下批 `mkverify` 起补 `assert 'BE_OK' in 打印` 断言（Temp 工具账，不涉仓内代码）。
+- 九、留白：核销后**无新增登记**（真机残项 2 = 既有 T2/T3 的硬件依赖如实标注，
+  非新留白；存疑 0）。
+- 十、落盘与工具账：Temp = `r66_audit.txt`（子代理取证报告）、`r66_recheck.py`
+  （我方独立复核 FAIL=0）、`r66_docs.py`、`r66_mkverify.py` / `r66_verify.py`、
+  `r66_commit.py` / `r66_msg.txt`。提交 = `feat(R66)` 单笔 2 文件（两文档：12 处
+  marker/标题外科翻转 + 纯插入 = §1 行 101 / §8.98 / 条目 115）。
 
 
 ## 9. 保留勿动（非任务，勿清理）
