@@ -4700,6 +4700,55 @@
        `r69_mkverify.py` / `r69_verify.py` / `r69_commit.py` / `r69_msg.txt`。
        提交 = `feat(R69)` 单笔 10 文件（**零 DDL** → 无 Migration、无 `chore(db)`）。
 
+119. **R70 · 位真帧 bit-true frame（FE 设计层收口，BE wire 相留白）**
+     （PLAN §8.102，2026-10-09；真机场景「帧主导头 10 bit 非整字节，原方案
+     无法展示」驱动，四轮拍板：全块 bit 粒度 / PAD 自动补零 / length 卡
+     unit=bit / 自适应位视图 + 多 bit HEX）
+     - **范围**：纯 FE 设计层/画布/计算层（`frameBitPack.js`、
+       `frameBitLayout.js`、`validateProtocol.js`、`bitGrid.js`、`Block.jsx`、
+       `BitFieldEditor.jsx`、两 PropertiesPanel、`Protocol.jsx`、`Canvas.jsx`、
+       `protocolTree.js`、`blockTypes.js` + 五新测两改测 + 四文档）；
+       **零后端、零 DDL**；`pack_protocol_bits` / `computeByteOffsets` /
+       `start_bit` LSB 存储口径零触碰。
+     - **新面**：`frameBitPack` 全帧 bit 流打包器（文档序 MSB-first、段内
+       LSB、>32bit 不截断，红测 10bit→`A540` / 40bit 不回绕）；
+       `frameBitLayout.computeBitFrameLayout`（Σ `bit_len` 帧总长 / 绝对 bit
+       偏移 / 紧凑打包 4+4=1 字节 / 尾 PAD / `hasSubByte` 自适应开关）；
+       `validateProtocol` 位真容量闸（`BIT_LEN_INVALID` /
+       `BIT_LEN_ENVELOPE` / `BIT_OVERFLOW` 段不越 PAD）；`bitGrid` 位带容量
+       认 `bit_len` + `cell.pad` 条件格（10bit → 10 格 + 尾 6 格 PAD）；
+       卡 footer 自适应（位视图 `10b @b0` + bit 偏移 tooltip，纯字节帧
+       `2B @00` 零扰动）；协议属性面板「BIT 长度」输入（`bit-len-input`
+       → 派生 `byte_length=ceil(bit_len/8)`）；指令镜像「BIT 长度」存
+       `parameter_config.bit_len`（零 DDL）+ `byte_len` 派生；位编辑器
+       `bitLen→bitCap` 归一 + **0x 十六进制录入**（拍板 ④，与 0b 并存）；
+       length 卡「计数单位 Unit」下拉（`parameter_config.unit=byte|bit`，
+       缺省 byte 零扰动）+ `protocolTree` unit=bit 注真 Σ bit（叶子
+       `bit_len` 优先 / 容器递归 Σ 子 / 字节叶 ×8，不按 envelope ×8 缩放）；
+       `blockTypes` `unit` 字段 select。
+     - **红测先行五轮**：`r70_red1.txt` frameBitPack Failed-to-resolve →
+       8/8；`r70_red2.txt` 3 红 2 绿（容量闸）→ `validateProtocol` 27/27；
+       `r70_red3.txt` 3 红 1 绿（位带容量/PAD）→ `bitGrid` 全绿 37/37；
+       `r70_red4.txt` frameBitLayout Failed-to-resolve → 5/5；另 lengthBit
+       3 红 1 绿 → protocolTree 61/61、0x 录入 1 红、blockTypes 2 红
+       （数组断言随字段设计改测）。
+     - **留白三档**（spec 六 → 七 如实记档，非缺陷）：① **BE 全帧
+       packBits**（发射期 bit 级拼接 + `block_spans` bit 化 + align/pad/
+       LITTLE 交互）—— 单 sub-byte 块帧两端一致（紧凑 = 逐块 ceil），
+       多 sub-byte 块帧设计层显紧凑、BE 仍逐块拼装，wire 口径权威未触碰；
+       ② 画布帧尾 `PAD` 灰标 + 拼图卡 bit 宽度（`tailPadBits` 已算出，
+       卡宽受泳道内容地板 `laneBodyNeed` 主导）；③ BE 指令镜像 /
+       length `unit` 出线红测（unit=bit 属设计层计数口径，线上 length
+       字段仍字节 SSOT）。
+     - **验收**：10 项提交前 + post-commit 两遍（`r70_verify.py` 谱系
+       §8.99 八，源 r69 大小写同换 + R68 史料恰 2 处断言；BE 1033 ·
+       FE **1603/106**（+29 / +5 文件）· lint 清零 · 校验器 0）。
+     - **pageStatus**：协议页 + 指令页各增 1 条目（`pageStatus.json` +
+       `PAGE_STATUS.md` 重生成）。
+     - **工具账**：Temp = `r70_red1.txt` ~ `r70_red4.txt` /
+       `r70_verify.py` / `r70_commit.py` / `r70_msg.txt`。
+       提交 = `feat(R70)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

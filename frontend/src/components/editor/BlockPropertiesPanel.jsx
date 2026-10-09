@@ -583,11 +583,36 @@ export default function BlockPropertiesPanel({
 
                         {/* BITFIELD: Dedicated bit layout editor */}
                         {selectedBlock.op_code === 'BITFIELD' && (
-                            <BitFieldEditor
-                                bits={tempBlockConfig.bits || []}
-                                byteLen={tempBlockConfig.byte_len || 0}
-                                onUpdateBits={(nextBits) => handleTempUpdate({ bits: nextBits })}
-                            />
+                            <div className="flex flex-col gap-1">
+                                {/* R70（§8.102 四 · 指令镜像）：bit_len 存 parameter_config
+                                    （零 DDL，与协议侧块 config 同源）；声明 → byte_len 自动
+                                    = ceil(bit_len/8)（出线字节），位带认 bit_len 画真值格。 */}
+                                <div className="flex items-center gap-2">
+                                    <label className="text-[10px] opacity-60 uppercase tracking-widest whitespace-nowrap">BIT 长度</label>
+                                    <input
+                                        type="number"
+                                        min={0}
+                                        data-testid="instr-bit-len-input"
+                                        value={tempBlockConfig.parameter_config?.bit_len ?? ''}
+                                        placeholder="按字节"
+                                        onChange={(e) => {
+                                            const raw = e.target.value;
+                                            const n = Math.floor(Number(raw));
+                                            const declared = raw === '' || !Number.isFinite(n) || n <= 0 ? undefined : n;
+                                            const patch = { parameter_config: { ...tempBlockConfig.parameter_config, bit_len: declared } };
+                                            if (declared) patch.byte_len = Math.ceil(declared / 8);
+                                            handleTempUpdate(patch);
+                                        }}
+                                        className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono tracking-wide w-24"
+                                    />
+                                </div>
+                                <BitFieldEditor
+                                    bits={tempBlockConfig.bits || []}
+                                    byteLen={tempBlockConfig.byte_len || 0}
+                                    bitLen={Number(tempBlockConfig.parameter_config?.bit_len) || 0}
+                                    onUpdateBits={(nextBits) => handleTempUpdate({ bits: nextBits })}
+                                />
+                            </div>
                         )}
 
                         {/* HEX_RAW / R25 SCRAMBLE 明文 Input (Manual) - Multi Format

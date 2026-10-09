@@ -388,6 +388,65 @@ const strictSigma = (owner, byId, root) => {
     return sum;
 };
 
+// ─── R70（§8.102 ③ · 计算层）length 卡 bit 计数（unit=byte｜bit）───────────
+// bit 真值 Σ（候选 A 落地）：叶子 bit_len 优先（sub-byte 真值，10bit 块 → 10），
+// 否则字节尺寸×8；容器递归 Σ 子（与 strictSigma 字节口径同构，只把「尺寸」换成
+// 「bit 宽」）。sub-byte 帧不能用字节 sigma×8 缩放（envelope×8 高估真值：10bit 块
+// byte_length=2 → ×8=16 ≠ 10）。任一 ref 悬空/含槽/尺寸未知 → null（不注入，卡面
+// 维持 ??，与字节链同族）。
+const nodeBitWidth = (node, byId) => {
+    if (!node || hasSlotInSubtree(node)) return null;
+    const kids = node.children || [];
+    if (isNestable(node.type) || kids.length > 0) {
+        let sum = 0;
+        for (const k of kids) {
+            const kb = nodeBitWidth(k, byId);
+            if (kb == null) return null;
+            sum += kb;
+        }
+        return sum;
+    }
+    const bitLen = Number(node.bit_len);
+    if (Number.isInteger(bitLen) && bitLen > 0) return bitLen;
+    const entry = byId.get(node.id);
+    return entry && entry.size != null ? entry.size * 8 : null;
+};
+
+const strictSigmaBits = (owner, byId, root) => {
+    const refs = owner?.parameter_config?.refs;
+    if (!Array.isArray(refs) || refs.length === 0 || !root) return null;
+    let sum = 0;
+    for (const refId of refs) {
+        const target = findNode(root, refId);
+        if (!target || hasSlotInSubtree(target)) return null;
+        const bits = nodeBitWidth(target, byId);
+        if (bits == null) return null;
+        sum += bits;
+    }
+    return sum;
+};
+
+// 无 root 纯函数直调（既有单测不带 root）：ref 查不到 node → 回落 byId 字节×8。
+const computeRefsSigmaBits = (owner, byId, root) => {
+    const refs = owner?.parameter_config?.refs;
+    if (!Array.isArray(refs) || refs.length === 0) return null;
+    let sum = 0;
+    for (const refId of refs) {
+        if (root && findNode(root, refId)?.type === 'slot') return null;
+        const target = root ? findNode(root, refId) : null;
+        if (target) {
+            const bits = nodeBitWidth(target, byId);
+            if (bits == null) return null;
+            sum += bits;
+        } else {
+            const entry = byId.get(refId);
+            if (!entry || entry.size == null) return null;
+            sum += entry.size * 8;
+        }
+    }
+    return sum;
+};
+
 const bytesToHex = (bytes) => bytes
     .map(b => b.toString(16).padStart(2, '0').toUpperCase()).join(' ');
 
@@ -504,6 +563,14 @@ export const injectRefsSigma = (lanes, byId, root) => (lanes || []).map(lane => 
     ...lane,
     items: (lane.items || []).map(item => {
         if (item?.type === 'length') {
+            // R70（§8.102 ③ length 卡 bit 计数 · unit=byte｜bit）：unit='bit' → 注
+            // 真 Σ bit（`10b`，sub-byte 真值非 ×8 缩放）；缺省 byte → `${sigma}B`
+            // （既有口径零扰动）。
+            if (item.parameter_config?.unit === 'bit') {
+                const bits = root ? strictSigmaBits(item, byId, root) : computeRefsSigmaBits(item, byId, root);
+                if (bits == null) return item;
+                return withComputedValue(item, `${bits}b`);
+            }
             const sigma = root ? strictSigma(item, byId, root) : computeRefsSigma(item, byId, root);
             if (sigma == null) return item;
             return withComputedValue(item, `${sigma}B`);

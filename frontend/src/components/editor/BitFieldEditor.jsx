@@ -51,6 +51,7 @@ const findOverlaps = (bits) => {
 /**
  * R69：默认值录入解析（纯函数）—— 0b 前缀二进制（Wireshark/010 惯例）或十进制。
  *  - '0b1010' / '0B1010' → 10（大小写不敏感，仅 [01] 才算合法二进制）
+ *  - '0x1F' / '0X1f' → 31（R70 ④：多 bit 字段值切 HEX 录入，与 0b 并存，[0-9a-f]）
  *  - '-40' / '12' → 十进制（既有 number 输入口径迁移）
  *  - ''（清空）→ null，调用方按旧口径写回 minVal
  *  - '0b' 半截 / 垃圾 → null，调用方不写回（草稿缓冲，不发半截值）
@@ -58,19 +59,23 @@ const findOverlaps = (bits) => {
 const parseBitDefaultInput = (text) => {
     const t = String(text ?? '').trim();
     if (/^0b[01]+$/i.test(t)) return parseInt(t.slice(2), 2);
+    if (/^0x[0-9a-f]+$/i.test(t)) return parseInt(t.slice(2), 16); // R70 ④：HEX 录入
     if (t === '') return null;
     if (/^[+-]?\d+$/.test(t)) return parseInt(t, 10);
     return null;
 };
 
-export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
+export default function BitFieldEditor({ bits, byteLen = 1, bitLen = 0, onUpdateBits }) {
     const list = Array.isArray(bits) ? bits : [];
     const conflicts = findOverlaps(list);
 
     // 批 2：位网格 + 点击式设段（上膛起点）+ 选中段（与表格行联动）
     const [armedBit, setArmedBit] = useState(null);
     const [selectedIndex, setSelectedIndex] = useState(null);
-    const grid = buildBitGrid(list, byteLen);
+    // R70（§8.102）：bitLen = 声明真实 bit 数（位真容量，grid/strip 同口径；
+    // 未声明/非法 → 0，回落 byteLen×8 既有口径）。
+    const bitCap = Number.isInteger(Number(bitLen)) && Number(bitLen) > 0 ? Number(bitLen) : 0;
+    const grid = buildBitGrid(list, byteLen, bitCap);
 
     // R68：连续位带拼图条（默认主视图）。存储口径零触碰，纯展示/交互层：
     //  - stripView：strip（默认拼图条）/ grid（批 2 网格副视图）
@@ -86,7 +91,7 @@ export default function BitFieldEditor({ bits, byteLen = 1, onUpdateBits }) {
     // R69：默认值输入本地草稿 —— 0b 前缀录入不被受控回写打断（'0b' 半截时
     // 不写回、显示保持草稿原文）；blur 清草稿回显十进制定值。
     const [defaultDraft, setDefaultDraft] = useState(null); // { idx, text } | null
-    const strip = buildStripLayout(list, byteLen, orient);
+    const strip = buildStripLayout(list, byteLen, orient, bitCap);
 
     const update = (index, patch) => {
         const next = list.map((b, i) => (i === index ? { ...b, ...patch } : b));

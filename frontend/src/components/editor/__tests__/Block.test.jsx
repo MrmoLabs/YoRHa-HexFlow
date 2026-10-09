@@ -364,3 +364,33 @@ describe('R69 位域卡泳道式多卡（根去卡壳 + 实线泳道带，区分
         expect(wSeg.textContent).toContain('8b');
     });
 });
+
+// R70（§8.102 三 · 自适应位视图）：含 sub-byte/bit 定义帧 → 卡 footer 切 bit 单位
+// （偏移尺 bit 刻度：宽 `10b`、偏移 `@b0`、tooltip 标「bit 偏移」）；纯字节帧
+// bitView 缺席 → 沿字节口径 `2B @00` 零扰动。
+describe('Block（R70 自适应位视图 footer）', () => {
+    it('bitView + bitMeta → footer 显 bit 宽/偏移（10b @b0）+ tooltip 标 bit 偏移', () => {
+        const { container } = renderBlock({
+            name: '主导头', type: 'bitfield', byte_length: 2, bit_len: 10,
+            offsetMeta: { offset: 0, size: 2 },
+            bitView: true,
+            bitMeta: { bitOffset: 0, bitWidth: 10, isContainer: false },
+        });
+        const offsetSpan = container.querySelector('[title^="bit 偏移"]');
+        expect(offsetSpan).toBeTruthy();
+        expect(offsetSpan.textContent).toBe('@b0');
+        // 前一兄弟 = 宽（bit 口径 10b，非字节口径 2B）
+        expect(offsetSpan.previousElementSibling.textContent).toBe('10b');
+    });
+
+    it('字节视图（bitView 缺席）footer 沿字节口径 2B @00 零扰动', () => {
+        const { container } = renderBlock({
+            name: 'RAW', type: 'hex', byte_length: 2, hex_value: 'AABB',
+            offsetMeta: { offset: 0, size: 2 },
+        });
+        const offsetSpan = container.querySelector('[title^="字节偏移"]');
+        expect(offsetSpan).toBeTruthy();
+        expect(offsetSpan.textContent).toBe('@00');
+        expect(offsetSpan.previousElementSibling.textContent).toBe('2B');
+    });
+});

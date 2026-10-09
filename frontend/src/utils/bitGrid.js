@@ -51,14 +51,21 @@ export const normalizeBits = (bits) => (Array.isArray(bits) ? bits : [])
  * 返回 { bytes, requiredBytes, overflow, conflictBits }，
  * cell = { bitIndex, owner, name, color, conflict }（owner: 段索引或 -1）。
  */
-export const buildBitGrid = (bits, byteLen = 1) => {
+export const buildBitGrid = (bits, byteLen = 1, bitLen = 0) => {
     const norm = normalizeBits(bits);
     const requiredBytes = norm.reduce((acc, b) => Math.max(acc, Math.ceil((b.start + b.len) / 8)), 0);
+    const requiredBits = norm.reduce((acc, b) => Math.max(acc, b.start + b.len), 0);
     const declared = Number(byteLen);
-    const byteCount = Math.max(
-        Number.isFinite(declared) && declared > 0 ? Math.ceil(declared) : 1,
-        requiredBytes
-    );
+    // R70（§8.102）位真容量：声明 bit_len（真实 bit 数）优先 —— bit 真值决定
+    // 占用字节与尾部 PAD；否则回落 byteLen×8（既有口径零触碰）。
+    const dBits = Number(bitLen);
+    const bitDeclared = Number.isInteger(dBits) && dBits > 0;
+    const byteCount = bitDeclared
+        ? Math.max(Math.ceil(dBits / 8), requiredBytes)
+        : Math.max(
+            Number.isFinite(declared) && declared > 0 ? Math.ceil(declared) : 1,
+            requiredBytes
+        );
 
     // 位号 → 占用它的段索引集合（多占 = 冲突）
     const ownersOf = new Map();
@@ -82,18 +89,24 @@ export const buildBitGrid = (bits, byteLen = 1) => {
             const owners = ownersOf.get(bitIndex) || [];
             const ownerIdx = owners.length > 0 ? owners[0] : -1;
             const owner = ownerIdx >= 0 ? norm.find(b => b.index === ownerIdx) : null;
-            row.push({
+            const cell = {
                 bitIndex,
                 owner: ownerIdx,
                 name: owner ? owner.name : '',
                 color: owner ? BIT_GRID_COLORS[ownerIdx % BIT_GRID_COLORS.length] : null,
                 conflict: conflictSet.has(bitIndex)
-            });
+            };
+            // R70：bit ≥ 声明 bit_len 的格 = 尾部补零 PAD（打包补零同源，条件挂载零回归）
+            if (bitDeclared && bitIndex >= dBits) cell.pad = true;
+            row.push(cell);
         }
         bytes.push(row);
     }
 
-    return { bytes, requiredBytes, byteCount, overflow: requiredBytes > (Number(byteLen) || 0), conflictBits };
+    const overflow = bitDeclared
+        ? requiredBits > dBits
+        : requiredBytes > (Number(byteLen) || 0);
+    return { bytes, requiredBytes, byteCount, overflow, conflictBits };
 };
 
 /**
@@ -105,9 +118,12 @@ export const buildBitGrid = (bits, byteLen = 1) => {
  *    间隙 = 逐位缺块；段标红按段级传播（被首 owner 压住的重叠段不漏标）。
  * 网格视图照旧走 buildBitGrid，两视图共享存储与打包口径。
  */
-export const buildStripLayout = (bits, byteLen = 1, view = 'msb') => {
-    const g = buildBitGrid(bits, byteLen);
-    const capacity = g.byteCount * 8;
+export const buildStripLayout = (bits, byteLen = 1, view = 'msb', bitLen = 0) => {
+    const g = buildBitGrid(bits, byteLen, bitLen);
+    // R70（§8.102）：声明 bit_len → 位带容量 = 真值（10bit 头画 10 格，所见即所得）；
+    // 否则回落 byteCount×8（既有口径）。
+    const dBits = Number(bitLen);
+    const capacity = (Number.isInteger(dBits) && dBits > 0) ? dBits : g.byteCount * 8;
     const norm = normalizeBits(bits);
     const conflictSet = new Set(g.conflictBits);
 

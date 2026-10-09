@@ -100,6 +100,20 @@ export const BLOCK_PROPERTY_FIELDS = {
             { value: 'varint', label: '变长 LEB128 (VARINT)' }
         ]
     },
+    // R70（§8.102 ③ · 计算层）: 长度计数单位 —— 存点 parameter_config.unit（缺省
+    // byte = 缺失键，字节口径零扰动）。bit = 注真 Σ bit（sub-byte 真值非 ×8 缩放，
+    // FE injectRefsSigma 计算层认 unit，卡中央值出 `10b`）。面板通用 select 分支零
+    // JSX 改动。
+    unit: {
+        key: 'parameter_config.unit',
+        label: '计数单位 (Unit)',
+        inputType: 'select',
+        default: 'byte',
+        options: [
+            { value: 'byte', label: '字节 (BYTE)' },
+            { value: 'bit', label: '比特 (BIT)' }
+        ]
+    },
     // R27（§8.52 排期 · varint / COBS 出线）: COBS 定界字节 —— 存点
     // parameter_config.terminator（'00' | 'none'，**缺省 '00' = 缺失键**，出线时
     // 追加 0x00 定界），由 toFrameBlocks mapNode / frame_builder._to_blocks 同形
@@ -157,7 +171,7 @@ export const BLOCK_TYPES = [
         // 大端/小端；缺省 big = 现状逐字节不变）。
         // R27: + encoding 出线编码下拉（parameter_config.encoding，缺省 fixed =
         // 缺失键 = 现状逐字节不变；varint = LEB128 最小无符号，字节序中立）。
-        fields: ['length', 'refs', 'byte_order', 'encoding']
+        fields: ['length', 'refs', 'byte_order', 'encoding', 'unit']
     },
     {
         type: 'checksum',

@@ -80,7 +80,7 @@ describe('blockTypes 插槽契约（批次二 D3/D14①）', () => {
 // response_spec.length.byte_order 同值域（能判也能发）；仅 length 列此字段。
 describe('blockTypes 长度字节序（R21 长度域 BE/LE）', () => {
     it('length 字段 = length + refs + byte_order + encoding（R27 + select 分流 + 点路径存 pc）', () => {
-        expect(BLOCK_TYPES.find(b => b.type === 'length').fields).toEqual(['length', 'refs', 'byte_order', 'encoding']);
+        expect(BLOCK_TYPES.find(b => b.type === 'length').fields).toEqual(['length', 'refs', 'byte_order', 'encoding', 'unit']);
         const f = BLOCK_PROPERTY_FIELDS.byte_order;
         expect(f.inputType).toBe('select');           // 面板通用 select 分支（零 JSX 改动）
         expect(f.key).toBe('parameter_config.byte_order');
@@ -88,7 +88,7 @@ describe('blockTypes 长度字节序（R21 长度域 BE/LE）', () => {
         expect(f.options.map(o => o.value)).toEqual(['big', 'little']);
         // 面板专用字段不提供 parse（同 refs/fit：直接被 inputType 分流消费）
         expect(f.parse).toBeUndefined();
-        expect(getBlockFields('length').map(x => x.id)).toEqual(['length', 'refs', 'byte_order', 'encoding']);
+        expect(getBlockFields('length').map(x => x.id)).toEqual(['length', 'refs', 'byte_order', 'encoding', 'unit']);
     });
 
     it('R34 翻面：checksum 列 byte_order（R21「仅 length 卡」的范围拍板已由 §8.66 收掉）；其它块型字段不变', () => {
@@ -132,7 +132,7 @@ describe('blockTypes 校验和字节序（R34 §8.66）', () => {
 
     it('length 卡字段顺序不变（byte_order 仍在 refs 与 encoding 之间）', () => {
         expect(getBlockFields('length').map(x => x.id))
-            .toEqual(['length', 'refs', 'byte_order', 'encoding']);
+            .toEqual(['length', 'refs', 'byte_order', 'encoding', 'unit']);
     });
 });
 

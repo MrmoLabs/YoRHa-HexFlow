@@ -47,6 +47,7 @@ function LaneContainer({ lane, index, children, isActiveLane, onSetFocusedLane }
 export default function Canvas({
     lanes = [],
     offsets = null, // P1: Map<id, {offset,size,isGroup}> byte-offset ruler (from utils/byteOffsets)
+    bitLayout = null, // R70: 设计层位布局 {blocks,hasSubByte,...}（含 sub-byte 帧 → 位视图）
     onMoveItem, // (itemId, newParentId, newIndex) => void
     selectedId,
     onSelect,
@@ -361,6 +362,8 @@ export default function Canvas({
                                     isPickMode={pickingMode?.isActive}
                                     isPickRef={pickingMode?.currentRefs?.includes(item.id)}
                                     offsetMeta={offsets?.get?.(item.id) ?? null}
+                                    bitView={!!bitLayout?.hasSubByte}
+                                    bitMeta={bitLayout?.blocks?.get?.(item.id) ?? null}
                                     // Clicking a block should focus THIS lane (the container), not the child lane
                                     onClick={() => handleBlockClick(item.id, item.op_code, lane.parentId)}
                                     isGroupActive={false}
@@ -507,6 +510,8 @@ export default function Canvas({
                                 isSelected={false}
                                 isGroupActive={false}
                                 offsetMeta={offsets?.get?.(activeDragItem.id) ?? null}
+                                bitView={!!bitLayout?.hasSubByte}
+                                bitMeta={bitLayout?.blocks?.get?.(activeDragItem.id) ?? null}
                             />
                         </div>
                     ) : null}

@@ -159,9 +159,23 @@ export function validateProtocol(protocol) {
             if (overlap) {
                 errors.push({ blockId: node.id, code: 'BIT_OVERLAP', message: `「${label}」位域重叠（${overlap.name} 起始 ${overlap.start} < 上一块结束 ${overlap.start}）` });
             }
-            const capacity = (Number(node.byte_length) || 0) * 8;
+            // R70（§8.102）位真容量：声明 bit_len（真实 bit 数）优先，否则
+            // byte_length×8。三闸 —— bit_len 非法 / 超字节包络 / 段越容量。
+            const rawBitLen = node.bit_len;
+            const nb = Number(rawBitLen);
+            const bitLenDeclared = Number.isInteger(nb) && nb > 0;
+            const bitLenUnset = rawBitLen === undefined || rawBitLen === null || rawBitLen === '' || nb === 0;
+            if (!bitLenUnset && !bitLenDeclared) {
+                errors.push({ blockId: node.id, code: 'BIT_LEN_INVALID', message: `「${label}」bit_len 非法（${rawBitLen}），须为正整数` });
+            }
+            const byteCap = (Number(node.byte_length) || 0) * 8;
+            if (bitLenDeclared && byteCap > 0 && nb > byteCap) {
+                errors.push({ blockId: node.id, code: 'BIT_LEN_ENVELOPE', message: `「${label}」bit_len ${nb} 超出字节包络（${node.byte_length}B = ${byteCap} bits）` });
+            }
+            const capacity = bitLenDeclared ? nb : byteCap;
             if (capacity > 0 && highest > capacity) {
-                errors.push({ blockId: node.id, code: 'BIT_OVERFLOW', message: `「${label}」位域超出容量（${node.byte_length}B = ${capacity} bits，最高位 ${highest}）` });
+                const capDesc = bitLenDeclared ? `bit_len ${nb}` : `${node.byte_length}B = ${byteCap} bits`;
+                errors.push({ blockId: node.id, code: 'BIT_OVERFLOW', message: `「${label}」位域超出容量（${capDesc}，最高位 ${highest}）` });
             }
         }
 

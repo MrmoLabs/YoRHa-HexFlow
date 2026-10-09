@@ -7,7 +7,7 @@ import { formatUnknown } from '../../utils/formula';
 import { packBits, formatBinaryBytes, buildStripLayout, BIT_GRID_COLORS } from '../../utils/bitGrid';
 import { padSpec } from '../../utils/padSpec';
 
-export default function Block({ id, label, name, byte_length, byte_len, type, op_code, hex_value, parameter_config, bits, isSelected, isPickMode, isPickRef, isGroupActive, offsetMeta, issue = null, onClick }) {
+export default function Block({ id, label, name, byte_length, byte_len, bit_len, type, op_code, hex_value, parameter_config, bits, isSelected, isPickMode, isPickRef, isGroupActive, offsetMeta, bitView = false, bitMeta = null, issue = null, onClick }) {
     // Normalize Props (Backend v4 vs v3)
     const displayLabel = name || label || 'BLOCK';
     const length = byte_len || byte_length || 1;
@@ -51,11 +51,17 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
     // 零触碰（镜像测试在 bitGrid.test.js），后端 bitfield.py 与编码器无感；
     // 段名 break-all 不截断（段卡换行变高，不丢名）。
     const isBitfield = type === 'bitfield';
+    // R70（§8.102）位真：声明 bit_len（真实 bit 数）→ 打包到 ceil(bit_len/8) 字节、
+    // 位带容量 = bit_len（10bit 头画 10 格 + 尾部 PAD，所见即所得）；否则回落
+    // byte_length×8（既有口径零触碰）。
+    const bitLenRaw = Number(bit_len);
+    const bitLen = Number.isInteger(bitLenRaw) && bitLenRaw > 0 ? bitLenRaw : 0;
     const bitFace = React.useMemo(() => {
         if (!isBitfield) return null;
-        const packed = packBits(bits, length);
+        const packTarget = bitLen ? Math.ceil(bitLen / 8) : length;
+        const packed = packBits(bits, packTarget);
         const binBytes = formatBinaryBytes(packed);
-        const strip = buildStripLayout(bits, length, 'msb');
+        const strip = buildStripLayout(bits, packTarget, 'msb', bitLen);
         // 独立子卡：位带单位逐张出卡 —— 段卡 = 色块 + 段名 + 位宽 + 段 0/1
         // 值（msb 视角序、半字节分组，与打包值同源逐位展开），缺块单元也占
         // 一张；digit 从打包值串尾取（bit0 = LSB = 串尾），超出打包宽度显 0。
@@ -75,15 +81,27 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
             value: group4(u.bits.map(digit).join('')),
         }));
         return { packed, binBytes, strip, subs };
-    }, [isBitfield, bits, length]);
+    }, [isBitfield, bits, length, bitLen]);
 
     // Footer byte length: trust byteOffsets when the ruler is wired (accurate
     // "??B" for unknown instead of the legacy `|| 1` guess); fall back to the
     // legacy display when no offsets were passed (e.g. Orchestration page).
-    const footerBytes = offsetMeta
-        ? (typeof offsetMeta.size === 'number' ? `${offsetMeta.size}B` : '??B')
-        : (isGroupCard ? '' : `${length}B`);
-    const offsetStr = offsetMeta ? formatOffset(offsetMeta) : '';
+    // R70（§8.102 三 · 自适应位视图）：含 sub-byte/bit 定义帧（bitView=true）→
+    // footer 切 bit 单位（偏移尺 bit 刻度：宽 `10b`、偏移 `@b0`）；纯字节帧
+    // bitView=false 沿原字节口径 `2B @00` 零扰动。
+    const footerBytes = bitView && bitMeta
+        ? `${bitMeta.bitWidth}b`
+        : offsetMeta
+            ? (typeof offsetMeta.size === 'number' ? `${offsetMeta.size}B` : '??B')
+            : (isGroupCard ? '' : `${length}B`);
+    const offsetStr = bitView && bitMeta
+        ? `@b${bitMeta.bitOffset}`
+        : offsetMeta ? formatOffset(offsetMeta) : '';
+    // R70（自适应位视图）：tooltip 随视图切 —— 位视图标「bit 偏移 N」，字节视图标
+    // 「字节偏移 0xN」（渲染 title 引用；byte 视图 offsetMeta 缺席时 span 不渲染，title 不可见）。
+    const offsetTitle = bitView && bitMeta
+        ? `bit 偏移 ${bitMeta.bitOffset}`
+        : `字节偏移 ${offsetMeta?.offset == null ? '未知（前序块长度动态）' : `0x${offsetMeta.offset.toString(16).toUpperCase()}`}`;
 
     // P1 smart width: byte-extent driven (group = Σ children via offsetMeta,
     // leaf = byte_len) with a content-aware floor so the footer
@@ -449,8 +467,8 @@ export default function Block({ id, label, name, byte_length, byte_len, type, op
                     {/* User Request: bytes before offset (`2B @00`) */}
                     <span>{footerBytes}</span>
                     {offsetMeta && (
-                        <span className="font-mono" title={`字节偏移 ${offsetMeta.offset === null ? '未知（前序块长度动态）' : `0x${offsetMeta.offset.toString(16).toUpperCase()}`}`}>
-                            {formatOffset(offsetMeta)}
+                        <span className="font-mono" title={offsetTitle}>
+                            {offsetStr}
                         </span>
                     )}
                     {/* R69: hex 打包值降为页脚小字（卡面已让位给泳道段卡） */}

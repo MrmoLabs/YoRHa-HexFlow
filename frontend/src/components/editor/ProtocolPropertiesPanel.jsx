@@ -201,9 +201,35 @@ export default function ProtocolPropertiesPanel({
                             return (
                                 <div key={field.id} className="flex flex-col gap-1">
                                     <label className="text-xs opacity-70 uppercase tracking-widest">{field.label}</label>
+                                    {/* R70（§8.102）位真：声明真实 bit 数（如 10bit 主导头设 10）→
+                                        位带画 10 格 + 尾部 PAD、打包 ceil(10/8) 字节；空/0 = 按字节
+                                        （byte_length×8，既有口径）。存块级 bit_len（children JSON，零 DDL）。 */}
+                                    <div className="flex items-center gap-2">
+                                        <label className="text-[10px] opacity-60 uppercase tracking-widest whitespace-nowrap">BIT 长度</label>
+                                        <input
+                                            type="number"
+                                            min={0}
+                                            data-testid="bit-len-input"
+                                            value={selectedBlock.bit_len ?? ''}
+                                            placeholder="按字节"
+                                            onChange={(e) => {
+                                                const raw = e.target.value;
+                                                const n = Math.floor(Number(raw));
+                                                const declared = raw === '' || !Number.isFinite(n) || n <= 0 ? undefined : n;
+                                                const patch = { bit_len: declared };
+                                                // R70（§8.102）：声明 bit_len → byte_length 自动 = ceil(bit_len/8)
+                                                //（出线字节数），后端 pack_protocol_bits / 偏移尺 / 打包全按
+                                                // byte_length 走，一处对齐全链（BE 零改动）。
+                                                if (declared) patch.byte_length = Math.ceil(declared / 8);
+                                                onUpdateBlock(selectedBlock.id, patch);
+                                            }}
+                                            className="bg-transparent border-b border-nier-light/50 focus:border-nier-light focus:outline-none py-1 font-mono tracking-wide w-24"
+                                        />
+                                    </div>
                                     <BitFieldEditor
                                         bits={Array.isArray(selectedBlock.bits) ? selectedBlock.bits : []}
                                         byteLen={Number(selectedBlock.byte_length) || 0}
+                                        bitLen={Number(selectedBlock.bit_len) || 0}
                                         onUpdateBits={(nextBits) => onUpdateBlock(selectedBlock.id, { bits: nextBits })}
                                     />
                                 </div>

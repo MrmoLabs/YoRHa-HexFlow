@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { api } from '../api';
 import { serializeProtocol, findNode, buildProtocolLanes, computeProtocolOffsets, moveNode, removeNode, updateNode, collectContainerIds, findAncestors, injectRefsSigma, injectContainerContent, buildDuplicateProtocolPayload } from '../utils/protocolTree';
 import { validateProtocol } from '../utils/validateProtocol';
+import { computeBitFrameLayout } from '../utils/frameBitLayout';
 import { analyzeProtocolImport } from '../utils/importExport';
 import { triggerBlobDownload } from '../utils/download';
 import { BLOCK_TYPES, createBlock, isNestable } from '../config/blockTypes';
@@ -151,6 +152,13 @@ export default function Protocol({ protocols, setProtocols }) {
     // 偏移标尺：容器经适配层判组 → 中心 Σ/??、页脚 @范围（指令页同款效果）
     const protocolOffsets = useMemo(
         () => computeProtocolOffsets(currentProtocol),
+        [currentProtocol]
+    );
+    // R70（§8.102 三 · 自适应位视图）：设计层 bit 布局 —— 含 sub-byte/bit 定义帧
+    // （hasSubByte）→ 画布切位视图（footer 显 bit 宽/偏移、帧头显总 bit/尾 PAD）；
+    // 纯字节帧 hasSubByte=false → 沿字节偏移零扰动。
+    const bitLayout = useMemo(
+        () => computeBitFrameLayout(currentProtocol?.children),
         [currentProtocol]
     );
     // A4 设计期 Σ 回显 + 容器内容拼接：纯派生注入 computedValue（不落库）——
@@ -838,6 +846,7 @@ export default function Protocol({ protocols, setProtocols }) {
                     <Canvas
                         lanes={displayLanes}
                         offsets={protocolOffsets.byId}
+                        bitLayout={bitLayout}
                         onMoveItem={handleMoveItem}
                         selectedId={selectedId}
                         onSelect={handleCanvasSelect}

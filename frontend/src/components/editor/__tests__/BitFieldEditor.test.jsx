@@ -524,4 +524,17 @@ describe('R69 位带 0/1 值流行 · 0b 回显/录入', () => {
         fireEvent.change(document.querySelector('[data-bit-default="0"]'), { target: { value: '-40' } });
         expect(onUpdateBits.mock.calls[0][0][0]).toMatchObject({ default_val: -40 });
     });
+
+    it('表格默认值支持 0x 十六进制录入（R70 ④ 与 R69 0b 并存），多 bit 值切 HEX', () => {
+        const onUpdateBits = vi.fn();
+        render(
+            <BitFieldEditor
+                bits={[{ id: 'h', bit_name: 'HDR', start_bit: 0, bit_len: 8, default_val: 0 }]}
+                byteLen={1}
+                onUpdateBits={onUpdateBits}
+            />
+        );
+        fireEvent.change(document.querySelector('[data-bit-default="0"]'), { target: { value: '0x1F' } });
+        expect(onUpdateBits.mock.calls[0][0][0]).toMatchObject({ default_val: 31 });
+    });
 });
