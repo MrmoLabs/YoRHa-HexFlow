@@ -9,11 +9,11 @@ const mk = (n = 0) => `id-${n}`;
 describe('blockTypes 位域块（批 4）', () => {
     it('BLOCK_TYPES 含 bitfield：非嵌套、1 字节、字段走 length + bits', () => {
         const t = BLOCK_TYPES.find(b => b.type === 'bitfield');
-        expect(t).toBeTruthy();
+        expect(t).not.toBeUndefined();
         expect(t.nestable).toBe(false);
         expect(t.fields).toEqual(['length', 'bits']);
-        expect(t.palette.mainLabel).toBeTruthy();
-        expect(t.palette.subLabel).toBeTruthy();
+        expect(t.palette.mainLabel).toBe('位域');
+        expect(t.palette.subLabel).toBe('BIT');
     });
 
     it('bitfield 在固定块之后、长度块之前（palette 顺序可预期）', () => {

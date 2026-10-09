@@ -319,7 +319,7 @@ describe('Protocol Page', () => {
 
         fireEvent.click(screen.getByTitle('新建容器'));
 
-        expect(screen.getByRole('button', { name: '新容器' })).toBeDefined();
+        expect(screen.getByRole('button', { name: '新容器' })).not.toBeNull();
         // 自动展开 → 新容器的空子泳道立即在场（不进折叠层盲加子块）
         expect(screen.getByTestId('mock-canvas').textContent).toContain('新容器:0');
 
@@ -427,7 +427,7 @@ describe('Protocol Page', () => {
 
         fireEvent.click(screen.getByTitle('添加固定块 (Fixed)'));
 
-        expect(screen.getByRole('button', { name: '固定块' })).toBeDefined();
+        expect(screen.getByRole('button', { name: '固定块' })).not.toBeNull();
 
         expect(api.updateProtocol).not.toHaveBeenCalled(); // 反馈 #3：无自动落库
         await saveViaButton();
@@ -470,7 +470,7 @@ describe('Protocol Page', () => {
 
             expect(api.updateProtocol).toHaveBeenCalled();
             // R51：失败横幅是**拒绝回包**上屏后才有的
-            await waitFor(() => expect(screen.getByText(/协议保存失败/)).toBeDefined());
+            await waitFor(() => expect(screen.getByText(/协议保存失败/)).not.toBeNull());
         } finally {
             errorSpy.mockRestore();
         }
@@ -506,20 +506,20 @@ describe('Protocol Page', () => {
 
         // 选中 length 卡 → 面板 refs 专用分支（计数 + SELECT FIELDS，非通用 input）
         fireEvent.click(screen.getByRole('button', { name: 'LENGTH' }));
-        expect(screen.getByText('0 REF(S)')).toBeDefined();
+        expect(screen.getByText('0 REF(S)')).not.toBeNull();
 
         // 进入拾取 → 画布点甲块 = 入 refs（mock 与真实 Canvas 同路由：isActive→onPickBlock）
         fireEvent.click(screen.getByRole('button', { name: 'SELECT FIELDS' }));
         fireEvent.click(screen.getByRole('button', { name: '甲块' }));
-        expect(screen.getByText('1 REF(S)')).toBeDefined();
+        expect(screen.getByText('1 REF(S)')).not.toBeNull();
 
         // ② slot 可作 refs 目标 —— 计数进位；refs 已含槽 → 定义期 Σ 不注入
         fireEvent.click(screen.getByRole('button', { name: '插槽' }));
-        expect(screen.getByText('2 REF(S)')).toBeDefined();
+        expect(screen.getByText('2 REF(S)')).not.toBeNull();
         // 自引用仍拒 + 状态栏提示（SYS 行）。前缀正则防 'move LENGTH' 移位按钮误中。
         fireEvent.click(screen.getByRole('button', { name: /^LENGTH/ }));
-        expect(screen.getByText('2 REF(S)')).toBeDefined();
-        expect(screen.getByText(/SYS: 不能引用自身/)).toBeDefined();
+        expect(screen.getByText('2 REF(S)')).not.toBeNull();
+        expect(screen.getByText(/SYS: 不能引用自身/)).not.toBeNull();
 
         // 反馈 #3：点保存持久化 —— refs 落 children[i].parameter_config
         expect(api.updateProtocol).not.toHaveBeenCalled();
@@ -535,9 +535,9 @@ describe('Protocol Page', () => {
 
         // 芯片单删（label 解自 findNode，删按钮在芯片内）→ 逐删至清空
         fireEvent.click(screen.getByTestId('ref-chip-fixed-a').querySelector('button'));
-        expect(screen.getByText('1 REF(S)')).toBeDefined();
+        expect(screen.getByText('1 REF(S)')).not.toBeNull();
         fireEvent.click(screen.getByTestId('ref-chip-slot-a').querySelector('button'));
-        expect(screen.getByText('0 REF(S)')).toBeDefined();
+        expect(screen.getByText('0 REF(S)')).not.toBeNull();
     });
 
     // A4 设计期 Σ 回显：仅 length 卡注入 computedValue（宽度=卡 byte_length）；
@@ -582,13 +582,13 @@ describe('Protocol Page', () => {
         );
 
         // Σ=2 → 十进制 `2B` 注入按钮文本（mock 露出 computedValue）
-        expect(screen.getByRole('button', { name: '长度 2B' })).toBeDefined();
+        expect(screen.getByRole('button', { name: '长度 2B' })).not.toBeNull();
         // checksum 不注入 → accessible name 仅 label
         // 确定 checksum 注入真值：缺省 CRC_16_MODBUS（与编码器同源）→ name 追加值
         const want = formatToHex(calculateChecksum(ChecksumAlgo.CRC_16_MODBUS, [0xDE, 0xAD]), 1);
-        expect(screen.getByRole('button', { name: `校验 ${want}` })).toBeDefined();
+        expect(screen.getByRole('button', { name: `校验 ${want}` })).not.toBeNull();
         // 悬空 ref → size null → 不注入
-        expect(screen.getByRole('button', { name: '长度悬空' })).toBeDefined();
+        expect(screen.getByRole('button', { name: '长度悬空' })).not.toBeNull();
     });
 
     // ─── 批次一 P0-1: 删协议前检查编排绑定引用 ─────────────────────────────
@@ -611,22 +611,22 @@ describe('Protocol Page', () => {
 
         fireEvent.click(within(row).getByRole('button', { name: '×' }));
 
-        await waitFor(() => expect(screen.getByText(/被 2 条编排绑定引用/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/被 2 条编排绑定引用/)).not.toBeNull());
         expect(api.deleteProtocol).not.toHaveBeenCalled();
 
         // 取消 → 弹窗关、协议仍在、未调 DELETE
         fireEvent.click(screen.getByRole('button', { name: /取消/ }));
         await waitFor(() => expect(screen.queryByText(/编排绑定引用/)).toBeNull());
         expect(api.deleteProtocol).not.toHaveBeenCalled();
-        expect(within(row).getByRole('button', { name: '×' })).toBeDefined();
+        expect(within(row).getByRole('button', { name: '×' })).not.toBeNull();
 
         // 再开 → 确认才执行删除
         fireEvent.click(within(row).getByRole('button', { name: '×' }));
-        await waitFor(() => expect(screen.getByText(/被 2 条编排绑定引用/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/被 2 条编排绑定引用/)).not.toBeNull());
         fireEvent.click(screen.getByRole('button', { name: /确认/ }));
         await waitFor(() => expect(api.deleteProtocol).toHaveBeenCalledWith('proto-1'));
         // 后端级联计数回显
-        await waitFor(() => expect(screen.getByText(/连带清理 2 条绑定/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/连带清理 2 条绑定/)).not.toBeNull());
     });
 
     it('无绑定引用 → 直接删除（不弹窗）', async () => {
@@ -656,7 +656,7 @@ describe('Protocol Page', () => {
 
         expect(api.getBindings).not.toHaveBeenCalled();
         expect(api.deleteProtocol).not.toHaveBeenCalled();
-        expect(screen.getByText(/SYS: 至少保留一个协议/)).toBeDefined();
+        expect(screen.getByText(/SYS: 至少保留一个协议/)).not.toBeNull();
     });
 
     // ─── 批次一 P0-3: 保存失败恢复 ─────────────────────────────────────────
@@ -682,7 +682,7 @@ describe('Protocol Page', () => {
             // 反馈 #3：点保存 → 首 PUT 失败 → 横幅带服务端 detail（草稿保留）
             await saveViaButton();
             await waitFor(() => expect(api.updateProtocol).toHaveBeenCalledTimes(1));
-            await waitFor(() => expect(screen.getByText(/服务端拒绝.*refs target not found/)).toBeDefined());
+            await waitFor(() => expect(screen.getByText(/服务端拒绝.*refs target not found/)).not.toBeNull());
             expect(screen.getByRole('button', { name: '保存更改 (SAVE)' })).toBeTruthy();
 
             // 重试 = 重发草稿（失败后草稿仍在）→ 再次 PUT（二次成功）
@@ -719,7 +719,7 @@ describe('Protocol Page', () => {
         // 成功响应的 version 2 已回写本地（共享行已更新）→ 下一次 PUT 必须带 2（1 已陈旧）
         // R51：「已回写」的可观察信号 = 草稿毕业、SAVE 按钮随回包消失
         await waitFor(() => expect(screen.queryByRole('button', { name: '保存更改 (SAVE)' })).toBeNull());
-        await waitFor(() => expect(screen.getByDisplayValue('改名一')).toBeDefined());
+        await waitFor(() => expect(screen.getByDisplayValue('改名一')).not.toBeNull());
         fireEvent.change(screen.getByDisplayValue('改名一'), { target: { value: '改名二' } });
         await saveViaButton();
         expect(api.updateProtocol).toHaveBeenCalledTimes(2);
@@ -746,9 +746,9 @@ describe('Protocol Page', () => {
             await saveViaButton(); // 反馈 #3：手动保存才 PUT
             await waitFor(() => expect(api.updateProtocol).toHaveBeenCalledTimes(1));
             // 横幅透传 409 文案 + 冲突态给双动作；原样「重试」必再 409 = 死路，不给
-            await waitFor(() => expect(screen.getByText(/版本冲突.*409/)).toBeDefined());
-            expect(screen.getByRole('button', { name: '强制覆盖' })).toBeDefined();
-            expect(screen.getByRole('button', { name: '加载最新' })).toBeDefined();
+            await waitFor(() => expect(screen.getByText(/版本冲突.*409/)).not.toBeNull());
+            expect(screen.getByRole('button', { name: '强制覆盖' })).not.toBeNull();
+            expect(screen.getByRole('button', { name: '加载最新' })).not.toBeNull();
             expect(screen.queryByRole('button', { name: '重试' })).toBeNull();
 
             // 强制覆盖：GET 最新行(version 7) → 带本地负载 + 7 重发 → 成功清横幅
@@ -781,10 +781,10 @@ describe('Protocol Page', () => {
             fireEvent.change(screen.getByDisplayValue('示例协议'), { target: { value: '本地改名' } });
             await saveViaButton(); // 反馈 #3：手动保存才 PUT
             await waitFor(() => expect(api.updateProtocol).toHaveBeenCalledTimes(1));
-            await waitFor(() => expect(screen.getByRole('button', { name: '加载最新' })).toBeDefined());
+            await waitFor(() => expect(screen.getByRole('button', { name: '加载最新' })).not.toBeNull());
 
             fireEvent.click(screen.getByRole('button', { name: '加载最新' }));
-            await waitFor(() => expect(screen.getByDisplayValue('远端最新')).toBeDefined());
+            await waitFor(() => expect(screen.getByDisplayValue('远端最新')).not.toBeNull());
             // 放弃本地：不重发、横幅关闭、草稿已清（SAVE 按钮消失）
             expect(api.updateProtocol).toHaveBeenCalledTimes(1);
             expect(screen.queryByRole('button', { name: '保存更改 (SAVE)' })).toBeNull();
@@ -828,14 +828,14 @@ describe('Protocol Page', () => {
 
         // 阻断：PUT 未发生 + SYS 状态 + 面板常驻错误清单（带 blockId 定位文案）
         expect(api.updateProtocol).not.toHaveBeenCalled();
-        expect(screen.getByText(/SYS: 保存被阻止：1 个结构错误/)).toBeDefined();
-        expect(screen.getByText(/⛔ 「甲块」HEX 含非十六进制字符/)).toBeDefined();
+        expect(screen.getByText(/SYS: 保存被阻止：1 个结构错误/)).not.toBeNull();
+        expect(screen.getByText(/⛔ 「甲块」HEX 含非十六进制字符/)).not.toBeNull();
 
         // 切选另一块 → 清单仍常驻（不随选中态隐藏）；点清单条目 → 定位回甲块
         fireEvent.click(screen.getByRole('button', { name: '乙块' }));
-        expect(screen.getByDisplayValue('乙块')).toBeDefined();
+        expect(screen.getByDisplayValue('乙块')).not.toBeNull();
         fireEvent.click(screen.getByText(/⛔ 「甲块」HEX 含非十六进制字符/));
-        expect(screen.getByDisplayValue('甲块')).toBeDefined();
+        expect(screen.getByDisplayValue('甲块')).not.toBeNull();
 
         // 修复 → 再点保存放行 + 清单同步消失
         fireEvent.change(screen.getByText('十六进制值 (Hex)').parentElement.querySelector('input'), {
@@ -982,10 +982,10 @@ describe('Protocol Page', () => {
         );
 
         fireEvent.click(screen.getByRole('button', { name: '甲块' }));
-        expect(screen.getByDisplayValue('甲块')).toBeDefined(); // 块级视图已进入
+        expect(screen.getByDisplayValue('甲块')).not.toBeNull(); // 块级视图已进入
 
         expect(screen.queryByRole('button', { name: '复制块 (DUPLICATE)' })).toBeNull();
-        expect(screen.getByRole('button', { name: '删除 (DELETE)' })).toBeDefined(); // 删除保留
+        expect(screen.getByRole('button', { name: '删除 (DELETE)' })).not.toBeNull(); // 删除保留
         // R57（PLAN §8.89）：hover 底 = tailwind red-500（4.1.18 实算 #fb2c36），白字 3.81
         // 低于正文线 → hover:text-black 5.52。
         expect(screen.getByRole('button', { name: '删除 (DELETE)' }).className).toContain('hover:text-black');
@@ -1012,14 +1012,14 @@ describe('Protocol Page', () => {
         fireEvent.change(screen.getByDisplayValue('主协议'), { target: { value: '主协议改' } });
         let saveBtn = screen.getByRole('button', { name: '保存更改 (SAVE)' });
         let anchor = screen.getByDisplayValue('主协议改');
-        expect(anchor.compareDocumentPosition(saveBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(!!(anchor.compareDocumentPosition(saveBtn) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
 
         // 块级视图：选中块改标签 → SAVE 仍在块字段之后（顶栏 SAVE 已撤）
         fireEvent.click(screen.getByRole('button', { name: '甲块' }));
         fireEvent.change(screen.getByDisplayValue('甲块'), { target: { value: '甲块改' } });
         saveBtn = screen.getByRole('button', { name: '保存更改 (SAVE)' });
         anchor = screen.getByDisplayValue('甲块改');
-        expect(anchor.compareDocumentPosition(saveBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(!!(anchor.compareDocumentPosition(saveBtn) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
 
         // R3 #5 三页属性栏类名对齐：协议页属性 aside 补 shrink-0 + overflow-y-auto
         expect(saveBtn.closest('aside').className).toContain('shrink-0');

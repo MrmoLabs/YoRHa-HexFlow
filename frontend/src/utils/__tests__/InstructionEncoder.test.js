@@ -132,7 +132,7 @@ describe('E1-1 INT_SIGNED 两补码（B5 已解 · 双端 byte-equal 锚点）',
         });
     });
 
-    it('静态 parameter_config.value 与运行时输入同口径', () => {
+    it('静态 parameter_config.value 与运行时输入同口径（int：signed -1 → FF）', () => {
         const viaStatic = InstructionEncoder.getFieldBytes(
             signedField(1, { value: -1 }), {}, {}, []);
         const viaInput = InstructionEncoder.getFieldBytes(
@@ -201,7 +201,7 @@ describe('E1-2 endianness LITTLE 反转（B6 已解 · 双端 byte-equal 锚点�
         });
         const viaBig = InstructionEncoder.resolveDependencies(mkInstr(null), {});
         const viaLittle = InstructionEncoder.resolveDependencies(mkInstr('LITTLE'), {});
-        expect(viaLittle.ck).toBeDefined();
+        expect(viaLittle.ck).not.toBeNull();
         expect(viaLittle.ck).toBe(viaBig.ck);
     });
 
@@ -316,7 +316,7 @@ describe('E1-4 FLOAT_IEEE float32 / R5 float64（B2+R5 · 双端 byte-equal 锚�
         });
     });
 
-    it('静态 parameter_config.value 与运行时输入同口径', () => {
+    it('静态 parameter_config.value 与运行时输入同口径（float：3.14 → 4048F5C3）', () => {
         const viaStatic = InstructionEncoder.getFieldBytes(
             fld({ value: 3.14 }), {}, {}, []);
         const viaInput = InstructionEncoder.getFieldBytes(

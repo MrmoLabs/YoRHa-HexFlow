@@ -61,9 +61,9 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
         render(<TransactionPanel instruction={INSTRUCTION} payload={PAYLOAD} />);
 
         await waitFor(() => expect(api.getResponseSpec).toHaveBeenCalledWith('instr-1'));
-        expect(screen.getByText(':: Transaction ::')).toBeDefined();
+        expect(screen.getByText(':: Transaction ::')).not.toBeNull();
         expect(screen.queryByText(/SPEC LOAD FAILED/)).toBeNull();
-        expect(screen.getByRole('button', { name: /SPEC ▸/ })).toBeDefined(); // 编辑器默认折叠
+        expect(screen.getByRole('button', { name: /SPEC ▸/ })).not.toBeNull(); // 编辑器默认折叠
     });
 
     it('打开编辑器改前缀 → SAVE 变脏标记 → 保存调 saveResponseSpec 并清脏', async () => {
@@ -75,7 +75,7 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
 
         const prefix = screen.getByPlaceholderText('AA55');
         fireEvent.change(prefix, { target: { value: 'AA55' } });
-        expect(screen.getByRole('button', { name: /SAVE \*/ })).toBeDefined(); // 脏标记
+        expect(screen.getByRole('button', { name: /SAVE \*/ })).not.toBeNull(); // 脏标记
 
         fireEvent.click(screen.getByRole('button', { name: /SAVE \*/ }));
         await waitFor(() => expect(api.saveResponseSpec).toHaveBeenCalledTimes(1));
@@ -84,7 +84,7 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
         expect(spec.prefix).toBe('AA55');
         expect(spec.mode).toBe('echo');
         await screen.findByText('SPEC SAVED');
-        expect(screen.getByRole('button', { name: /^SAVE$/ })).toBeDefined(); // 脏标记已清
+        expect(screen.getByRole('button', { name: /^SAVE$/ })).not.toBeNull(); // 脏标记已清
     });
 
     it('拉取失败（非 404）→ 错误条可见且降级本地默认仍可用', async () => {
@@ -92,7 +92,7 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
 
         render(<TransactionPanel instruction={INSTRUCTION} payload={PAYLOAD} />);
         await screen.findByText(/SPEC LOAD FAILED: network down/);
-        expect(screen.getByRole('button', { name: /SEND_TRANSACTION/ })).toBeDefined();
+        expect(screen.getByRole('button', { name: /SEND_TRANSACTION/ })).not.toBeNull();
     });
 
     it('干净规格发送 → response_spec=null，渲染 TXN_OK 汇总与逐次 attempt', async () => {
@@ -113,10 +113,10 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
         expect(body.broadcast).toBe(false);
 
         await screen.findByText(/TXN_OK · 1 ATTEMPT · RTT 0\.4 ms/);
-        expect(screen.getByText('#1')).toBeDefined();
-        expect(screen.getByText('OK')).toBeDefined();
-        expect(screen.getByText('0.4 ms')).toBeDefined();
-        expect(screen.getByText('DEFAULT')).toBeDefined(); // spec_source
+        expect(screen.getByText('#1')).not.toBeNull();
+        expect(screen.getByText('OK')).not.toBeNull();
+        expect(screen.getByText('0.4 ms')).not.toBeNull();
+        expect(screen.getByText('DEFAULT')).not.toBeNull(); // spec_source
     });
 
     it('脏规格发送 → response_spec 内联；FAILED 记录渲染原因', async () => {
@@ -133,9 +133,9 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
         expect(body.response_spec).toEqual(expect.objectContaining({ prefix: '0D0A' }));
 
         await screen.findByText(/TXN_FAILED · 2 ATTEMPTS · RTT 0\.5 ms/);
-        expect(screen.getByText('SUFFIX_MISMATCH')).toBeDefined();
-        expect(screen.getByText('NO_RESPONSE')).toBeDefined();
-        expect(screen.getByText('INLINE')).toBeDefined();
+        expect(screen.getByText('SUFFIX_MISMATCH')).not.toBeNull();
+        expect(screen.getByText('NO_RESPONSE')).not.toBeNull();
+        expect(screen.getByText('INLINE')).not.toBeNull();
     });
 
     it('空帧禁用发送；广播开关翻转；发送异常显示错误条', async () => {
@@ -163,11 +163,11 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
 
         const lengthToggle = screen.getByRole('button', { name: /LENGTH OFF/ });
         fireEvent.click(lengthToggle);
-        expect(screen.getByRole('button', { name: /LENGTH ON/ })).toBeDefined();
-        expect(screen.getByText('OFFSET_VAL')).toBeDefined(); // 子字段展开
+        expect(screen.getByRole('button', { name: /LENGTH ON/ })).not.toBeNull();
+        expect(screen.getByText('OFFSET_VAL')).not.toBeNull(); // 子字段展开
 
         fireEvent.change(screen.getByPlaceholderText('4-6,10-12'), { target: { value: '6-4' } });
-        expect(screen.getByText(/格式非法/)).toBeDefined();
+        expect(screen.getByText(/格式非法/)).not.toBeNull();
         // 非法区间 → SAVE 禁用（不落半截状态）
         expect(screen.getByRole('button', { name: /SAVE/ }).disabled).toBe(true);
     });
@@ -189,7 +189,7 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
 
         // BYTE_LEN 在 varint 下仍可编辑（它是设计期宽度，收侧回算 offset_val 要用）
         fireEvent.change(box, { target: { value: 'varint' } });
-        expect(screen.getByText(/设计期宽度/)).toBeDefined();
+        expect(screen.getByText(/设计期宽度/)).not.toBeNull();
         expect(screen.getByLabelText('length encoding').value).toBe('varint');
         const byteLen = screen.getByText('BYTE_LEN').parentElement.querySelector('input');
         expect(byteLen.disabled).toBe(false);
@@ -225,21 +225,21 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
         await globalThis.__YORHA_settle(); // R51：404 降级先落定，再动编辑器
 
         fireEvent.click(screen.getByRole('button', { name: /LENGTH OFF/ })); // 本地改一刀 → 脏
-        expect(screen.getByRole('button', { name: /SAVE \*/ })).toBeDefined();
+        expect(screen.getByRole('button', { name: /SAVE \*/ })).not.toBeNull();
         fireEvent.click(screen.getByRole('button', { name: /SAVE \*/ }));
         await waitFor(() => expect(api.saveResponseSpec).toHaveBeenCalledTimes(1));
 
         // 回包未回 → 用户再改：length encoding 写成 varint
         fireEvent.change(screen.getByLabelText('length encoding'), { target: { value: 'varint' } });
-        expect(screen.getByRole('button', { name: /SAVE \*/ })).toBeDefined();
+        expect(screen.getByRole('button', { name: /SAVE \*/ })).not.toBeNull();
 
         // 回包这时才到
         release({ id: 1700000000001 });
-        await waitFor(() => expect(screen.getByText('SPEC SAVED')).toBeDefined());
+        await waitFor(() => expect(screen.getByText('SPEC SAVED')).not.toBeNull());
 
         // 判据：这份回包对应的是**上一次**的保存，不能把新编辑判成已保存 ——
         // 判成已保存会让下一次发送走 response_spec: null，新编辑被静默丢弃
-        expect(screen.getByRole('button', { name: /SAVE \*/ })).toBeDefined();
+        expect(screen.getByRole('button', { name: /SAVE \*/ })).not.toBeNull();
     });
 
     it('R52 回归：GET 规格回包晚于本地编辑 → 本地优先，不被过期回包覆盖', async () => {
@@ -252,7 +252,7 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
         // 回包未回 → 本地先改：开 LENGTH + 写 varint（设计期宽度文案即在场）
         fireEvent.click(screen.getByRole('button', { name: /LENGTH OFF/ }));
         fireEvent.change(screen.getByLabelText('length encoding'), { target: { value: 'varint' } });
-        expect(screen.getByText(/设计期宽度/)).toBeDefined();
+        expect(screen.getByText(/设计期宽度/)).not.toBeNull();
 
         // 回包这时才到，且带的是一份**没开 LENGTH** 的规格
         release({ spec: defaultSpec(), stale: null });
@@ -261,7 +261,7 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
         });
 
         // 判据：本地优先 —— 拉取期间敲下的编辑不能被过期回包整份冲掉
-        expect(screen.getByText(/设计期宽度/)).toBeDefined();
+        expect(screen.getByText(/设计期宽度/)).not.toBeNull();
         expect(screen.getByLabelText('length encoding').value).toBe('varint');
     });
 
@@ -292,13 +292,13 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
 
         // 本地改字段（脏稿重渲染）→ 徽标不丢
         fireEvent.change(screen.getByPlaceholderText('AA55'), { target: { value: 'AA55' } });
-        expect(screen.getByTestId('response-spec-stale')).toBeDefined();
-        expect(screen.getByRole('button', { name: /SAVE \*/ })).toBeDefined();
+        expect(screen.getByTestId('response-spec-stale')).not.toBeNull();
+        expect(screen.getByRole('button', { name: /SAVE \*/ })).not.toBeNull();
     });
 
     it('D7-A stale=false（仍匹配）→ 不渲染徽标', async () => {
         await openSpecWith(false);
-        expect(screen.getByText('RESPONSE_SPEC')).toBeDefined(); // 编辑器头部在场
+        expect(screen.getByText('RESPONSE_SPEC')).not.toBeNull(); // 编辑器头部在场
         expect(screen.queryByTestId('response-spec-stale')).toBeNull();
     });
 
@@ -311,7 +311,7 @@ describe('TransactionPanel（P2 事务发送面板）', () => {
         api.getResponseSpec.mockRejectedValue(Object.assign(new Error('nf'), { response: { status: 404 } }));
         render(<TransactionPanel instruction={INSTRUCTION} payload={PAYLOAD} />);
         fireEvent.click(await screen.findByRole('button', { name: /SPEC ▸/ }));
-        expect(await screen.findByText('RESPONSE_SPEC')).toBeDefined();
+        expect(await screen.findByText('RESPONSE_SPEC')).not.toBeNull();
         // R51：同上，404 降级落定后再断言「无徽标」，防假通过
         await globalThis.__YORHA_settle();
         expect(screen.queryByTestId('response-spec-stale')).toBeNull();

@@ -4451,6 +4451,50 @@
        未跟踪 = 既有状态、本批未碰，不入提交范围。提交 = `feat(R61)` 单笔（**零 DDL** → 无 Migration、
        无 `chore(db)`）。
 
+111. **R62 · 测试质量线收尾（全修档 · 第 1/2 批）weak assert 判档 + 窄修 3 项 + 静态护栏**
+     （PLAN §8.94，2026-10-09；R61 §8.93 收口后本会话拍板下一批 = 测试质量三件，
+     第 1 批做判档与窄修，第 2 批接余量）
+     - **范围**：**仅测试文件 + 新增静态护栏 · 零 DDL** —— 零 BE（`backend/` 一行未碰）、
+       无 Migration、无 `chore(db)`、不引 pytest、新 pip 依赖 = 0，`/dispatch` 缺省口径
+       逐字节不变，`frontend/src` 产品代码一行未改，`frontend/test/` 仅动
+       `settleFakeTimers.test.js`（`setupDelay.js` 不碰）；`frontend/red-report.json` 与
+       `backend/db/yorha.db` = 仓内既有状态、本批未碰，不入提交范围。
+     - **判档口径（用户拍板）**：`.toBeDefined()` **221 处全量改 `.not.toBeNull()`**
+       （反形态 0）；`.toBeTruthy()` **222 处 = 记账保留 201**（元素存在类等价非弱：
+       正则初判 176 + 上下文补认 25）**+ 精确化 19**（源码 / fixture 实值 3、语义等价
+       形态 16、跑测定 0）**+ 判不准记账 2**（`BitFieldEditor.test.jsx:48`、
+       `routingView.test.js:86`，上下文不足以定值、计入弱断言账不冒充强化）。
+       裸 `.toHaveBeenCalled()` **121 处一行不改**，拆 = `.not.toHaveBeenCalled()` 104
+       （阴性精确、非弱，R63 预计保留）+ 正形态真弱 17；`expect(x).toBe(true)` 112 处不动；
+       `.toBeFalsy()` / `.toBeCalled()` 未触。
+     - **红测先行**：护栏 `frontend/src/__tests__/weakAssertions.test.js` 实现前 = **2 红 1 绿**
+       （逐字红因 `r62_red1.txt`：defined 扫描 `expected [ …(221) ] to deeply equal []`、
+       重复标题扫描 `expected [ Array(1) ] to deeply equal []`；第 1 条扫描面非空基线即绿、
+       单列不冒充红测）。转换暴露红 **0**、触及产品的红 **0**；三档 = 缺特性 2 / 先修 0 /
+       改写 0。off 档 0 红照跑；15ms 探测照跑全绿。
+     - **窄修 3 项**：(1) `frontend/test/settleFakeTimers.test.js:35` 补
+       `expect(chainLanded).toBe(false);`（原 :41 断言未动）；(2)
+       `frontend/src/utils/__tests__/InstructionEncoder.test.js:135` / `:319` →
+       int 版 / float 版标题与断言对齐；(3) 新增静态护栏 3 条（双判据按 `it(` / `test(`
+       第一实参源码整体提标题、规避 3 处模板引号截断伪报；自身按路径豁免，先例 R58 §8.90
+       —— 其注释含 `.toBeDefined()` 字面、bulk 转换按路径跳过，故实扫 221 而非 222）。
+     - **BE 记账**：BE 无断言测试方法初判 37 − helper 误报 10（`self._reject` 4 +
+       `self._assert_rejects` 6）= **27 条清单**（`r62_be27_body.txt`，方法体 + 调用面），
+       R63 处置；BE 全量 **1033 / 0 红**（`BE_OK 1033`、`BE_FAIL_N 0`）。抑制注释
+       `applied` 新增 **0**（输出 = 0 applied · 1 invalid · 0 unused，invalid 沿既有）。
+     - **等价性与验收**：FE **1533 → 1536**（100 → 101 文件，+3 护栏）、不设 env 全量 0 红。
+       **10 项 × 两遍**（`r62_verify.py`，复制 r61 口径）全绿：BE 1033 · FE 1536 ·
+       `npx vite build` 0 · `npm run lint` 0 · 校验器（27 份改动 + 全仓 14 md）0 违规 ·
+       md 8/8 · 口径扩展 13/13 · 自检 7/7 · probe15 1536 · `ev40` TOTAL_PROBLEMS=0 ·
+       `ev33` STAGED=0 DEL=0 BAD=0。
+     - **工具账**：Temp 取证 = `r62_class.py` / `r62_class.txt` · `r62_ctx.py` ·
+       `r62_judge.py` · `r62_be27.py` / `r62_be27_body.txt` · `r62_apply.py` /
+       `r62_apply_log.txt` · `r62_red1.txt` · `r62_fe_after.txt` · `r62_verify.py` ·
+       `r62_*.txt`（验收日志）。提交 = `feat(R62)` 单笔（**零 DDL** → 无 Migration、
+       无 `chore(db)`）。**未 git add、未 commit**（待 review 后自行提交）。
+     - **下一批（R63）**：121 裸 called 处置（104 阴性 + 17 阳性真弱）+ BE 27 清单
+       + 17 处正形态裸 `toHaveBeenCalled()` 收敛。
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

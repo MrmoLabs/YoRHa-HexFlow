@@ -113,7 +113,7 @@ describe('Orchestration Page', () => {
         expect(screen.getByTestId('mock-canvas').textContent).toContain('帧头');
         expect(screen.getByTestId('mock-canvas').textContent).toContain('命令字');
         expect(screen.getByTestId('mock-canvas').textContent).toContain('帧尾');
-        expect(screen.getByText('* Yellow indicates injected Payload')).toBeDefined();
+        expect(screen.getByText('* Yellow indicates injected Payload')).not.toBeNull();
     });
 
     it('should add a second binding entry', async () => {
@@ -132,8 +132,8 @@ describe('Orchestration Page', () => {
         expect(screen.getAllByText(/绑定/i).length).toBeGreaterThan(0);
         fireEvent.click(screen.getByRole('button', { name: '+' }));
 
-        expect(screen.getByText('新绑定 (NEW)')).toBeDefined();
-        expect(screen.getByText('默认绑定 (DEFAULT)')).toBeDefined();
+        expect(screen.getByText('新绑定 (NEW)')).not.toBeNull();
+        expect(screen.getByText('默认绑定 (DEFAULT)')).not.toBeNull();
     });
 
     it('should display total size including injected payload bytes', async () => {
@@ -265,8 +265,8 @@ describe('Orchestration Page', () => {
             />
         );
 
-        expect(await screen.findByText('服务端绑定A')).toBeDefined();
-        expect(screen.getByText('服务端绑定B')).toBeDefined();
+        expect(await screen.findByText('服务端绑定A')).not.toBeNull();
+        expect(screen.getByText('服务端绑定B')).not.toBeNull();
         expect(api.getBindings).toHaveBeenCalledTimes(1);
         // 服务端已有绑定 → 不种默认、不 POST
         expect(screen.queryByText('默认绑定 (DEFAULT)')).toBeNull();
@@ -367,7 +367,7 @@ describe('Orchestration Page', () => {
 
         await awaitDefaultBinding();
         fireEvent.click(screen.getByRole('button', { name: '+' }));
-        expect(screen.getByText('新绑定 (NEW)')).toBeDefined();
+        expect(screen.getByText('新绑定 (NEW)')).not.toBeNull();
 
         const newRow = screen.getByText('新绑定 (NEW)').parentElement;
         fireEvent.click(newRow.querySelector('button'));
@@ -387,24 +387,24 @@ describe('Orchestration Page', () => {
             />
         );
 
-        expect(await screen.findByText(/加载失败/)).toBeDefined();
-        expect(await screen.findByText('默认绑定 (DEFAULT)')).toBeDefined();
+        expect(await screen.findByText(/加载失败/)).not.toBeNull();
+        expect(await screen.findByText('默认绑定 (DEFAULT)')).not.toBeNull();
         // 加载失败 → 不向后端写任何东西
         expect(api.createBinding).not.toHaveBeenCalled();
 
         // 反馈 #4：降级模式的属性编辑不标脏（提示条已声明本地不持久化）
         fireEvent.change(screen.getByDisplayValue('默认绑定 (DEFAULT)'), { target: { value: '再改名' } });
-        expect(screen.getByDisplayValue('再改名')).toBeDefined();
+        expect(screen.getByDisplayValue('再改名')).not.toBeNull();
         expect(api.updateBinding).not.toHaveBeenCalled();
         // 反馈 #6③：降级模式 SAVE 常驻但禁用（loadFailed 不落库）
         expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(true);
 
         fireEvent.click(screen.getByRole('button', { name: '+' }));
-        expect(screen.getByText('新绑定 (NEW)')).toBeDefined();
+        expect(screen.getByText('新绑定 (NEW)')).not.toBeNull();
         expect(api.createBinding).not.toHaveBeenCalled();
         expect(api.updateBinding).not.toHaveBeenCalled();
         // 反馈 #6③：降级加行同样不出可点 SAVE（常驻但禁用）
-        expect(screen.getByRole('button', { name: '保存更改 (SAVE)' })).toBeDefined();
+        expect(screen.getByRole('button', { name: '保存更改 (SAVE)' })).not.toBeNull();
         expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(true);
     });
 
@@ -465,7 +465,7 @@ describe('Orchestration Page', () => {
 
         await screen.findByText('绑定甲');
         // 2 绑定 > 1 洞 → countSlots 对账警示
-        expect(screen.getByText(/洞位不足/)).toBeDefined();
+        expect(screen.getByText(/洞位不足/)).not.toBeNull();
 
         // 洞号 = 同协议绑定按 slot_order 升序的位次（甲在首位 → #0）
         const holeSelect = screen.getByLabelText(/洞位/);
@@ -568,11 +568,11 @@ describe('Orchestration Page', () => {
         });
         // 层位改线：不再走「先套壳再裸发」两跳
         expect(api.compileWrapped).not.toHaveBeenCalled();
-        expect(await screen.findByText(/^SENT:/)).toBeDefined();
+        expect(await screen.findByText(/^SENT:/)).not.toBeNull();
 
         api.dispatchWrappedGroup.mockRejectedValueOnce(new Error('409: dispatch in flight'));
         fireEvent.click(screen.getByRole('button', { name: /封装试发/ }));
-        expect(await screen.findByText(/SEND FAILED: 409/)).toBeDefined();
+        expect(await screen.findByText(/SEND FAILED: 409/)).not.toBeNull();
     });
 
     // 批次二 (D3): 封装期溢出/欠载告警不得静默 —— record.warnings 走独立徽标
@@ -658,7 +658,7 @@ describe('Orchestration Page', () => {
 
         // 点乙星（设默认）→ 只弹确认框，未 PUT、本地未变
         fireEvent.click(starOf('绑定乙'));
-        expect(await screen.findByText(/默认封装绑定/)).toBeDefined();
+        expect(await screen.findByText(/默认封装绑定/)).not.toBeNull();
         expect(api.updateBinding).not.toHaveBeenCalled();
         expect(starOf('绑定乙').textContent).toBe('☆');
 
@@ -702,19 +702,19 @@ describe('Orchestration Page', () => {
         await awaitDefaultBinding();
 
         // 干净态：常驻计数行（0 条 muted）+ SAVE 常驻但禁用
-        expect(screen.getByText('0 条未保存')).toBeDefined();
+        expect(screen.getByText('0 条未保存')).not.toBeNull();
         expect(screen.getByRole('button', { name: '保存更改 (SAVE)' }).disabled).toBe(true);
 
         // 改名标脏 → 计数 1、SAVE 可用；SAVE 在绑定名称 input 之后（面板底部）
         fireEvent.change(screen.getByDisplayValue('默认绑定 (DEFAULT)'), { target: { value: '改名了' } });
-        expect(screen.getByText('1 条未保存')).toBeDefined();
+        expect(screen.getByText('1 条未保存')).not.toBeNull();
         // R56（PLAN §8.88）：脏计数 = 深红语义类 text-warn（原 text-[#E58D28] 沙底 1.73:1）
         expect(screen.getByText('1 条未保存').className).toContain('text-warn');
         const saveBtn = screen.getByRole('button', { name: '保存更改 (SAVE)' });
         expect(saveBtn.disabled).toBe(false);
         const nameInput = screen.getByDisplayValue('改名了');
         // DOM 顺序：SAVE后于字段 → compareDocumentPosition 报 FOLLOWING
-        expect(nameInput.compareDocumentPosition(saveBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+        expect(!!(nameInput.compareDocumentPosition(saveBtn) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
     });
 
     // ─── 人工验证第 3 轮 #6②: 属性面板四分区 + 结构 select 从头部移入 ─────
@@ -729,10 +729,10 @@ describe('Orchestration Page', () => {
         await awaitDefaultBinding();
 
         // 四分区工业标签
-        expect(screen.getByText('绑定标识 (IDENTITY)')).toBeDefined();
-        expect(screen.getByText('结构选择 (STRUCTURE)')).toBeDefined();
-        expect(screen.getByText('洞位 (HOLE)')).toBeDefined();
-        expect(screen.getByText('操作 (ACTIONS)')).toBeDefined();
+        expect(screen.getByText('绑定标识 (IDENTITY)')).not.toBeNull();
+        expect(screen.getByText('结构选择 (STRUCTURE)')).not.toBeNull();
+        expect(screen.getByText('洞位 (HOLE)')).not.toBeNull();
+        expect(screen.getByText('操作 (ACTIONS)')).not.toBeNull();
 
         // 中心头部不再承载结构 select（总长度/EXPORT 仍留头部）；面板内 DOM
         // 顺序 = 协议外壳 → 指令内核 → 洞位（原 select[0]/getByLabelText 断言不破）
@@ -816,9 +816,9 @@ describe('Orchestration Page', () => {
         />
     );
     const selectRecipe = async (id = 'recipe-1') => {
-        await waitFor(() => expect(screen.getByTestId('recipe-select')).toBeDefined());
+        await waitFor(() => expect(screen.getByTestId('recipe-select')).not.toBeNull());
         fireEvent.change(screen.getByTestId('recipe-select'), { target: { value: id } });
-        await waitFor(() => expect(screen.getByTestId('recipe-save')).toBeDefined());
+        await waitFor(() => expect(screen.getByTestId('recipe-save')).not.toBeNull());
     };
     const slotChips = () => within(screen.getByTestId('recipe-slots-0')).getAllByRole('button');
 
@@ -1012,7 +1012,7 @@ describe('Orchestration Page', () => {
         });
         // 层位口径不变：不走「先套壳再裸发」两跳
         expect(api.compileWrapped).not.toHaveBeenCalled();
-        expect(await screen.findByText(/^SENT:/)).toBeDefined();
+        expect(await screen.findByText(/^SENT:/)).not.toBeNull();
 
         // 配方脏稿 → 试发禁用（后端只认已落库配方，带脏稿试发 = 预想与出线不一致）
         fireEvent.change(screen.getByTestId('recipe-name'), { target: { value: '改了名' } });
@@ -1062,7 +1062,7 @@ describe('Orchestration Page', () => {
         expect(badge.textContent).toContain('绑定已失效 STALE');
         // R56（PLAN §8.88）：失效徽标 = 深红语义类 text-warn（原 text-[#FFB74D] 更浅、沙底 < 1.5）
         expect(badge.className).toContain('text-warn');
-        expect(screen.getByText('失效绑定')).toBeDefined();
+        expect(screen.getByText('失效绑定')).not.toBeNull();
         // 同批行只出 1 枚（不重复渲染）
         expect(screen.getAllByTestId('binding-stale')).toHaveLength(1);
     });
@@ -1079,8 +1079,8 @@ describe('Orchestration Page', () => {
             />
         );
 
-        expect(await screen.findByText('仍匹配')).toBeDefined();
-        expect(screen.getByText('无出处')).toBeDefined();
+        expect(await screen.findByText('仍匹配')).not.toBeNull();
+        expect(screen.getByText('无出处')).not.toBeNull();
         expect(screen.queryByTestId('binding-stale')).toBeNull();
     });
 

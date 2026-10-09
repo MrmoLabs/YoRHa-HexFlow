@@ -53,11 +53,11 @@ describe('DataHub Page', () => {
         render(<DataHub />);
 
         await waitFor(() => {
-            expect(screen.getByText('0.2.0')).toBeDefined();
+            expect(screen.getByText('0.2.0')).not.toBeNull();
         });
-        expect(screen.getByText('D:/Projects/YoRHa/backend/db/yorha.db')).toBeDefined();
-        expect(screen.getByText('15')).toBeDefined(); // instructions count
-        expect(screen.getByText('30')).toBeDefined(); // fields count
+        expect(screen.getByText('D:/Projects/YoRHa/backend/db/yorha.db')).not.toBeNull();
+        expect(screen.getByText('15')).not.toBeNull(); // instructions count
+        expect(screen.getByText('30')).not.toBeNull(); // fields count
         expect(api.getDatahubStatus).toHaveBeenCalledTimes(1);
     });
 
@@ -67,10 +67,10 @@ describe('DataHub Page', () => {
         render(<DataHub />);
 
         await waitFor(() => {
-            expect(screen.getByText(/ERR: network down/)).toBeDefined();
+            expect(screen.getByText(/ERR: network down/)).not.toBeNull();
         });
-        expect(screen.getByText('状态不可用')).toBeDefined();
-        expect(screen.getByRole('button', { name: /刷新/ })).toBeDefined();
+        expect(screen.getByText('状态不可用')).not.toBeNull();
+        expect(screen.getByRole('button', { name: /刷新/ })).not.toBeNull();
     });
 
     it('exports the aggregate bundle ZIP and triggers a download', async () => {
@@ -88,7 +88,7 @@ describe('DataHub Page', () => {
         });
         const [, filename] = triggerBlobDownload.mock.calls[0];
         expect(filename).toMatch(/^yorha-datahub-\d+\.zip$/);
-        expect(screen.getByText(/导出完成/)).toBeDefined();
+        expect(screen.getByText(/导出完成/)).not.toBeNull();
     });
 
     it('R17 按域导出：芯片按 9 域表顺序带域名下载，全不选即禁用不发请求', async () => {
@@ -100,7 +100,7 @@ describe('DataHub Page', () => {
 
         // 9 域芯片齐（= 后端 BUNDLE_DOMAIN_VERSIONS 键序），全不选时按钮禁用
         ['instructions', 'relations', 'frames', 'recipes', 'sequences', 'transport', 'profiles', 'templates', 'routing_rules']
-            .forEach((key) => expect(screen.getByRole('button', { name: key })).toBeDefined());
+            .forEach((key) => expect(screen.getByRole('button', { name: key })).not.toBeNull());
         const exportBtn = screen.getByRole('button', { name: /导出所选域/ });
         expect(exportBtn.disabled).toBe(true);
 
@@ -117,7 +117,7 @@ describe('DataHub Page', () => {
         await waitFor(() => expect(triggerBlobDownload).toHaveBeenCalledTimes(1));
         const [, filename] = triggerBlobDownload.mock.calls[0];
         expect(filename).toMatch(/^yorha-datahub-recipes-sequences-\d+\.zip$/);
-        await waitFor(() => expect(screen.getByText(/导出完成（2 域：recipes \+ sequences）/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/导出完成（2 域：recipes \+ sequences）/)).not.toBeNull());
 
         // 取消到空 → 回到禁用，且**不再发请求**
         fireEvent.click(screen.getByRole('button', { name: 'recipes' }));
@@ -141,7 +141,7 @@ describe('DataHub Page', () => {
         await waitFor(() => expect(triggerBlobDownload).toHaveBeenCalledTimes(1));
         const [, filename] = triggerBlobDownload.mock.calls[0];
         expect(filename).toMatch(/^yorha-datahub-\d+\.zip$/);
-        await waitFor(() => expect(screen.getByText(/9 域：instructions\.json/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/9 域：instructions\.json/)).not.toBeNull());
     });
 
     it('R19 示例包：动态出「按域导入的 6 域」，文件名打 sample 标记', async () => {
@@ -163,7 +163,7 @@ describe('DataHub Page', () => {
         await waitFor(() => expect(triggerBlobDownload).toHaveBeenCalledTimes(1));
         const [, filename] = triggerBlobDownload.mock.calls[0];
         expect(filename).toMatch(/^yorha-datahub-sample-\d+\.zip$/);
-        await waitFor(() => expect(screen.getByText(/示例包已生成/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/示例包已生成/)).not.toBeNull());
         // 全量按钮仍是另一条路：不因示例包而改参
         expect(api.exportDataBundle).not.toHaveBeenCalledWith();
     });
@@ -183,7 +183,7 @@ describe('DataHub Page', () => {
             expect(api.createDbBackup).toHaveBeenCalledTimes(1);
             expect(api.getDatahubStatus).toHaveBeenCalledTimes(2); // 初始 + 备份后刷新
         });
-        expect(screen.getByText(/备份完成：yorha-20260922-120001\.db/)).toBeDefined();
+        expect(screen.getByText(/备份完成：yorha-20260922-120001\.db/)).not.toBeNull();
     });
 
     it('requires confirmation before restoring a backup', async () => {
@@ -195,11 +195,11 @@ describe('DataHub Page', () => {
         });
 
         render(<DataHub />);
-        await waitFor(() => expect(screen.getByText('yorha-20260922-120000.db')).toBeDefined());
+        await waitFor(() => expect(screen.getByText('yorha-20260922-120000.db')).not.toBeNull());
 
         fireEvent.click(screen.getByRole('button', { name: /恢复 \(RESTORE\)/ }));
         // 确认弹窗出现，尚未调用 API
-        expect(screen.getByText(/确认从备份恢复数据库/)).toBeDefined();
+        expect(screen.getByText(/确认从备份恢复数据库/)).not.toBeNull();
         expect(api.restoreDbBackup).not.toHaveBeenCalled();
 
         fireEvent.click(screen.getByRole('button', { name: /确认/ }));
@@ -207,7 +207,7 @@ describe('DataHub Page', () => {
             expect(api.restoreDbBackup).toHaveBeenCalledWith('yorha-20260922-120000.db');
         });
         // R51：快照回执要等 restoreDbBackup 的回包上屏
-        await waitFor(() => expect(screen.getByText(/安全快照：pre-restore-20260922-120001\.db/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/安全快照：pre-restore-20260922-120001\.db/)).not.toBeNull());
         await waitFor(() => {
             expect(api.getDatahubStatus).toHaveBeenCalledTimes(2);
         });
@@ -217,7 +217,7 @@ describe('DataHub Page', () => {
         api.getDatahubStatus.mockResolvedValue(STATUS);
 
         render(<DataHub />);
-        await waitFor(() => expect(screen.getByText('yorha-20260922-120000.db')).toBeDefined());
+        await waitFor(() => expect(screen.getByText('yorha-20260922-120000.db')).not.toBeNull());
 
         fireEvent.click(screen.getByRole('button', { name: /恢复 \(RESTORE\)/ }));
         fireEvent.click(screen.getByRole('button', { name: /取消/ }));
@@ -247,15 +247,15 @@ describe('DataHub Page', () => {
         api.exportDataBundle.mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }));
 
         render(<DataHub />);
-        await waitFor(() => expect(screen.getByText('绑定 BINDINGS')).toBeDefined());
-        expect(screen.getByText('应答规格 SPECS')).toBeDefined();
-        expect(screen.getByText('7')).toBeDefined();
+        await waitFor(() => expect(screen.getByText('绑定 BINDINGS')).not.toBeNull());
+        expect(screen.getByText('应答规格 SPECS')).not.toBeNull();
+        expect(screen.getByText('7')).not.toBeNull();
         // R55（PLAN §8.86）：计数徽标 = 深琥珀语义类（原 text-yellow-300 压沙底 1.16）
         expect(screen.getByText('7').className).toContain('text-hl');
         expect(screen.getByText('7').className).not.toContain('text-yellow-300');
 
         fireEvent.click(screen.getByRole('button', { name: /下载 ZIP/ }));
-        await waitFor(() => expect(screen.getByText(/导出完成/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/导出完成/)).not.toBeNull());
         // 回显行含 4a 新增的 relations.json（面板段落也提到它 → 断言回显行本身）
         expect(screen.getByText(/导出完成/).textContent).toMatch(/relations\.json/);
     });
@@ -275,16 +275,16 @@ describe('DataHub Page', () => {
             target: { files: [makeJsonFile(JSON.stringify(RELATIONS))] }
         });
 
-        await waitFor(() => expect(screen.getByText(/确认导入关系数据/)).toBeDefined());
-        expect(screen.getByText(/绑定 2 条 · 应答规格 1 条/)).toBeDefined();
+        await waitFor(() => expect(screen.getByText(/确认导入关系数据/)).not.toBeNull());
+        expect(screen.getByText(/绑定 2 条 · 应答规格 1 条/)).not.toBeNull();
         expect(api.importRelations).not.toHaveBeenCalled();
 
         fireEvent.click(screen.getByRole('button', { name: /确认/ }));
         await waitFor(() => expect(api.importRelations).toHaveBeenCalledWith(RELATIONS));
-        await waitFor(() => expect(screen.getByText(/导入完成/)).toBeDefined());
-        expect(screen.getByText(/绑定 新增 1 \/ 更新 1 \/ 跳过 0/)).toBeDefined();
-        expect(screen.getByText(/应答规格 新增 1 \/ 更新 0 \/ 跳过 0/)).toBeDefined();
-        expect(screen.getByText(/警告 0 条/)).toBeDefined();
+        await waitFor(() => expect(screen.getByText(/导入完成/)).not.toBeNull());
+        expect(screen.getByText(/绑定 新增 1 \/ 更新 1 \/ 跳过 0/)).not.toBeNull();
+        expect(screen.getByText(/应答规格 新增 1 \/ 更新 0 \/ 跳过 0/)).not.toBeNull();
+        expect(screen.getByText(/警告 0 条/)).not.toBeNull();
         await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledTimes(2)); // 初始 + 导入后刷新
     });
 
@@ -297,7 +297,7 @@ describe('DataHub Page', () => {
         fireEvent.change(screen.getByTestId('relations-import-input'), {
             target: { files: [makeJsonFile(JSON.stringify(RELATIONS))] }
         });
-        await waitFor(() => expect(screen.getByText(/确认导入关系数据/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/确认导入关系数据/)).not.toBeNull());
         fireEvent.click(screen.getByRole('button', { name: /取消/ }));
 
         expect(api.importRelations).not.toHaveBeenCalled();
@@ -312,11 +312,11 @@ describe('DataHub Page', () => {
         const input = screen.getByTestId('relations-import-input');
 
         fireEvent.change(input, { target: { files: [makeJsonFile('{oops')] } });
-        await waitFor(() => expect(screen.getByText(/不是合法 JSON/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/不是合法 JSON/)).not.toBeNull());
         expect(screen.queryByText(/确认导入关系数据/)).toBeNull();
 
         fireEvent.change(input, { target: { files: [makeJsonFile(JSON.stringify({ foo: 1 }))] } });
-        await waitFor(() => expect(screen.getByText(/缺 bindings \/ responseSpecs/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/缺 bindings \/ responseSpecs/)).not.toBeNull());
         expect(api.importRelations).not.toHaveBeenCalled();
     });
 
@@ -345,13 +345,13 @@ describe('DataHub Page', () => {
             target: { files: [makeJsonFile(JSON.stringify(SEQUENCES), 'sequences.json')] }
         });
 
-        await waitFor(() => expect(screen.getByText(/确认导入序列/)).toBeDefined());
-        expect(screen.getByText(/条目 1 条/)).toBeDefined();
+        await waitFor(() => expect(screen.getByText(/确认导入序列/)).not.toBeNull());
+        expect(screen.getByText(/条目 1 条/)).not.toBeNull();
         expect(api.importDomain).not.toHaveBeenCalled();
 
         fireEvent.click(screen.getByRole('button', { name: /确认/ }));
         await waitFor(() => expect(api.importDomain).toHaveBeenCalledWith('sequences', SEQUENCES));
-        await waitFor(() => expect(screen.getByText(/导入完成/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/导入完成/)).not.toBeNull());
         const line = screen.getByText(/导入完成/).textContent;
         expect(line).toContain('新增 1 / 更新 0 / 跳过 1');
         expect(line).toContain('警告 0 条');
@@ -381,7 +381,7 @@ describe('DataHub Page', () => {
             fireEvent.change(input, {
                 target: { files: [makeJsonFile(JSON.stringify(body), `${domain}.json`)] }
             });
-            await waitFor(() => expect(screen.getByText(new RegExp(`确认导入${label}`))).toBeDefined());
+            await waitFor(() => expect(screen.getByText(new RegExp(`确认导入${label}`))).not.toBeNull());
             fireEvent.click(screen.getByRole('button', { name: /取消/ }));
             expect(screen.queryByText(new RegExp(`确认导入${label}`))).toBeNull();
         }
@@ -396,11 +396,11 @@ describe('DataHub Page', () => {
         const input = screen.getByTestId('domain-import-input');
 
         fireEvent.change(input, { target: { files: [makeJsonFile('{oops')] } });
-        await waitFor(() => expect(screen.getByText(/不是合法 JSON/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/不是合法 JSON/)).not.toBeNull());
         expect(screen.queryByText(/确认导入序列/)).toBeNull();
 
         fireEvent.change(input, { target: { files: [makeJsonFile(JSON.stringify({ foo: 1 }))] } });
-        await waitFor(() => expect(screen.getByText(/识别不出域/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/识别不出域/)).not.toBeNull());
         expect(api.importDomain).not.toHaveBeenCalled();
     });
 
@@ -432,7 +432,7 @@ describe('DataHub Page', () => {
         fireEvent.change(screen.getByTestId('domain-import-input'), {
             target: { files: [makeJsonFile(JSON.stringify(body), 'routing_rules.json')] }
         });
-        await waitFor(() => expect(screen.getByText(/确认导入发前路由规则/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/确认导入发前路由规则/)).not.toBeNull());
         expect(api.importDomain).not.toHaveBeenCalled();
         fireEvent.click(screen.getByRole('button', { name: /确认/ }));
         await waitFor(() => expect(api.importDomain)
@@ -472,7 +472,7 @@ describe('DataHub Page', () => {
         seedMatrix();
 
         render(<DataHub />);
-        await waitFor(() => expect(screen.getByTestId('matrix-summary')).toBeDefined());
+        await waitFor(() => expect(screen.getByTestId('matrix-summary')).not.toBeNull());
 
         const summary = screen.getByTestId('matrix-summary').textContent;
         expect(summary).toContain('指令 2');
@@ -500,9 +500,9 @@ describe('DataHub Page', () => {
         api.getBindings.mockResolvedValue([]);
 
         render(<DataHub />);
-        await waitFor(() => expect(screen.getByTestId('matrix-summary')).toBeDefined());
+        await waitFor(() => expect(screen.getByTestId('matrix-summary')).not.toBeNull());
         expect(screen.getByTestId('matrix-summary').textContent).toContain('无绑定 1');
-        expect(screen.getByText(/尚未指定默认协议/)).toBeDefined();
+        expect(screen.getByText(/尚未指定默认协议/)).not.toBeNull();
 
         fireEvent.click(screen.getByRole('button', { name: /刷新/ }));
         await waitFor(() => expect(api.getDatahubStatus).toHaveBeenCalledTimes(2));

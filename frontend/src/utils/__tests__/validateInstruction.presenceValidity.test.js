@@ -38,7 +38,7 @@ describe('R31 W PRESENCE_REF_NO_SOURCE（引用字段拿不到可判定的值）
     it('引用字段是锁定常量（HEX_RAW 无静态值）→ warning，落在门字段上', () => {
         const r = validateInstruction(withGate(fld('ref', 1, { hex: 'FF' }, 'HEX_RAW'), '1'));
         const w = r.warnings.find(x => x.code === 'PRESENCE_REF_NO_SOURCE');
-        expect(w).toBeTruthy();
+        expect(w).not.toBeUndefined();
         expect(w.blockId).toBe('gate');
         expect(w.message).toContain('拿不到可判定的值');
         expect(w.message).toContain('fail-open');
@@ -106,7 +106,7 @@ describe('R31 W PRESENCE_EXPECT_UNREACHABLE（可取值穷尽无一命中）', (
         const r = validateInstruction(withGate(
             fld('ref', 1, { options: { 甲: '05', 乙: '06' } }, 'MAPPING'), '0A'));
         const w = r.warnings.find(x => x.code === 'PRESENCE_EXPECT_UNREACHABLE');
-        expect(w).toBeTruthy();
+        expect(w).not.toBeUndefined();
         expect(w.blockId).toBe('gate');
         expect(w.message).toContain('可取值');
         expect(w.message).toContain('expect "0A"');

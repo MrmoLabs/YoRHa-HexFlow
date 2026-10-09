@@ -692,7 +692,7 @@ describe('第 15 单：无选项 MAPPING —— 枚举身份不因摊平丢失',
 
     it('语义行出琥珀 NO OPTIONS 提示（warn + title 指引），有选项不出', () => {
         const warn = collectSemanticItems(optless).find(i => i.warn);
-        expect(warn).toBeDefined();
+        expect(warn).not.toBeNull();
         expect(warn.text).toContain('NO OPTIONS');
         expect(String(warn.title || '').length).toBeGreaterThan(0);
         expect(collectSemanticItems(leaf({

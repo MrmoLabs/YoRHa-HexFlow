@@ -150,14 +150,14 @@ describe('Terminal Page（E3 通讯调试）', () => {
         expect(api.getTransportStatus).toHaveBeenCalledTimes(1);
         expect(api.getDispatchHistory).toHaveBeenCalledWith(50);
 
-        expect(screen.getByText('通讯配置 (TRANSPORT CONFIG)')).toBeDefined();
-        expect(screen.getByText('连接状态 (CONNECTION)')).toBeDefined();
-        expect(screen.getByText('发送历史 (SEND HISTORY)')).toBeDefined();
-        expect(screen.getByText('原始报文 (RAW FRAME)')).toBeDefined();
-        expect(screen.getByText('响应与错误日志 (RESPONSE · ERROR)')).toBeDefined();
+        expect(screen.getByText('通讯配置 (TRANSPORT CONFIG)')).not.toBeNull();
+        expect(screen.getByText('连接状态 (CONNECTION)')).not.toBeNull();
+        expect(screen.getByText('发送历史 (SEND HISTORY)')).not.toBeNull();
+        expect(screen.getByText('原始报文 (RAW FRAME)')).not.toBeNull();
+        expect(screen.getByText('响应与错误日志 (RESPONSE · ERROR)')).not.toBeNull();
 
         // 连接状态 + 默认选中首条：raw dump 尾字节（预览格截断不含 '09 0A'）与 response 各自可见
-        expect(screen.getByText('已连接 CONNECTED')).toBeDefined();
+        expect(screen.getByText('已连接 CONNECTED')).not.toBeNull();
 
         // R55（PLAN §8.86）：状态徽标 / 事件行非错误态 = 深琥珀，错误态 = 深红
         // （原 text-yellow-300 / text-red-300 压沙底实测 1.16 / 1.28）
@@ -170,14 +170,14 @@ describe('Terminal Page（E3 通讯调试）', () => {
         expect(statusCell('ERROR').className).toContain('text-warn');
         expect(statusCell('ERROR').className).not.toContain('text-red-300');
         await waitFor(() => {
-            expect(screen.getByText(/09 0A/)).toBeDefined();
+            expect(screen.getByText(/09 0A/)).not.toBeNull();
         });
-        expect(screen.getByText('B1 B2 B3')).toBeDefined();
+        expect(screen.getByText('B1 B2 B3')).not.toBeNull();
         // 错误日志汇总包含 ERROR 记录原因
         expect(screen.getAllByText(/TCP 连接 127\.0\.0\.1:18899 失败/).length).toBeGreaterThanOrEqual(1);
         // 历史两行 + 预览截断标记
-        expect(screen.getByText('DE AD BE EF')).toBeDefined();
-        expect(screen.getByText(/…\+2/)).toBeDefined();
+        expect(screen.getByText('DE AD BE EF')).not.toBeNull();
+        expect(screen.getByText(/…\+2/)).not.toBeNull();
     });
 
     it('点击历史行切换原始报文与错误详情', async () => {
@@ -189,7 +189,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
         await waitFor(() => {
             expect(screen.getAllByText('DE AD BE EF').length).toBeGreaterThanOrEqual(2); // 表格 + raw dump
         });
-        expect(screen.getByText('无响应（发送失败，见下方错误日志）')).toBeDefined();
+        expect(screen.getByText('无响应（发送失败，见下方错误日志）')).not.toBeNull();
         expect(screen.queryByText('B1 B2 B3')).toBeNull(); // 响应面板切走
     });
 
@@ -214,10 +214,10 @@ describe('Terminal Page（E3 通讯调试）', () => {
             escape: { enabled: false, pairs: [] } // N4: escape 段随 patch 全量提交
         });
         await waitFor(() => {
-            expect(screen.getByText(/配置已生效：模式 TCP/)).toBeDefined();
+            expect(screen.getByText(/配置已生效：模式 TCP/)).not.toBeNull();
         });
         expect(api.getTransportStatus).toHaveBeenCalledTimes(2); // 应用后刷新状态
-        expect(screen.getByDisplayValue('10.0.0.5')).toBeDefined(); // 草稿回填生效配置
+        expect(screen.getByDisplayValue('10.0.0.5')).not.toBeNull(); // 草稿回填生效配置
     });
 
     // ─── R53 (PLAN §8.85): 过期回包不得覆盖更新的本地状态 ────────────────
@@ -240,10 +240,10 @@ describe('Terminal Page（E3 通讯调试）', () => {
             await Promise.resolve();
             await Promise.resolve();
         });
-        await waitFor(() => expect(screen.getByText(/配置已生效：模式 TCP/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/配置已生效：模式 TCP/)).not.toBeNull());
 
         // 判据：回包对应那次应用 → 应用之后敲的字段不得被回填掉
-        expect(screen.getByDisplayValue('10.0.0.9')).toBeDefined();
+        expect(screen.getByDisplayValue('10.0.0.9')).not.toBeNull();
     });
 
     it('串口模式暴露参数并按字符串→数字提交（stopbits 1.5）', async () => {
@@ -256,8 +256,8 @@ describe('Terminal Page（E3 通讯调试）', () => {
         await waitFor(() => expect(api.getTransportConfig).toHaveBeenCalledTimes(1));
 
         fireEvent.click(screen.getByRole('button', { name: /串口 SERIAL/ }));
-        expect(screen.getByText('波特率 BAUDRATE')).toBeDefined();
-        expect(screen.getByText('停止位 STOPBITS')).toBeDefined();
+        expect(screen.getByText('波特率 BAUDRATE')).not.toBeNull();
+        expect(screen.getByText('停止位 STOPBITS')).not.toBeNull();
 
         fireEvent.change(screen.getByPlaceholderText('9600'), { target: { value: '115200' } });
         fireEvent.change(screen.getByLabelText(/校验位/), { target: { value: 'E' } });
@@ -300,12 +300,12 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
         fireEvent.change(input, { target: { value: '01 02' } });
         expect(sendButton.disabled).toBe(false);
-        expect(screen.getByText('2 B')).toBeDefined(); // 字节预览
+        expect(screen.getByText('2 B')).not.toBeNull(); // 字节预览
 
         fireEvent.click(sendButton);
         await waitFor(() => expect(api.dispatchPayload).toHaveBeenCalledWith('01 02', null));
         await waitFor(() => {
-            expect(screen.getByText(/SENT id=9001 · LOOPBACK · 2 字节/)).toBeDefined();
+            expect(screen.getByText(/SENT id=9001 · LOOPBACK · 2 字节/)).not.toBeNull();
         });
         expect(api.getDispatchHistory).toHaveBeenCalledTimes(2); // 发送后刷新
         expect(api.getTransportStatus).toHaveBeenCalledTimes(2);
@@ -316,13 +316,13 @@ describe('Terminal Page（E3 通讯调试）', () => {
         await waitFor(() => screen.getByText('DE AD BE EF'));
 
         fireEvent.click(screen.getByRole('button', { name: /清空 \(CLEAR\)/ }));
-        expect(screen.getByText(/确认清空发送历史/)).toBeDefined();
+        expect(screen.getByText(/确认清空发送历史/)).not.toBeNull();
         expect(api.clearDispatchHistory).not.toHaveBeenCalled();
 
         fireEvent.click(screen.getByRole('button', { name: /确认/ }));
         await waitFor(() => expect(api.clearDispatchHistory).toHaveBeenCalledTimes(1));
         await waitFor(() => {
-            expect(screen.getByText(/发送历史已清空/)).toBeDefined();
+            expect(screen.getByText(/发送历史已清空/)).not.toBeNull();
         });
         expect(api.getDispatchHistory).toHaveBeenCalledTimes(2);
     });
@@ -335,12 +335,12 @@ describe('Terminal Page（E3 通讯调试）', () => {
         await renderTerminal();
 
         await waitFor(() => {
-            expect(screen.getByText('配置不可用')).toBeDefined();
+            expect(screen.getByText('配置不可用')).not.toBeNull();
         });
-        expect(screen.getByText('状态不可用')).toBeDefined();
-        expect(screen.getByText(/ERR: network down/)).toBeDefined();
-        expect(screen.getByRole('button', { name: /发送 \(SEND\)/ })).toBeDefined();
-        expect(screen.getByRole('button', { name: /刷新 \(REFRESH\)/ })).toBeDefined();
+        expect(screen.getByText('状态不可用')).not.toBeNull();
+        expect(screen.getByText(/ERR: network down/)).not.toBeNull();
+        expect(screen.getByRole('button', { name: /发送 \(SEND\)/ })).not.toBeNull();
+        expect(screen.getByRole('button', { name: /刷新 \(REFRESH\)/ })).not.toBeNull();
     });
 
     // ---- P1 设备档案 ----
@@ -349,12 +349,12 @@ describe('Terminal Page（E3 通讯调试）', () => {
         await renderTerminal();
         await waitFor(() => expect(api.getProfiles).toHaveBeenCalledTimes(1));
 
-        expect(screen.getByText('设备档案 (DEVICE PROFILES)')).toBeDefined();
-        expect(screen.getByLabelText(/档案 PROFILE/)).toBeDefined();
+        expect(screen.getByText('设备档案 (DEVICE PROFILES)')).not.toBeNull();
+        expect(screen.getByLabelText(/档案 PROFILE/)).not.toBeNull();
         // 选项文案 = 名称 · 摘要（激活加 ★），来自 profileOptionLabel 纯函数
-        expect(screen.getByText('环回基准 · LOOPBACK')).toBeDefined();
-        expect(screen.getByText('产线网关 · TCP 10.1.2.3:502 ★')).toBeDefined();
-        expect(screen.getByText(/当前生效 LOOPBACK/)).toBeDefined();
+        expect(screen.getByText('环回基准 · LOOPBACK')).not.toBeNull();
+        expect(screen.getByText('产线网关 · TCP 10.1.2.3:502 ★')).not.toBeNull();
+        expect(screen.getByText(/当前生效 LOOPBACK/)).not.toBeNull();
     });
 
     it('P1: 输入名称存为档案 → createProfile({label}) + 列表刷新 + 输入清空', async () => {
@@ -373,7 +373,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
         await waitFor(() => expect(api.createProfile).toHaveBeenCalledWith({ label: '新台架' }));
         await waitFor(() => expect(api.getProfiles).toHaveBeenCalledTimes(2));
-        expect(screen.getByText(/档案已保存：新台架/)).toBeDefined();
+        expect(screen.getByText(/档案已保存：新台架/)).not.toBeNull();
         expect(screen.getByPlaceholderText(/新档案名称/).value).toBe('');
     });
 
@@ -400,14 +400,14 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
         await waitFor(() => expect(api.activateProfile).toHaveBeenCalledWith('pf-2'));
         await waitFor(() => expect(api.getProfiles).toHaveBeenCalledTimes(2));
-        expect(screen.getByText(/档案已应用：产线网关 · 模式 TCP/)).toBeDefined();
+        expect(screen.getByText(/档案已应用：产线网关 · 模式 TCP/)).not.toBeNull();
         expect(api.getTransportStatus).toHaveBeenCalledTimes(2); // 挂载 1 + 应用后刷新
         // 生效配置回填 → 草稿切到 TCP 表单
-        expect(screen.getByRole('button', { name: /网络 TCP/ })).toBeDefined();
-        expect(screen.getByDisplayValue('10.1.2.3')).toBeDefined();
+        expect(screen.getByRole('button', { name: /网络 TCP/ })).not.toBeNull();
+        expect(screen.getByDisplayValue('10.1.2.3')).not.toBeNull();
         // 选中的激活档案展示徽标（pf-2 夹具 is_active + modified）
-        expect(screen.getByText('已激活')).toBeDefined();
-        expect(screen.getByText('已修改')).toBeDefined();
+        expect(screen.getByText('已激活')).not.toBeNull();
+        expect(screen.getByText('已修改')).not.toBeNull();
     });
 
     it('P1: 更新写入当前生效配置；删除需确认后才 DELETE', async () => {
@@ -421,19 +421,19 @@ describe('Terminal Page（E3 通讯调试）', () => {
         fireEvent.change(screen.getByLabelText(/档案 PROFILE/), { target: { value: 'pf-1' } });
         fireEvent.click(screen.getByRole('button', { name: /更新 \(UPDATE\)/ }));
         await waitFor(() => expect(api.updateProfile).toHaveBeenCalledWith('pf-1', { config: CONFIG }));
-        await waitFor(() => expect(screen.getByText(/档案已更新：环回基准/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/档案已更新：环回基准/)).not.toBeNull());
 
         // R50：更新要等 refreshProfiles 跑完 busy 才放掉 —— busy 期间按钮文案是「处理中…」，
         // 直接按 /删除档案/ 找不到（与「等请求不等渲染」同族：等的是真上屏，不是调用发生）。
-        await waitFor(() => expect(screen.getByRole('button', { name: /删除档案/ })).toBeDefined());
+        await waitFor(() => expect(screen.getByRole('button', { name: /删除档案/ })).not.toBeNull());
         fireEvent.click(screen.getByRole('button', { name: /删除档案/ }));
-        expect(screen.getByText(/确认删除档案/)).toBeDefined();
+        expect(screen.getByText(/确认删除档案/)).not.toBeNull();
         expect(api.deleteProfile).not.toHaveBeenCalled(); // 未确认不发 DELETE
 
         fireEvent.click(screen.getByRole('button', { name: /确认/ }));
         await waitFor(() => expect(api.deleteProfile).toHaveBeenCalledWith('pf-1'));
         await waitFor(() => expect(api.getProfiles).toHaveBeenCalledTimes(3)); // 挂载 + 更新 + 删除
-        expect(screen.getByText(/档案已删除：环回基准/)).toBeDefined();
+        expect(screen.getByText(/档案已删除：环回基准/)).not.toBeNull();
         expect(screen.getByLabelText(/档案 PROFILE/).value).toBe(''); // 选中已清
     });
 
@@ -445,17 +445,17 @@ describe('Terminal Page（E3 通讯调试）', () => {
         fireEvent.change(screen.getByPlaceholderText(/新档案名称/), { target: { value: '环回基准' } });
         fireEvent.click(screen.getByRole('button', { name: /存为档案/ }));
 
-        await waitFor(() => expect(screen.getByText(/ERR: 档案名已存在/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/ERR: 档案名已存在/)).not.toBeNull());
     });
 
     // ---- N4 (G3): 传输层帧字节转义（配置面板） ----
 
     it('N4: 转义区渲染且缺省关闭、无规则时不显示样例', async () => {
         await renderTerminal();
-        await waitFor(() => expect(screen.getByText('帧字节转义 ESCAPE')).toBeDefined());
+        await waitFor(() => expect(screen.getByText('帧字节转义 ESCAPE')).not.toBeNull());
 
-        expect(screen.getByText('关闭 DISABLED')).toBeDefined();
-        expect(screen.getByRole('button', { name: '启用 ON' })).toBeDefined();
+        expect(screen.getByText('关闭 DISABLED')).not.toBeNull();
+        expect(screen.getByRole('button', { name: '启用 ON' })).not.toBeNull();
         expect(screen.queryByText(/样例 SAMPLE/)).toBeNull();
         expect(screen.queryByText(/未列入受保护字节/)).toBeNull();
     });
@@ -466,7 +466,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
             escape: { enabled: true, pairs: [['7D', '7D5D']] }
         });
         await renderTerminal();
-        await waitFor(() => expect(screen.getByText('帧字节转义 ESCAPE')).toBeDefined());
+        await waitFor(() => expect(screen.getByText('帧字节转义 ESCAPE')).not.toBeNull());
 
         fireEvent.click(screen.getByRole('button', { name: /添加规则/ }));
         fireEvent.change(screen.getAllByPlaceholderText('7D')[0], { target: { value: '7d' } });
@@ -475,7 +475,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
         // 样例预览与 BE 向量同字节：AA 7D BB → AA 7D 5D BB
         await waitFor(() => {
-            expect(screen.getByText('AA 7D BB → AA 7D 5D BB')).toBeDefined();
+            expect(screen.getByText('AA 7D BB → AA 7D 5D BB')).not.toBeNull();
         });
 
         fireEvent.click(screen.getByRole('button', { name: /应用配置/ }));
@@ -486,7 +486,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
             serial: { port: 'COM3', baudrate: 9600, bytesize: 8, parity: 'N', stopbits: 1, read_timeout_ms: 2000 },
             escape: { enabled: true, pairs: [['7d', '7d5d']] }
         });
-        await waitFor(() => expect(screen.getByText('已启用 ENABLED')).toBeDefined());
+        await waitFor(() => expect(screen.getByText('已启用 ENABLED')).not.toBeNull());
         // 生效值回填（BE 归一为大写）
         await waitFor(() => expect(screen.getAllByPlaceholderText('7D')[0].value).toBe('7D'));
     });
@@ -511,7 +511,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
             escape: { enabled: true, pairs: [['11', '7D31']] }
         });
         await renderTerminal();
-        await waitFor(() => expect(screen.getByText(/未列入受保护字节/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/未列入受保护字节/)).not.toBeNull());
     });
     // R2（PLAN §8.37）：回退上一配置 —— 按钮由 status.configHistoryDepth 决定是否置灰，
     // 成功后拿生效配置回填表单（同 APPLY 口径）并刷新状态与档案（配置变更会清激活指针）。
@@ -527,15 +527,15 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
         const button = screen.getByRole('button', { name: /回退上一配置/ });
         expect(button.disabled).toBe(false);
-        expect(screen.getByText('可回退 1 版')).toBeDefined();
+        expect(screen.getByText('可回退 1 版')).not.toBeNull();
 
         fireEvent.click(button);
 
         await waitFor(() => expect(api.revertTransportConfig).toHaveBeenCalledTimes(1));
-        await waitFor(() => expect(screen.getByText(/已回退到上一配置：模式 TCP/)).toBeDefined());
-        expect(screen.getByText(/还可回退 0 版/)).toBeDefined();
+        await waitFor(() => expect(screen.getByText(/已回退到上一配置：模式 TCP/)).not.toBeNull());
+        expect(screen.getByText(/还可回退 0 版/)).not.toBeNull();
         expect(api.getTransportStatus).toHaveBeenCalledTimes(2); // 挂载 1 + 回退后刷新
-        expect(screen.getByDisplayValue('10.0.0.9')).toBeDefined(); // 草稿回填生效配置
+        expect(screen.getByDisplayValue('10.0.0.9')).not.toBeNull(); // 草稿回填生效配置
     });
 
     it('R2 无可回退历史时按钮置灰', async () => {
@@ -545,7 +545,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
         await waitFor(() => expect(api.getTransportConfig).toHaveBeenCalledTimes(1));
 
         expect(screen.getByRole('button', { name: /回退上一配置/ }).disabled).toBe(true);
-        expect(screen.getByText('暂无可回退配置')).toBeDefined();
+        expect(screen.getByText('暂无可回退配置')).not.toBeNull();
         expect(api.revertTransportConfig).not.toHaveBeenCalled();
     });
 
@@ -558,7 +558,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /回退上一配置/ }));
 
-        await waitFor(() => expect(screen.getByText(/没有可回退的上一配置/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/没有可回退的上一配置/)).not.toBeNull());
         expect(api.revertTransportConfig).toHaveBeenCalledTimes(1);
     });
 
@@ -583,7 +583,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
         expect(screen.getByRole('button', { name: /^COM1$/ }).getAttribute('aria-pressed')).toBe('false');
 
         fireEvent.click(screen.getByRole('button', { name: /^COM1$/ }));
-        expect(screen.getByDisplayValue('COM1')).toBeDefined();
+        expect(screen.getByDisplayValue('COM1')).not.toBeNull();
 
         // 枚举只是给表单省事 —— 点它不触发 APPLY（配置仍需点「应用配置」才落库）
         expect(api.setTransportConfig).not.toHaveBeenCalled();
@@ -627,13 +627,13 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /串口 SERIAL/ }));
         // 降级如实报（不静默），且不出任何端口芯片
-        expect(screen.getByText(/枚举降级：pyserial 未安装/)).toBeDefined();
+        expect(screen.getByText(/枚举降级：pyserial 未安装/)).not.toBeNull();
         expect(screen.queryByRole('button', { name: /^COM3$/ })).toBeNull();
 
         // 枚举是锦上添花 —— 配置字段与 APPLY 照常
-        expect(screen.getByText('波特率 BAUDRATE')).toBeDefined();
-        expect(screen.getByRole('button', { name: /应用配置/ })).toBeDefined();
-        expect(screen.getByRole('button', { name: /刷新端口 REFRESH/ })).toBeDefined();
+        expect(screen.getByText('波特率 BAUDRATE')).not.toBeNull();
+        expect(screen.getByRole('button', { name: /应用配置/ })).not.toBeNull();
+        expect(screen.getByRole('button', { name: /刷新端口 REFRESH/ })).not.toBeNull();
     });
 
     // ── R15 · 档案重命名 + 自动轮询（PLAN §8.49）──────────────────────────────────
@@ -658,7 +658,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
         // 改名**不带 config** —— 不该动配置快照，与「更新（写入配置）」两码事
         expect(api.updateProfile.mock.calls[0][1].config).toBeUndefined();
         await waitFor(() => expect(api.getProfiles).toHaveBeenCalledTimes(2));
-        expect(screen.getByText(/档案已重命名：环回基准 → 环回基准·产线/)).toBeDefined();
+        expect(screen.getByText(/档案已重命名：环回基准 → 环回基准·产线/)).not.toBeNull();
         expect(screen.queryByPlaceholderText('档案新名称')).toBeNull(); // 成功即收起
         expect(api.activateProfile).not.toHaveBeenCalled();
     });
@@ -679,8 +679,8 @@ describe('Terminal Page（E3 通讯调试）', () => {
         fireEvent.change(screen.getByPlaceholderText('档案新名称'), { target: { value: '产线网关' } });
         fireEvent.click(screen.getByRole('button', { name: /确认改名 \(CONFIRM\)/ }));
 
-        await waitFor(() => expect(screen.getByText(/档案名已存在：产线网关/)).toBeDefined());
-        expect(screen.getByPlaceholderText('档案新名称')).toBeDefined();
+        await waitFor(() => expect(screen.getByText(/档案名已存在：产线网关/)).not.toBeNull());
+        expect(screen.getByPlaceholderText('档案新名称')).not.toBeNull();
         expect(api.getProfiles).toHaveBeenCalledTimes(1); // 失败不刷列表
     });
 
@@ -693,7 +693,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
             // 挂载同步拉一次（状态 + 历史）
             expect(api.getTransportStatus).toHaveBeenCalledTimes(1);
             expect(api.getDispatchHistory).toHaveBeenCalledTimes(1);
-            expect(screen.getByRole('button', { name: /自动刷新 AUTO · 5s/ })).toBeDefined();
+            expect(screen.getByRole('button', { name: /自动刷新 AUTO · 5s/ })).not.toBeNull();
 
             // 5s 一跳：状态与历史各再拉一次
             await act(async () => { vi.advanceTimersByTime(5000); });
@@ -714,7 +714,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
             // 关掉开关 → effect 清理，彻底不再拉（手动刷新按钮仍在）
             fireEvent.click(screen.getByRole('button', { name: /自动刷新 AUTO · 5s/ }));
-            expect(screen.getByRole('button', { name: /自动刷新停 AUTO OFF/ })).toBeDefined();
+            expect(screen.getByRole('button', { name: /自动刷新停 AUTO OFF/ })).not.toBeNull();
             await act(async () => { vi.advanceTimersByTime(30000); });
             expect(api.getTransportStatus).toHaveBeenCalledTimes(3);
             expect(api.getDispatchHistory).toHaveBeenCalledTimes(3);
@@ -730,7 +730,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
         const HEX_PREVIEW = 'AA 55 01 02 03 04 05 06 07 08 …+2';
         const preTexts = () => [...document.querySelectorAll('pre')].map((node) => node.textContent);
-        expect(screen.getByText(HEX_PREVIEW)).toBeDefined(); // 历史预览（hex 缺省）
+        expect(screen.getByText(HEX_PREVIEW)).not.toBeNull(); // 历史预览（hex 缺省）
         expect(preTexts()).toContain('AA 55 01 02 03 04 05 06\n07 08 09 0A'); // 原始报文 8 字节/行
 
         const asciiBtn = screen.getByRole('button', { name: 'ASCII' });
@@ -739,13 +739,13 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
         // 一次点击换三处：历史预览列 + 原始报文（+ 响应面板 'B1 B2 B3' → '...'）
         expect(screen.queryByText(HEX_PREVIEW)).toBeNull();
-        expect(screen.getByText('.U........ …+2')).toBeDefined();
+        expect(screen.getByText('.U........ …+2')).not.toBeNull();
         expect(preTexts()).toContain('.U......\n....');
         expect(screen.getByRole('button', { name: 'ASCII' }).getAttribute('aria-pressed')).toBe('true');
 
         // 切回 HEX：与存量逐字相同（帧内容从头到尾没变过）
         fireEvent.click(screen.getByRole('button', { name: 'HEX' }));
-        expect(screen.getByText(HEX_PREVIEW)).toBeDefined();
+        expect(screen.getByText(HEX_PREVIEW)).not.toBeNull();
         expect(preTexts()).toContain('AA 55 01 02 03 04 05 06\n07 08 09 0A');
         expect(screen.getByRole('button', { name: 'HEX' }).getAttribute('aria-pressed')).toBe('true');
     });
@@ -764,11 +764,11 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /排序顺序 \(REORDER\)/ }));
         expect(save().disabled).toBe(true); // 顺序没动 → 不放行
-        expect(screen.getByText(/顺序未改动/)).toBeDefined();
+        expect(screen.getByText(/顺序未改动/)).not.toBeNull();
 
         fireEvent.click(screen.getAllByTitle('下移')[0]); // 草稿里把 pf-1 挪到 pf-2 后面
         expect(save().disabled).toBe(false);
-        expect(screen.getByText(/顺序已改动/)).toBeDefined();
+        expect(screen.getByText(/顺序已改动/)).not.toBeNull();
         // 拖 / 上移下移**只改草稿序**：此刻一次网络调用都没有（拍板口径）
         expect(api.reorderProfiles).not.toHaveBeenCalled();
 
@@ -779,7 +779,7 @@ describe('Terminal Page（E3 通讯调试）', () => {
         // 成功：排序区收起 + 回执 + 下拉按新顺序渲染（端点回的就是新顺序，不再多拉一次）
         // R50：先等回执再查收起 —— 点保存后 busy='order'，按钮文案换成「处理中…」，
         // 此时 toBeNull() 是**假通过**；回执与收起在同一趟提交里，等回执即等真结果。
-        await waitFor(() => expect(screen.getByText(/档案顺序已保存（2 条）/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/档案顺序已保存（2 条）/)).not.toBeNull());
         await waitFor(() => expect(screen.queryByRole('button', { name: /保存顺序/ })).toBeNull());
         expect(optionLabels()[1]).toContain('产线网关');
         expect(optionLabels()[2]).toContain('环回基准');
@@ -812,10 +812,10 @@ describe('Terminal Page（E3 通讯调试）', () => {
 
         await waitFor(() => expect(api.reorderProfiles).toHaveBeenCalledTimes(1));
         // R50：等的是回执上屏，不是「调用发生」—— 拒绝回执是 15ms 后才落地的。
-        await waitFor(() => expect(screen.getByText(/ERR: 顺序与在册档案不一致/)).toBeDefined());
+        await waitFor(() => expect(screen.getByText(/ERR: 顺序与在册档案不一致/)).not.toBeNull());
         // 草稿不丢：排序区还开着、顺序仍是改过的那版（保存按钮仍亮，可改完再存）
         expect(screen.getByRole('button', { name: /保存顺序 \(SAVE ORDER\)/ }).disabled).toBe(false);
-        expect(screen.getByText(/顺序已改动/)).toBeDefined();
+        expect(screen.getByText(/顺序已改动/)).not.toBeNull();
     });
 
 });

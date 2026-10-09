@@ -53,7 +53,7 @@ describe('R47 输入表持久化 · utils/routeInputsPersist（§8.79）', () =>
 
         saveRouteInputs(ROWS);
 
-        expect(window.localStorage.getItem(ROUTE_INPUTS_KEY)).toBeTruthy();
+        expect(window.localStorage.getItem(ROUTE_INPUTS_KEY)).not.toBeNull();
         expect(JSON.parse(window.localStorage.getItem(ROUTE_INPUTS_KEY))).toEqual(ROWS);
     });
 

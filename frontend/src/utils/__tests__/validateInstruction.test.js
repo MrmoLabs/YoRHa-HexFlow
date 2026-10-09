@@ -187,7 +187,7 @@ describe('validateInstruction — LENGTH_CALC refs without formula (W3)', () => 
         ]));
         expect(errors).toEqual([]);
         const w = warnings.find((x) => x.code === 'LENGTH_NO_FORMULA');
-        expect(w).toBeTruthy();
+        expect(w).not.toBeUndefined();
         expect(w.blockId).toBe('f2');
     });
 
@@ -218,7 +218,7 @@ describe('validateInstruction N1 护栏（G5 未知算子 / G7 FLOAT_IEEE 位宽
         ]));
         expect(errors).toEqual([]);
         const w = warnings.find((x) => x.code === 'FLOAT_IEEE_WIDTH_UNSUPPORTED');
-        expect(w).toBeTruthy();
+        expect(w).not.toBeUndefined();
         expect(w.blockId).toBe('f1');
         expect(w.message).toMatch(/float32/);
         expect(w.message).toMatch(/2B/);
@@ -238,7 +238,7 @@ describe('validateInstruction N1 护栏（G5 未知算子 / G7 FLOAT_IEEE 位宽
             blk({ op_code: 'WEIRD_OP', parameter_config: {} }),
         ]));
         const e = errors.find((x) => x.code === 'OP_UNKNOWN');
-        expect(e).toBeTruthy();
+        expect(e).not.toBeUndefined();
         expect(e.blockId).toBe('f1');
         expect(e.message).toMatch(/WEIRD_OP/);
         expect(warnings.some((x) => x.code === 'OP_UNKNOWN')).toBe(false);
@@ -277,7 +277,7 @@ describe('validateInstruction N2 文本字段（G2 字符集）', () => {
         ]));
         expect(errors).toEqual([]);
         const w = warnings.find((x) => x.code === 'STRING_NON_ASCII');
-        expect(w).toBeTruthy();
+        expect(w).not.toBeUndefined();
         expect(w.blockId).toBe('f1');
         expect(w.message).toMatch(/utf8/);
     });

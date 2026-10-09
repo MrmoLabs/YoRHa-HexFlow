@@ -323,7 +323,7 @@ describe('R47 输入表持久化 · 规则页「试解析」（§8.79）', () =>
         fireEvent.change(dryRow(1).key, { target: { value: 'meter_id' } });
         fireEvent.change(dryRow(1).value, { target: { value: '0001' } });
 
-        expect(window.localStorage.getItem(SHARED_INPUTS_KEY)).toBeTruthy();
+        expect(window.localStorage.getItem(SHARED_INPUTS_KEY)).not.toBeNull();
         expect(stored()).toEqual([{ key: 'meter_id', value: '0001' }]);
         expect(screen.getByText(/1 项有效/)).toBeTruthy();
     });

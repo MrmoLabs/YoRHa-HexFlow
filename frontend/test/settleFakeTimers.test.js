@@ -32,6 +32,7 @@ describe('R61 假定时器下的在途链排空', () => {
         const mock = vi.fn(async () => 'payload');
         mock().then(() => { chainLanded = true; });
         // 故意不 await、不 useRealTimers —— 只有全局 afterEach 的收尾排空救得了它
+        expect(chainLanded).toBe(false); // R62：② 收尾时链确实还没落地（③ 才排空）
     });
 
     it('③ 上一测的在途链已在收尾被排干（排空不再盲跳）', () => {

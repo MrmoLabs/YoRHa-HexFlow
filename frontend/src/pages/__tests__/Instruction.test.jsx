@@ -84,9 +84,9 @@ describe('Instruction Page (Smoke Test)', () => {
         render(<Instruction />);
 
         // Check for presence of key layout containers
-        expect(screen.getByTestId('mock-sidebar')).toBeDefined();
-        expect(screen.getByTestId('mock-canvas')).toBeDefined();
-        expect(screen.getByTestId('mock-palette')).toBeDefined();
+        expect(screen.getByTestId('mock-sidebar')).not.toBeNull();
+        expect(screen.getByTestId('mock-canvas')).not.toBeNull();
+        expect(screen.getByTestId('mock-palette')).not.toBeNull();
     });
 
     // R55（PLAN §8.86）：未保存徽标 = 深红语义类 text-warn（原 text-yellow-500 压沙底 1.28）；

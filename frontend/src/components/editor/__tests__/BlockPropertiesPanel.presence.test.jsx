@@ -59,7 +59,7 @@ beforeEach(() => {
 describe('BlockPropertiesPanel PRESENCE 区渲染', () => {
     it('选中块渲染「条件存在 (PRESENCE)」区，回显完整配置', () => {
         renderPanel({ ref_id: 'cmd', expect: '1' });
-        expect(screen.getByTestId('presence-section')).toBeDefined();
+        expect(screen.getByTestId('presence-section')).not.toBeNull();
         expect(screen.getByTestId('presence-summary').textContent).toContain('cmd');
         expect(screen.getByTestId('presence-summary').textContent).toContain('1');
         expect(screen.getByTestId('presence-expect').value).toBe('1');
@@ -67,7 +67,7 @@ describe('BlockPropertiesPanel PRESENCE 区渲染', () => {
 
     it('无 presence → 区仍在，摘要显未配置态、expect 输入为空', () => {
         renderPanel(undefined);
-        expect(screen.getByTestId('presence-section')).toBeDefined();
+        expect(screen.getByTestId('presence-section')).not.toBeNull();
         expect(screen.getByTestId('presence-summary').textContent).toContain('未配置');
         expect(screen.getByTestId('presence-expect').value).toBe('');
     });

@@ -648,7 +648,7 @@ describe('useInstructionData', () => {
         });
         expect(field.bits[1].signed).toBeUndefined();
         // pc 原样保留（bit_meta 不被消费掉 —— 保存时重建同源）
-        expect(field.parameter_config.bit_meta).toBeTruthy();
+        expect(field.parameter_config.bit_meta).toEqual(bitInstruction.fields[0].parameter_config.bit_meta);
         expect(field.parameter_config.input_base).toBe('dec');
     });
 

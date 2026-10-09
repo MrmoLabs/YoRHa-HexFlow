@@ -227,7 +227,7 @@ describe('Sequences Page', () => {
         await act(async () => {});
 
         // 判据：重建只认「服务端已存的那份」，存后那次编辑不得被冲掉
-        expect(screen.getByDisplayValue('存后名')).toBeDefined();
+        expect(screen.getByDisplayValue('存后名')).not.toBeNull();
     });
 
     it('save stays disabled while any step is uncompiled', async () => {

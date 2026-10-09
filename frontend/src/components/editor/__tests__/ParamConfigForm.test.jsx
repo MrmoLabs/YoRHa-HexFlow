@@ -33,6 +33,6 @@ describe('ParamConfigForm', () => {
             />
         );
 
-        expect(screen.getByDisplayValue('ADD_SUM')).toBeDefined();
+        expect(screen.getByDisplayValue('ADD_SUM')).not.toBeNull();
     });
 });

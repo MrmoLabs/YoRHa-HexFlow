@@ -52,7 +52,7 @@ describe('resolvePresenceStates · 进表口径', () => {
                 fields: [leaf('inner', { op_code: 'HEX_RAW', parameter_config: { hex: 'AA' } })]
             },
         ], {}, {});
-        expect(st.grp).toBeTruthy();
+        expect(st.grp).not.toBeUndefined();
         expect(st.grp.hit).toBe(true);
     });
 });

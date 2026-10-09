@@ -42,7 +42,7 @@ describe('BlockPropertiesPanel validation issues (P0-2)', () => {
 
         // Error row rendered as bright full-strength text
         const errBtn = screen.getByText(/字段标签重复「X」/);
-        expect(errBtn).toBeDefined();
+        expect(errBtn).not.toBeNull();
 
         // P0 fix: the issue box sits at the TOP of the meta section (before the
         // first form field), so a blocked save is visible without scrolling.
@@ -55,7 +55,7 @@ describe('BlockPropertiesPanel validation issues (P0-2)', () => {
         // Warnings collapsed by default, expandable
         const toggle = screen.getByText(/展开提醒/);
         fireEvent.click(toggle);
-        expect(screen.getByText(/模拟提醒/)).toBeDefined();
+        expect(screen.getByText(/模拟提醒/)).not.toBeNull();
     });
 });
 
@@ -77,7 +77,7 @@ describe('BlockPropertiesPanel 录入进制配置 (批 1)', () => {
 
     it('参数区顶部固定行：「录入进制 (INPUT BASE)」HEX/DEC 切换，排在模板参数之前', () => {
         withBlock({});
-        expect(screen.getByText(/录入进制/)).toBeDefined();
+        expect(screen.getByText(/录入进制/)).not.toBeNull();
 
         const html = document.body.innerHTML;
         // 「配置参数 (CONFIG)」标题之下、模板参数（start_val）之上
@@ -106,7 +106,7 @@ describe('BlockPropertiesPanel 录入进制配置 (批 1)', () => {
 
     it('不可编辑语义的块（HEX_RAW 固定值 / BITFIELD 打包值）不显示该配置', () => {
         withBlock({});
-        expect(screen.getByText(/录入进制/)).toBeDefined();
+        expect(screen.getByText(/录入进制/)).not.toBeNull();
 
         render(
             <BlockPropertiesPanel
@@ -176,8 +176,8 @@ describe('BlockPropertiesPanel 复制块按钮移除（R3 #1）', () => {
         );
 
         expect(screen.queryByRole('button', { name: '复制块 (DUPLICATE)' })).toBeNull();
-        expect(screen.getByRole('button', { name: '应用配置 (APPLY)' })).toBeDefined();
-        expect(screen.getByRole('button', { name: '删除 (DELETE)' })).toBeDefined();
+        expect(screen.getByRole('button', { name: '应用配置 (APPLY)' })).not.toBeNull();
+        expect(screen.getByRole('button', { name: '删除 (DELETE)' })).not.toBeNull();
         // R57（PLAN §8.89）：hover 底 = tailwind red-500（4.1.18 实算 #fb2c36），白字 3.81
         // 低于正文线 → hover:text-black 5.52（同文件 :781 既有先例）。
         expect(screen.getByRole('button', { name: '删除 (DELETE)' }).className).toContain('hover:text-black');
@@ -312,8 +312,8 @@ describe('BlockPropertiesPanel R25 加扰字段 (SCRAMBLE)', () => {
 
     it('明文输入框在场（PLAINTEXT 标签）、模板参数渲染、录入进制不渲染', () => {
         const { container } = renderScramble({ hex: 'AABB', seed: 'A5' });
-        expect(screen.getByText(/PLAINTEXT/)).toBeDefined();
-        expect(screen.getByText(/STORED: AABB/)).toBeDefined();
+        expect(screen.getByText(/PLAINTEXT/)).not.toBeNull();
+        expect(screen.getByText(/STORED: AABB/)).not.toBeNull();
         // SCRAMBLE 与 HEX_RAW 同判「不可编辑语义」→ 录入进制不渲染
         expect(screen.queryByText(/录入进制/)).toBeNull();
         // ParamConfigForm 在场（op ≠ HEX_RAW/BITFIELD）→ 三键齐

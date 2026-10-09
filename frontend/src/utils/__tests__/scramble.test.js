@@ -190,7 +190,7 @@ describe('R25 SCRAMBLE 保存侧校验（E1 扩 + SCRAMBLE_PARAM，与 BE _valid
     it('E1 扩到 SCRAMBLE：明文长度 ≠ byte_len×2 → HEX_LENGTH（error）', () => {
         const { errors } = validateInstruction(instOf([blk({ hex: 'AA', seed: 'A5' })]));
         const e = errors.find((x) => x.code === 'HEX_LENGTH');
-        expect(e).toBeTruthy();
+        expect(e).not.toBeUndefined();
         expect(e.message).toMatch(/HEX 长度与字节长度不符/);
     });
 
@@ -210,7 +210,7 @@ describe('R25 SCRAMBLE 保存侧校验（E1 扩 + SCRAMBLE_PARAM，与 BE _valid
         ].forEach((pc) => {
             const { errors } = validateInstruction(instOf([blk(pc)]));
             const e = errors.find((x) => x.code === 'SCRAMBLE_PARAM');
-            expect(e, JSON.stringify(pc)).toBeTruthy();
+            expect(e, JSON.stringify(pc)).not.toBeUndefined();
             expect(e.message).toMatch(/加扰模式无效|XOR 种子无效|位旋转位数无效/);
         });
     });

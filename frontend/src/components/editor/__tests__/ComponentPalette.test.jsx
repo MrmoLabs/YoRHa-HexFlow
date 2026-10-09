@@ -14,10 +14,10 @@ describe('ComponentPalette', () => {
             />
         );
 
-        expect(screen.getByText('BASE')).toBeDefined();
-        expect(screen.getByText('STRUCT')).toBeDefined();
-        expect(screen.getByText('原始Hex')).toBeDefined();
-        expect(screen.getByText('嵌套组')).toBeDefined();
+        expect(screen.getByText('BASE')).not.toBeNull();
+        expect(screen.getByText('STRUCT')).not.toBeNull();
+        expect(screen.getByText('原始Hex')).not.toBeNull();
+        expect(screen.getByText('嵌套组')).not.toBeNull();
     });
 
     it('should show retry state when operator templates fail', () => {

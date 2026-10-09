@@ -94,6 +94,7 @@
 | R59 | **校验器口径扩展三项 + 行级抑制（`~~~` 围栏 · `.txt` 纳入 · 豁免口开在「行 + 规则号 + 理由」）** —— R48 §8.80 七 第 2、3 条与 R49 §8.81 八 第 1 条两处留白同挂的收口批（本会话拍板**三项全做**、抑制口径 = **行级 + 规则号 + 理由**；四空格缩进代码块不在拍板范围、沿旧不判）（§8.91） | ✅ **已完成（2026-10-08，§8.91，仓外 skill 改动 + 仓内新增可复跑测试 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 与零 FE 业务代码改动、`frontend/src` 一行未改）**：**扩面探测先取数** —— 仓内 14 份 md 在新口径下 `~~~` 新增 **0 条**（全仓本就没有 `~~~` 围栏）；`.txt` 纳入后 7 份 `.txt` 中 6 份 fixture 共 **13 条**、`backend/requirements.txt` **0 条** → fixture 改名 `.fixture` 后**净新增 0 条**，且未落在 PLAN / HANDOVER 历史叙述的示例里 → **未触发**「新增量 >10 或落在历史示例即停手」条件。**三项实现**（仓外 `validate-yorha-ui.mjs`）：① `extractMarkdownFences` 换 `FENCE_LINE` —— 反引号围栏与 `~~~` 等价（同字符闭合、语言归一与别名表复用、行号 = 围栏起始行 + 块内偏移）；② `SCANNED_EXTENSIONS` 加 `.txt`（整份判，不走 md 口径），R48 那 6 份 fixture 随之 `.txt` → `.fixture`（**放置口径未变、扩展名换到扫描面外**）；③ **行级抑制** —— 代码行 `// yorha-ui: allow <规则号> <中文理由>`、md 行用 HTML 注释同款，**规则号与非空理由缺一不算数**、只抑制所在行（md = 报告所指行），报告与 `--json` 全量列点 文件 / 行 / 规则号 / 理由 + `totals.suppressions`。**8 条规则与 `RULES` 表一行未改**（`validateYoRHaCode` 只多第二个可选参数）。**红测先行**：新增 `scripts/test-yorha-validator-scope.mjs` **13 条**，实现落笔前 **6 红 / 7 护栏**（逐字红因存 `r59_red1.txt`）；三档记账 **缺特性 6 / 测试自身 bug 先修 0 / 随新事实改写 0**；既有 R48 **8/8** 与 R49 **7/7** 断言零改写（仅 3 处 fixture 路径随改名更新）。**验收 = 10 项两遍全绿**：BE **1033/1033** 持平 · FE **1528/1528** 持平（98 文件，用例数零变化）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**4 个现存改动 js/jsx/mjs + 全仓 14 md**）**0 违规** · md 8/8 · **口径扩展 13/13** · 自检 7/7 · **15ms 探测 1528/1528** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
 | R60 | **补注入盲区 27 处（async 形态 mock 也进延迟）** —— R51 §8.83 八 第 2 条登记的留白「注入盲区 27 处（`vi.fn(async …)` / `mockImplementation(async …)`）不进延迟 —— 微任务即达，与从前逐字相同，要压这类得换注入点，本批不做」（同批 §8.83 二 取数表同数同登，§8.84 与 §8.85 两处「R51 留白沿旧」各再提一次）；R51 收口问 R52 排批时本项曾列为候选（用户当时选了假通过全仓排查），**本会话拍板下一批 = 本项**（§8.92） | ✅ **已完成（2026-10-08，§8.92，仅测试基建 + 测试文件 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`frontend/src` 产品代码零改动）**：**走路线 1 中央解** —— 扩 `frontend/test/setupDelay.js`：`vi.fn(async …)` 实参与 `mockImplementation` / `mockImplementationOnce` 传入的 async 函数统一包一层（判据 = `AsyncFunction`），**回调体照旧调用时立即执行**（副作用与调用记账一字不差），被推迟的只有「响应何时到」；处理器在调用当下挂上原 Promise（在途拒绝不露 unhandled 窗口）、包装点幂等打标防双倍延迟；**非 async 形态一个不碰**（R50 `Terminal.test.jsx` 自己的 `ok()` / `fail()` 与手动掌闸 Promise 照旧）。**27 处调用点一行未动**（路线 2「改写调用点为声明式形态」落选：Protocol 那 13 处回包由实参算出，`mockResolvedValue` 接不住）。**红测先行**：新增 `frontend/test/delayAsync.test.js` 2 条，实现前 15ms 档 **2 红**（逐字红因 `r60_red1.txt`：`AssertionError: expected true to be false` —— 宏任务刻度后 resolve 已落定 = 微任务即达），不设 env 同文件 **2 绿**（等价性护栏，单列不冒充红测）。**三档记账**：缺特性（真红测）2 / 测试自身 bug 先修 2 / 随新事实改写 0。**15ms 探测新暴露 2 红 / 1 文件**（Protocol：假定时器冻住回包计时器 → SAVE 未消失；options 未到齐就 change → 生成钮仍禁用），**只补等待**（`act` 内推 `DELAY+5`、`waitFor` options 真在场），断言期望一字未改，**触及产品的红 0 条**。**覆盖证明 27 → 29**（延迟路径打点去重 union：api 5 文件 14 处 + Protocol 13 处全进 + 护栏自测 2 处，`r60_cover.txt`）。**等价性**：不设 env 全量 **1530/1530 · 0 红**。**验收 = 10 项两遍全绿**：BE **1033/1033** · FE **1530/1530**（99 文件，+2 条 +1 文件）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**3 个改动 js/jsx + 3 个 mjs + 全仓 14 md**）**0 违规**（`applied` 新增 0）· md 8/8 · 口径扩展 13/13 · 自检 7/7 · **15ms 探测 1530/1530** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
 | R61 | **假定时器在途链（两个盲跳点改有界排空）** —— R51 §8.83 八 第 3 条登记的留白「**假定时器下的排空与 `settle` 是跳过的**（等不到就硬跳，防冻死钩子）—— 若某文件既用假定时器、又跨测试留在途链，排空不生效；本批已把 Protocol 那 2 条要等回包的测试切真定时器，其余假定时器文件的在途链**未逐一验证**；」（口径原文 §8.83 行 7401-7402、留白行 7480-7482；§8.92 七 第 3 条同族沿旧一次）；R60 收口后**本会话拍板下一批 = 本项**（推荐理由 = 根治后这类修法收敛成统一口径）（§8.93） | ✅ **已完成（2026-10-08，§8.93，仅测试基建 + 测试文件 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`frontend/src` 产品代码零改动、断言期望一字未改）**：**中央解** `frontend/test/setupDelay.js` —— `__YORHA_settle()` 与全局 `afterEach` 两个盲跳点都改成**有界排空**：假定时器档**推进假时钟**（每轮 `advanceTimersByTimeAsync(DELAY_MS + 5)` + 微任务随轮排空，**自己在账的在途链清零**或**时钟无挂起计时器**即早退；**轮数 ≤ 8 且累计 ≤ 1000ms** 双上限防死循环），真定时器档**先等一轮 `DELAY_MS + 5`（与 R51 旧口径逐字一致）再按在途链账有界续等**（多跳链的第二跳不再漏到下一个测试）；**在途链分账 `{ real, fake }`**（计时器**发起 +1、落地 -1**，按发起那一刻是不是假时钟入账），走真档即把随 `useRealTimers()` 卸载被丢弃的假陈账就地清零。与 R52 §8.84 的 `__YORHA_harnessSettle` **收编同源**（该口当时只作临时复检、跑完 `git checkout` 还原、**从未入库**）——**不另起第二个等待口**；与 R60 `delayAsync` 共存（其回包计时器同样进 `delayTimer` 记账）。**红测先行**：新增 `frontend/test/settleFakeTimers.test.js` 3 条，实现落笔前 15ms 档 **2 红**（逐字红因 `r61_red1.txt`：`AssertionError: expected false to be true` @ `:23:28` 与 `:40:33` —— 假定时器下 `settle` 与收尾排空都盲跳、链没落地），不设 env 同文件 **3 绿**（`r61_red1_off.txt`，等价性护栏单列）。**三档记账：缺特性 2 / 测试自身 bug 先修 0 / 随新事实改写 0**（实现 bug 0）。**逐一验证（grep `useFakeTimers` 全仓 = 4 个文件 + 1 个伪）**：现状打点实测既有 99 文件两个盲跳分支**0 命中**（`r61_probe_skip.txt`，跑完即撤）；在途链审计（发起落地埋点 + 测试序号）**100 文件 1533 条 · 跨测试落地 0**（改前 `Sequences.test.jsx` **6 至 7 条**在途响应落到下一个测试 = 真档单次固定等待盖不住多跳链 → 只补收尾续等，断言一字未改）。**等价性**：不设 env 全量 **1533/1533 · 0 红**；**15ms 探测 1533/1533 · 推进时钟翻红断言 0 条**。**验收 = 10 项两遍全绿**：BE **1033/1033** 持平 · FE **1533/1533**（100 文件，+3 条 +1 文件）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**4 个改动 js/jsx + 全仓 14 md**）**0 违规**（`applied` 0 · invalid 1 · unused 0，均沿既有）· md 8/8 · 口径扩展 13/13 · 自检 7/7 · 15ms 探测 **1533/1533** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
+| R62 | 测试质量三件：weak assert 判档处置（`.toBeDefined()` 221 处全量改 `.not.toBeNull()`（反形态 0）；`.toBeTruthy()` 222 处 = 等价非弱记账保留 201 + 精确化 19 + 判不准记账 2）；窄修 3 项（`frontend/test/settleFakeTimers` 补断言、`InstructionEncoder` 两处标题与断言对齐、新增静态护栏 3 条）；BE 27 条无断言（不抛即过）测试方法与 17 处正形态裸 `toHaveBeenCalled()` 仅记账（本批零 BE 改动、零产品代码改动，121 裸 called 一行不改登记 R63）（§8.94） | ✅ **已完成（2026-10-09，§8.94，仅测试文件 + 新增静态护栏 · 零 DDL → 无 Migration、无 `chore(db)`、零 BE 改动、`frontend/src` 产品代码零改动、期望值除 19 处精确化外一字未改）**：**判档口径（用户拍板）** `.toBeDefined()` 全改 `.not.toBeNull()`；`.toBeTruthy()` 依上下文三分（元素存在类等价非弱记账保留、可定值者精确化、判不准者记账）。**红测先行**：护栏实现前 **2 红 1 绿**（逐字红因 `r62_red1.txt`；第 1 条扫描面非空基线即绿、单列不冒充红测）；**转换暴露红 0、触及产品的红 0**；三档 = 缺特性 2 / 先修 0 / 改写 0。**窄修 3 项**：`frontend/test/settleFakeTimers.test.js:35` 补 `chainLanded` 断言、`InstructionEncoder.test.js:135/:319` int / float 标题对齐、新增 `weakAssertions.test.js` 3 条（自身按路径豁免，先例 R58 §8.90）。**等价性**：不设 env 全量 **1536/1536 · 0 红**；**15ms 探测 1536/1536**。**验收 = 10 项两遍全绿**：BE **1033/1033** 持平零改动 · FE **1536/1536**（101 文件，1533 → 1536 = +3 护栏 +1 文件）· `npx vite build` 0 · `npm run lint` 0 · 校验器（**27 个改动 js/jsx/css/mjs + 全仓 14 md**）**0 违规**（`applied` 0 · invalid 1 · unused 0，均沿既有）· md 8/8 · 口径扩展 13/13 · 自检 7/7 · 15ms 探测 **1536/1536** · `ev40` TOTAL_PROBLEMS=0 · `ev33` STAGED=0 DEL=0 BAD=0 |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -8844,6 +8845,76 @@ R61 已闭）与 §8.92 七 第 3 条同族沿旧提及；`PROJECT_HANDOVER.md` 
 
 **R61 ✅ —— 假时钟不是「等不到」，是「没人替它走」：现在秒表交得出去、也收得回来，
 而且有界。**
+
+
+## 8.94 R62 测试质量线收尾（全修档 · 第 1/2 批）判档与窄修账（2026-10-09）
+
+> **已落地 ✅ → 本节 §8.94**。历史条目一律不改写；本批**零 BE 改动、零产品代码改动**，
+> `backend/` 一行未碰，`frontend/src` 只动测试文件；`/dispatch` 缺省口径逐字节不变；
+> `frontend/red-report.json` 与 `backend/db/yorha.db` 为仓内既有状态未触；无 pytest、
+> 无新 pip、无 DDL / Migration、无 `chore(db)`。裸 `.toHaveBeenCalled()` 121 处**一行不改**
+> （登记 R63 留白）；`expect(x).toBe(true)` 112 处不动。
+
+### 一 · 判档口径（用户拍板）与计数
+
+- `.toBeDefined()` **221 处** → 全部改 `.not.toBeNull()`；反形态 0 处。
+- `.toBeTruthy()` **222 处** → 三分：
+  - **记账保留 201 处**（等价非弱）：元素存在类（正则初判 176 + 上下文补认元素存变量 25）——
+    元素节点真值判据即「在 DOM / 数组里存在且非 null」，与渲染产物取到 null 时的
+    `.not.toBeNull()` 在本仓所有命中处等价，属等价非弱，保留不改；
+  - **精确化 19 处**：依据分档 = 源码 / fixture 实值可定 3（`blockTypes.test.js:15/16` →
+    `toBe('位域')` / `toBe('BIT')`；`useInstructionData.test.js:651` →
+    `toEqual(bitInstruction.fields[0].parameter_config.bit_meta)`）+ 语义等价形态 16
+    （localStorage 读写 ×3 → `.not.toBeNull()`，依源码读回形态；位掩码 ×3 →
+    `expect(!!(...)).toBe(true)`，依 `BitFieldEditor.test.js:129` 既有先例；
+    `find()` 命中 ×10 → `.not.toBeUndefined()`）；**跑测定 0**；
+  - **判不准记账 2 处**：`BitFieldEditor.test.jsx:48`（`next[0].id`）与 `routingView.test.js:86`
+    上下文不足以定值，保持 `.toBeTruthy()` 并计入弱断言账，**不冒充已强化**。
+- 转换后逐条行号锚点比对全对齐（`r62_apply_log.txt`）。
+
+### 二 · `.toHaveBeenCalled()` 121 处拆账（R63 留白，一行未改）
+
+- **`.not.toHaveBeenCalled()` 104 处**（阴性精确、非弱，预计 R63 保留）+
+  **正形态裸 `.toHaveBeenCalled()` 17 处**（真弱，R63 处置对象）。
+- `.toBeFalsy()` / `.toBeCalled()` 未触。
+
+### 三 · 红测先行（三档记账）
+
+- 护栏 `frontend/src/__tests__/weakAssertions.test.js`（3 条：扫描面非空、defined 零残留、
+  同文件零重复标题）实现前跑 = **2 红 1 绿**；逐字红因存 `r62_red1.txt`：
+  `AssertionError: expected [ …(221) ] to deeply equal []`（defined 扫描）与
+  `expected [ Array(1) ] to deeply equal []`（重复标题扫描，实现前 1 真重复）。
+  第 1 条扫描面非空基线即绿，**单列不冒充红测**。
+- 转换暴露的红 **0**（转换后 FE 全量 101 文件 / 1536 用例 0 红）；触及产品的红 **0**；
+  **三档 = 缺特性 2 / 先修 0 / 改写 0**。
+- off 档（不设 env）0 红铁律照跑；15ms 探测照跑全绿。
+
+### 四 · 窄修 3 项
+
+1. `frontend/test/settleFakeTimers.test.js:35` 补 `expect(chainLanded).toBe(false);`
+   （原 :41 断言未动）。
+2. `frontend/src/utils/__tests__/InstructionEncoder.test.js:135` → int 版标题、
+   `:319` → float 版标题（标题与断言对齐）。
+3. 新增静态护栏 `weakAssertions.test.js` 3 条：双判据按 `it(` / `test(` 第一个实参源码整体
+   提取标题，规避 3 处模板引号截断伪报；**自身按路径豁免**（先例 R58 §8.90）——
+   其注释含 `.toBeDefined()` 字面，bulk 转换按路径跳过，故实扫 221 而非 222。
+
+### 五 · BE 记账（本批零改动）
+
+- BE 无断言测试方法初判 37 处 − helper 误报 10（`self._reject` 4 + `self._assert_rejects` 6）
+  = **27 处清单**已取证（`r62_be27_body.txt`，含方法体与调用面），R63 处置对象。
+- BE 全量 **1033 用例 0 红**（`BE_OK 1033`、`BE_FAIL_N 0`）。
+- 抑制注释本批 **0 applied**（未用到）；仓内 1 invalid 为既有语法示例行、0 unused。
+
+### 六 · 等价性与验收（10 项 × 两遍）
+
+- FE **1533 → 1536** 用例（+3 护栏）、文件 100 → 101，不设 env 全量 0 红；
+  15ms 探测 1536/1536。
+- `r62_verify.py`（复制 r61，保持无删除目标与第 6 项双脚本口径）**两遍 10 项全绿**：
+  BE 1033 0 红 / FE 1536 0 红 / `npx vite build` 0 / `npm run lint` 0 /
+  校验器 0 违规（改动 27 份 js·jsx·css·mjs + 全仓 14 md）/ md 8/8 / 口径扩展 13/13 /
+  自检 7/7 / probe15 1536 / `ev40` TOTAL_PROBLEMS=0 / `ev33` STAGED=0 DEL=0 BAD=0。
+- `PROJECT_HANDOVER.md` 新增条目 111。`setupDelay.js` 本批不碰。
 
 
 ## 9. 保留勿动（非任务，勿清理）

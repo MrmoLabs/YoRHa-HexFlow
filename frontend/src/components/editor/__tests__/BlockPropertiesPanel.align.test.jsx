@@ -56,7 +56,7 @@ beforeEach(() => {
 describe('BlockPropertiesPanel ALIGN 区渲染', () => {
     it('选中块渲染「对齐 / 填充」区，回显三键配置', () => {
         renderPanel({ align: '4', pad_to: '8', pad_byte: 'FF' });
-        expect(screen.getByTestId('align-section')).toBeDefined();
+        expect(screen.getByTestId('align-section')).not.toBeNull();
         expect(screen.getByTestId('align-input').value).toBe('4');
         expect(screen.getByTestId('padto-input').value).toBe('8');
         expect(screen.getByTestId('padbyte-input').value).toBe('FF');
@@ -65,7 +65,7 @@ describe('BlockPropertiesPanel ALIGN 区渲染', () => {
 
     it('无 pad 配置 → 区仍在，摘要显未配置态、三输入为空', () => {
         renderPanel(undefined);
-        expect(screen.getByTestId('align-section')).toBeDefined();
+        expect(screen.getByTestId('align-section')).not.toBeNull();
         expect(screen.getByTestId('align-summary').textContent).toContain('未配置');
         expect(screen.getByTestId('align-input').value).toBe('');
         expect(screen.getByTestId('padto-input').value).toBe('');

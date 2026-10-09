@@ -56,7 +56,7 @@ describe('R28 Phase 0：规格提交形状金标准（无变长编码时逐字�
 
         fireEvent.change(screen.getByPlaceholderText('AA55'), { target: { value: 'AA55' } });
         fireEvent.click(screen.getByRole('button', { name: /LENGTH OFF/ }));
-        expect(screen.getByText('OFFSET_VAL')).toBeDefined();
+        expect(screen.getByText('OFFSET_VAL')).not.toBeNull();
 
         fireEvent.click(screen.getByRole('button', { name: /SAVE \*/ }));
         await waitFor(() => expect(api.saveResponseSpec).toHaveBeenCalledTimes(1));
