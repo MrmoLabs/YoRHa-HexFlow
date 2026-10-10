@@ -50,15 +50,19 @@ export default function Block({ id, label, name, byte_length, byte_len, bit_len,
     // 整行值流删除（段卡即图例、段值即值流）。纯展示层：packBits 打包口径
     // 零触碰（镜像测试在 bitGrid.test.js），后端 bitfield.py 与编码器无感；
     // 段名 break-all 不截断（段卡换行变高，不丢名）。
-    const isBitfield = type === 'bitfield';
+    // R72（§8.104 · 拍板「指令页位域卡同款」）：位域分支补 op_code='BITFIELD'
+    // 回退 —— 指令页字段无 type 列（类型由 op_code 承载，§8.103 五-3 读码证据），
+    // 回退后指令位域字段卡与协议页同款；协议形态（type='bitfield'）路径不变。
+    const isBitfield = type === 'bitfield' || op_code === 'BITFIELD';
     // R71（§8.102 三 · 值展示）：泳道头 BIN⇄HEX 切换 —— 多 bit 段值可切 HEX
     // （0x..，与 R69 0b 录入并存），单 bit 旗标与缺块 GAP 恒 bin；纯展示态
     // （组件内 state，不落库不进历史），packBits 打包口径零触碰。
     const [segViewHex, setSegViewHex] = React.useState(false);
     // R70（§8.102）位真：声明 bit_len（真实 bit 数）→ 打包到 ceil(bit_len/8) 字节、
     // 位带容量 = bit_len（10bit 头画 10 格 + 尾部 PAD，所见即所得）；否则回落
-    // byte_length×8（既有口径零触碰）。
-    const bitLenRaw = Number(bit_len);
+    // byte_length×8（既有口径零触碰）。R72：指令形态 bit_len 存 parameter_config
+    // （R70 指令镜像存点）→ 顶层缺席时回退读取，两侧同名同义。
+    const bitLenRaw = Number(bit_len ?? parameter_config?.bit_len);
     const bitLen = Number.isInteger(bitLenRaw) && bitLenRaw > 0 ? bitLenRaw : 0;
     const bitFace = React.useMemo(() => {
         if (!isBitfield) return null;
@@ -209,7 +213,7 @@ export default function Block({ id, label, name, byte_length, byte_len, bit_len,
         // R69 返工终拍 B：位域卡 = 泳道式多卡 —— 根去卡壳（透明无框，泳道头/
         // 体与段卡自己成卡；选中/拖拽/拾取态描边仍由 getClasses 叠加），与 hex
         // 容器泳道（border-dashed + 外置标题 + FOCUS）视觉区分。
-        if (type === 'bitfield') return 'border-transparent bg-transparent text-nier-light';
+        if (isBitfield) return 'border-transparent bg-transparent text-nier-light';
 
         if (isDark) return darkStyle;
         if (type === 'optional') return 'border-dashed border-nier-light text-nier-light opacity-80';
@@ -304,7 +308,7 @@ export default function Block({ id, label, name, byte_length, byte_len, bit_len,
 
         // 2.6 批 4: 位域块 —— 卡面显示位段打包后的真实字节（与编码期同口径，
         // packBits 镜像后端 handlers/bitfield.py），而不是 hex_value。
-        if (type === 'bitfield') {
+        if (isBitfield) {
             const packed = packBits(bits, length);
             return packed.match(/.{1,2}/g)?.join(' ') || packed;
         }

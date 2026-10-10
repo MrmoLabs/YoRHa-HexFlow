@@ -4781,6 +4781,35 @@
        提交 = `feat(R71)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
 
 
+121. **R72 · 指令页位域卡同款（Block 位域分支 op_code 回退）**
+     （PLAN §8.104，2026-10-10；R71 §8.103 五-3 读码观察 → question 拍板
+     「指令页位域卡同款」，纯 FE 展示层）
+     - **范围**：`Block.jsx` 单文件四点回退 + `Block.test.jsx` 三新测 + 文档；
+       **零后端、零 DDL、零 DB、零历史、零 wire**；packBits 打包与出线
+       byte_len 零触碰，协议形态（`type='bitfield'`）路径逐字不变。
+     - **新面**：指令页 `op_code='BITFIELD'` 字段卡与协议页同款 —— 根去卡壳
+       泳道式多卡（泳道头段数 chip + 总览位带 + 段独立卡 + 缺块 GAP 虚线卡）
+       + BIN⇄HEX 切换器 + hex 值流打包字节页脚（`packBits(bits, length)` 镜像
+       后端）+ `bit_len` 回退读 `parameter_config.bit_len`（R70 指令镜像存点）
+       → 位带容量 bit 真值（`BITS·1` 非 byte×8 回落）。
+     - **红测先行一轮**：`r72_red1.txt` 2 红 + 29 绿（HEX_RAW 不外溢负向护栏）
+       → 31/31；**先修 1** = 红测自身 hex 值流断言序向瑕疵（首写 `A0` 按文档
+       阅读序，实为存储序 `0x0A`，R69 `09` 同源），产品代码未动；全量 FE
+       **1612/106**（+3，files 不变）。
+     - **留白四条**：① 承接拼图卡 bit 宽度；② 承接 BIN⇄HEX 持久化与全局档
+       （指令页同享）；③ 指令页位真 footer 未推广（Canvas 不传 `bitLayout`
+       → footer 字节口径，如需 `4b @b0` = 计算推广到 `Instruction.jsx`，
+       待拍板）；④ 承接 wire 相两条原样。
+     - **验收**：10 项提交前 + post-commit 两遍（`r72_verify.py` 谱系 §8.99 八，
+       源 r71 大小写同换 + R70=2·r70=2 史料断言；BE 1033 · FE **1612/106**
+       · lint 清零 · 校验器 0）。
+     - **pageStatus**：指令页 +1 条目（`pageStatus.json` + `PAGE_STATUS.md`
+       重生成；协议页不动 —— 协议形态路径零变化）。
+     - **工具账**：Temp = `r72_red1.txt` / `r72_green1.txt` / `r72_mkverify.py` /
+       `r72_verify.py` / `r72_commit.py` / `r72_amend.py` / `r72_postverify.py` /
+       `r72_msg.txt`。提交 = `feat(R72)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

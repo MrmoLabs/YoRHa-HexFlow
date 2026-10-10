@@ -104,6 +104,7 @@
 | R69 | **位域展示/配置二进制化 + 泳道式卡面** —— R68 位带落地后用户回看卡面，question 拍板下一批 = 二进制值流 + 迷你位带 + 段名图例 + 属性面板 0b 录入；实现完成后用户追加反馈「其实我希望的是类似容器的那种展现效果」→ 二问补拍 = 嵌套盒 + 段子片、容器盒包住三件；真机联调两轮反馈 → 返工拍板 A = 容器盒 + 每段一张独立子卡（值流/图例删除、位带留盒顶总览）→ 再反馈「不要都塞在一个卡片里，很拥挤，可以考虑类似泳道的处理，但与十六进制容器下的泳道有所区分」→ 终拍 B = 泳道式多卡（根去卡壳、实线泳道带内嵌段数 chip + 位带、每段独立卡，与 hex 容器泳道虚线外置标题区分）（§8.101） | ✅ **已完成（2026-10-09，§8.101，纯 FE 展示/交互层批 · 零后端改动 · 零 DDL → 无 Migration、无 `chore(db)`）**：**红测先行四轮** = `r69_red1.txt`（13 新契约 12 红 + 1 绿 = 十进制保真锚，逐字红因存档）→ 实现后三文件 90/90；`r69_red2.txt`（段子片 3 红 + 1 绿 = 非位域负向锚）；返工拍板 A 后 `r69_red3.txt`（容器式独立子卡 3 红 / 2 绿守卫）；终拍 B 后 `r69_red4.txt`（泳道式 3 红 / 2 绿守卫）→ 卡面定形 23/23；全量 **1574/101**（+14 = R69 净增，迁移面 0）；**新面** = `bitGrid.formatBinaryBytes`（hex → 每字节 `XXXX XXXX` 串数组，定宽保前导零；packBits 函数体零改动）+ `Block` 位域卡泳道式多卡（根去卡壳透明无框；泳道头 = 段数 chip `BITS·N` + 总览位带内嵌；泳道体 = 实线窄带 + 浅底、每段一张独立卡 = 色块 + 段名 + 位宽 + 段 0/1 值、缺块一张 GAP 虚线卡、冲突红框红名，与 hex 容器泳道 border-dashed + 外置标题 + FOCUS 区分（区分契约入测）；值流/图例两件删除；hex 打包值降页脚小字；宽度地板 = 每行 4 段卡）+ `BitFieldEditor` 位带下逐位 0/1 值流行（段同色、字节边界镜像、视角随 ruler）+ 预览 0b 二进制行 + 默认值 0b 前缀录入（text + 草稿态，半截/垃圾不写回，十进制与 `-40` 两补码回归锚不动）；**三档** = 缺特性 3（二进制化 + 容器式返工 + 泳道式返工）/ 先修 1（红测自身断言瑕疵：`join('')` 含半字节空格未容许，先修档）/ 改写 2（卡面契约随用户形态反馈两度换形 8 → 5 → 5 条）；**文档** = pageStatus L31 卡面口径改写 + 协议/指令两条目 + `PAGE_STATUS.md` 重生成（顺带收口 R68 只改 json 的未重生成漂移）。**验收 = 10 项** 提交前 + post-commit 遍全绿（`r69_verify.py`，谱系 §8.99 八：源 `r68_verify.py` 大小写同换 R68→R69 + r68→r69、历史 R67 引用恰 2 处保护断言过；BE 1033 · FE 1574/101 · probe15 1574 · ev33 STAGED=10 → 返工 amend 遍 6 → post-commit 遍 0）。留白 = 架构复盘一条（字节单位之限：字节为 SSOT、单位/格式降为计算与呈现维度，三候选挂账暂不立项，§8.101 十一）|
 | R70 | **位真帧 bit-true frame** —— 真机场景「帧主导头 = 版本号/标志等若干 bit 字段拼成 10 bit，非整数字节」，原方案卡在字节包络无法展示（§8.101 十一 边界①）；现状盘点 + 四轮拍板定批：① 全块 bit 粒度（彻底，不再须并入单一位域块手工重分组）② pad 自动补零标 PAD ③ length 卡 unit 双值（byte 或 bit，并入 bit 计数，候选 A）④ 自适应位视图 + 位字段名值配置 + 多 bit 值切 HEX（候选 C）（§8.102） | ✅ **已完成（2026-10-09，§8.102，纯 FE 设计层/画布/计算层批 · 零后端改动 · 零 DDL → 无 Migration、无 `chore(db)`）**：**红测先行五轮** = `r70_red1.txt`（frameBitPack 缺席 Failed-to-resolve 实证）→ 8/8；`r70_red2.txt`（位真容量闸 3 红 2 绿）→ `validateProtocol` 27/27；`r70_red3.txt`（位带容量与 PAD 3 红 1 绿）→ `bitGrid` 37/37；`r70_red4.txt`（frameBitLayout 缺席）→ 5/5；另 lengthBit 3 红 1 绿 → `protocolTree` 61/61 · 0x 录入 1 红 · blockTypes 2 红（数组断言随 unit 字段设计改测）；全量 **1603/106**（+29 = 5 新测试文件 26 条 + 并入 3 条，迁移面 0）；**新面** = `frameBitPack`（全帧 bit 流打包器：文档序 MSB-first、段内 bit LSB、字符串按位 >32bit 不截断，10bit→A540）+ `frameBitLayout.computeBitFrameLayout`（Σ bit_len 帧总长 / 绝对 bit 偏移 / 紧凑打包 4+4=1 字节 / 尾 PAD / hasSubByte 自适应开关，`computeByteOffsets` 字节真源零触碰）+ `validateProtocol` 位真容量闸（BIT_LEN_INVALID、BIT_LEN_ENVELOPE、BIT_OVERFLOW 段不越 PAD）+ `bitGrid` 位带容量认 bit_len + cell.pad 条件格（10bit → 10 格 + 尾 6 格 PAD）+ `Block` 卡 footer 自适应位视图（`10b @b0` + bit 偏移 tooltip，字节视图 `2B @00` 零扰动）+ 协议属性面板「BIT 长度」输入（派生 byte_length=ceil(bit_len/8)）+ 指令镜像 parameter_config.bit_len（零 DDL）+ byte_len 派生 + `BitFieldEditor` bitLen→bitCap 归一 + 0x 十六进制录入（与 0b 并存）+ length 卡「计数单位 Unit」下拉 + `protocolTree` unit=bit 注真 Σ bit（叶子 bit_len 优先、容器递归 Σ 子、字节叶 ×8）+ `blockTypes` unit 字段 select；**三档** = 缺特性 5 / 先修 0 / 改写 1（blockTypes 字段数组断言 2 条随 unit 字段设计改测，契约变更有据）；**文档** = PLAN §1 表行 + §8.102 spec 与七 留白填档 + HANDOVER 条目 119 + pageStatus 协议/指令两新条目 + `PAGE_STATUS.md` 重生成。**验收 = 10 项** 提交前 + post-commit 遍全绿（`r70_verify.py`，谱系 §8.99 八：源 `r69_verify.py` 大小写同换 R69→R70 与 r69→r70、历史 R68 引用恰 2 处保护断言过；BE 1033 · FE 1603/106 · probe15 1603 · ev33 STAGED=0）。留白 = 三条（BE 全帧 packBits / 画布帧尾 PAD 灰标与拼图卡 bit 宽度 / BE 出线红测，§8.102 七） |
 | R71 | **位视图帧级 chrome（帧头 Σ 摘要 + 帧尾 PAD 灰标 + 段值 BIN⇄HEX）** —— R70 §8.102 七 留白 2「画布帧尾 PAD 灰标」+ spec 三「值展示：多 bit 值可切 HEX、单 bit 旗标 bin」均为 R70 四轮拍板已拍板项（拍板 ② / ④）；本会话「继续」自主取安全面落地，wire 相仍挂账不擅动（BE 全帧 packBits 涉 pad 落位会改字节）（§8.103） | ✅ **已完成（2026-10-10，§8.103，纯 FE 展示层批 · 零后端 · 零 DDL → 无 Migration、无 `chore(db)`）**：**红测先行两轮** = `r71_red1.txt`（Canvas 帧级 chrome 2 红 + 4 绿 = 3 既有 + 纯字节零扰动负向护栏）→ 6/6；`r71_red2.txt`（Block BIN⇄HEX 2 红 + 26 绿 = 25 既有 + 非位域负向护栏）→ 28/28；全量 **FE 1609/106**（+6 = Canvas 3 + Block 3，files 不变）· BE 1033 · lint 清零 · 校验器 0；**新面** = `Canvas` 帧头 Σ 摘要（`frame-bit-summary`：`Σ 10b → 2B · PAD 6b`，hasSubByte 才渲染、tailPad=0 无 PAD 段、纯字节帧零扰动）+ 帧尾 `PAD` 灰标（根泳道卡流末、`SortableContext` 外不可拖、虚线浅灰与 GAP 卡同语言、`tailPadBits` 首个画布消费方）+ `Block` 泳道头 BIN⇄HEX 切换（`data-card-view-toggle`：多 bit 段 0/1 位型 ⇄ `0x..` 定宽半字节保前导零，单 bit 旗标与缺块 GAP 恒 bin，`stopPropagation` 纯展示不触发选中；`subs` 增 `hex` 字段）+ `Protocol.jsx` R70 陈旧注释改现势；**三档** = 缺特性 3 / 先修 0 / 改写 0；**文档** = PLAN §8.103（spec 三 补完 + 五 留白四条）+ HANDOVER 条目 120 + pageStatus 协议页 +1 条目 + `PAGE_STATUS.md` 重生成。**验收 = 10 项** 提交前定稿遍 + commit 门遍 + post-commit 遍全绿（`r71_verify.py`，谱系 §8.99 八：源 `r70_verify.py` 大小写同换 R70→R71 与 r70→r71、历史 R69=1·r69=2 前置断言过；BE 1033 · FE 1609/106 · probe15 1609 · ev40 TOTAL_PROBLEMS=0 · ev33 STAGED=0）。留白 = 四条（拼图卡 bit 宽度内容地板权衡 / BIN⇄HEX 持久化与全局档待拍板 / 指令页画布位域分支读码观察 op_code 回退挂账 / 承接 R70 wire 相两条，§8.103 五） |
+| R72 | **指令页位域卡同款（Block 位域分支 op_code 回退）** —— R71 §8.103 五-3 读码观察（`InstructionField` 无 `type` 列 → 指令页画布卡不入位域分支、不出泳道卡与切换器）本会话 question 拍板「指令页位域卡同款」= Block 位域分支补 `op_code='BITFIELD'` 回退（§8.104） | ✅ **已完成（2026-10-10，§8.104，纯 FE 展示层批 · 零后端 · 零 DDL → 无 Migration、无 `chore(db)`）**：**红测先行一轮** = `r72_red1.txt`（指令形态 2 红 = 泳道卡/切换器缺席 + 位带容量断言 + 29 绿 = 28 既有 + HEX_RAW 不外溢负向护栏）→ 31/31；**先修 1** = 红测自身 hex 值流断言序向瑕疵（首写 `A0` 按文档阅读序，实为存储序 `0x0A`，R69 `0b1001→09` 同源，产品代码未动）；全量 **FE 1612/106**（R71 基线 1609 + 3，files 不变）· BE 1033 · lint 清零 · 校验器 0；**四点回退**（`Block.jsx` 单文件）= 位域分支主开关（`type='bitfield'` 或 `op_code='BITFIELD'` 并联）+ `getClasses` 卡壳分类接 `isBitfield` + `displayValue` hex 值流接 `isBitfield` + `bitLenRaw` 顶层缺席回退读 `parameter_config.bit_len`（R70 指令镜像存点，`bitFace` 依赖经派生 `bitLen` 传导零补）→ 指令页 `BITFIELD` 字段卡与协议页同款（根去卡壳泳道式多卡 + BIN⇄HEX 切换器 + 打包字节页脚 + 位带 bit 真值格）；**三档** = 缺特性 2 / 先修 1 / 改写 0；**文档** = PLAN §8.104（四点回退表 + 五 留白四条）+ HANDOVER 条目 121 + pageStatus 指令页 +1 条目 + `PAGE_STATUS.md` 重生成（协议页不动，协议形态路径零变化）。**验收 = 10 项** 提交前定稿遍 + commit 门遍 + post-commit 遍全绿（`r72_verify.py`，谱系 §8.99 八：源 `r71_verify.py` 大小写同换 R71→R72 与 r71→r72、历史 R70=2·r70=2 前置断言过；BE 1033 · FE 1612/106 · probe15 1612 · ev40 TOTAL_PROBLEMS=0 · ev33 STAGED=0）。留白 = 四条（拼图卡 bit 宽度内容地板 / BIN⇄HEX 持久化全局档 指令页同享 / 指令页位真 footer 未推广待拍板 / 承接 wire 相两条，§8.104 五） |
 
 节奏：每批 = 实现 → 测试/构建/校验器 → 文档同步 → 人工验证 → 提交（一批一提交）。
 
@@ -9482,6 +9483,36 @@ R70 注释「帧头显总 bit/尾 PAD」由待实现转现势（`Protocol.jsx` �
 3. **读码观察（未实机）· 指令页画布位域分支未入**：`InstructionField` 无 `type` 列（`db/models.py`）、`handleAddBlock` 不写 `type`、`useInstructionLanes` 原样透传 → 按读码指令页画布卡不入 `type==='bitfield'` 泳道分支（无泳道卡亦无切换器；R69 pageStatus「两页共享」指组件共享口径）。如需指令页画布同款卡面 = Block 位域分支补 `op_code==='BITFIELD'` 回退，属产品决策挂账待拍板。
 4. （承接原样）§8.102 七 留白 1（BE 全帧 packBits，pad 落位口径未拍板）与留白 3（BE 出线红测）不动。
 
+
+
+## 8.104 R72 指令页位域卡同款（Block 位域分支补 op_code='BITFIELD' 回退）—— §8.103 五-3 读码观察转落地（2026-10-10 · question 拍板 · 纯 FE 展示层）
+
+### 一 · 来源与拍板
+R71 §8.103 五-3 读码观察（`InstructionField` 无 `type` 列 → 指令页画布卡不入 `type==='bitfield'` 位域分支、不出泳道卡与 BIN⇄HEX 切换器，类型由 op_code 承载）—— 本会话 question 拍板下一批 =「指令页位域卡同款」。纯 FE 展示层：零 DB、零历史、零 wire、零 DDL，packBits 打包与出线 byte_len 口径零触碰；协议形态（`type='bitfield'`）既有路径逐字不变（条件只加宽不收紧）。
+
+### 二 · 四点回退（Block.jsx 单文件）
+| 点 | 位置 | 口径 |
+|---|---|---|
+| **位域分支主开关** | `isBitfield` | `type='bitfield'` **或** `op_code='BITFIELD'` 一票并联 —— 指令页类型由 op_code 承载（`handleAddBlock` 不写 `type`、`useInstructionLanes` 原样透传，§8.103 五-3 证据链） |
+| **卡壳分类** | `getClasses` 位域分支 | 接 `isBitfield` → 指令位域字段卡 = 根去卡壳泳道式多卡（与协议页同款视觉） |
+| **hex 值流** | `displayValue` 位域分支 | 接 `isBitfield` → `packBits(bits, length)` 打包字节页脚回显（镜像后端 `handlers/bitfield.py`，非 `hex_value`） |
+| **bit_len 回退读** | `bitLenRaw` | 顶层 `bit_len` 缺席 → 回退 `parameter_config.bit_len`（R70 指令镜像存点）→ 位带容量 = bit 真值（`BITS·1` 而非回落 byte×8 的 `BITS·2`）；`bitFace` 依赖数组经派生 `bitLen` 传导、依赖零补 |
+
+指令页 `op_code='BITFIELD'` 字段卡自此与协议页同款：泳道头（段数 chip + 总览位带）+ 段独立卡 + 缺块 GAP 虚线卡 + BIN⇄HEX 切换器 + 打包字节页脚（声明 `parameter_config.bit_len` 时位带按真值画格）。
+
+### 三 · 测试口径（红测先行一轮）
+- `r72_red1.txt`：Block 指令形态 **2 红**（泳道卡与切换器缺席 `expected null to be truthy` + 位带容量断言红）+ 29 绿（28 既有 + HEX_RAW 不外溢负向护栏）→ 实现后 **31/31**。
+- **先修 1**（红测自身断言瑕疵，产品代码未动）：hex 值流断言首写 `A0`（按文档阅读序高位在左推），实测 packBits 为存储序（`start_bit` LSB，R69 `0b1001 → 09` 同源）→ VER=0b1010 落 bit0..3 = 低半字节 = `0x0A`；改断言转绿。
+- 全量 FE **1612/106**（R71 基线 1609 + 3 新测，files 不变）· probe15 同 FE · eslint 清零 · build 绿 · BE 1033（零后端改动）。
+
+### 四 · 三档记账
+缺特性 2（指令形态位域分支主开关 + bit_len 回退读；另两点为主开关派生接线）· 先修 1（红测 hex 值流断言序向瑕疵）· 改写 0。
+
+### 五 · 留白（收口 2026-10-10 填）
+1. （承接 §8.103 五-1）拼图卡 bit 宽度内容地板权衡不动。
+2. （承接 §8.103 五-2）BIN⇄HEX 持久化与全局档待拍板 —— 指令页卡面现同享该切换器（每卡 state 重载复位）。
+3. **指令页位真 footer 未推广**：指令 Canvas 不传 `bitLayout` → footer 维持字节口径（`1B`），协议页 `hasSubByte` 才切 `4b @b0`；如需指令页同款位真 footer = `bitLayout` 计算推广到 `Instruction.jsx`（挂账待拍板）。
+4. （承接原样）§8.103 五-4 与 §8.102 七 wire 相（BE 全帧 packBits pad 落位 / BE 出线红测）不动。
 
 
 ## 9. 保留勿动（非任务，勿清理）

@@ -454,3 +454,62 @@ describe('Block（R71 段值 BIN⇄HEX 切换）', () => {
         expect(container.querySelector('[data-card-view-toggle]')).toBeNull();
     });
 });
+
+// R72（§8.104 · 用户拍板「指令页位域卡同款」）：Block 位域分支补
+// op_code='BITFIELD' 回退 —— 指令页字段无 type 列（db/models.py
+// InstructionField 无 type 列、handleAddBlock 不写 type、useInstructionLanes
+// 原样透传，§8.103 五-3 读码证据），类型由 op_code 承载；回退后指令位域字段
+// 卡与协议页同款（泳道多卡 + BIN⇄HEX 切换器 + hex 值流打包字节），bit_len 走
+// parameter_config.bit_len 回退（R70 指令镜像存点）。纯展示层：packBits 打包
+// 口径零触碰、出线 byte_len 零触碰、协议形态（type='bitfield'）既有路径不变。
+describe('Block（R72 指令形态位域卡同款）', () => {
+    const I_BITS = [
+        { id: 'a', bit_name: 'MODE', start_bit: 0, bit_len: 2, default_val: 1 },
+        { id: 'b', bit_name: 'LONG', start_bit: 2, bit_len: 2, default_val: 2 },
+    ];
+
+    it('指令形态（无 type、op_code=BITFIELD）→ 泳道卡同款 + BIN⇄HEX 切换器同款', () => {
+        const { container } = renderBlock({
+            name: '控制域', op_code: 'BITFIELD', byte_len: 1, bits: I_BITS,
+            parameter_config: {},
+        });
+        // 泳道卡同款：根去卡壳 + 泳道头（2 段 + 1 缺块 = BITS·3）
+        const lane = container.querySelector('[data-card-lane]');
+        expect(lane).toBeTruthy();
+        expect(lane.querySelector('[data-card-lane-head]').textContent).toContain('BITS·3');
+        // 切换器同款：BIN → HEX（多 bit 段 0x、缺块 GAP 恒 bin）
+        const toggle = container.querySelector('[data-card-view-toggle]');
+        expect(toggle).toBeTruthy();
+        expect(toggle.textContent).toBe('BIN');
+        fireEvent.click(toggle);
+        const segs = [...container.querySelectorAll('[data-card-seg]')];
+        expect(segs.find(t => t.textContent.includes('LONG'))
+            .querySelector('[data-card-seg-val]').textContent).toBe('0x2');
+        expect(container.querySelector('[data-card-seg-gap]').textContent).toContain('0000');
+    });
+
+    it('指令形态 parameter_config.bit_len=4 → 位带容量走 4bit 真值（BITS·1 无缺块卡），hex 值流 = 打包字节 0x0A', () => {
+        const { container } = renderBlock({
+            name: '主导头', op_code: 'BITFIELD', byte_len: 1,
+            parameter_config: { bit_len: 4 },
+            bits: [{ id: 'v', bit_name: 'VER', start_bit: 0, bit_len: 4, default_val: 10 }],
+        });
+        // capacity = bit_len 4（回退生效）→ VER 0..3 占满、无缺块卡 = BITS·1；
+        // 回退失效会回落 byte_len×8=8 → BITS·2 + 4 格缺块
+        expect(container.querySelector('[data-card-lane-head]').textContent).toContain('BITS·1');
+        expect(container.querySelectorAll('[data-card-strip-gap]').length).toBe(0);
+        // hex 值流 = packBits(bits, length=1) → 段值落存储位（start_bit LSB：
+        // VER=0b1010 @bit0..3 = 低半字节 = 0x0A，镜像后端 handlers/bitfield.py），
+        // 页脚小字 0x..（R69 降页脚口径）；非 hex_value
+        expect(container.textContent).toContain('0x0A');
+    });
+
+    it('非位域算子（HEX_RAW、无 type）→ 不入泳道分支（回退不外溢）', () => {
+        const { container } = renderBlock({
+            name: 'RAW', op_code: 'HEX_RAW', byte_len: 1,
+            parameter_config: { hex: 'AABB' },
+        });
+        expect(container.querySelector('[data-card-lane]')).toBeNull();
+        expect(container.querySelector('[data-card-view-toggle]')).toBeNull();
+    });
+});
