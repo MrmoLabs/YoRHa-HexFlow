@@ -4749,6 +4749,38 @@
        `r70_verify.py` / `r70_commit.py` / `r70_msg.txt`。
        提交 = `feat(R70)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
 
+120. **R71 · 位视图帧级 chrome（帧头 Σ 摘要 + 帧尾 PAD 灰标 + 段值 BIN⇄HEX）**
+     （PLAN §8.103，2026-10-10；R70 留白 2 + spec 三 已拍板项安全面落地，
+     「继续」自主取批，wire 相仍挂账）
+     - **范围**：纯 FE 展示层（`Canvas.jsx` + `Block.jsx` + `Protocol.jsx` 注释
+       + 两测试文件 + 文档）；**零后端、零 DDL、零 DB、零历史、零 wire**；
+       `packBits` 打包口径零触碰。
+     - **新面**：帧头 Σ 摘要（`frame-bit-summary`：`hasSubByte` → `Σ 10b → 2B ·
+       PAD 6b`、tailPad=0 无 PAD 段、纯字节帧不渲染）；帧尾 `PAD` 灰标
+       （`frame-tail-pad`：根泳道卡流末、`SortableContext` 外不可拖、虚线浅灰
+       与 GAP 卡同语言、`tailPadBits` 首个画布消费方）；泳道头 BIN⇄HEX 切换
+       （`data-card-view-toggle`：多 bit 段 0/1 位型 ⇄ `0x..` 定宽半字节，
+       单 bit 旗标与缺块 GAP 恒 bin、`stopPropagation` 纯展示不触发选中，
+       组件内 state 重载复位）。
+     - **红测先行两轮**：`r71_red1.txt` 2 红 + 4 绿（纯字节负向护栏）→
+       Canvas 6/6；`r71_red2.txt` 2 红 + 26 绿（非位域负向护栏）→ Block 28/28；
+       全量 FE **1609/106**（+6，files 不变）。
+     - **留白四条**：① 拼图卡 bit 宽度（内容地板 `laneBodyNeed` 主导，bit 驱动宽
+       恒 ≤ 字节驱动宽 → 地板下空转，权衡待评估）；② BIN⇄HEX 持久化与全局档
+       （页级/落库 `parameter_config.value_view` 待拍板）；③ 读码观察：指令页
+       画布位域分支未入（`InstructionField` 无 `type` 列 → 不入泳道分支，
+       op_code 回退属产品决策挂账）；④ 承接 R70 wire 相两条原样。
+     - **验收**：10 项提交前 + post-commit 两遍（`r71_verify.py` 谱系 §8.99 八，
+       源 r70 大小写同换 + R69=1·r69=2 史料断言；BE 1033 · FE **1609/106**
+       · lint 清零 · 校验器 0）。
+     - **pageStatus**：协议页 +1 条目（`pageStatus.json` + `PAGE_STATUS.md`
+       重生成；帧级 chrome 两件仅协议页有 `bitLayout`，指令页画布无此分支）。
+     - **工具账**：Temp = `r71_red1.txt` / `r71_red2.txt` / `r71_green1.txt` /
+       `r71_green2.txt` / `r71_mkverify.py` / `r71_verify.py` / `r71_commit.py` /
+       `r71_amend.py` / `r71_postverify.py` / `r71_msg.txt`。
+       提交 = `feat(R71)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+
+
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。
 

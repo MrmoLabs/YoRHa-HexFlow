@@ -375,6 +375,19 @@ export default function Canvas({
                                 </div>
                             )}
                         </SortableContext>
+                        {/* R71（§8.102 三）：帧尾 PAD 灰标 —— 只挂根泳道（帧卡流
+                            末尾），打包补零不承载字段；视觉与缺块 GAP 卡同语言
+                            （虚线 + 浅灰 + opacity），不可拖拽（在 SortableContext 外）。 */}
+                        {!lane.parentId && bitLayout?.hasSubByte && bitLayout.tailPadBits > 0 && (
+                            <div
+                                data-testid="frame-tail-pad"
+                                className="flex flex-col gap-0.5 border border-dashed border-nier-light/25 bg-nier-light/5 px-2 py-1.5 min-w-[64px] opacity-60 shrink-0"
+                                title="帧尾补零（打包到整字节，不承载字段）"
+                            >
+                                <span className="text-[8px] font-mono tracking-wider">PAD</span>
+                                <span className="text-[11px] font-bold font-mono leading-tight">{bitLayout.tailPadBits}b</span>
+                            </div>
+                        )}
                     </LaneContainer>
                 </div>
 
@@ -495,6 +508,20 @@ export default function Canvas({
                             className="absolute z-20 w-[2px] bg-[#E58D28] pointer-events-none"
                             style={{ left: dropHint.left - 1, top: dropHint.top, height: dropHint.height }}
                         />
+                    )}
+
+                    {/* R71（§8.102 三 · 位视图帧级 chrome）：含 sub-byte/bit 定义帧
+                        （hasSubByte）→ 帧头显「Σ 真实 bit → 打包字节 · 尾 PAD」，
+                        所见即所得地报出设计层帧长与打包补零；纯字节帧不渲染（零扰动）。 */}
+                    {bitLayout?.hasSubByte && (
+                        <div
+                            data-testid="frame-bit-summary"
+                            className="mb-2 text-[10px] font-mono tracking-widest text-nier-light opacity-70 border border-nier-light/20 bg-nier-dark/60 px-1.5 py-0.5"
+                            title="位真帧设计层：Σ 真实 bit → 打包字节（不足整字节的尾部补零 = PAD）"
+                        >
+                            {`Σ ${bitLayout.totalBits}b → ${bitLayout.packedBytes}B`}
+                            {bitLayout.tailPadBits > 0 ? ` · PAD ${bitLayout.tailPadBits}b` : ''}
+                        </div>
                     )}
 
                     {rootLanes.map(lane => (

@@ -51,6 +51,10 @@ export default function Block({ id, label, name, byte_length, byte_len, bit_len,
     // 零触碰（镜像测试在 bitGrid.test.js），后端 bitfield.py 与编码器无感；
     // 段名 break-all 不截断（段卡换行变高，不丢名）。
     const isBitfield = type === 'bitfield';
+    // R71（§8.102 三 · 值展示）：泳道头 BIN⇄HEX 切换 —— 多 bit 段值可切 HEX
+    // （0x..，与 R69 0b 录入并存），单 bit 旗标与缺块 GAP 恒 bin；纯展示态
+    // （组件内 state，不落库不进历史），packBits 打包口径零触碰。
+    const [segViewHex, setSegViewHex] = React.useState(false);
     // R70（§8.102）位真：声明 bit_len（真实 bit 数）→ 打包到 ceil(bit_len/8) 字节、
     // 位带容量 = bit_len（10bit 头画 10 格 + 尾部 PAD，所见即所得）；否则回落
     // byte_length×8（既有口径零触碰）。
@@ -71,15 +75,21 @@ export default function Block({ id, label, name, byte_length, byte_len, bit_len,
             return i >= 0 && i < packedBin.length ? packedBin[i] : '0';
         };
         const group4 = (v) => v.replace(/(.{4})/g, '$1 ').trim();
-        const subs = strip.units.map((u, ui) => ({
-            key: ui,
-            kind: u.kind,
-            name: u.kind === 'seg' ? (u.name || '(未命名)') : null,
-            color: u.conflict ? '#D94834' : u.color,
-            conflict: !!u.conflict,
-            len: u.bits.length,
-            value: group4(u.bits.map(digit).join('')),
-        }));
+        const subs = strip.units.map((u, ui) => {
+            const bitsStr = u.bits.map(digit).join('');
+            return {
+                key: ui,
+                kind: u.kind,
+                name: u.kind === 'seg' ? (u.name || '(未命名)') : null,
+                color: u.conflict ? '#D94834' : u.color,
+                conflict: !!u.conflict,
+                len: u.bits.length,
+                // value = msb 视角 0/1 位型（半字节分组）；hex = 定宽 0x（R71
+                // BIN⇄HEX 用，bit 数 → ceil(bit/4) 半字节定宽保前导零）
+                value: group4(bitsStr),
+                hex: `0x${(parseInt(bitsStr, 2) || 0).toString(16).toUpperCase().padStart(Math.ceil(u.bits.length / 4), '0')}`,
+            };
+        });
         return { packed, binBytes, strip, subs };
     }, [isBitfield, bits, length, bitLen]);
 
@@ -403,6 +413,21 @@ export default function Block({ id, label, name, byte_length, byte_len, bit_len,
                                 />
                             )))}
                         </div>
+                        {/* R71：段值显示进制切换（BIN 0/1 位型 ⇄ HEX 0x..）——
+                            纯展示动作（stopPropagation 不触发卡选中）；单 bit 旗标
+                            与缺块 GAP 恒 bin（渲染侧按 len>1 判）。 */}
+                        <button
+                            type="button"
+                            data-card-view-toggle
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setSegViewHex(v => !v);
+                            }}
+                            className="text-[8px] font-mono tracking-widest px-1 border border-nier-light/25 shrink-0 opacity-80 hover:opacity-100"
+                            title="段值显示进制：BIN（0/1 位型）⇄ HEX（0x..）；单 bit 旗标与缺块恒 bin"
+                        >
+                            {segViewHex ? 'HEX' : 'BIN'}
+                        </button>
                     </div>
 
                     {/* 泳道体：实线窄带 + 浅底（区分 hex 容器泳道的虚线大框），
@@ -442,7 +467,7 @@ export default function Block({ id, label, name, byte_length, byte_len, bit_len,
                                         style={t.conflict ? { color: '#D94834' } : undefined}
                                     >{t.name}</span>
                                 </span>
-                                <span data-card-seg-val={i} className="text-[11px] font-bold font-mono leading-tight">{t.value}</span>
+                                <span data-card-seg-val={i} className="text-[11px] font-bold font-mono leading-tight">{(segViewHex && t.len > 1) ? t.hex : t.value}</span>
                                 <span className="text-[8px] font-mono opacity-60">{t.len}b</span>
                             </div>
                         )))}

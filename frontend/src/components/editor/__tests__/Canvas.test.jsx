@@ -57,3 +57,57 @@ describe('Canvas 校验标色透传', () => {
         expect(chip.getAttribute('data-issue-chip')).toBe('error');
     });
 });
+
+// R71（§8.102 三 · 位视图帧级 chrome）：含 sub-byte/bit 定义帧（hasSubByte）
+// → 帧头显「Σ 真实 bit → 打包字节 · 尾 PAD」、帧尾出 PAD 灰标（打包补零不承载
+// 字段）；纯字节帧 hasSubByte=false 两件都不渲染（零扰动）。
+const bitLanes = [{
+    depth: 0,
+    parentId: null,
+    parentName: 'FRAME',
+    items: [
+        { id: 'head', label: '主导头', type: 'bitfield', byte_length: 2, bit_len: 10,
+            bits: [{ id: 'v', bit_name: 'VER', start_bit: 0, bit_len: 10, default_val: 0x295 }] },
+    ],
+}];
+const bitLayout = (over = {}) => ({
+    blocks: new Map([['head', { bitOffset: 0, bitWidth: 10, isContainer: false }]]),
+    totalBits: 10, hasSubByte: true, packedBytes: 2, tailPadBits: 6,
+    ...over,
+});
+
+describe('Canvas（R71 位视图帧级 chrome）', () => {
+    it('含 sub-byte 帧：帧头显 Σ10b → 2B · PAD 6b；帧尾出 PAD 灰标（6b）', () => {
+        const { container } = render(<Canvas lanes={bitLanes} bitLayout={bitLayout()} />);
+        const summary = container.querySelector('[data-testid="frame-bit-summary"]');
+        expect(summary).toBeTruthy();
+        expect(summary.textContent).toContain('Σ 10b');
+        expect(summary.textContent).toContain('→ 2B');
+        expect(summary.textContent).toContain('PAD 6b');
+        const pad = container.querySelector('[data-testid="frame-tail-pad"]');
+        expect(pad).toBeTruthy();
+        expect(pad.textContent).toContain('PAD');
+        expect(pad.textContent).toContain('6b');
+        // 帧尾灰标挂在根泳道（帧卡流）末尾，与缺块 GAP 卡同视觉语言（虚线）
+        expect(pad.className).toContain('border-dashed');
+    });
+
+    it('纯字节帧（hasSubByte=false）→ 帧头摘要与帧尾灰标都不渲染（零扰动）', () => {
+        const { container } = render(
+            <Canvas lanes={lanes} bitLayout={bitLayout({ hasSubByte: false, tailPadBits: 0 })} />
+        );
+        expect(container.querySelector('[data-testid="frame-bit-summary"]')).toBeNull();
+        expect(container.querySelector('[data-testid="frame-tail-pad"]')).toBeNull();
+    });
+
+    it('hasSubByte 但 tailPad=0（整字节收尾）→ 帧头摘要不带 PAD 段、帧尾无灰标', () => {
+        const { container } = render(
+            <Canvas lanes={bitLanes} bitLayout={bitLayout({ totalBits: 16, tailPadBits: 0 })} />
+        );
+        const summary = container.querySelector('[data-testid="frame-bit-summary"]');
+        expect(summary).toBeTruthy();
+        expect(summary.textContent).toContain('Σ 16b');
+        expect(summary.textContent).not.toContain('PAD');
+        expect(container.querySelector('[data-testid="frame-tail-pad"]')).toBeNull();
+    });
+});

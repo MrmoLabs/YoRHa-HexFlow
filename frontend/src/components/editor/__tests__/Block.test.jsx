@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { DndContext } from '@dnd-kit/core';
 import Block from '../Block';
 
@@ -392,5 +392,65 @@ describe('Block（R70 自适应位视图 footer）', () => {
         expect(offsetSpan).toBeTruthy();
         expect(offsetSpan.textContent).toBe('@00');
         expect(offsetSpan.previousElementSibling.textContent).toBe('2B');
+    });
+});
+
+// R71（§8.102 三 · 值展示）：位域泳道头 BIN⇄HEX 切换 —— 多 bit 段值可切 HEX
+// （0x..，与 R69 0b 录入并存），单 bit 旗标与缺块 GAP 恒 bin（spec 三原文）；
+// 切换是纯展示动作，不触发卡选中；纯展示层，packBits 打包口径零触碰。
+describe('Block（R71 段值 BIN⇄HEX 切换）', () => {
+    // 本地夹具（与 R69 BF_BITS 同构）：MODE=01 @bit0..1、LONG=10 @bit2..3、
+    // 缺块 bit4..7；packBits → 0x09。
+    const BITS = [
+        { id: 'a', bit_name: 'MODE', start_bit: 0, bit_len: 2, default_val: 1 },
+        { id: 'b', bit_name: 'VERY_LONG_SEGMENT_NAME_HERE', start_bit: 2, bit_len: 2, default_val: 2 }
+    ];
+    const segValText = (container, name) => {
+        const seg = [...container.querySelectorAll('[data-card-seg]')]
+            .find(t => t.textContent.includes(name));
+        expect(seg).toBeTruthy();
+        return seg.querySelector('[data-card-seg-val]').textContent;
+    };
+
+    it('泳道头 BIN⇄HEX：多 bit 段值切 0x HEX、缺块 GAP 恒 bin、切换不触发选中', () => {
+        const onClick = vi.fn();
+        const { container } = renderBlock({
+            name: '控制', type: 'bitfield', byte_length: 1, bits: BITS, onClick,
+        });
+        const toggle = container.querySelector('[data-card-view-toggle]');
+        expect(toggle).toBeTruthy();
+        expect(toggle.textContent).toBe('BIN');
+        // 默认 BIN（msb 视角序：LONG=10、MODE=01）
+        expect(segValText(container, 'VERY_LONG')).toContain('10');
+        expect(segValText(container, 'MODE')).toContain('01');
+        fireEvent.click(toggle);
+        // 多 bit 段切 HEX：LONG=0b10→0x2、MODE=0b01→0x1（定宽半字节）
+        expect(toggle.textContent).toBe('HEX');
+        expect(segValText(container, 'VERY_LONG')).toBe('0x2');
+        expect(segValText(container, 'MODE')).toBe('0x1');
+        // 缺块 GAP 恒 bin（未覆盖位不承载段值）
+        expect(container.querySelector('[data-card-seg-gap]').textContent).toContain('0000');
+        // 纯展示动作：点击切换不冒泡到卡选中
+        expect(onClick).not.toHaveBeenCalled();
+    });
+
+    it('单 bit 旗标在 HEX 档仍显 0/1（spec 三：单 bit 旗标 bin）', () => {
+        const { container } = renderBlock({
+            name: '主导头', type: 'bitfield', byte_length: 1, bit_len: 4,
+            bits: [
+                { id: 'f', bit_name: 'FLAG', start_bit: 0, bit_len: 1, default_val: 1 },
+                { id: 'v', bit_name: 'VER', start_bit: 1, bit_len: 3, default_val: 5 },
+            ],
+        });
+        fireEvent.click(container.querySelector('[data-card-view-toggle]'));
+        expect(segValText(container, 'FLAG')).toBe('1');
+        expect(segValText(container, 'VER')).toBe('0x5');
+    });
+
+    it('非位域卡不渲染视图切换（既有卡面口径零迁移）', () => {
+        const { container } = renderBlock({
+            name: 'RAW', type: 'hex', byte_length: 1, hex_value: 'AABB',
+        });
+        expect(container.querySelector('[data-card-view-toggle]')).toBeNull();
     });
 });

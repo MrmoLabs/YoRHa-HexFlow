@@ -155,8 +155,9 @@ export default function Protocol({ protocols, setProtocols }) {
         [currentProtocol]
     );
     // R70（§8.102 三 · 自适应位视图）：设计层 bit 布局 —— 含 sub-byte/bit 定义帧
-    // （hasSubByte）→ 画布切位视图（footer 显 bit 宽/偏移、帧头显总 bit/尾 PAD）；
-    // 纯字节帧 hasSubByte=false → 沿字节偏移零扰动。
+    // （hasSubByte）→ 画布切位视图（footer 显 bit 宽/偏移）；纯字节帧 hasSubByte=false
+    // → 沿字节偏移零扰动。R71 补完帧级 chrome：帧头 Σ 总 bit/打包字节/尾 PAD 与
+    // 帧尾 PAD 灰标在 Canvas 内消费同一 bitLayout（见 Canvas frame-bit-summary）。
     const bitLayout = useMemo(
         () => computeBitFrameLayout(currentProtocol?.children),
         [currentProtocol]
