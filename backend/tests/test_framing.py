@@ -219,8 +219,8 @@ class LengthVarintHandlerTest(unittest.TestCase):
         ]
         orch = Orchestrator(forest)
         self.assertEqual(_compact(orch.process()), "FAFA07C90100CA")
-        self.assertEqual(orch.block_spans["l"], [(3, 5)])
-        self.assertEqual(orch.block_spans["c"], [(5, 7)])
+        self.assertEqual(orch.block_spans["l"], [(24, 40)])   # R73: bit 化（旧 (3,5)）
+        self.assertEqual(orch.block_spans["c"], [(40, 56)])   # 旧 (5,7)
 
 
 class CobsOrchestratorTest(unittest.TestCase):
@@ -239,7 +239,7 @@ class CobsOrchestratorTest(unittest.TestCase):
                      is_container=True, children=self._inner())
         orch = Orchestrator([node])
         self.assertEqual(_compact(orch.process()), "05FAFA010700")
-        self.assertEqual(orch.block_spans["c"], [(0, 6)])
+        self.assertEqual(orch.block_spans["c"], [(0, 48)])   # R73: bit 化（旧 (0,6)）
         # 内层 length 真值就地定值 → 分层 LEN/CRC 卡面回显仍取得到
         self.assertEqual(node.children[1].hex_value, "01")
 
@@ -292,7 +292,7 @@ class CobsOrchestratorTest(unittest.TestCase):
                      config=BlockConfig(params={"refs": ["c"]}))
         orch = Orchestrator([cobs_node, lens])
         self.assertEqual(_compact(orch.process()), "0102AA0004")
-        self.assertEqual(orch.block_spans["c"], [(0, 4)])
+        self.assertEqual(orch.block_spans["c"], [(0, 32)])   # R73: bit 化（旧 (0,4)）
 
 
 class FrameVectorTest(unittest.TestCase):

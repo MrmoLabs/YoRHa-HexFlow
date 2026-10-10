@@ -15,6 +15,11 @@ R27 新增的两条能力都必须是**显式配置**才生效：
   ② 组帧元素 `cobs`（既有元素集里不存在 → 零节点零改动）。
 故本文件的断言在 R27 落码后**必须依旧全绿**（改一必改二的反向钉子）——
 任何一条变红，即说明变长编码漏进了缺省路径。
+
+R73（§8.105）注：发射期改位游标后 `block_spans` **以 bit 计**（既登记 spec
+「block_spans bit 化」，frame_builder._collect_shell 换算回字节消费）——本文件
+spans 断言按 ×8 等价换算（字节区间不变的等价证明），**帧 hex 断言一字未动**，
+「无变长编码时逐字节不变」的钉子效力不变。
 """
 
 import copy
@@ -39,7 +44,8 @@ def block(nid, **kw):
 
 
 class DirectEmitBaseline(unittest.TestCase):
-    """Orchestrator 发射期各分支的出线字节 + block_spans（改造前抓取）。"""
+    """Orchestrator 发射期各分支的出线字节 + block_spans（改造前抓取；
+    R73 起 spans 单位 bit，hex 断言零改动）。"""
 
     def test_fixed_and_disabled_block(self):
         blocks = [
@@ -49,7 +55,7 @@ class DirectEmitBaseline(unittest.TestCase):
         ]
         orch = Orchestrator(blocks)
         self.assertEqual(orch.process(), "FA FA AA")
-        self.assertEqual(orch.block_spans, {"a1": [(0, 2)], "a3": [(2, 3)]})
+        self.assertEqual(orch.block_spans, {"a1": [(0, 16)], "a3": [(16, 24)]})
 
     def test_length_and_checksum_refs_default_big_endian(self):
         blocks = [
@@ -66,7 +72,8 @@ class DirectEmitBaseline(unittest.TestCase):
         # 非 R27 范围，两侧基线各钉各的现值，见 framingBaseline.test.js 同注）。
         self.assertEqual(orch.process(), "FA FA 01 02 04 01F7")
         self.assertEqual(orch.block_spans, {
-            "h": [(0, 2)], "p": [(2, 4)], "l": [(4, 5)], "c": [(5, 7)],
+            # R73 起 spans 以 bit 计（= 旧字节值 ×8，纯字节帧等价换算）
+            "h": [(0, 16)], "p": [(16, 32)], "l": [(32, 40)], "c": [(40, 56)],
         })
 
     def test_length_byte_order_little_r21(self):
@@ -78,7 +85,7 @@ class DirectEmitBaseline(unittest.TestCase):
         ]
         orch = Orchestrator(blocks)
         self.assertEqual(orch.process(), "A0 01 02 03 0300")
-        self.assertEqual(orch.block_spans, {"h": [(0, 1)], "p": [(1, 4)], "l": [(4, 6)]})
+        self.assertEqual(orch.block_spans, {"h": [(0, 8)], "p": [(8, 32)], "l": [(32, 48)]})
 
     def test_bitfield_pack(self):
         blocks = [
@@ -92,7 +99,7 @@ class DirectEmitBaseline(unittest.TestCase):
         ]
         orch = Orchestrator(blocks)
         self.assertEqual(orch.process(), "FF3A ED")
-        self.assertEqual(orch.block_spans, {"b": [(0, 2)], "t": [(2, 3)]})
+        self.assertEqual(orch.block_spans, {"b": [(0, 16)], "t": [(16, 24)]})
 
     def test_container_repeat_empty_and_little_leaf(self):
         blocks = [
@@ -105,7 +112,7 @@ class DirectEmitBaseline(unittest.TestCase):
         orch = Orchestrator(blocks)
         self.assertEqual(orch.process(), "11 11 02 01")
         self.assertEqual(orch.block_spans,
-                         {"g1": [(0, 1), (1, 2)], "le": [(2, 4)]})
+                         {"g1": [(0, 8), (8, 16)], "le": [(16, 32)]})
 
     def test_slot_emits_nothing(self):
         blocks = [
@@ -114,7 +121,7 @@ class DirectEmitBaseline(unittest.TestCase):
         ]
         orch = Orchestrator(blocks)
         self.assertEqual(orch.process(), "A0")
-        self.assertEqual(orch.block_spans, {"h": [(0, 1)]})
+        self.assertEqual(orch.block_spans, {"h": [(0, 8)]})
 
     def test_emit_does_not_resize_blocks_without_varint(self):
         """R27 硬前置：缺省路径**不得改块宽**（varint 的实际宽度回写只在显式

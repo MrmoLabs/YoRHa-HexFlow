@@ -1,0 +1,87 @@
+[
+  {
+    "name": "header10_single_block",
+    "blocks": [
+      {
+        "type": "bitfield",
+        "bit_len": 10,
+        "byte_length": 2,
+        "bits": [
+          { "bit_name": "VER", "start_bit": 0, "bit_len": 4, "default_val": 10 },
+          { "bit_name": "FLAG", "start_bit": 4, "bit_len": 6, "default_val": 20 }
+        ]
+      }
+    ],
+    "expect": { "bitLen": 10, "padBits": 6, "hex": "5280", "bytes": 2 }
+  },
+  {
+    "name": "two_subbyte_blocks_4plus6",
+    "blocks": [
+      {
+        "type": "bitfield",
+        "bit_len": 4,
+        "byte_length": 1,
+        "bits": [{ "bit_name": "VER", "start_bit": 0, "bit_len": 4, "default_val": 10 }]
+      },
+      {
+        "type": "bitfield",
+        "bit_len": 6,
+        "byte_length": 1,
+        "bits": [{ "bit_name": "FLAG", "start_bit": 0, "bit_len": 6, "default_val": 21 }]
+      }
+    ],
+    "expect": { "bitLen": 10, "padBits": 6, "hex": "A540", "bytes": 2 }
+  },
+  {
+    "name": "subbyte_then_byte_straddle",
+    "blocks": [
+      {
+        "type": "bitfield",
+        "bit_len": 10,
+        "byte_length": 2,
+        "bits": [
+          { "bit_name": "VER", "start_bit": 0, "bit_len": 4, "default_val": 10 },
+          { "bit_name": "FLAG", "start_bit": 4, "bit_len": 6, "default_val": 20 }
+        ]
+      },
+      { "type": "fixed", "byte_length": 1, "hex_value": "ED" }
+    ],
+    "expect": { "bitLen": 18, "padBits": 6, "hex": "52BB40", "bytes": 3 }
+  },
+  {
+    "name": "subbyte_bitlen12",
+    "blocks": [
+      {
+        "type": "bitfield",
+        "bit_len": 12,
+        "byte_length": 2,
+        "bits": [{ "bit_name": "W", "start_bit": 0, "bit_len": 12, "default_val": 2748 }]
+      }
+    ],
+    "expect": { "bitLen": 12, "padBits": 4, "hex": "ABC0", "bytes": 2 }
+  },
+  {
+    "name": "byte_frame_guard",
+    "blocks": [
+      { "type": "fixed", "byte_length": 2, "hex_value": "FA FA" },
+      { "type": "fixed", "byte_length": 1, "hex_value": "ED" }
+    ],
+    "expect": { "bitLen": 24, "padBits": 0, "hex": "FAFAED", "bytes": 3 }
+  },
+  {
+    "name": "big40_guard",
+    "blocks": [
+      { "type": "hex", "hex_value": "12" },
+      { "type": "hex", "hex_value": "34" },
+      { "type": "hex", "hex_value": "56" },
+      { "type": "hex", "hex_value": "78" },
+      { "type": "hex", "hex_value": "9A" }
+    ],
+    "expect": { "bitLen": 40, "padBits": 0, "hex": "123456789A", "bytes": 5 }
+  },
+  {
+    "name": "empty_frame",
+    "blocks": [],
+    "expect": { "bitLen": 0, "padBits": 0, "hex": "", "bytes": 0 }
+  }
+]

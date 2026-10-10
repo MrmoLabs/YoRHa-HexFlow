@@ -10,6 +10,10 @@ class ProtocolNodeSchema(BaseModel):
     label: str
     type: str
     byte_length: int = 0
+    # R73（§8.105）：sub-byte 块的**声明位宽**（children JSON 列，零 DDL）——
+    # 同 refs/bits 先例，不显式透传则 pydantic 静默丢弃 → 协议刷新即失 →
+    # 发射期拿不到真值宽度，wire 位真帧无从谈起。0/缺省 = 按 byte_length×8。
+    bit_len: Optional[int] = None
     hex_value: Optional[str] = None
     config: Dict[str, Any] = Field(default_factory=dict)
     # 一期 A6: refs 引用走 children JSON 列（零 DDL）—— 不透传则 pydantic

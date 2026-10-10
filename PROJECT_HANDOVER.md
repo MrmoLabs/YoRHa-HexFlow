@@ -4809,6 +4809,43 @@
        `r72_verify.py` / `r72_commit.py` / `r72_amend.py` / `r72_postverify.py` /
        `r72_msg.txt`。提交 = `feat(R72)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
 
+122. **R73 · BE 全帧 packBits（发射期位游标 · wire 收口）**
+     （PLAN §8.105，2026-10-10；R70 §8.102 七 留白 1 既登记 spec → question
+     双问一次答齐：方向 = BE 全帧 packBits、wire 补零 = 尾补零 = 高对齐
+     `5280`/`A540` 系，头补零旧口径废止）
+     - **范围**：BE 六点 = `ProtocolNodeSchema`/`Block` `bit_len` 透传
+       （refs/bits 先例，零 DDL）· `backend/core/frame_bits.py`（新，纯函数
+       层镜像 FE `frameBitPack.js`）· `_to_blocks` 单点映射 · orchestrator
+       发射期位游标（纯字节帧原值串直出、spans bit 化、帧尾一次补零）·
+       `pack_protocol_bits` 声明 extent 尾补零 · `_collect_shell` 字节换算；
+       + 双端向量 `vectors/bit_true_frame.json`（manifest 强制双端消费）+
+       新红测 `test_frame_bits_pack.py` 13 测。纯字节帧 raw 出线与 R27 基线
+       **逐字节不变**。
+     - **新面**：sub-byte 帧 wire 收口 —— 单 10bit 头 `5280`（旧 `014A`）、
+       多 sub-byte 块紧凑并字节 `A540`（旧逐块 `A0 15`）、跨字节边界随位流走；
+       `block_spans` 以 **bit** 计（字节消费方 floor/ceil 换算）；设计层（画布）
+       与 wire 自此逐位一致。**既有协议需重存一次**使 `bit_len` 落库（schema
+       此前静默丢字段 → 刷新即失）。
+     - **红测先行一轮**：`r73_red1.txt` = manifest 绿（双端矩阵）+
+       `test_frame_bits_pack` 11 红 2 绿 → 实现后 **13/13**（`r73_green1.txt`）；
+       **先修 2** = 红测自身期望值算错（LITTLE 窗反转实 `8052` 误写 8056、
+       pack 缺省低半字节实 `0A` 误写 `A0`），产品代码未动；**改写 9** =
+       `block_spans` 断言 ×8 bit 化（baseline 6 方法 + framing 3 方法，帧 hex
+       断言零改动）；全量 BE **1046**（1033+13）· FE **1613/106**（+1）。
+     - **留白五条**：① checksum/length 域与紧凑帧字节区间对齐（帧相对切片
+       两遍化，下一批承接）；② length Σ `byte_length` vs 紧凑总字节
+       （`unit=bit` 出线待拍板）；③ 跨字节 LEN/CRC shell 配方不支持；
+       ④ 指令侧 block-level `bit_len` 不达（有意零漂移，推广待拍板）；
+       ⑤ 承接拼图卡 bit 宽度 / BIN⇄HEX 持久化 / 指令页位真 footer 三条。
+     - **验收**：10 项提交前定稿遍 + commit 门遍 + post 遍（`r73_verify.py`
+       谱系 §8.99 八，源 r72 大小写同换 + R71=2·r71=2 史料前置断言；BE 1046
+       · FE 1613/106 · probe15 同 FE · lint 清零 · 校验器 0）。
+     - **pageStatus**：协议页 +1 条目（出线 hex 收口 + 重存一次提示，
+       `pageStatus.json` + `PAGE_STATUS.md` 重生成）。
+     - **工具账**：Temp = `r73_red1.txt` / `r73_green1.txt` / `r73_mkverify.py` /
+       `r73_verify.py` / `r73_commit.py` / `r73_amend.py` / `r73_postverify.py` /
+       `r73_msg.txt`。提交 = `feat(R73)` 单笔（**零 DDL** → 无 Migration、无 `chore(db)`）。
+
 
 ## 6. 目录地图（文件 → 职责 → 是否在用）
 > 这是本项目的“地图”。接手前先读这张表，避免全局搜索。

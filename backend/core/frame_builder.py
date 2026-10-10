@@ -350,6 +350,9 @@ def _to_blocks(nodes, by_id: dict) -> List[Block]:
             type=str(ntype),
             label=str(node.get("label") or node.get("name") or node.get("id")),
             byte_length=bl,
+            # R73（§8.105）：声明位宽透传 → 发射期位流 extent（sub-byte 块
+            # wire 收口的前提；None/0 = byte_length×8 旧口径）。
+            bit_len=_finite_int(node.get("bit_len")),
             hex_value=hex_value,
             config=config,
             children=kids,
@@ -395,9 +398,14 @@ def _collect_shell(nodes, spans: Dict[str, List[Tuple[int, int]]]) -> dict:
     仅多一个键，既有消费方逐键取值 → 零影响。
     """
     out: dict = {"payload_offset": None, "length": [], "checksum": []}
+    # R73（§8.105）：`block_spans` 已 bit 化（发射期位游标）——此处统一换算回
+    # 字节区间：offset = floor(bit/8)（字段首含字节）、width = ceil(bit/8)
+    # （覆盖字节）。纯字节帧逐位等价旧值（起点恒字节对齐、宽恒 8 倍数）→
+    # 载荷注入点 / LEN·CRC 字段位置 / recipe 平移口径零漂移；sub-byte 帧的
+    # 跨字节 LEN/CRC 字段按覆盖字节上报（该态配方不支持，§8.105 留白登记）。
     hits = spans.get("i-payload-0")
     if hits:
-        out["payload_offset"] = int(hits[0][0])
+        out["payload_offset"] = int(hits[0][0]) // 8
 
     def walk(node_list) -> None:
         for node in node_list or []:
@@ -406,7 +414,10 @@ def _collect_shell(nodes, spans: Dict[str, List[Tuple[int, int]]]) -> dict:
             ntype = str(node.type)
             if ntype in ("length", "checksum"):
                 for start, end in spans.get(str(node.id)) or []:
-                    out[ntype].append({"offset": int(start), "byte_length": int(end - start)})
+                    start, end = int(start), int(end)
+                    out[ntype].append(
+                        {"offset": start // 8, "byte_length": (end - start + 7) // 8}
+                    )
             if node.children:
                 walk(node.children)
 

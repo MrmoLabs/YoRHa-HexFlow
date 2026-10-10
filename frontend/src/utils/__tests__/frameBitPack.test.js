@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import bitTrueVec from '../../../../vectors/bit_true_frame.json';
 import {
     packFrameBitStream,
     blockBitString,
@@ -96,5 +97,20 @@ describe('frameBitPack（R70 位真帧打包器）', () => {
         expect(frame.bitLen).toBe(0);
         expect(frame.padBits).toBe(0);
         expect(frame.hex).toBe('');
+    });
+});
+
+// R73（§8.105）双端位真帧向量：BE core/frame_bits.py 同读
+// vectors/bit_true_frame.json —— 发射期出线与设计层 packFrameBitStream 逐位一致
+// （尾补零 = 高对齐拍板；消费矩阵由 test_vectors_manifest.py 强制，改一必改二）。
+describe('双端位真帧向量（R73 · 同读 vectors/bit_true_frame.json）', () => {
+    it('packFrameBitStream 逐例 byte-equal（含 10bit 头 / 多 sub-byte 紧凑 / 跨字节 / 字节帧与 40bit 护栏）', () => {
+        bitTrueVec.forEach((c) => {
+            const frame = packFrameBitStream(c.blocks);
+            expect(frame.bitLen, `${c.name}.bitLen`).toBe(c.expect.bitLen);
+            expect(frame.padBits, `${c.name}.padBits`).toBe(c.expect.padBits);
+            expect(frame.hex, `${c.name}.hex`).toBe(c.expect.hex);
+            expect(frame.bytes, `${c.name}.bytes`).toBe(c.expect.bytes);
+        });
     });
 });

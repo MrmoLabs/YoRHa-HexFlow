@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest';
 import { loadVectors } from '../../../../vectors/vectors.js';
 import alignVec from '../../../../vectors/align.json';
 import bcdScaledVec from '../../../../vectors/bcd_scaled.json';
+import bitTrueFrameVec from '../../../../vectors/bit_true_frame.json';
 import bitfieldVec from '../../../../vectors/bitfield.json';
 import checksumAlgoVec from '../../../../vectors/checksum_algo.json';
 import checksumOrderVec from '../../../../vectors/checksum_order.json';
@@ -40,6 +41,7 @@ const VECTOR_FILES = fs
 const TABLES = {
     align: alignVec,
     bcd_scaled: bcdScaledVec,
+    bit_true_frame: bitTrueFrameVec,
     bitfield: bitfieldVec,
     checksum_algo: checksumAlgoVec,
     checksum_order: checksumOrderVec,

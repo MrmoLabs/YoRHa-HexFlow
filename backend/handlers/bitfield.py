@@ -34,9 +34,21 @@ def _as_int(value, default=0) -> int:
     return default
 
 
-def pack_protocol_bits(bits, byte_length: int) -> str:
-    """位段列表 → 定宽大端 hex。超块长部分被自然截掉（低字节保留）。"""
+def pack_protocol_bits(bits, byte_length: int, bit_len: int = 0) -> str:
+    """位段列表 → 定宽大端 hex（R73 拍板：**尾补零 = 高对齐**）。
+
+    - extent = 声明 `bit_len`（0 < 且 ≤ size×8）否则 size×8；段按 start_bit 落位
+      到 extent，**超 extent 的位段被截**（低 extent 位保留 —— 与既有「低字节
+      保留」同向；脏态同时守住 size 字节宽度不变量）；
+    - 结果整窗高对齐补零到 size 字节：10bit 声明 → `5280`，与发射期位流 /
+      设计层 frameBitPack 同位序（wire 头补零旧口径 `014A` 系废止）；
+    - `bit_len` 缺省（0）→ extent = size×8 → 高对齐位移 0 → 与 R73 前**逐字节
+      一致**（PACK_VECTORS / 指令侧 BITFIELD 零漂移护栏）。
+    """
     size = max(1, _as_int(byte_length, 1))
+    span = size * 8
+    declared = _as_int(bit_len, 0)
+    extent = declared if 0 < declared <= span else span
     packed = 0
     for b in bits or []:
         if not isinstance(b, dict):
@@ -47,11 +59,15 @@ def pack_protocol_bits(bits, byte_length: int) -> str:
             continue
         mask = (1 << length) - 1
         packed |= (_as_int(b.get("default_val"), 0) & mask) << start
-    packed &= (1 << (size * 8)) - 1
-    return f"{packed:0{size * 2}X}"
+    packed &= (1 << extent) - 1
+    return f"{packed << (span - extent):0{size * 2}X}"
 
 
 class BitfieldHandler(LogicHandler):
     def calculate(self, block: Block, flattened_blocks: List[Tuple[str, Block]]) -> str:
         params = (block.config.params if block.config else None) or {}
-        return pack_protocol_bits(params.get("bits"), block.byte_length)
+        # R73（§8.105）：声明位宽随块透传 → extent 尾补零高对齐（与 wire 同口径；
+        # 未声明 = size×8 → 与既有打包逐字节一致）。
+        return pack_protocol_bits(
+            params.get("bits"), block.byte_length, getattr(block, "bit_len", 0) or 0
+        )

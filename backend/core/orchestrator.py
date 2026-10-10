@@ -8,16 +8,16 @@ from backend.handlers.length import LengthHandler
 from backend.handlers.checksum import ChecksumHandler
 from backend.handlers.bitfield import BitfieldHandler
 from backend.core.pad import (
-    align_pad_len,
     normalize_align,
     normalize_pad_byte,
     normalize_pad_to,
     pad_hex,
-    pad_to_pad_len,
 )
 # R27（§8.52 排期 · varint / COBS 出线）：组帧编码 SSOT —— 编码在编排器**发射前**
 # 的树级改写里做，解包（stages 逆向解包 / 应答匹配）是 R28 的范围，本批不碰。
 from backend.core.framing import encode_cobs_hex
+# R73（§8.105）发射期全帧 packBits：文档 bit 串纯函数层（镜像 FE frameBitPack.js）
+from backend.core.frame_bits import block_bit_string, hex_to_bits
 # 帧转义不在编排器（旧占位 `backend.handlers.escape` 已随本批清掉）：N4 拍板
 # 「传输层 · 内核转义后套壳」—— 编排器只出逻辑字节（内容口径），出线时由
 # dispatch / sequence 调 backend/core/escape.py 转义（escape_hex / escape_bytes）。
@@ -41,6 +41,54 @@ def _reverse_hex_pairs(hex_str: str) -> str:
     if " " in hex_str:
         return " ".join(reversed_pairs)
     return "".join(reversed_pairs)
+
+
+def _mirror_node(b: Block) -> dict:
+    """Block → frame_bits.block_bit_string 输入形态（镜像 FE frameBitPack 节点键）。"""
+    params = (b.config.params if b.config else None) or {}
+    return {
+        "type": str(b.type),
+        "bit_len": getattr(b, "bit_len", None),
+        "byte_length": b.byte_length,
+        "hex_value": b.hex_value,
+        "bits": params.get("bits"),
+    }
+
+
+def _pad_to_bits(cursor: int, span: int) -> int:
+    """align / pad_to / 容器 pad 标记的**位游标**补位量：补到 N×8 bit 边界。
+
+    与 core/pad 的 align_pad_len / pad_to_pad_len 同式（bit 版）：纯字节帧下
+    cursor 恒 8 倍数 → 8×旧公式**逐位等价**（公式换算见 §8.105 三）；sub-byte
+    游标（cursor 不足字节）时先把当前余位补满字节再对 N 边界，pad 图案取
+    pad_byte 的位模式截断到补位量。
+    """
+    if not span or cursor < 0:
+        return 0
+    edge = span * 8
+    return (edge - (cursor % edge)) % edge
+
+
+def _flush_hex(final_hex: List[str], carry: str) -> str:
+    """把余流里的完整字节刷成**一个** hex 组；不足一字节的余位留下。"""
+    n = (len(carry) // 8) * 8
+    if n:
+        final_hex.append(format(int(carry[:n], 2), "0" + str(n // 4) + "X"))
+        return carry[n:]
+    return carry
+
+
+def _append_pad(final_hex: List[str], carry: str, count: int, byte: int) -> str:
+    """补 count 个 bit（pad_byte 图案）。纯字节帧（余流空 + 整字节）走 pad_hex
+    直出 → 既有 raw 空格分组逐字节不变（R27 基线口径）；sub-byte 游标下按
+    图案截位并入余流后刷组。"""
+    if count <= 0:
+        return carry
+    if not carry and count % 8 == 0:
+        final_hex.append(pad_hex(count // 8, byte))
+        return carry
+    pat = format(byte & 0xFF, "08b")
+    return _flush_hex(final_hex, carry + (pat * ((count + 7) // 8))[:count])
 
 
 class _PadMark:
@@ -109,54 +157,82 @@ class Orchestrator:
                     block.hex_value = handler.calculate(block, flat_tuples)
 
         # 4. Emit final hex (slots are placeholders and emit nothing).
+        #    R73（§8.105）发射期全帧 packBits —— 游标 bit 化（镜像 frameBitPack.js）：
+        #    各块**文档 bit 串**按序拼接、帧尾一次补零（尾补零 = 高对齐拍板，
+        #    与设计层 frameBitPack / 画布逐位一致，wire 头补零旧口径废止）。纯字节
+        #    帧（游标恒字节对齐）走**原值串直出**分支 → 既有出线字符串逐字节逐
+        #    空格不变（R27 基线钉死）；sub-byte 帧按位流跨字节，字节边界随位走。
         #    N5 (G4): 发射期维护绝对游标 —— 叶的 align 前置 pad / pad_to 后置
-        #    pad 与容器标记都按游标解析；pad 在 LITTLE 反转之外（只反转字段内容），
+        #    pad 与容器标记都按游标解析（字节级构造 → 补到 N×8 bit 边界，纯字节
+        #    帧与旧公式逐位等价）；pad 在 LITTLE 反转之外（只反转字段内容），
         #    且被 emit_blocks 过滤后不改 handler 眼里的内容字节。
-        final_hex = []
-        cursor = 0
+        final_hex: List[str] = []
+        carry = ""   # 未满字节的余位（MSB-first 文档串，恒留 <8 位）
+        cursor = 0   # 绝对游标（bit；含 pad、不含帧尾补零）
         # CP3 3c (D6-B): 发射期旁路记录 —— 叶块 id → [(内容起点, 内容终点), ...]。
-        # 只增记录、不改发射顺序与字节；供 frame_builder 求载荷注入点（= 外壳
+        # 只增记录、不改发射顺序与位流；供 frame_builder 求载荷注入点（= 外壳
         # 头部字节数）与 length/checksum 字段的绝对位置（plan.shell 逐层区间）。
+        # **R73（§8.105）起区间以 bit 计**（位游标直录，R70 留白 spec「block_spans
+        # bit 化」明文），字节消费方由 _collect_shell 按 floor/ceil 换算回字节。
         # 一对起点/终点 = 单次发射；repeat 展开同 id 多次 → 追加成列表。
         # align 前置 pad 归前一块、pad_to 后置 pad 归后一块（内容口径，同 handler）。
         self.block_spans: Dict[str, List[Tuple[int, int]]] = {}
         for b in self.flattened_stream:
             if not isinstance(b, Block):
                 # 容器级 pad 标记：kind=align → 补到 N 边界；pad_to → 同式。
-                n = (align_pad_len(cursor, b.n) if b.kind == "align"
-                     else pad_to_pad_len(cursor, b.n))
-                if n > 0:
-                    final_hex.append(pad_hex(n, b.byte))
-                    cursor += n
+                n_bits = _pad_to_bits(cursor, b.n)
+                if n_bits > 0:
+                    carry = _append_pad(final_hex, carry, n_bits, b.byte)
+                    cursor += n_bits
                 continue
             if b.is_enabled and b.type != BlockType.SLOT:
                 align = normalize_align(b.align)
                 pad_to = normalize_pad_to(b.pad_to)
                 pad_byte = normalize_pad_byte(b.pad_byte)
                 if align:
-                    n = align_pad_len(cursor, align)
-                    if n > 0:
-                        final_hex.append(pad_hex(n, pad_byte))
-                        cursor += n
+                    n_bits = _pad_to_bits(cursor, align)
+                    if n_bits > 0:
+                        carry = _append_pad(final_hex, carry, n_bits, pad_byte)
+                        cursor += n_bits
                 val = b.hex_value or ("00" * b.byte_length)
                 # E1-2 (B6): LITTLE-endian blocks reverse their whole byte
                 # sequence at emission. Length/checksum handlers already ran
                 # above on big-endian order — mirrors the frontend, where
                 # refs feed _encodeFieldBytes (unreversed) and the reversal
                 # happens in the getFieldBytes wrapper at emit time.
-                if str(getattr(b, "endianness", None) or "BIG").upper() == "LITTLE":
+                little = str(getattr(b, "endianness", None) or "BIG").upper() == "LITTLE"
+                if little:
+                    # 字节级语义：整窗反转后按字节参与位流（块内不收紧）。
                     val = _reverse_hex_pairs(val)
+                    bits = hex_to_bits(val)
+                    if bits is None:
+                        bits = "0" * (max(0, int(b.byte_length)) * 8)
+                else:
+                    # 镜像 frameBitPack.block_bit_string：bitfield 段按 start_bit
+                    # 落位（declared bit_len 优先）/ hex 家族逐 nibble 展开 /
+                    # 无值块按 byte_length×8 占位（真值已由 handler 进 hex_value）。
+                    bits = block_bit_string(_mirror_node(b))["bits"]
                 # 转义不在此层（N4 定案：传输层 · 内核转义后套壳）——本函数输出
                 # 逻辑字节；线上转义见 backend/core/escape.py（dispatch/sequence 调用）。
                 content_start = cursor
-                final_hex.append(val)
-                cursor += len(re.sub(r"\s+", "", val)) // 2
+                if carry == "" and len(bits) % 8 == 0 and bits == hex_to_bits(val):
+                    # 纯字节帧原值串直出：raw 空格分组与 R27 基线逐字节一致
+                    # （val 与位流逐位等价才敢直出；不等价/余流非空 → 按位重拼）。
+                    final_hex.append(val)
+                else:
+                    carry = _flush_hex(final_hex, carry + bits)
+                cursor += len(bits)
                 self.block_spans.setdefault(b.id, []).append((content_start, cursor))
                 if pad_to:
-                    n = pad_to_pad_len(cursor, pad_to)
-                    if n > 0:
-                        final_hex.append(pad_hex(n, pad_byte))
-                        cursor += n
+                    n_bits = _pad_to_bits(cursor, pad_to)
+                    if n_bits > 0:
+                        carry = _append_pad(final_hex, carry, n_bits, pad_byte)
+                        cursor += n_bits
+
+        # 帧尾一次补零（R73 拍板：尾补零 = 高对齐）；纯字节帧 tail=0 → 输出零触碰。
+        tail = (8 - (cursor % 8)) % 8
+        if tail:
+            carry = _flush_hex(final_hex, carry + "0" * tail)
 
         return " ".join(final_hex)
 

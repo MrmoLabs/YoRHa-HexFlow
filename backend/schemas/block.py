@@ -34,6 +34,10 @@ class Block(BaseModel):
     type: str # Use string to allow flexibility or BlockType enum
     label: str
     byte_length: int
+    # R73（§8.105）：sub-byte 块声明位宽（发射期位流 extent 优先取值；0/None =
+    # byte_length×8）。协议侧经 frame_builder._to_blocks 从 bit_len 映射；
+    # 指令侧 fields_to_blocks 不映射 → 指令帧维持逐块字节（零漂移，§8.105 登记）。
+    bit_len: Optional[int] = None
     hex_value: Optional[str] = None
     config: Optional[BlockConfig] = None
     
